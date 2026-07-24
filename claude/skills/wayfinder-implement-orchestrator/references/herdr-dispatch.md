@@ -50,32 +50,41 @@
 
 - 执行 tab label 以 `X-` 开头，只列当前活跃 ticket 编号，例如 `X-#957·#958`。
 - 每个 X tab 最多 4 个 panes。优先使用当前有容量的 X tab，再扫描其他 X tabs；都满时
-  用 `herdr tab create --workspace <workspace-id> --no-focus` 创建新 tab。
-- 新 tab 自带的默认 shell pane 不承载 worker；Codex pane 验证成功后再关闭该空 pane。
+  创建新 tab。
+- 新 tab 的初始 shell pane直接承载第一名 worker；已有 tab 用 anchor pane 创建 split。
 
 ## 原子派发
 
 一张票完整走完以下步骤后再处理下一张：
 
-1. 使用显式 workspace、tab 和 worktree cwd 启动 Codex：
+1. 创建 cwd 为 lane worktree 的目标 pane：
+
+   ```bash
+   # 新 tab：读取返回的 tab-id 与初始 pane-id
+   herdr tab create \
+     --workspace <workspace-id> \
+     --cwd <lane-path> \
+     --label 'X-#<issue-number>' \
+     --no-focus
+
+   # 已有 tab：选择该 tab 内一个 verified anchor pane，读取返回的新 pane-id
+   herdr pane split \
+     --pane <anchor-pane-id> \
+     --direction right \
+     --cwd <lane-path> \
+     --no-focus
+   ```
+
+2. 在该 pane 启动 Codex：
 
    ```bash
    herdr agent start "codex-<issue-number>" \
-     --workspace <workspace-id> \
-     --tab <tab-id> \
-     --cwd <lane-path> \
-     --no-focus \
-     -- codex -s danger-full-access -a never
+     --kind codex \
+     --pane <pane-id> \
+     -- -s danger-full-access -a never
    ```
 
-2. 从结果读取 `pane-id`，投递并执行指令：
-
-   ```bash
-   herdr pane send-text <pane-id> '$implement <issue-url>'
-   herdr pane send-keys <pane-id> Enter
-   ```
-
-3. 重命名 pane，并同步 tab label：
+3. 重命名 pane 并同步 tab label：
 
    ```bash
    herdr pane rename <pane-id> '#<issue-number> <标题摘要>'
@@ -83,12 +92,21 @@
    ```
 
 4. 运行 `herdr pane get <pane-id>`，确认 `workspace_id`、`tab_id`，并确认 `cwd` 精确等于
-   `<lane-path>`；再读取 agent status，确认 Codex 已启动并收到指令。
-5. 新 tab 若仍有默认空 shell pane，在 Codex pane 验证成功后运行
-   `herdr pane close <default-pane-id>`。
+   `<lane-path>`；再读取 agent status，确认 Codex 已启动。
+5. 按 `lane-registry.md` 写入 `created` checkpoint 并 readback。加载
+   `assets/CODEX_PANE_DISPATCH_PACKET.md`，投递以 `$implement <issue-url>` 开头的完整
+   packet：
 
-所有创建命令必须显式带 `--workspace`、`--tab`、`--cwd` 和 `--no-focus`；用户当前聚焦
-位置不是派发坐标。
+   ```bash
+   herdr pane send-text <pane-id> '<filled-packet>'
+   herdr pane send-keys <pane-id> Enter
+   ```
+
+   确认 packet 已收到后把 registry 更新为 `running`。
+6. 按 `child-monitoring.md` 给 verified pane 挂 lead-owned listener。
+
+所有 tab/pane 创建命令必须显式带 workspace/anchor、`--cwd` 和 `--no-focus`；`agent start`
+必须显式带 `--kind` 和 `--pane`。用户当前聚焦位置不是派发坐标。
 
 ## 失败隔离
 
@@ -96,4 +114,14 @@
 - 已创建错误 pane 时先关闭它，再用重新解析的显式坐标重试一次。
 - 两次失败后把该票记为 `deferred`，记录命令、错误与目标坐标，继续处理 batch 里的其他票。
 - worktree 创建或验证失败时不启动 Codex，也不删除、重置或覆盖现有路径。
-- 派发完成后不启动 wait、watchdog 或 terminal fan-in；调用方拥有后续生命周期。
+- verified pane 必须有 terminal waiter；后续按 `child-monitoring.md` fan-in。
+
+## 集成后关闭
+
+commit 按 dependency topology 集成且 focused checks 成功后：
+
+1. 按 `lane-registry.md` 写入 `integrated` 并 readback。
+2. 运行 `herdr pane close <pane-id>`。
+3. 用 `herdr pane get <pane-id>` 或 agent list 确认 pane 已消失，再写入 `closed`。
+4. 关闭失败时写入 `close_pending`，保留 pane/worktree，继续其他 ready tickets；新会话恢复
+   时重试关闭。

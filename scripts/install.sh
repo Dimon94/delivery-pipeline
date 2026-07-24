@@ -113,7 +113,7 @@ has_codex_dependency() {
 
 if [ "$SKIP_DEPS" -eq 0 ] && { [ "$TARGET" = "codex" ] || [ "$TARGET" = "all" ]; }; then
   missing=()
-  for dep in implement; do
+  for dep in wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review; do
     has_codex_dependency "$dep" || missing+=("$dep")
   done
 

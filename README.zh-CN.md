@@ -1,51 +1,49 @@
-# Wayfinder Implementation Dispatcher
+# Wayfinder Implement Orchestrator
 
 [English README](README.md)
 
-一个个人 Codex/Claude skill bundle，只负责把现成的 implementation tickets 自动分配给
-相互隔离的 Codex workers。
+一个可恢复的 Codex/Claude 交付链：
 
-输入 tracker issue URL 或编号后，它读取当前 dependency 与写足迹，计算
-`maximal safe batch`，为每张入选票创建独立 Git worktree 并启动 Codex worker，验证
-pane 落点与 cwd，并把每个输入报告为 `dispatched` 或 `deferred`。
+```text
+idea/map -> discovery -> spec -> implementation tickets
+  -> 自动分配 Codex worktrees -> integration -> summary PR/MR
+```
 
-验证派发完成后 skill 立即结束。票面准备、执行监控、结果收敛、集成、tracker 写入和远程
-发布由调用方或其他 skill 负责。
+新会话里给出链路中的任意 issue 即可。skill 会沿 tracker relationships 向上、向下重建
+map/spec/ticket 状态，并从最早未完成的 gate 自动继续。
+
+各阶段 owner 保持权威：`wayfinder` 负责 discovery，`to-spec` 负责 spec，`to-tickets`
+负责发布 implementation tickets，`implement` 负责单张票。orchestrator 只验证持久链接和
+状态转换，不再增加第二套票面判断。
+
+执行自动分配：每张 ready ticket 对应一个隔离的 Codex worker 和一个 Git worktree。
+dependency 与 mutable-resource 冲突只串行受影响的 tickets。
+每个被派发的 child 都保存 pane/thread ID、worktree、branch、commit 和生命周期状态。
+新会话会先恢复已有 child 并重挂 terminal listener。Claude 在集成与 focused checks 成功后
+自动关闭对应 Codex pane。
 
 ## 安装
 
-先安装 Matt Pocock 的 `implement` skill，然后运行：
-
-```bash
-./scripts/install.sh
-```
-
-安装 Claude/Herdr 版：
-
-```bash
-./scripts/install.sh --target claude
-```
-
-同时安装两个版本：
+先安装 `skill-bundle.json` 中的依赖，然后运行：
 
 ```bash
 ./scripts/install.sh --target all
 ```
 
-所有目标都会软链接到当前 checkout。
+Codex 和 Claude 安装都会软链接到当前 checkout。
 
 ## 使用
 
 Codex：
 
 ```text
-使用 $wayfinder-implement-orchestrator 分配 <issue-url> <issue-url> ...
+使用 $wayfinder-implement-orchestrator 继续 <任意 map/spec/ticket issue>。
 ```
 
 Herdr 中的 Claude：
 
 ```text
-使用 /wayfinder-implement-orchestrator <issue-url> <issue-url> ...
+使用 /wayfinder-implement-orchestrator <任意 map/spec/ticket issue>。
 ```
 
 ## 校验

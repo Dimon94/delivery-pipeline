@@ -1,6 +1,6 @@
 interface:
-  display_name: "Wayfinder Implementation Dispatcher"
-  short_description: "Dispatch tickets to isolated Codex tasks"
-  default_prompt: "Use $wayfinder-implement-orchestrator to dispatch these existing implementation tickets."
+  display_name: "Wayfinder Implement Orchestrator"
+  short_description: "Resume Wayfinder delivery from any issue"
+  default_prompt: "Use $wayfinder-implement-orchestrator to resume this issue's delivery chain and carry it forward."
 policy:
   allow_implicit_invocation: false

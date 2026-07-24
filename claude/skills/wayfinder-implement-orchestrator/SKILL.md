@@ -1,63 +1,90 @@
 ---
 name: wayfinder-implement-orchestrator
-description: Dispatch existing implementation tickets to fresh Codex panes as a verified maximal safe batch.
+description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ticket graph through discovery, spec and ticket publication, automatic Codex worktree dispatch, integration, and one summary PR/MR.
 ---
 
-# Wayfinder Implementation Dispatcher for Claude
+# Wayfinder Implement Orchestrator for Claude
 
-把一组已经写好的 implementation tickets 自动分配给 Herdr 中的 fresh Codex panes。
-这个 skill 的产物是可核验的派发结果，不是实现结果。
-
-## 输入
-
-接受 tracker issue URL 或编号列表：
+把输入推进到一条完整交付链：
 
 ```text
-/wayfinder-implement-orchestrator <issue1> [issue2 ...] [--worktree-root <path>]
+idea/map -> discovery -> spec -> implementation tickets
+  -> automatic Codex dispatch -> collect/integrate -> summary PR/MR
 ```
 
-## 派发流程
+`/wayfinder`、`/to-spec`、`/to-tickets`、`/implement` 和 `/code-review` 各自拥有自己的产物
+质量。本 skill 只识别当前 gate、调用对应 owner、验证持久坐标并自动分配执行。
 
-1. 读取 repo instructions、tracker 配置，以及每张输入票的标题、状态、依赖、assignee、
-   acceptance、显式文件足迹和 labels。只读取现有票面；不改写票的范围。
-2. 排除 closed、已被其他 owner claim、prerequisites 未完成或已有活跃 pane 的票，并把
-   原因记为 `deferred`。
-3. 从剩余票中计算 `maximal safe batch`：
-   - dependency 相连的票按依赖顺序串行；
-   - 显式文件或可变资源足迹重叠的票串行；
-   - 无法证明写集合互不相交的票串行；
-   - 其余票并发。
-   按 tracker priority、再按输入顺序做确定性选择。
-4. 确认 `HERDR_ENV=1`，然后完整读取
-   `references/herdr-dispatch.md`。按其中规则为 batch 中的每张票创建或验证一个真实、独立
-   的 Git worktree。worktree 创建或验证失败的票直接记为 `deferred`。
-5. 以验证后的 worktree 作为 `--cwd`，为每张票启动一个 Codex pane，并投递：
+## 输入与 Gate
 
-   ```text
-   $implement <issue-url>
-   ```
+接受松散想法、Wayfinder map issue、已批准 spec issue 或已发布 implementation tickets。
+裸 issue 编号必须能从当前 repo 的 tracker 配置唯一解析。每次新会话都沿持久 relationships
+重建链路，从最早未完成的 gate 自动继续。
 
-6. 对每个 pane 核对 workspace、tab、cwd、pane label 和 agent status；`cwd` 必须精确等于
-   该票的 worktree 根目录。落点错误时关闭错误 pane 并重试一次；第二次仍失败就记为
-   `deferred`，继续派发其他票。
-7. 返回派发表。每张输入票必须恰好出现一次：
+1. 读取 repo instructions、tracker operations 和输入 artifact，加载
+   `references/gate-state-machine.md`、`references/fresh-session-boundaries.md`、
+   `references/lane-registry.md` 和 `references/child-monitoring.md`。完成标准：输入已归入
+   唯一 gate，map/spec/ticket 与 existing child 坐标均已 readback。
+2. `discovery`：加载 `references/wayfinder-frontier-loop.md`、
+   `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md` 和
+   `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`。涉及因果、冲突或隐藏假设时再加载
+   `references/toc-thinking-processes.md`。松散想法先调用 `/wayfinder` 建图；随后通过
+   Herdr 自动派发 ready AFK decision tickets。HITL ticket
+   只阻塞自身。完成标准：所有 in-scope child issues 已关闭，resolution 与必要 artifacts
+   可读回。
+3. `spec`：如果当前链路还没有已批准 spec，调用 `/to-spec`，并遵守它自己的提案、用户
+   判断和发布流程。交给 fresh pane 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
+   完成标准：已发布 spec 的真实 URL/ID 与 body 可读回。
+4. `tickets`：读取 spec 的 native children/sub-issues，以及 body 中 `Parent` 精确回链该
+   spec 的 implementation tickets；按 issue ID 去重。命中为零时调用
+   `/to-tickets <spec-url>`；交给 fresh pane 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
+   完成标准：至少一张真实 ticket 的 ID、spec 回链和 dependency edges 可读回。
+   `/to-tickets` 的已发布结果直接成为 execution graph。
+5. `dispatch`：加载 `references/frontier-lanes.md`、
+   `references/herdr-dispatch.md` 和
+   `assets/CODEX_PANE_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，选择无
+   mutable-resource 冲突的 maximal safe batch。每张入选票先创建并验证真实、独立的 Git
+   worktree，再以该路径创建 pane，并用 `herdr agent start --kind codex --pane` 启动 Codex
+   后投递 `$implement <ticket-url>`。完成标准：ticket 的 durable registry 已 readback
+   pane ID、workspace/tab、worktree、branch、base commit 和 attached waiter。
+6. 每个 pane 做 startup probe：workspace、tab、cwd、pane label 和 agent status 均需匹配；
+   `cwd` 必须精确等于该票 worktree。错误落点关闭后重试一次，第二次失败只把该票标成
+   setup blocked。
+7. workers 运行时只消费 terminal final report；验证 commit、checks 和 dirty state 后按
+   dependency order 集成，并立即重算 frontier。
+   cherry-pick/集成与 focused checks 成功后关闭对应 pane；关闭失败只留下可恢复
+   `close_pending` lane。
+8. execution graph 清空后运行 whole-change checks。获得 remote publication authority 时
+   加载 `references/remote-closeout-checklist.md`，push/open summary PR/MR，并等待 CI/CD
+   与 remote review verdict。
 
-   ```text
-   | ticket | result | pane | workspace/tab | worktree | reason |
-   |---|---|---|---|---|---|
-   | <url> | dispatched | <pane id> | <coords> | <path> | ready and conflict-free |
-   | <url> | deferred | - | - | - | <dependency/conflict/setup reason> |
-   ```
+## 分配规则
+
+- ready ticket = open、未被 claim、全部 blockers completed。
+- 不评估 ticket 大小、是否需要拆分、描述/验收是否够详细，或这张票“是否合理”；
+  `/to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
+- dependency 相连、显式文件/可变资源重叠或写集合无法证明独立的 tickets 串行；其余并发。
+- 按 tracker priority、dependency order、issue ID 做确定性选择。
+- 每张 ticket 一个 Codex pane、一个 worktree/branch。lane terminal 后由 lead 重算下一批，
+  不让 worker 自领 sibling tickets。
+- 新会话先从每张 ticket 的 durable lane registry 恢复 existing panes，再创建 replacement。
+- `HERDR_ENV` 不可用或找不到匹配 workspace 时，输出完整 packets；不假装已经派发。
+
+## 真相源与权限
+
+- map 只索引 discovery decisions；spec 承载共同 scope；tracker tickets 是 execution graph；
+  lane reports、Git commits 和 checks 是执行证据；PR/MR 是远程收尾真相源。
+- spec 与 tickets 的内容由对应 skill 决定。orchestrator 的 gate 只检查存在性、回链、依赖
+  和发布 readback，不增加内容质量或拆票复审 gate。
+- 自动分配包含 lane registry checkpoint 的 tracker write authority。本地 worktree、文件
+  修改与 commit 使用 local execution authority；其他 remote comment、push 和 PR/MR 需要
+  remote publication authority。
+- 所有面向用户、workers、tracker 和 PR/MR 的自然语言使用中文；skill/tool/status/path/hash
+  保持原样。
 
 ## 完成标准
 
-每张输入票都已被验证派发，或以可核验原因记为 `deferred`。派发完成即结束；执行监控、
-结果收敛、集成、tracker 更新和远程发布由调用方负责。
-
-## 边界
-
-- 只接收上游已经准备完成的 implementation tickets，并原样调度。
-- 只根据现有 dependency 与写足迹做分配；信息不足时保守串行。
-- 每个 dispatched ticket 固定由 Codex 在独立 Git worktree 中执行。
-- 不实现 ticket，不 review，不 commit，不集成，不 push，不开 PR/MR。
-- 不创建 Herdr workspace；找不到匹配 workspace 时全部记为 `deferred`。
+map decisions、spec、implementation ticket graph、lane commits/checks 和 summary PR/MR
+已形成可追溯链路；execution graph 为空，whole-change checks 与远程 CI/CD 通过，remote
+review Agent 明确 can pass。没有 remote authority 时完成本地 integration 并报告唯一剩余
+remote gate。

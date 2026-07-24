@@ -1,53 +1,53 @@
-# Wayfinder Implementation Dispatcher
+# Wayfinder Implement Orchestrator
 
 [中文说明](README.zh-CN.md)
 
-A personal Codex/Claude skill bundle that dispatches existing implementation
-tickets to isolated Codex workers.
+A resumable Codex/Claude skill bundle for one durable delivery chain:
 
-Given tracker issue URLs or numbers, it reads their current dependency and
-write-footprint metadata, computes a maximal safe batch, launches one fresh
-Codex worker in an independent Git worktree per selected ticket, verifies
-placement and cwd, and reports every input as either `dispatched` or `deferred`.
+```text
+idea/map -> discovery -> spec -> implementation tickets
+  -> automatic Codex worktree dispatch -> integration -> summary PR/MR
+```
 
-The skill ends when dispatch is verified. Ticket authoring, execution
-monitoring, result collection, integration, tracker mutation, and remote
-publication belong to the caller or another skill.
+Start a fresh session with any issue from the chain. The skill follows tracker
+relationships upward and downward, reconstructs map/spec/ticket state, and
+continues from the earliest incomplete gate.
+
+Stage-owning skills remain authoritative: `wayfinder` owns discovery,
+`to-spec` owns the spec, `to-tickets` owns ticket publication, and `implement`
+owns one ticket. The orchestrator verifies durable links and state transitions;
+it does not add a second ticket-shaping policy.
+
+Implementation dispatch is automatic. Every ready ticket gets one isolated
+Codex worker and one Git worktree. Dependencies and mutable-resource conflicts
+serialize only the affected tickets.
+Each dispatched child persists its pane/thread ID, worktree, branch, commit, and
+lifecycle state. Fresh sessions recover children and reattach terminal listeners
+first. Claude closes the matching Codex pane after integration and focused checks
+succeed.
 
 ## Install
 
-Install Matt Pocock's `implement` skill first, then run:
-
-```bash
-./scripts/install.sh
-```
-
-Install the Claude/Herdr variant with:
-
-```bash
-./scripts/install.sh --target claude
-```
-
-Install both variants with:
+Install the dependencies listed in `skill-bundle.json`, then:
 
 ```bash
 ./scripts/install.sh --target all
 ```
 
-All targets are symlinked to this checkout.
+Both installations are symlinked to this checkout.
 
 ## Use
 
 Codex:
 
 ```text
-Use $wayfinder-implement-orchestrator with <issue-url> <issue-url> ...
+Use $wayfinder-implement-orchestrator with <any-map-spec-or-ticket-issue>.
 ```
 
 Claude inside Herdr:
 
 ```text
-Use /wayfinder-implement-orchestrator <issue-url> <issue-url> ...
+Use /wayfinder-implement-orchestrator <any-map-spec-or-ticket-issue>.
 ```
 
 ## Verify

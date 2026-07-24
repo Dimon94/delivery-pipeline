@@ -11,9 +11,49 @@
   },
   "requires": [
     {
+      "name": "wayfinder",
+      "source": "mattpocock-skills",
+      "reason": "Create and advance Wayfinder maps and decision tickets."
+    },
+    {
+      "name": "grilling",
+      "source": "mattpocock-skills",
+      "reason": "Resolve HITL Wayfinder decisions."
+    },
+    {
+      "name": "domain-modeling",
+      "source": "mattpocock-skills",
+      "reason": "Pin shared terminology during discovery."
+    },
+    {
+      "name": "prototype",
+      "source": "mattpocock-skills",
+      "reason": "Create reaction artifacts for prototype decision tickets."
+    },
+    {
+      "name": "research",
+      "source": "mattpocock-skills",
+      "reason": "Resolve AFK research decision tickets with cited artifacts."
+    },
+    {
+      "name": "to-spec",
+      "source": "mattpocock-skills",
+      "reason": "Publish the implementation spec after discovery."
+    },
+    {
+      "name": "to-tickets",
+      "source": "mattpocock-skills",
+      "reason": "Create linked implementation tickets when a spec has no existing ticket chain."
+    },
+    {
       "name": "implement",
       "source": "mattpocock-skills",
       "reason": "Issue-level implementation directive sent to each dispatched Codex worker."
+    },
+    {
+      "name": "code-review",
+      "source": "mattpocock-skills",
+      "reason": "Review integrated changes before remote publication."
     }
   ]
 }
