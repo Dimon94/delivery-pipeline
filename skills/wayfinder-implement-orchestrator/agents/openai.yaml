@@ -1,6 +1,6 @@
 interface:
-  display_name: "Wayfinder Implement Orchestrator"
-  short_description: "Orchestrate Wayfinder through implementation"
-  default_prompt: "Use $wayfinder-implement-orchestrator to carry this tracker-backed Wayfinder map through its approved delivery gates."
+  display_name: "Wayfinder Implementation Dispatcher"
+  short_description: "Dispatch tickets to isolated Codex tasks"
+  default_prompt: "Use $wayfinder-implement-orchestrator to dispatch these existing implementation tickets."
 policy:
   allow_implicit_invocation: false

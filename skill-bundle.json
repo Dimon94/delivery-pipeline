@@ -3,69 +3,17 @@
   "name": "wayfinder-implement-orchestrator",
   "entrypoints": {
     "codex": "skills/wayfinder-implement-orchestrator/SKILL.md",
-    "claude": "claude/skills/wayfinder-implement-orchestrator/SKILL.md",
-    "claudeAgents": "claude/agents"
+    "claude": "claude/skills/wayfinder-implement-orchestrator/SKILL.md"
   },
   "install": {
     "codexSkillDirectory": "skills/wayfinder-implement-orchestrator",
-    "claudeSkillDirectory": "claude/skills/wayfinder-implement-orchestrator",
-    "claudeAgentsDirectory": "claude/agents"
+    "claudeSkillDirectory": "claude/skills/wayfinder-implement-orchestrator"
   },
   "requires": [
     {
-      "name": "ask-matt",
-      "source": "mattpocock-skills",
-      "reason": "Router and vocabulary for the idea-to-ship engineering flow."
-    },
-    {
-      "name": "wayfinder",
-      "source": "mattpocock-skills",
-      "reason": "Discovery maps and research/prototype tickets."
-    },
-    {
-      "name": "grilling",
-      "source": "mattpocock-skills",
-      "reason": "HITL Wayfinder decision tickets and destination clarification."
-    },
-    {
-      "name": "domain-modeling",
-      "source": "mattpocock-skills",
-      "reason": "Shared terminology during Wayfinder and grilling sessions."
-    },
-    {
-      "name": "prototype",
-      "source": "mattpocock-skills",
-      "reason": "HITL prototype tickets that need concrete artifacts for reaction."
-    },
-    {
-      "name": "research",
-      "source": "mattpocock-skills",
-      "reason": "AFK Wayfinder research tickets and cited linked artifacts."
-    },
-    {
-      "name": "to-spec",
-      "source": "mattpocock-skills",
-      "reason": "Spec synthesis gate."
-    },
-    {
-      "name": "to-tickets",
-      "source": "mattpocock-skills",
-      "reason": "Tracer-bullet ticket split gate."
-    },
-    {
       "name": "implement",
       "source": "mattpocock-skills",
-      "reason": "Issue-level implementation sessions."
-    },
-    {
-      "name": "code-review",
-      "source": "mattpocock-skills",
-      "reason": "Pre-commit Standards and Spec review."
-    },
-    {
-      "name": "writing-great-skills",
-      "source": "mattpocock-skills",
-      "reason": "Skill authoring constraints."
+      "reason": "Issue-level implementation directive sent to each dispatched Codex worker."
     }
   ]
 }

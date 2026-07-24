@@ -19,9 +19,6 @@ Installs $SKILL_NAME to one or both (all targets symlink to this checkout):
   \${CODEX_HOME:-~/.codex}/skills/$SKILL_NAME
   \${CLAUDE_HOME:-~/.claude}/skills/$SKILL_NAME
 
-Claude helper agents install to (per-file symlinks):
-  \${CLAUDE_HOME:-~/.claude}/agents/wayfinder-*.md
-
 Codex dependency discovery checks both:
   \${CODEX_HOME:-~/.codex}/skills
   \${AGENTS_HOME:-~/.agents}/skills
@@ -91,28 +88,18 @@ install_codex() {
 
 install_claude() {
   local skill_source="$ROOT/claude/skills/$SKILL_NAME"
-  local agents_source="$ROOT/claude/agents"
   local skill_dest="$CLAUDE_HOME_DIR/skills/$SKILL_NAME"
-  local agents_dest="$CLAUDE_HOME_DIR/agents"
 
   [ -f "$skill_source/SKILL.md" ] || {
     echo "Cannot find bundled Claude skill at $skill_source" >&2
     exit 1
   }
-  [ -d "$agents_source" ] || {
-    echo "Cannot find bundled Claude agents at $agents_source" >&2
-    exit 1
-  }
 
   rm -rf "$skill_dest"
-  mkdir -p "$(dirname "$skill_dest")" "$agents_dest"
+  mkdir -p "$(dirname "$skill_dest")"
   ln -s "$skill_source" "$skill_dest"
-  for agent in "$agents_source"/wayfinder-*.md; do
-    ln -sf "$agent" "$agents_dest/$(basename "$agent")"
-  done
 
   echo "Symlinked Claude $SKILL_NAME to $skill_dest -> $skill_source"
-  echo "Symlinked Claude wayfinder agents into $agents_dest"
 }
 
 has_codex_dependency() {
@@ -126,7 +113,7 @@ has_codex_dependency() {
 
 if [ "$SKIP_DEPS" -eq 0 ] && { [ "$TARGET" = "codex" ] || [ "$TARGET" = "all" ]; }; then
   missing=()
-  for dep in ask-matt wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review writing-great-skills; do
+  for dep in implement; do
     has_codex_dependency "$dep" || missing+=("$dep")
   done
 

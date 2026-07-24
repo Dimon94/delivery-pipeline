@@ -1,114 +1,63 @@
 ---
 name: wayfinder-implement-orchestrator
-description: Orchestrate tracker-backed Wayfinder maps through concurrent design frontiers, AFK execution lanes, terminal fan-in, and one summary PR/MR.
+description: Dispatch existing implementation tickets to fresh Codex panes as a verified maximal safe batch.
 ---
 
-# Wayfinder Implement Orchestrator for Claude
+# Wayfinder Implementation Dispatcher for Claude
 
-用 tracker 上的 wayfinder map issue、shared map 想法或已批准 spec/tickets 集合调用。编排链路专用；
-`/wayfinder`、`/to-spec`、`/to-tickets`、`/implement` 各自负责其阶段。
+把一组已经写好的 implementation tickets 自动分配给 Herdr 中的 fresh Codex panes。
+这个 skill 的产物是可核验的派发结果，不是实现结果。
 
-## Execution Model
+## 输入
 
-每轮都从持久真相源重算 `ready frontier`，选择没有 dependency 或 mutable-resource 冲突的
-`maximal safe batch`。安全并发是默认行为。
+接受 tracker issue URL 或编号列表：
 
-- **Design fan-out**：一个判断问题一个 Herdr pane；AFK research/evidence/task 自动并发，
-  HITL blocker 只暂停对应 pane。
-- **AFK execution lanes**：一个 lane = 一个 AFK owner + 一个 worktree/branch + 一条可串行
-  验证的 ticket 链。所有 lanes 派发到 fresh pane 或输出 manual packet；coordinator 不亲自
-  执行任何 lane。
-- **Terminal fan-in**：lead 消费 `done` / `blocked` terminal event；每个 final report 读
-  一次，验证后按依赖拓扑集成，立刻重算 frontier。轮询不固定节奏，event-driven 唤醒。
+```text
+/wayfinder-implement-orchestrator <issue1> [issue2 ...] [--worktree-root <path>]
+```
 
-每条 execution lane 自动选择 runtime：自包含、已冻结、无需 MCP/密钥/HITL/remote write 的
-hands-on work 用 `codex-pane`；需要 Claude 会话工具、tracker write、用户判断或不可逆操作的
-work 用 `claude-native`。runtime 是 lane-local routing。
+## 派发流程
 
-Claude Agent Team 作为 pane-local accelerator，lifecycle 与 map/spec/tickets/PR/MR 更新归 lead。
-Codex 通过 Herdr pane 派发（`codex exec` 在 Claude Bash 中已被取代）。
+1. 读取 repo instructions、tracker 配置，以及每张输入票的标题、状态、依赖、assignee、
+   acceptance、显式文件足迹和 labels。只读取现有票面；不改写票的范围。
+2. 排除 closed、已被其他 owner claim、prerequisites 未完成或已有活跃 pane 的票，并把
+   原因记为 `deferred`。
+3. 从剩余票中计算 `maximal safe batch`：
+   - dependency 相连的票按依赖顺序串行；
+   - 显式文件或可变资源足迹重叠的票串行；
+   - 无法证明写集合互不相交的票串行；
+   - 其余票并发。
+   按 tracker priority、再按输入顺序做确定性选择。
+4. 确认 `HERDR_ENV=1`，然后完整读取
+   `references/herdr-dispatch.md`。按其中规则为 batch 中的每张票创建或验证一个真实、独立
+   的 Git worktree。worktree 创建或验证失败的票直接记为 `deferred`。
+5. 以验证后的 worktree 作为 `--cwd`，为每张票启动一个 Codex pane，并投递：
 
-absent `HERDR_ENV=1` 时：所有 lanes 输出 manual packets，coordinator 不执行任何 lane。
+   ```text
+   $implement <issue-url>
+   ```
 
-## Startup Gates
+6. 对每个 pane 核对 workspace、tab、cwd、pane label 和 agent status；`cwd` 必须精确等于
+   该票的 worktree 根目录。落点错误时关闭错误 pane 并重试一次；第二次仍失败就记为
+   `deferred`，继续派发其他票。
+7. 返回派发表。每张输入票必须恰好出现一次：
 
-1. 读取 map issue、repo instructions、tracker operations 和引用 artifacts。识别 Destination、
-   Decisions-so-far、Not yet specified、Out of scope、真相源、frontier 和 claim 规则。
-   如果本轮刚 chart map，立即把所有 `wayfinder:research` decision tickets 作为
-   `/research` panes 并发派出，先 claim/readback，并要求 `research/<name>` branch +
-   Markdown context pointer，防止随后 frontier 重复派发。
-2. 加载 `references/gate-state-machine.md`，识别当前 gate、route 和通过证据。
-3. 涉及根因、因果、冲突、隐藏假设或不确定影响时，加载
-   `references/toc-thinking-processes.md`。
-4. 加载 `references/frontier-lanes.md`、`references/fresh-session-boundaries.md` 和
-   `references/codex-first-channel.md`。完成标准：ready frontier、maximal safe batch、lane
-   坐标、runtime 和 terminal channel 已明确。
-5. 进入 tickets gate 或出现执行期漂移时，加载 `references/ticket-split-coverage.md`。
-   按 `references/map-dashboard.md` 维护仪表盘：shell 只复制一次，tickets 审批前与
-   每轮派发完成后刷新数据层并打开，执行期 terminal fan-in 后只刷新数据层。
-6. 按 work 类型加载 packet：gate/review/evidence 用 `GATE_CHILD_DISPATCH_PACKET.md`；
-   discovery 用 `wayfinder-frontier-loop.md` 与 `WAYFINDER_TICKET_DISPATCH_PACKET.md`；
-   grilling 用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md`；execution lane 按 runtime 用
-   `ISSUE_IMPLEMENT_DISPATCH_PACKET.md` 或 `CODEX_PANE_DISPATCH_PACKET.md`。
-7. 创建 pane 前加载 `references/herdr-pane-placement.md`，显式解析 space/tab/pane 落点。
-8. workers 运行时加载 `references/child-monitoring.md`，建立 terminal fan-in 与 watchdog。
-9. 收尾 summary PR/MR 时加载 `references/remote-closeout-checklist.md`。
+   ```text
+   | ticket | result | pane | workspace/tab | worktree | reason |
+   |---|---|---|---|---|---|
+   | <url> | dispatched | <pane id> | <coords> | <path> | ready and conflict-free |
+   | <url> | deferred | - | - | - | <dependency/conflict/setup reason> |
+   ```
 
-## Dispatch Rules
+## 完成标准
 
-- 创建 pane 需要 `HERDR_ENV=1`；absent 时所有 lanes 输出 manual packets，coordinator 不执行。
-- design pane label 为 `#<issue> <摘要>`；execution pane label 为
-  `L<lane>(#<issue>) <摘要>`。创建命令显式带目标 workspace/tab 和 `--no-focus`。
-- Claude pane 用 `claude --dangerously-skip-permissions`；Codex pane 用
-  `codex -s danger-full-access -a never`（需完整开发环境与网络访问）。
-- create、send-text、pane rename、tab rename 是一个原子组；完成后再创建下一 pane。
-- 每轮自动派发 maximal safe batch。重叠 mutable resources 串行相关 work，其他 work 保持并发。
-- lane blocker 只停本 lane；lead 处理 terminal report 后立即重算并继续其他 ready work。
-- workers 职责：执行 lane packet，生成 terminal report。lead 职责：route、用户判断、
-  fan-in、integration、remote publication。
+每张输入票都已被验证派发，或以可核验原因记为 `deferred`。派发完成即结束；执行监控、
+结果收敛、集成、tracker 更新和远程发布由调用方负责。
 
-## Worktree Policy
+## 边界
 
-- 每个 execution lane 使用独立 worktree/branch；共享 worktree 同时只允许一个 writer。
-- 创建前记录 source worktree branch。用
-  `git worktree add -b <lane-branch> <lane-path> <base-ref>` 创建，source worktree 保持原样。
-- lane path/branch 写入 packet 和坐标记录。推荐 branch `wf/<map-slug>-l<lane>`，path
-  `<repo-parent>/<repo>-wf-<map-slug>-l<lane>`。
-- design/read-only workers 默认不建 worktree；repo writes 需要时遵守一 writer 一 worktree。
-- lane terminal 后先验证 clean state 和 commits；集成完成且不再复用时移除 worktree。
-
-## Truth and Authority Rules
-
-- 面向用户、worker 和 PR/MR 的自然语言用中文；skill/tool/status/path/hash 保持原样。
-- map 是 index，discovery details 留在 child resolution 与 artifacts。
-- discovery frontier 清空后运行 route classifier。
-- 大型 Wayfinder map 清雾后继续交付默认先 `/to-spec`。直接 `/to-tickets` 或 `/implement`
-  需要 `gate-state-machine.md` 小型化跳过证据逐条读回。
-- Wayfinder child ticket 是 discovery/decision work；implementation ticket 才进入 `/implement`。
-- 每次 dispatch 或 terminal event 从 tracker/Git 重算进度快照，source of truth 是外部系统。
-- local execution authority 在 worktree 创建、文件修改和本地 commit 前检查。
-- remote publication authority 在 push、open/update PR/MR 或 remote comment 前检查；absent 时
-  本地 lanes 继续执行。
-- HITL ticket 由真人反馈 resolve。用户判断只阻塞相关 item，safe work 继续。
-- Summary PR/MR 完成标准：CI/CD 通过且 remote review Agent 明确 can pass。
-- 本 skill 有独立 gates，与 cc-dev workflow 隔离。
-
-## AFK Continuation
-
-Claude/Codex 自动压缩是正常续航机制。lane 从 packet、tracker、Git、checks 和 checkpoint
-commits 重建。暂停条件：合同被证据推翻、需要用户判断、缺少 local authority、安全边界失效。
-
-## Minimal Run
-
-1. 读取 map 与 frontier，自动并发派发 design maximal safe batch。
-2. 每个 terminal event 到达时只读一次 final report，更新真相源并重算 frontier。
-3. discovery 完成后选择 `wayfinder-complete`、`needs-spec`、
-   `needs-implementation-tickets` 或 `direct-implementation-dispatch`。
-4. implementation ready 且每票带估时档位（XL 必拆、L 有不拆理由）后，先为 maximal
-   safe batch 建立独立 lanes 并全部派发到 fresh pane（或输出 manual packet），再刷新
-   仪表盘数据层并打开；coordinator 不亲自执行任何 lane，按 lane 特征自动选择
-   `claude-native` 或 `codex-pane` runtime。
-5. 每条 lane AFK 执行、验证、review、checkpoint；blocked 只停本 lane。
-6. terminal fan-in 按拓扑集成、追加 `estimate-log.csv`、刷新仪表盘数据层并持续重算
-   frontier；全部清空后运行 whole-change gates。
-7. 获得 remote publication authority 后 push/open summary PR/MR，等待 CI/CD 与 review verdict。
+- 只接收上游已经准备完成的 implementation tickets，并原样调度。
+- 只根据现有 dependency 与写足迹做分配；信息不足时保守串行。
+- 每个 dispatched ticket 固定由 Codex 在独立 Git worktree 中执行。
+- 不实现 ticket，不 review，不 commit，不集成，不 push，不开 PR/MR。
+- 不创建 Herdr workspace；找不到匹配 workspace 时全部记为 `deferred`。
