@@ -93,7 +93,8 @@ registry 已 readback、orchestrator `cwd` 位于 integration worktree。
    # 检查 working tree 状态
    DIRTY=$(git -C "$INTEGRATION_PATH" status --short)
    ```
-3. 如果 worktree valid 且 clean：自动恢复（切换到 integration worktree，继续当前 gate）。
+3. 如果 worktree valid 且 clean：提示用户确认 resume（显示 integration worktree 路径和当前 gate），
+   用户确认后切换到 integration worktree 并继续。
 4. 如果 worktree valid 但 dirty：报告 uncommitted changes，询问用户是 stash/commit/abort。
 5. 如果 worktree invalid 或路径不存在：报告 "integration worktree missing or invalid"，
    询问用户是否重新创建。
@@ -104,7 +105,7 @@ registry 已 readback、orchestrator `cwd` 位于 integration worktree。
 不存在时重新创建。
 
 **完成标准：** orchestrator 已切换到 valid integration worktree，gate state 已从 registry 恢复，
-workspace 已确认存在。
+workspace 已确认存在，用户已确认 resume。
 
 ### Routing Logic
 
@@ -116,41 +117,33 @@ workspace 已确认存在。
 | map issue | source worktree | 存在且 valid | 提示用户确认 resume，切换到 integration worktree |
 | map issue | integration worktree | 自己 | 直接继续当前 gate |
 | map issue | integration worktree | 不匹配 | 错误：在错误的 integration worktree |
-| spec/tickets | source worktree | - | 错误：必须在 integration worktree 运行（或自动创建） |
+| spec/tickets | source worktree | 可追溯到 map | 追溯 map，创建/恢复 integration worktree，运行 |
+| spec/tickets | source worktree | 无法追溯 | 错误：spec/tickets 必须在 integration worktree 或能追溯到 map |
 | spec/tickets | integration worktree | 自己 | 直接继续 |
 
 **检测当前位置是 source 还是 integration worktree：**
 
+优先使用 branch 名称检测（最可靠）：
+
 ```bash
-# 获取当前 worktree root
-CURRENT_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git branch --show-current)
 
-# 方法 1：检查路径模式
-if [[ "$CURRENT_ROOT" =~ /worktrees/.*-map-[0-9]+$ ]]; then
-  # 在 integration worktree
-  WORKTREE_TYPE="integration"
-else
-  # 在 source worktree
-  WORKTREE_TYPE="source"
-fi
-
-# 方法 2：检查 branch 名称
 if [[ "$CURRENT_BRANCH" =~ ^feature/map-[0-9]+$ ]]; then
   WORKTREE_TYPE="integration"
 elif [[ "$CURRENT_BRANCH" = "main" || "$CURRENT_BRANCH" = "master" ]]; then
   WORKTREE_TYPE="source"
-fi
-
-# 方法 3：检查 git worktree list
-# integration worktree 会在 list 中显示，source worktree 不会（它是 main worktree）
-git worktree list --porcelain | grep -q "^worktree $CURRENT_ROOT$"
-if [ $? -eq 0 ]; then
-  WORKTREE_TYPE="integration"  # 或 execution
 else
-  WORKTREE_TYPE="source"
+  # 后备方案：检查路径模式
+  CURRENT_ROOT=$(git rev-parse --show-toplevel)
+  if [[ "$CURRENT_ROOT" =~ /worktrees/.*-map-[0-9]+$ ]]; then
+    WORKTREE_TYPE="integration"
+  else
+    WORKTREE_TYPE="source"
+  fi
 fi
 ```
+
+Branch 名称检测失败或 detached HEAD 时才使用路径模式后备方案。
 
 ## Execution Worktree Lifecycle
 

@@ -34,35 +34,35 @@ idea/map -> discovery -> spec -> implementation tickets
    识别当前是 source worktree（main）还是 integration worktree（`feature/map-*`）。
    输入是 map 且在 source worktree 时：检查该 map 的 integration worktree 是否存在（registry + 路径）；
    存在且 valid 则提示 resume，不存在则创建 integration worktree + Herdr workspace，切换过去。
-   已在 integration worktree 时直接继续。完成标准：输入归入唯一 gate、worktree 位置正确、
-   所有坐标已 readback。
-2. **Discovery gate。** 加载 `references/wayfinder-frontier-loop.md`、
+   已在 integration worktree 时直接继续。完成标准：worktree 位置正确（integration worktree 或已确认在 source）、
+   输入已识别类型（map/spec/tickets）、所有 existing child 坐标已 readback。
+2. **Run discovery。** 加载 `references/wayfinder-frontier-loop.md`、
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
    松散想法先调用 `wayfinder` owner 建图，随后自动派发 ready AFK decision tickets（HITL 只阻塞自身）。
    完成标准：所有 in-scope child issues closed、resolution 与 artifacts 可读回。
-3. **Spec gate。** 如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
+3. **Generate spec。** 如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
    提案、用户判断和发布流程。交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
    完成标准：已发布 spec 的真实 URL/ID 与 body 可读回。
-4. **Tickets gate。** 读取 spec 的 native children/sub-issues 和 body 中 `Parent` 精确回链该 spec 的
+4. **Generate tickets。** 读取 spec 的 native children/sub-issues 和 body 中 `Parent` 精确回链该 spec 的
    implementation tickets，按 issue ID 去重。命中为零时解析并执行 `to-tickets` owner；
    交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
    完成标准：至少一张真实 ticket 的 ID、spec 回链和 dependency edges 可读回。
-5. **Dispatch gate。** 加载 `references/frontier-lanes.md`、`assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。
+5. **Dispatch execution。** 加载 `references/frontier-lanes.md`、`assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。
    从 dependency graph 重算 ready frontier，选择无 mutable-resource 冲突的 maximal safe batch。
    解析 `implement` owner 后，每张入选票从当前 integration worktree 创建独立 execution worktree
    （branch `codex/issue-<N>`）、fresh Codex task 和 Herdr pane（放入 X tabs，遵守 4-pane capacity）；
    coordinator 不亲自实现。完成标准：ticket 的 durable registry 已 readback thread ID、projectId、
    execution_worktree_path、branch 和 base commit。
-6. **Startup probe。** 每个 task 创建后做一次 startup probe：确认 `Source owner projectId` 属于同一 repo、
+6. **Probe startup。** 每个 task 创建后做一次 startup probe：确认 `Source owner projectId` 属于同一 repo、
    `cwd` 位于该票自己的 execution worktree、完整 packet 已收到，且 child 已 readback 相同的 owner
    name/resolved path。错误落点或未读 owner file 时用同一 projectId 重建一次；第二次失败
    只把该票标成 setup blocked。
-7. **Integration loop。** Workers 运行时只消费 terminal final report；验证 commit、checks 和 dirty state 后
+7. **Integrate changes。** Workers 运行时只消费 terminal final report；验证 commit、checks 和 dirty state 后
    cherry-pick 到 integration worktree（遇冲突标 blocked），按 dependency order 集成，
    通过 focused checks 后删除 execution worktree/branch 并关闭 Herdr pane，立即重算 frontier。
    Lane blocker 不停止其他 ready tickets。
-8. **Test decision 与 remote closeout。** Execution graph 清空后，运行 whole-change checks。
+8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。
    全部通过时进入 test decision：提示用户选择（1）在 integration worktree 测试、（2）立即 rebase 到 main 再测试、
    或（3）跳过测试。用户确认继续后，rebase integration branch 到最新 main（遇冲突委托
    `/mattpocock-skills:resolving-merge-conflicts`），从 source worktree push 到 main（默认直接 push，
