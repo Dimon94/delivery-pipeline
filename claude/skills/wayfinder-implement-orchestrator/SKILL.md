@@ -79,7 +79,7 @@ idea/map -> discovery -> spec -> implementation tickets
 - 按 tracker priority、dependency order、issue ID 做确定性选择。
 - discovery AFK tickets（research、task）：一个 `Agent` tool subagent、一个可选 worktree/branch。
   implementation tickets：一个 Codex pane、一个 worktree/branch。
-  lane terminal 后由 lead 重算下一批，不让 worker 自领 sibling tickets。
+  lane terminal 后由 lead 重算下一批，不让 subagent/pane 自领 sibling tickets。
 - 新会话先从每张 ticket 的 durable lane registry 恢复 existing lanes，再创建 replacement。
 - `Agent` tool 不可用时输出完整 packets 作为 copy-paste fallback；不假装已经派发。
   `HERDR_ENV` 不可用或 `/herdr` skill 找不到匹配 workspace 时，HITL panes 同理。

@@ -1,10 +1,10 @@
-# Wayfinder Ticket Worker Packet
+# Wayfinder Ticket Subagent Packet
 
-用于派发一个 Wayfinder decision ticket worker。不要发送半截 packet。
+用于派发一个 Wayfinder decision ticket 后台 subagent。不要发送半截 packet。
 
 ```text
 项目：
-Coordinator task：
+Lead session：
 Wayfinder map issue：
 Ticket issue：
 Ticket title：
@@ -12,7 +12,6 @@ Ticket label：wayfinder:research | wayfinder:task
 Ticket mode：AFK
 基线分支：
 基线提交：
-Source owner projectId：
 Owner skill name：<research | wayfinder>
 Owner skill SKILL.md：<absolute resolved path>
 Owner skill invocation label：<$research | $wayfinder>
@@ -23,9 +22,9 @@ Research branch：research/<ticket-name> | n/a
 
 路由：
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再执行对应
-  contract；invocation label 只用于说明，不依赖 child catalog。
-- `wayfinder:research`：当前 fresh worker 按 `research` owner 执行研究工作流，
-  不再调用 `/wayfinder` 或嵌套派发另一个 research worker。
+  contract；invocation label 只用于说明，不依赖 catalog。
+- `wayfinder:research`：按 `research` owner 执行研究工作流，
+  不再调用 `/wayfinder` 或嵌套派发另一个 research subagent。
 - `wayfinder:task`：按 `wayfinder` owner处理该 map issue 和 ticket issue。
 - 只解决这个 child issue。
 - Wayfinder 默认是 planning；除非 map Notes 明确授权 execution，产出 decisions、
@@ -50,16 +49,15 @@ Research branch：research/<ticket-name> | n/a
 - Artifact paths：
 
 执行规则：
-- 使用 fresh successor task。
+- 本 subagent 作为独立后台 agent 运行（不是 Herdr pane 或 Codex thread）。
 - 需要分支时，只在本 worktree 目录内创建/切换；不要切换主目录/source worktree 的分支。
 - 如果 ticket 仍 open 且 unassigned，先 assign 给自己并读回确认；如果已分配给
-  别的 session/dev，停止并报告 blocker。
+  别的 agent/dev，停止并报告 blocker。
 - 能查到的 fact 自己查；任何 product、architecture、preference 或 risk judgement
   都是 human decision，停止并回报 `ask-user`，不要替用户回答。
 - 不要解决 sibling child issues。
-- 只解决当前 ticket；不要创建 descendant threads。resolution 暴露出的新 decision
-  tickets 仍按下方规则创建并连线。不要进入下一 gate、`/to-spec`、`/to-tickets`
-  或 `/implement`。
+- 不要派发后续 subagents。不要建议进入 `/to-spec`、`/to-tickets` 或 `/implement`；
+  lead 会重查 map/frontier 再判断下一步。
 - 不要进入 `/implement`。
 - 如果 ticket 是 `wayfinder:task`，只执行让后续 decision 可判断的前置清障；不要把
   task 扩大成实现 Destination 的交付。
@@ -78,18 +76,20 @@ Research branch：research/<ticket-name> | n/a
   Decisions-so-far。
 - 如果 `执行目标` 和 `Source worktree` 不同，只能修改上面列出的外部可写目标；
   其他 source-worktree 路径全部只读。
-- 不回报 routine 进度。resolved、blocked 或 ask-user 时输出 final report，并向 coordinator
-  发送 `TERMINAL: <ticket> completed|blocked <一句原因>`。
+- 在本 subagent final answer 中输出完整 final report。
 
-Final report：
+最终输出必须完整包含两个 marker：
+
+FINAL_REPORT_BEGIN
 Ticket：
 状态：resolved | blocked
-线程：
+Agent：<agent-name>
 Worktree：
 执行目标：
 Source worktree：
 分支：
 Commit：<hash subject> | none
+Lead handoff：ready
 Tracker 变更：
 -
 Artifacts：
@@ -97,10 +97,10 @@ Artifacts：
 Research context pointer：<branch + path | n/a>
 新增或解除阻塞的 child issues / Not yet specified / Out of scope：
 -
-Coordinator 下一步建议：
+Lead 下一步提示：
 -
 阻塞：
 -
 下一门禁建议：spec | more-discovery | ask-user | blocked
-
+FINAL_REPORT_END
 ```

@@ -20,9 +20,10 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Design Fan-out
 
-- AFK research、evidence 和自动 task：每个 decision ticket 一个 fresh worker。
+- AFK research、evidence 和自动 task：每个 decision ticket 通过 `Agent` tool 派发为后台
+  subagent（`run_in_background: true`）；不创建 pane。
 - HITL prototype、grilling 和 task：各自独立，用户判断只阻塞该 ticket。
-- coordinator 拥有 map frontier、用户问题和 fan-in；worker 只拥有自己的 decision ticket。
+- coordinator 拥有 map frontier、用户问题和 fan-in；subagent 只拥有自己的 decision ticket。
 
 ## Execution Lanes
 

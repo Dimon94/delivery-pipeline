@@ -1,10 +1,10 @@
-# Wayfinder Ticket worker pane 派发包
+# Wayfinder Ticket subagent 派发包
 
-用于派发一个 Wayfinder decision ticket worker pane。不要发送半截 prompt。
+用于派发一个 Wayfinder decision ticket 后台 subagent。不要发送半截 prompt。
 
 ```text
 项目：
-Lead pane：
+Lead session：
 Wayfinder map issue：
 Ticket issue：
 Ticket title：
@@ -22,9 +22,9 @@ Research branch：research/<ticket-name> | n/a
 
 路由：
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再执行对应
-  contract；invocation label 只用于说明，不依赖 pane catalog。
-- `wayfinder:research`：当前独立 pane 按 `research` owner 执行研究工作流，
-  不再调用 `/wayfinder` 或嵌套派发另一个 research worker。
+  contract；invocation label 只用于说明，不依赖 catalog。
+- `wayfinder:research`：按 `research` owner 执行研究工作流，
+  不再调用 `/wayfinder` 或嵌套派发另一个 research subagent。
 - `wayfinder:task`：按 `wayfinder` owner处理该 map issue 和 ticket issue。
 - 只解决这个 child issue。
 - Wayfinder 默认是 planning；除非 map Notes 明确授权 execution，产出 decisions、
@@ -49,14 +49,14 @@ Research branch：research/<ticket-name> | n/a
 - Artifact paths：
 
 执行规则：
-- 使用独立 worker pane（由 `/herdr` skill 管理）。
+- 本 subagent 作为独立后台 agent 运行（不是 Herdr pane）。
 - 需要分支时，只在本 worktree 目录内创建/切换；不要切换主目录/source worktree 的分支。
 - 如果 ticket 仍 open 且 unassigned，先 assign 给自己并读回确认；如果已分配给
-  别的 pane/dev，停止并报告 blocker。
+  别的 agent/dev，停止并报告 blocker。
 - 能查到的 fact 自己查；任何 product、architecture、preference 或 risk judgement
   都是 human decision，停止并回报 `ask-user`，不要替用户回答。
 - 不要解决 sibling child issues。
-- 不要创建后续 worker panes。不要建议进入 `/to-spec`、`/to-tickets` 或 `/implement`；
+- 不要派发后续 subagents。不要建议进入 `/to-spec`、`/to-tickets` 或 `/implement`；
   lead 会重查 map/frontier 再判断下一步。
 - 不要进入 `/implement`。
 - 如果 ticket 是 `wayfinder:task`，只执行让后续 decision 可判断的前置清障；不要把
@@ -76,15 +76,14 @@ Research branch：research/<ticket-name> | n/a
   Decisions-so-far。
 - 如果 `执行目标` 和 `Source worktree` 不同，只能修改上面列出的外部可写目标；
   其他 source-worktree 路径全部只读。
-- 在本 worker pane final answer 中输出完整 final report。
-- final report 准备好后，在当前 pane 留下紧凑 handoff，供 lead 收集。
+- 在本 subagent final answer 中输出完整 final report。
 
 最终输出必须完整包含两个 marker：
 
 FINAL_REPORT_BEGIN
 Ticket：
 状态：resolved | blocked
-Pane：
+Agent：<agent-name>
 Worktree：
 执行目标：
 Source worktree：

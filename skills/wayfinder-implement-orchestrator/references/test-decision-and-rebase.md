@@ -384,7 +384,7 @@ else:
    # 从 map registry 读取 workspace_id 或 workspace_label
    WORKSPACE_LABEL="<map-title>-map-${MAP_ISSUE}"
    
-   # 关闭 workspace 中所有 panes（LEAD + X/G/P/R tabs）
+   # 关闭 workspace 中所有 panes（LEAD + X/G/P tabs）
    /herdr workspace close-all-panes "$WORKSPACE_LABEL"
    
    # 保留 workspace 本身（用于历史访问）

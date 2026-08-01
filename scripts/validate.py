@@ -256,7 +256,7 @@ def main() -> None:
     )
     require(
         CODEX_ROOT / "references" / "lane-registry.md",
-        ("thread_id:", "project_id:", "runtime: codex-thread"),
+        ("thread_id:", "project_id:", "runtime: subagent | codex-thread"),
     )
     require(
         CLAUDE_ROOT / "references" / "child-monitoring.md",
@@ -270,9 +270,9 @@ def main() -> None:
     require(
         CODEX_ROOT / "references" / "child-monitoring.md",
         (
-            "coordinator-owned `wait_threads`",
-            "缺失此消息不影响 `wait_threads`",
-            "用最新 cursor 继续 `wait_threads`",
+            "Agent` tool",
+            "run_in_background: true",
+            "FINAL_REPORT_BEGIN",
         ),
     )
 

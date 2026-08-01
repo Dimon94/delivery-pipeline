@@ -36,8 +36,8 @@
   HITL `wayfinder:task`，或需要实时用户判断；加载
   `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`，输出一个用于完整 HITL 会话的
   已填写 prompt，然后等待 returned handoff 再继续。不要每个问题创建一个 prompt；
-- worker 报告 `ask-user`、`blocked` 或 `Unknown` 时只暂停对应 item；若其他 ready work 存在则继续；
-- 两个 worker panes 编辑了同一个 child issue，或留下冲突 tracker state。
+- subagent 报告 `ask-user`、`blocked` 或 `Unknown` 时只暂停对应 item；若其他 ready work 存在则继续；
+- 两个 subagents 编辑了同一个 child issue，或留下冲突 tracker state。
 
 对非判断类 tickets，copy-paste worker prompts 只是 `Agent` tool 不可用时的 fallback。
 `Agent` tool 可用时通过后台 subagent 执行。
