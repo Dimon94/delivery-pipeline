@@ -30,7 +30,7 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 - maximal safe batch 中每张 implementation ticket 创建一个 fresh Codex pane。
 - 每张票先创建并验证独立 worktree（Git），再以该 worktree 作为 pane cwd。
-- Codex pane 只运行该 ticket 的 `/implement`、focused checks、review 和 commit。
+- Codex pane 只运行该 ticket 的 `/mattpocock-skills:implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 lead 重算下一 batch。
 - 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。
 

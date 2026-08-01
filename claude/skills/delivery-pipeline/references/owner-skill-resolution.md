@@ -1,7 +1,7 @@
 # Owner Skill Resolution
 
 Stage owners may be user-invoked skills and therefore absent from a delegated Codex pane’s active
-skill catalog. A bare `$implement` or `/to-spec` string is not proof that the skill was attached.
+skill catalog. A bare `$implement` or `/mattpocock-skills:to-spec` string is not proof that the skill was attached.
 
 ## Resolve
 

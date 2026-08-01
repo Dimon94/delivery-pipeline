@@ -24,7 +24,7 @@ Research branch：research/<ticket-name> | n/a
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再执行对应
   contract；invocation label 只用于说明，不依赖 catalog。
 - `wayfinder:research`：按 `research` owner 执行研究工作流，
-  不再调用 `/wayfinder` 或嵌套派发另一个 research subagent。
+  不再调用 `/mattpocock-skills:wayfinder` 或嵌套派发另一个 research subagent。
 - `wayfinder:task`：按 `wayfinder` owner处理该 map issue 和 ticket issue。
 - 只解决这个 child issue。
 - Wayfinder 默认是 planning；除非 map Notes 明确授权 execution，产出 decisions、
@@ -56,9 +56,9 @@ Research branch：research/<ticket-name> | n/a
 - 能查到的 fact 自己查；任何 product、architecture、preference 或 risk judgement
   都是 human decision，停止并回报 `ask-user`，不要替用户回答。
 - 不要解决 sibling child issues。
-- 不要派发后续 subagents。不要建议进入 `/to-spec`、`/to-tickets` 或 `/implement`；
+- 不要派发后续 subagents。不要建议进入 `/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets` 或 `/mattpocock-skills:implement`；
   lead 会重查 map/frontier 再判断下一步。
-- 不要进入 `/implement`。
+- 不要进入 `/mattpocock-skills:implement`。
 - 如果 ticket 是 `wayfinder:task`，只执行让后续 decision 可判断的前置清障；不要把
   task 扩大成实现 Destination 的交付。
 - 如果 ticket 是 `wayfinder:research`，在开始阅读前建立或复用

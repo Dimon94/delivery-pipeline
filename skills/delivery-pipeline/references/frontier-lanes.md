@@ -28,7 +28,7 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 ## Execution Lanes
 
 - maximal safe batch 中每张 implementation ticket 创建一个 fresh Codex task。
-- 每个 task 使用独立 worktree/branch，只运行该 ticket 的 `/implement`、focused checks、
+- 每个 task 使用独立 worktree/branch，只运行该 ticket 的 `/mattpocock-skills:implement`、focused checks、
   review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 coordinator 重算下一 batch。
 - 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。

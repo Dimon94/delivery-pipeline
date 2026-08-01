@@ -7,8 +7,8 @@
 
 - lead：链路重建、当前 gate、用户问题、ready frontier、integration、remote closeout。
 - discovery pane：一个 Wayfinder decision ticket。
-- spec pane：一次 `/to-spec` 调用及其持久 spec。
-- ticket pane：一次 `/to-tickets` 调用及其已发布 ticket graph。
+- spec pane：一次 `/mattpocock-skills:to-spec` 调用及其持久 spec。
+- ticket pane：一次 `/mattpocock-skills:to-tickets` 调用及其已发布 ticket graph。
 - execution pane：一张 implementation ticket、一个 Codex process、一个 worktree 和一个
   commit/report。
 

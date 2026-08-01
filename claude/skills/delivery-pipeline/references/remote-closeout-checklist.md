@@ -14,7 +14,7 @@
 
 - 只集成已验证 lane commits，并遵循 dependency topology。
 - frontier 清空后，运行能证明 spec acceptance 的最小 whole-change check。
-- remote submission 前运行 `/code-review` 或 repo-native review gate。
+- remote submission 前运行 `/mattpocock-skills:code-review` 或 repo-native review gate。
 - 如果 review gate 要并行 helpers，优先使用 pane-local Claude Agent Team 的
   `wayfinder-integration-reviewer`，并显式传入完整 review 包：base commit、
   integrated diff、spec、tickets、验证结果、只读要求和输出格式。

@@ -14,7 +14,7 @@
    自动派发 AFK `Research` 和只为 decision 清障的 `Task`，使用 `Agent` tool 与
    `WAYFINDER_TICKET_DISPATCH_PACKET.md` 作为 prompt；不需要用户先开启并发。
    `Research` subagent 必须走 `research` owner 路线并返回 `research/<name>` branch +
-   Markdown context pointer；不得统一改走 `/wayfinder`。已 assigned 的 research ticket 不在
+   Markdown context pointer；不得统一改走 `/mattpocock-skills:wayfinder`。已 assigned 的 research ticket 不在
    frontier 内，先读回 owner 坐标，不重复派发。
    `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；没有可参与的用户 pane 时，
    生成对应 prompt/worker 坐标并停止为 `ask-user`。
@@ -43,4 +43,4 @@
 `Agent` tool 可用时通过后台 subagent 执行。
 
 Lead 负责派发 subagents。subagent 可以建议后续 frontier，但不能自己派发
-descendant subagents，也不能建议进入 `/to-spec`、`/to-tickets` 或 `/implement`。
+descendant subagents，也不能建议进入 `/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets` 或 `/mattpocock-skills:implement`。

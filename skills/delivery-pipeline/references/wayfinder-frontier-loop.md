@@ -14,7 +14,7 @@
    frontier；按 `frontier-lanes.md` 选择 maximal safe batch，用
    `WAYFINDER_TICKET_DISPATCH_PACKET.md` 通过 `Agent` tool 自动创建并行 subagents。
    `Research` subagent 必须走 `research` owner 路线并返回 `research/<name>` branch +
-   Markdown context pointer；不得统一改走 `/wayfinder`。已 assigned 的 research ticket 不在
+   Markdown context pointer；不得统一改走 `/mattpocock-skills:wayfinder`。已 assigned 的 research ticket 不在
    frontier 内，先读回 owner 坐标，不重复派发。
    `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；没有可参与的用户线程时，
    生成对应 prompt/worker 坐标并停止为 `ask-user`。
@@ -41,5 +41,5 @@
 对非判断类 tickets，`Agent` tool 可用时自动并发派发为后台 subagents；不可用时输出所有
 ready work 的 durable briefs，coordinator 不亲自执行任何 work item。
 
-coordinator 负责 frontier、fan-in 和下一 gate；subagents 不进入 `/to-spec`、
-`/to-tickets` 或 `/implement`。
+coordinator 负责 frontier、fan-in 和下一 gate；subagents 不进入 `/mattpocock-skills:to-spec`、
+`/mattpocock-skills:to-tickets` 或 `/mattpocock-skills:implement`。

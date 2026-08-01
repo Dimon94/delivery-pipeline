@@ -12,7 +12,7 @@ idea/map -> discovery -> spec -> implementation tickets
   -> automatic Codex dispatch -> collect/integrate -> summary PR/MR
 ```
 
-`/wayfinder`、`/to-spec`、`/to-tickets`、`/implement` 和 `/code-review` 各自拥有自己的产物
+`/mattpocock-skills:wayfinder`、`/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets`、`/mattpocock-skills:implement` 和 `/mattpocock-skills:code-review` 各自拥有自己的产物
 质量。本 skill 只识别当前 gate、调用对应 owner、验证持久坐标并自动分配执行。
 
 ## 执行流程
@@ -35,7 +35,7 @@ spec URL/ID 与 body 可读回。
 
 **Tickets gate：** 读取 spec 的 native children 和 body 中 `Parent` 回链。
 命中为零时调用 `to-tickets` owner。完成标准：至少一张 ticket 的 ID、
-spec 回链和 dependency edges 可读回。`/to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
+spec 回链和 dependency edges 可读回。`/mattpocock-skills:to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
 
 **Dispatch gate：** 从 dependency graph 重算 ready frontier，选择无 mutable-resource
 冲突的 maximal safe batch。从 integration worktree 为每张 ready ticket 创建 execution worktree
@@ -62,7 +62,7 @@ push 到 main，删除所有 worktrees/branches，关闭 panes（保留 workspac
 ## 分配与恢复
 
 **Ready 判断：** open、未被 claim、全部 blockers completed。不评估 ticket 大小、
-拆分合理性或描述质量；`/to-tickets` 已发布的 tickets 直接作为 execution graph。
+拆分合理性或描述质量；`/mattpocock-skills:to-tickets` 已发布的 tickets 直接作为 execution graph。
 
 **并发控制：** dependency 相连、文件/资源重叠或写集合无法证明独立时串行；其余并发。
 按 tracker priority、dependency order、issue ID 确定性选择 maximal safe batch。
@@ -85,7 +85,7 @@ worker 不自领 sibling tickets。
 lane reports + Git commits + checks 是执行证据；PR/MR 是远程收尾真相源。
 
 **Gate 边界：** orchestrator 只检查产物存在性、回链、依赖和发布 readback。
-内容质量由 owner skills 决定（`/wayfinder`、`/to-spec`、`/to-tickets`、`/implement`、`/code-review`）。
+内容质量由 owner skills 决定（`/mattpocock-skills:wayfinder`、`/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets`、`/mattpocock-skills:implement`、`/mattpocock-skills:code-review`）。
 不增加内容质量或拆票复审 gate。
 
 **权限模型：** 自动分配使用 tracker write authority（lane registry checkpoint）。

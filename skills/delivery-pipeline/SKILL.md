@@ -13,7 +13,7 @@ idea/map -> discovery -> spec -> implementation tickets
   -> automatic Codex dispatch -> collect/integrate -> summary PR/MR
 ```
 
-`/wayfinder`、`/to-spec`、`/to-tickets`、`/implement` 和 `/code-review` 各自拥有自己的产物
+`/mattpocock-skills:wayfinder`、`/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets`、`/mattpocock-skills:implement` 和 `/mattpocock-skills:code-review` 各自拥有自己的产物
 质量。本 skill 只识别当前 gate、调用对应 owner、验证持久坐标并自动分配执行。
 
 ## 输入与 Gate
@@ -79,7 +79,7 @@ idea/map -> discovery -> spec -> implementation tickets
 
 - ready ticket = open、未被 claim、全部 blockers completed。
 - 不评估 ticket 大小、是否需要拆分、描述/验收是否够详细，或这张票“是否合理”；
-  `/to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
+  `/mattpocock-skills:to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
 - dependency 相连、显式文件/可变资源重叠或写集合无法证明独立的 tickets 串行；其余并发。
 - 按 tracker priority、dependency order、issue ID 做确定性选择。
 - 每张 ticket 一个 execution lane、一个 owner、一个 worktree/branch。lane terminal 后由
