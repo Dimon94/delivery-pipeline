@@ -250,127 +250,22 @@ git branch -D "$EXECUTION_BRANCH"
 
 标记 ticket 为 `setup blocked`，报告原因。用户需要手动检查或重新 dispatch。
 
-## Rebase to Main
+## Rebase to Main and Cleanup
 
 **触发：** 所有 tickets integrated 到 integration worktree，whole-change checks 通过，
-用户完成 test decision（选择继续）。
+用户完成 test decision。
 
-**Rebase 序列：**
-
-1. 切换到 integration worktree（如果不在）。
-2. Fetch latest main：
-   ```bash
-   git fetch origin main
-   ```
-3. 检查 main 是否前进：
-   ```bash
-   MERGE_BASE=$(git merge-base HEAD origin/main)
-   MAIN_HEAD=$(git rev-parse origin/main)
-   
-   if [ "$MERGE_BASE" != "$MAIN_HEAD" ]; then
-     echo "main has advanced, rebasing..."
-   fi
-   ```
-4. Rebase 到 main：
-   ```bash
-   git rebase origin/main
-   ```
-5. 如果冲突：
-   ```bash
-   # 检测冲突
-   git status --short | grep -q "^UU "
-   
-   # 调用 /mattpocock-skills:resolving-merge-conflicts
-   # 传递 integration worktree path、conflicting files、map issue context
-   ```
-6. 等待 conflict resolution 完成，验证 working tree clean。
-7. Push integration branch：
-   ```bash
-   git push origin "$INTEGRATION_BRANCH"
-   ```
-8. 切换到 source worktree：
-   ```bash
-   cd "$SOURCE_ROOT"
-   ```
-9. Rebase source worktree 的 main 到 integration branch：
-   ```bash
-   git rebase "$INTEGRATION_BRANCH"
-   ```
-10. Push main：
-    ```bash
-    git push origin main
-    ```
-11. 如果 push 失败（non-fast-forward，另一个 map 并发 push）：
-    ```bash
-    # Fetch again
-    git fetch origin main
-    # Rebase again
-    git rebase origin/main
-    # Retry push
-    git push origin main
-    ```
-12. 如果 retry 仍失败：报告 "main has advanced, please re-run orchestrator"。
-
-**完成标准：** integration branch 已 rebase 到最新 main、main 已 push 到 remote、
-没有冲突或冲突已解决。
-
-## Cleanup After Merge
-
-**触发：** push to main 成功。
-
-**清理序列：**
-
-1. 验证 push 成功：
-   ```bash
-   REMOTE_MAIN=$(git ls-remote origin main | cut -f1)
-   LOCAL_MAIN=$(git rev-parse HEAD)
-   test "$REMOTE_MAIN" = "$LOCAL_MAIN"
-   ```
-2. 删除 integration worktree：
-   ```bash
-   # 先检查是否 dirty
-   DIRTY=$(git -C "$INTEGRATION_PATH" status --short)
-   if [ -n "$DIRTY" ]; then
-     echo "警告：integration worktree 有未提交变更，保留在 $INTEGRATION_PATH"
-     # 不删除，保留 worktree
-   else
-     git worktree remove "$INTEGRATION_PATH"
-   fi
-   ```
-3. 删除 integration branch：
-   ```bash
-   git branch -D "$INTEGRATION_BRANCH"
-   # 可选：删除 remote branch
-   git push origin --delete "$INTEGRATION_BRANCH"
-   ```
-4. 扫描并删除残留的 execution worktrees（应该为空，但 defensive）：
-   ```bash
-   git worktree list --porcelain | grep "worktree.*-map-${MAP_ISSUE}-issue-"
-   # 对每个匹配的 worktree：git worktree remove
-   ```
-5. 删除 execution branches：
-   ```bash
-   git branch -D codex/issue-*  # 只删除与该 map 相关的
-   ```
-6. 通过 `/herdr`：关闭 workspace 中所有 panes（LEAD + X/G/P/R/D tabs），但保留 workspace 自身。
-7. 关闭 map issue，写入 completion comment：
-   ```text
-   map-<issue> 已完成并合并到 main。
-   
-   Final merge commit: <hash>
-   Implemented tickets: #<t1>, #<t2>, ...
-   Verification: all checks passed
-   Integration worktree: <path> (已删除)
-   ```
-
-**完成标准：** 所有 worktrees 已删除、所有 branches 已删除（除非 dirty）、
-workspace panes 已关闭、map issue 已关闭。
+**详见 `references/test-decision-and-rebase.md`**，包含：
+- Test decision point（三种测试策略选择）
+- Rebase sequence（自动 rebase 到最新 main，冲突委托 conflict resolution）
+- Push and cleanup sequence（push 到 main，删除所有 worktrees/branches）
+- Full recovery from registry（crash 恢复）
 
 ## Recovery from Registry
 
 **触发：** 新会话启动，从 map issue registry 恢复状态。
 
-**恢复序列：**
+**基础恢复序列（简化版，完整版见 test-decision-and-rebase.md）：**
 
 1. 读取 map issue 的 latest lane registry comment，提取 `integration_worktree_path`。
 2. 读取所有 implementation tickets 的 registries，提取 `execution_worktree_path`。

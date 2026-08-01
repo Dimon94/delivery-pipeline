@@ -65,13 +65,15 @@ idea/map -> discovery -> spec -> implementation tickets
    执行 cherry-pick。成功后运行 focused checks，通过则删除 execution worktree/branch、关闭 Herdr pane、
    更新 tab label、更新 registry 为 `integrated`、立即重算 frontier。冲突时中止 cherry-pick，
    标记 `integration_conflict`，保留 execution worktree 供调试。Lane blocker 不停止其他 ready tickets。
-8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。
-   全部通过时进入 test decision：提示用户选择（1）在 integration worktree 测试、（2）立即 rebase 到 main 再测试、
-   或（3）跳过测试。用户确认继续后，rebase integration branch 到最新 main（遇冲突委托
-   `/mattpocock-skills:resolving-merge-conflicts`），从 source worktree push 到 main（默认直接 push，
-   不创建 PR/MR 除非用户明确要求）。Push 成功后删除所有 worktrees/branches，关闭 Herdr workspace
-   panes（保留 workspace），关闭 map issue。获得 remote publication authority 时加载
-   `references/remote-closeout-checklist.md`。
+8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。全部通过时加载
+   `references/test-decision-and-rebase.md`，暂停在 test decision point，由用户选择：(1) 在 integration
+   worktree 测试，(2) rebase 后在 main 测试，(3) 跳过测试直接 push。用户选择后自动 rebase integration
+   branch 到最新 main，检测冲突时委托 `/mattpocock-skills:resolving-merge-conflicts`。Rebase 成功后
+   push 到 main（默认直接 push，不创建 PR/MR 除非用户明确要求），删除所有 worktrees（integration +
+   残留 execution），删除所有 branches（`feature/map-X` + `codex/issue-*`），关闭 Herdr workspace
+   所有 panes（保留 workspace），关闭 map issue 并写入 completion comment。获得 remote publication
+   authority 时加载 `references/remote-closeout-checklist.md`，push/open summary PR/MR，
+   并等待 CI/CD 与 remote review verdict。
 
 ## 分配规则
 

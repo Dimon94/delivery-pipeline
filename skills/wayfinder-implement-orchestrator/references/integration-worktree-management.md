@@ -352,7 +352,7 @@ git branch -D "$EXECUTION_BRANCH"
    ```bash
    git branch -D codex/issue-*  # 只删除与该 map 相关的
    ```
-6. 通过 `/herdr`：关闭 workspace 中所有 panes（LEAD + X/G/P/R/D tabs），但保留 workspace 自身。
+6. 通过 `/herdr`：关闭 workspace 中所有 panes（LEAD + X/G/P tabs），但保留 workspace 自身。
 7. 关闭 map issue，写入 completion comment：
    ```text
    map-<issue> 已完成并合并到 main。

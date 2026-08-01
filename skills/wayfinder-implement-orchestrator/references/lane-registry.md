@@ -10,30 +10,27 @@ decision issue，spec gate 写在 map，tickets gate 写在 spec，implementatio
 
 ```yaml
 work_item: <url>
-role: discovery | spec | tickets | implementation | review
+role: discovery | spec | tickets | implementation | review | map
 lane_id: <stable-id>
-runtime: codex-thread
-state: created | running | terminal | consumed | integrated | blocked
+runtime: subagent | codex-thread
+state: created | running | terminal | consumed | integrated | closed | blocked | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress
+# --- codex-thread fields (runtime: codex-thread) ---
 project_id: <Source-owner-projectId>
 thread_id: <id>
+# --- subagent fields (runtime: subagent) ---
+agent_name: <Agent tool name parameter | none>
+# --- map fields (role: map) ---
+integration_worktree_path: <absolute-path-or-none>
+integration_branch: <feature/map-N-or-none>
+herdr_workspace_label: <map-title-map-N-or-none>
+test_strategy: test_in_integration | rebase_then_test | skip_test_and_push | none
+# --- common fields ---
 worktree: <absolute-path-or-none>
 branch: <branch-or-none>
 base_commit: <hash-or-none>
 head_commit: <hash-or-none>
 integrated_commit: <hash-or-none>
 updated_at: <ISO-8601>
-
-# Integration worktree fields (stored in map issue registry)
-integration_worktree_path: <absolute-path-or-none>
-integration_branch: <feature/map-N-or-none>
-integration_base_commit: <hash-when-created-or-none>
-herdr_workspace_label: <map-title-map-N-or-none>
-herdr_workspace_id: <id-from-herdr-or-none>
-
-# Execution worktree fields (stored in implementation ticket registry)
-execution_worktree_path: <absolute-path-or-none>
-execution_branch: <codex/issue-N-or-none>
-parent_integration_worktree_path: <path-to-integration-worktree-or-none>
 ```
 
 不写入 secrets。优先更新原 checkpoint；tracker 不支持编辑时追加新 checkpoint，并按
@@ -41,12 +38,19 @@ tracker 顺序取同一 `lane_id` 的最后一条。每次写入都 readback 精
 
 ## State Machine
 
-**Implementation/execution lanes:**
+**Implementation ticket states:**
 
 ```text
-created -> running -> terminal -> consumed
-                            \-> integrated
+created -> running -> terminal -> consumed -> closed
+                            \-> integrated -> closed
                             \-> blocked
+```
+
+**Map states:**
+
+```text
+created -> running -> test_decision_paused -> rebase_in_progress -> cleanup_in_progress -> closed
+                                           \-------------------> push_failed -> (retry) -> closed
 ```
 
 **Integration worktree lifecycle (tracked in map issue registry):**

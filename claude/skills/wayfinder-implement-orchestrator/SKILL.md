@@ -30,8 +30,9 @@ idea/map -> discovery -> spec -> implementation tickets
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md` 和
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`。涉及因果、冲突或隐藏假设时再加载
    `references/toc-thinking-processes.md`。松散想法先解析并执行 `wayfinder` owner 建图；
-   随后通过 `/herdr` skill 自动派发 ready AFK decision tickets。HITL ticket
-   只阻塞自身。完成标准：所有 in-scope child issues 已关闭，resolution 与必要 artifacts
+   随后通过 `Agent` tool（`run_in_background: true`）自动派发 ready AFK decision tickets
+   为后台 subagents。HITL ticket（grilling、prototype）仍通过 `/herdr` skill 创建 pane。
+   完成标准：所有 in-scope child issues 已关闭，resolution 与必要 artifacts
    可读回。
 3. `spec`：如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
    提案、用户判断和发布流程。交给 fresh pane 时加载
@@ -60,21 +61,28 @@ idea/map -> discovery -> spec -> implementation tickets
    更新 tab label、更新 registry 为 `integrated`、立即重算 frontier。冲突时中止 cherry-pick，
    标记 `integration_conflict`，保留 execution worktree 供调试。关闭 pane 失败只留下可恢复
    `pane_close_pending` lane。
-8. execution graph 清空后运行 whole-change checks。获得 remote publication authority 时
-   加载 `references/remote-closeout-checklist.md`，push/open summary PR/MR，并等待 CI/CD
-   与 remote review verdict。
+8. execution graph 清空后运行 whole-change checks。通过后加载 `references/test-decision-and-rebase.md`，
+   暂停在 test decision point，由用户选择：(1) 在 integration worktree 测试，(2) rebase 后在 main 测试，
+   (3) 跳过测试直接 push。用户选择后自动 rebase integration branch 到最新 main，检测冲突时委托
+   `/mattpocock-skills:resolving-merge-conflicts`。Rebase 成功后 push 到 main，删除所有 worktrees
+   （integration + 残留 execution），删除所有 branches（`feature/map-X` + `codex/issue-*`），
+   通过 `/herdr` skill 关闭所有 panes（保留 workspace），关闭 map issue 并写入 completion comment。
+   获得 remote publication authority 时加载 `references/remote-closeout-checklist.md`，
+   push/open summary PR/MR，并等待 CI/CD 与 remote review verdict。
 
 ## 分配规则
 
 - ready ticket = open、未被 claim、全部 blockers completed。
-- 不评估 ticket 大小、是否需要拆分、描述/验收是否够详细，或这张票“是否合理”；
+- 不评估 ticket 大小、是否需要拆分、描述/验收是否够详细，或这张票”是否合理”；
   `/to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
 - dependency 相连、显式文件/可变资源重叠或写集合无法证明独立的 tickets 串行；其余并发。
 - 按 tracker priority、dependency order、issue ID 做确定性选择。
-- 每张 ticket 一个 Codex pane、一个 worktree/branch。lane terminal 后由 lead 重算下一批，
-  不让 worker 自领 sibling tickets。
-- 新会话先从每张 ticket 的 durable lane registry 恢复 existing panes，再创建 replacement。
-- `HERDR_ENV` 不可用或 `/herdr` skill 找不到匹配 workspace 时，输出完整 packets；不假装已经派发。
+- discovery AFK tickets（research、task）：一个 `Agent` tool subagent、一个可选 worktree/branch。
+  implementation tickets：一个 Codex pane、一个 worktree/branch。
+  lane terminal 后由 lead 重算下一批，不让 worker 自领 sibling tickets。
+- 新会话先从每张 ticket 的 durable lane registry 恢复 existing lanes，再创建 replacement。
+- `Agent` tool 不可用时输出完整 packets 作为 copy-paste fallback；不假装已经派发。
+  `HERDR_ENV` 不可用或 `/herdr` skill 找不到匹配 workspace 时，HITL panes 同理。
 
 ## 真相源与权限
 
