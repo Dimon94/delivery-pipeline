@@ -89,7 +89,6 @@ Worktree：
 Source worktree：
 分支：
 Commit：<hash subject> | none
-Lead handoff：ready
 Tracker 变更：
 -
 Artifacts：

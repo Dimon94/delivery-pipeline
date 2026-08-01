@@ -39,8 +39,8 @@
 - subagent 报告 `ask-user`、`blocked` 或 `Unknown` 时只暂停对应 item；若其他 ready work 存在则继续；
 - 两个 subagents 编辑了同一个 child issue，或留下冲突 tracker state。
 
-对非判断类 tickets，copy-paste worker prompts 只是 `Agent` tool 不可用时的 fallback。
+对非判断类 tickets，copy-paste prompts 只是 `Agent` tool 不可用时的 fallback。
 `Agent` tool 可用时通过后台 subagent 执行。
 
-Lead 负责派发 subagents。worker subagent 可以建议后续 frontier，但不能自己派发
+Lead 负责派发 subagents。subagent 可以建议后续 frontier，但不能自己派发
 descendant subagents，也不能建议进入 `/to-spec`、`/to-tickets` 或 `/implement`。
