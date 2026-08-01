@@ -27,38 +27,48 @@ idea/map -> discovery -> spec -> implementation tickets
 裸 issue 编号必须能从当前 repo 的 tracker 配置唯一解析。每次新会话都沿持久 relationships
 重建链路，从最早未完成的 gate 自动继续。
 
-1. 读取 repo instructions、tracker operations 和输入 artifact，加载
-   `references/gate-state-machine.md`、`references/fresh-session-boundaries.md`、
-   `references/lane-registry.md` 和 `references/child-monitoring.md`。完成标准：输入已归入
-   唯一 gate，map/spec/ticket 与 existing child 坐标均已 readback。
-2. `discovery`：加载 `references/wayfinder-frontier-loop.md`、
-   `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md` 和
-   `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`。涉及因果、冲突或隐藏假设时再加载
-   `references/toc-thinking-processes.md`。松散想法先调用 `/wayfinder` 建图；随后自动派发
-   ready AFK decision tickets，HITL ticket 只阻塞自身。
-   完成标准：所有 in-scope child issues 已关闭，resolution 与必要 artifacts 可读回。
-3. `spec`：如果当前链路还没有已批准 spec，调用 `/to-spec`，并遵守它自己的提案、用户
-   判断和发布流程。交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
+1. **识别输入与 worktree routing。** 读取 repo instructions、tracker operations 和输入 artifact。
+   加载 `references/gate-state-machine.md`、`references/integration-worktree-management.md`、
+   `references/fresh-session-boundaries.md`、`references/lane-registry.md`、
+   `references/child-monitoring.md` 和 `references/owner-skill-resolution.md`。
+   识别当前是 source worktree（main）还是 integration worktree（`feature/map-*`）。
+   输入是 map 且在 source worktree 时：检查该 map 的 integration worktree 是否存在（registry + 路径）；
+   存在且 valid 则提示 resume，不存在则创建 integration worktree + Herdr workspace，切换过去。
+   已在 integration worktree 时直接继续。完成标准：输入归入唯一 gate、worktree 位置正确、
+   所有坐标已 readback。
+2. **Discovery gate。** 加载 `references/wayfinder-frontier-loop.md`、
+   `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
+   `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
+   松散想法先调用 `wayfinder` owner 建图，随后自动派发 ready AFK decision tickets（HITL 只阻塞自身）。
+   完成标准：所有 in-scope child issues closed、resolution 与 artifacts 可读回。
+3. **Spec gate。** 如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
+   提案、用户判断和发布流程。交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
    完成标准：已发布 spec 的真实 URL/ID 与 body 可读回。
-4. `tickets`：读取 spec 的 native children/sub-issues，以及 body 中 `Parent` 精确回链该
-   spec 的 implementation tickets；按 issue ID 去重。命中为零时调用
-   `$to-tickets <spec-url>`；交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
+4. **Tickets gate。** 读取 spec 的 native children/sub-issues 和 body 中 `Parent` 精确回链该 spec 的
+   implementation tickets，按 issue ID 去重。命中为零时解析并执行 `to-tickets` owner；
+   交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
    完成标准：至少一张真实 ticket 的 ID、spec 回链和 dependency edges 可读回。
-   `/to-tickets` 的已发布结果直接成为 execution graph。
-5. `dispatch`：加载 `references/frontier-lanes.md` 和
-   `assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
-   选择无 mutable-resource 冲突的 maximal safe batch。每张入选票创建一个 fresh Codex
-   task 和独立 worktree；coordinator 不亲自实现。完成标准：ticket 的 durable registry
-   已 readback thread ID、projectId、worktree、branch 和 base commit。
-6. 每个 task 创建后做一次 startup probe：确认 `Source owner projectId` 属于同一 repo、
-   `cwd` 位于该票自己的 worktree、完整 packet 已收到。错误落点用同一 projectId 重建
-   一次；第二次失败只把该票标成 setup blocked。
-7. workers 运行时只消费 terminal final report；验证 commit、checks 和 dirty state 后按
-   dependency order 集成，并立即重算 frontier。
-   lane blocker 不停止其他 ready tickets。
-8. execution graph 清空后运行 whole-change checks。获得 remote publication authority 时
-   加载 `references/remote-closeout-checklist.md`，push/open summary PR/MR，并等待 CI/CD
-   与 remote review verdict。
+5. **Dispatch gate。** 加载 `references/frontier-lanes.md`、`assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。
+   从 dependency graph 重算 ready frontier，选择无 mutable-resource 冲突的 maximal safe batch。
+   解析 `implement` owner 后，每张入选票从当前 integration worktree 创建独立 execution worktree
+   （branch `codex/issue-<N>`）、fresh Codex task 和 Herdr pane（放入 X tabs，遵守 4-pane capacity）；
+   coordinator 不亲自实现。完成标准：ticket 的 durable registry 已 readback thread ID、projectId、
+   execution_worktree_path、branch 和 base commit。
+6. **Startup probe。** 每个 task 创建后做一次 startup probe：确认 `Source owner projectId` 属于同一 repo、
+   `cwd` 位于该票自己的 execution worktree、完整 packet 已收到，且 child 已 readback 相同的 owner
+   name/resolved path。错误落点或未读 owner file 时用同一 projectId 重建一次；第二次失败
+   只把该票标成 setup blocked。
+7. **Integration loop。** Workers 运行时只消费 terminal final report；验证 commit、checks 和 dirty state 后
+   cherry-pick 到 integration worktree（遇冲突标 blocked），按 dependency order 集成，
+   通过 focused checks 后删除 execution worktree/branch 并关闭 Herdr pane，立即重算 frontier。
+   Lane blocker 不停止其他 ready tickets。
+8. **Test decision 与 remote closeout。** Execution graph 清空后，运行 whole-change checks。
+   全部通过时进入 test decision：提示用户选择（1）在 integration worktree 测试、（2）立即 rebase 到 main 再测试、
+   或（3）跳过测试。用户确认继续后，rebase integration branch 到最新 main（遇冲突委托
+   `/mattpocock-skills:resolving-merge-conflicts`），从 source worktree push 到 main（默认直接 push，
+   不创建 PR/MR 除非用户明确要求）。Push 成功后删除所有 worktrees/branches，关闭 Herdr workspace
+   panes（保留 workspace），关闭 map issue。获得 remote publication authority 时加载
+   `references/remote-closeout-checklist.md`。
 
 ## 分配规则
 

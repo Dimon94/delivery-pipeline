@@ -22,6 +22,18 @@ base_commit: <hash-or-none>
 head_commit: <hash-or-none>
 integrated_commit: <hash-or-none>
 updated_at: <ISO-8601>
+
+# Integration worktree fields (stored in map issue registry)
+integration_worktree_path: <absolute-path-or-none>
+integration_branch: <feature/map-N-or-none>
+integration_base_commit: <hash-when-created-or-none>
+herdr_workspace_label: <map-title-map-N-or-none>
+herdr_workspace_id: <id-from-herdr-or-none>
+
+# Execution worktree fields (stored in implementation ticket registry)
+execution_worktree_path: <absolute-path-or-none>
+execution_branch: <codex/issue-N-or-none>
+parent_integration_worktree_path: <path-to-integration-worktree-or-none>
 ```
 
 不写入 secrets。优先更新原 checkpoint；tracker 不支持编辑时追加新 checkpoint，并按
@@ -29,10 +41,19 @@ tracker 顺序取同一 `lane_id` 的最后一条。每次写入都 readback 精
 
 ## State Machine
 
+**Implementation/execution lanes:**
+
 ```text
 created -> running -> terminal -> consumed
                             \-> integrated
                             \-> blocked
+```
+
+**Integration worktree lifecycle (tracked in map issue registry):**
+
+```text
+created -> discovery_complete -> spec_complete -> tickets_complete 
+  -> all_integrated -> test_decision -> rebasing -> merged -> closed
 ```
 
 registry 写入或 readback 失败时，不声称该 child 可恢复。
