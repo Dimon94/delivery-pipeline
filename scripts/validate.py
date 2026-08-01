@@ -142,8 +142,7 @@ def main() -> None:
         CLAUDE_SKILL,
         common
         + (
-            "references/herdr-dispatch.md",
-            "herdr agent start --kind codex --pane",
+            "/herdr",
             "attached waiter",
         ),
     )
@@ -195,18 +194,43 @@ def main() -> None:
             ),
         )
         require(
+            root / "references" / "owner-skill-resolution.md",
+            (
+                "user-invoked skills",
+                "Owner skill name",
+                "Owner skill SKILL.md",
+                "Owner skill invocation label",
+                "read the passed `SKILL.md` completely",
+                "must not trigger a fallback workflow",
+            ),
+        )
+        require(
             root / "assets" / "GATE_CHILD_DISPATCH_PACKET.md",
-            ("$to-spec" if root == CODEX_ROOT else "/to-spec", "Parent links"),
+            (
+                "$to-spec" if root == CODEX_ROOT else "/to-spec",
+                "Parent links",
+                "Owner skill SKILL.md：<absolute resolved path>",
+                "不依赖 child catalog",
+            ),
         )
 
     require(
         CODEX_ROOT / "assets" / "ISSUE_IMPLEMENT_DISPATCH_PACKET.md",
-        ("$implement", "只处理这张 ticket", "send_message_to_thread"),
+        (
+            "Owner skill name：implement",
+            "Owner skill SKILL.md：<absolute resolved path>",
+            "不依赖 child catalog",
+            "只处理这张 ticket",
+            "send_message_to_thread",
+        ),
     )
     require(
         CLAUDE_ROOT / "assets" / "CODEX_PANE_DISPATCH_PACKET.md",
         (
             "$implement",
+            "Owner skill name：implement",
+            "Owner skill SKILL.md：<absolute resolved path>",
+            "不依赖 Codex pane catalog",
             "只处理这张 ticket",
             "Codex pane",
             "FINAL_REPORT_BEGIN",
@@ -219,24 +243,6 @@ def main() -> None:
         CLAUDE_ROOT / "assets" / "WAYFINDER_GRILLING_DISPATCH_PACKET.md",
     ):
         require(packet, ("FINAL_REPORT_BEGIN", "FINAL_REPORT_END"))
-    require(
-        CLAUDE_ROOT / "references" / "herdr-dispatch.md",
-        (
-            "git worktree add -b",
-            "git-common-dir",
-            "--cwd <lane-path>",
-            "herdr tab create",
-            "herdr pane split",
-            "--kind codex",
-            "--pane <pane-id>",
-            "-- -s danger-full-access -a never",
-            "assets/CODEX_PANE_DISPATCH_PACKET.md",
-            "child-monitoring.md",
-            "herdr pane close <pane-id>",
-            "close_pending",
-            "集成后关闭",
-        ),
-    )
     require(
         CLAUDE_ROOT / "references" / "lane-registry.md",
         (
@@ -255,13 +261,10 @@ def main() -> None:
     require(
         CLAUDE_ROOT / "references" / "child-monitoring.md",
         (
-            "herdr agent wait <child-pane-id>",
-            "herdr agent prompt <lead-pane-id>",
-            "herdr pane wait-output",
+            "/herdr",
             "FINAL_REPORT_END",
-            "herdr agent read <child-pane-id>",
-            "listener-timeout",
-            "running pane 无条件挂到新 lead listener",
+            "listener",
+            "running pane 无条件通过 `/herdr` skill 挂到新 lead listener",
         ),
     )
     require(
@@ -289,12 +292,16 @@ def main() -> None:
     )
 
     install = (ROOT / "scripts" / "install.sh").read_text()
-    dependency_loop = (
-        "for dep in wayfinder grilling domain-modeling prototype research "
-        "to-spec to-tickets implement code-review"
+    require(
+        ROOT / "scripts" / "install.sh",
+        (
+            "DEPENDENCIES=(wayfinder grilling domain-modeling prototype research "
+            "to-spec to-tickets implement code-review)",
+            'for dep in "${DEPENDENCIES[@]}"',
+            "expose_codex_dependencies",
+            'ln -s "$source" "$dest"',
+        ),
     )
-    if dependency_loop not in install:
-        fail("installer dependency list mismatch")
 
     subprocess.run(["bash", "-n", str(ROOT / "scripts" / "install.sh")], check=True)
     if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):

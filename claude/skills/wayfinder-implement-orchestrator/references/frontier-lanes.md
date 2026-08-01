@@ -20,7 +20,7 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Design Fan-out
 
-- AFK research、evidence 和自动 task：每个 decision ticket 一个 fresh Herdr pane。
+- AFK research、evidence 和自动 task：每个 decision ticket 通过 `/herdr` skill 创建 fresh pane。
 - HITL prototype、grilling 和 task：各自独立，用户判断只阻塞该 ticket。
 - lead 拥有 map frontier、用户问题和 fan-in；worker 只拥有自己的 decision ticket。
 
@@ -35,7 +35,7 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 ## Terminal Fan-in
 
 - normal path 只消费 terminal event，不读取 routine progress。
-- final report、Git 和 tracker 是证据；Herdr lifecycle notification 只负责唤醒。
+- final report、Git 和 tracker 是证据；lifecycle notification 只负责唤醒。
 - lead 对每个 terminal lane 读取一次 final report，验证 commit、checks、dirty state 和
   touched files，按 dependency order 集成，然后立即重算 ready frontier。
 - watchdog 只处理启动失败、terminal signal 丢失或工具 timeout；每次异常只做一次状态检查。

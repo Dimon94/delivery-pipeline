@@ -25,6 +25,8 @@ Each dispatched child persists its pane/thread ID, worktree, branch, commit, and
 lifecycle state. Fresh sessions recover children and reattach terminal listeners
 first. Claude closes the matching Codex pane after integration and focused checks
 succeed.
+Delegated children receive the owner skill's resolved `SKILL.md` path, so
+user-invoked stage owners do not depend on the child task's active skill catalog.
 
 ## Install
 
@@ -44,7 +46,7 @@ Codex:
 Use $wayfinder-implement-orchestrator with <any-map-spec-or-ticket-issue>.
 ```
 
-Claude inside Herdr:
+Claude（通过 `/herdr` skill 管理 panes）：
 
 ```text
 Use /wayfinder-implement-orchestrator <any-map-spec-or-ticket-issue>.

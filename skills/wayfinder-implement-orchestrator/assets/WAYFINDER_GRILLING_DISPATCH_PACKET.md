@@ -16,6 +16,9 @@ Ticket mode：HITL
 基线分支：
 基线提交：
 Source owner projectId：
+Owner skill name：<prototype | grilling | wayfinder>
+Owner skill SKILL.md：<absolute resolved path>
+Owner skill invocation label：<$prototype | $grilling | $wayfinder>
 Source worktree：
 HITL 目标：
 需要解决的决策/反馈分支：
@@ -23,7 +26,9 @@ HITL 目标：
 进度快照：<当前门禁；discovery 已完成/运行/阻塞/待派发数量；本 ticket 为什么需要用户判断；下一门禁或 blocker>
 
 路由：
-- 使用该 map issue 和 ticket issue 调用 /wayfinder。
+- 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再执行对应
+  contract；invocation label 只用于说明，不依赖 child catalog。
+- 按 resolved owner处理该 map issue 和 ticket issue。
 - 只解决这个 child issue。
 - Wayfinder 默认是 planning；除非 map Notes 明确授权 execution，产出 decisions、
   evidence 和 linked artifacts，不交付 Destination 本身。

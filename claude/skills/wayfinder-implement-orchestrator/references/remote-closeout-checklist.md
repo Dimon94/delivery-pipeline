@@ -6,7 +6,7 @@
 ## Execution Result Audit
 
 - 审计每条 lane 的 terminal final report、ticket checkpoints、commits、verification 和 dirty state；
-  不要只相信 Herdr status 或 notification。
+  不要只相信 notification。
 - 集成前检查每个 commit：`git show --stat --oneline <hash>` 和 focused diff。
 - 拒绝包含无关文件、缺失验证、dirty worktree，或把 blocker 包装成 success 的 commits。
 

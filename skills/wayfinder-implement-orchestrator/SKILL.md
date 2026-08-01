@@ -48,20 +48,23 @@ idea/map -> discovery -> spec -> implementation tickets
    implementation tickets，按 issue ID 去重。命中为零时解析并执行 `to-tickets` owner；
    交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
    完成标准：至少一张真实 ticket 的 ID、spec 回链和 dependency edges 可读回。
-5. **Dispatch execution。** 加载 `references/frontier-lanes.md`、`assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。
-   从 dependency graph 重算 ready frontier，选择无 mutable-resource 冲突的 maximal safe batch。
-   解析 `implement` owner 后，每张入选票从当前 integration worktree 创建独立 execution worktree
-   （branch `codex/issue-<N>`）、fresh Codex task 和 Herdr pane（放入 X tabs，遵守 4-pane capacity）；
-   coordinator 不亲自实现。完成标准：ticket 的 durable registry 已 readback thread ID、projectId、
-   execution_worktree_path、branch 和 base commit。
-6. **Probe startup。** 每个 task 创建后做一次 startup probe：确认 `Source owner projectId` 属于同一 repo、
-   `cwd` 位于该票自己的 execution worktree、完整 packet 已收到，且 child 已 readback 相同的 owner
-   name/resolved path。错误落点或未读 owner file 时用同一 projectId 重建一次；第二次失败
-   只把该票标成 setup blocked。
-7. **Integrate changes。** Workers 运行时只消费 terminal final report；验证 commit、checks 和 dirty state 后
-   cherry-pick 到 integration worktree（遇冲突标 blocked），按 dependency order 集成，
-   通过 focused checks 后删除 execution worktree/branch 并关闭 Herdr pane，立即重算 frontier。
-   Lane blocker 不停止其他 ready tickets。
+5. **Dispatch execution。** 加载 `references/frontier-lanes.md`、`references/integration-worktree-management.md`、
+   `assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
+   选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票：
+   先从 integration worktree 创建 execution worktree（path: `<source-parent>/worktrees/<repo>-map-<M>-issue-<N>/`，
+   branch: `codex/issue-<N>` based on integration branch），验证 Git state（worktree registered、branch correct、
+   working tree clean），创建 fresh Codex task 和 Herdr pane（X tabs，4-pane capacity，tab label
+   自动更新），投递完整 dispatch packet；coordinator 不亲自实现。完成标准：ticket 的 durable registry
+   已 readback thread ID、projectId、execution_worktree_path、branch、base commit 和 herdr_pane_id。
+6. **Probe startup。** 每个 task 创建后验证：`Source owner projectId` 属于同一 repo、`cwd` 位于
+   execution worktree、完整 packet 已收到、child 已 readback owner name/resolved path。
+   错误落点或未读 owner file 时用同一 projectId 重建一次；第二次失败标记 `setup_blocked`，
+   立即删除 execution worktree/branch/pane（参考 `references/execution-worktree-integration.md`）。
+7. **Integrate changes。** 加载 `references/execution-worktree-integration.md`。Workers 运行时只消费
+   terminal final report；验证 commit、extraction worktree、integration worktree state，按 dependency order
+   执行 cherry-pick。成功后运行 focused checks，通过则删除 execution worktree/branch、关闭 Herdr pane、
+   更新 tab label、更新 registry 为 `integrated`、立即重算 frontier。冲突时中止 cherry-pick，
+   标记 `integration_conflict`，保留 execution worktree 供调试。Lane blocker 不停止其他 ready tickets。
 8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。
    全部通过时进入 test decision：提示用户选择（1）在 integration worktree 测试、（2）立即 rebase 到 main 再测试、
    或（3）跳过测试。用户确认继续后，rebase integration branch 到最新 main（遇冲突委托

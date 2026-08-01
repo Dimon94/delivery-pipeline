@@ -21,6 +21,8 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 每个被派发的 child 都保存 pane/thread ID、worktree、branch、commit 和生命周期状态。
 新会话会先恢复已有 child 并重挂 terminal listener。Claude 在集成与 focused checks 成功后
 自动关闭对应 Codex pane。
+派发包会携带 owner skill 的 resolved `SKILL.md` 路径，因此用户调用型 stage owner 不依赖
+子任务当前加载的 skill catalog。
 
 ## 安装
 
@@ -40,7 +42,7 @@ Codex：
 使用 $wayfinder-implement-orchestrator 继续 <任意 map/spec/ticket issue>。
 ```
 
-Herdr 中的 Claude：
+Claude（通过 `/herdr` skill 管理 panes）：
 
 ```text
 使用 /wayfinder-implement-orchestrator <任意 map/spec/ticket issue>。

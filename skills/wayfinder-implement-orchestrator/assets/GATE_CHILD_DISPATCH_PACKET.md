@@ -12,11 +12,9 @@ Spec：<url | none>
 Tracker/repo：
 Source branch/commit：
 
-Owner skill：
-- spec：$to-spec <map-url>
-- tickets：$to-tickets <spec-url>
-- review：$code-review
-- evidence：<明确只读问题>
+Owner skill name：<to-spec | to-tickets | code-review | research>
+Owner skill SKILL.md：<absolute resolved path>
+Owner skill invocation label：<$to-spec | $to-tickets | $code-review | $research>
 
 先读：
 -
@@ -31,6 +29,8 @@ Owner skill：
 - evidence：问题已有直接证据与来源
 
 规则：
+- 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再执行该
+  contract；invocation label 只用于说明，不依赖 child catalog。
 - 对应 owner skill 决定产物内容；不要增加另一套 gate。
 - 所有 tracker create/update/comment 后立即 readback。
 - 面向 tracker、用户和 coordinator 的自然语言使用中文。

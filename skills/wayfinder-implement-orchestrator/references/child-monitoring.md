@@ -5,7 +5,8 @@
 
 ## Startup
 
-1. startup probe 验证 packet、work item、`Source owner projectId` 和独立 worktree。
+1. startup probe 验证 packet、work item、`Source owner projectId`、独立 worktree，以及
+   child readback 的 owner name/resolved `SKILL.md` path。
 2. `create_thread` 返回 `clientThreadId` 时先记录 pending coordinate；解析真实 thread ID 后
    写入 `created` registry 并 readback。
 3. 确认 child 已收到 packet 后写入 `running`。

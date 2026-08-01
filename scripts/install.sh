@@ -8,6 +8,7 @@ AGENTS_HOME_DIR="${AGENTS_HOME:-$HOME/.agents}"
 CLAUDE_HOME_DIR="${CLAUDE_HOME:-$HOME/.claude}"
 SKIP_DEPS=0
 TARGET="codex"
+DEPENDENCIES=(wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review)
 
 usage() {
   cat <<EOF
@@ -22,6 +23,9 @@ Installs $SKILL_NAME to one or both (all targets symlink to this checkout):
 Codex dependency discovery checks both:
   \${CODEX_HOME:-~/.codex}/skills
   \${AGENTS_HOME:-~/.agents}/skills
+
+Dependencies found only under AGENTS_HOME are also exposed through CODEX_HOME
+so fresh Codex tasks can locate their SKILL.md.
 EOF
 }
 
@@ -111,9 +115,49 @@ has_codex_dependency() {
   return 1
 }
 
+find_codex_dependency() {
+  local dep="$1"
+  local root
+  for root in "$CODEX_HOME_DIR/skills" "$AGENTS_HOME_DIR/skills"; do
+    if [ -f "$root/$dep/SKILL.md" ]; then
+      (
+        cd "$root/$dep"
+        pwd -P
+      )
+      return 0
+    fi
+  done
+  return 1
+}
+
+expose_codex_dependencies() {
+  local dep source dest
+  mkdir -p "$CODEX_HOME_DIR/skills"
+  for dep in "${DEPENDENCIES[@]}"; do
+    dest="$CODEX_HOME_DIR/skills/$dep"
+    if [ -f "$dest/SKILL.md" ]; then
+      continue
+    fi
+    if [ -L "$dest" ]; then
+      echo "Broken Codex dependency symlink: $dest" >&2
+      exit 1
+    fi
+    if [ -e "$dest" ]; then
+      echo "Codex dependency path exists without SKILL.md: $dest" >&2
+      exit 1
+    fi
+    source="$(find_codex_dependency "$dep")" || {
+      echo "Cannot expose missing Codex dependency: $dep" >&2
+      exit 1
+    }
+    ln -s "$source" "$dest"
+    echo "Exposed Codex dependency $dep at $dest -> $source"
+  done
+}
+
 if [ "$SKIP_DEPS" -eq 0 ] && { [ "$TARGET" = "codex" ] || [ "$TARGET" = "all" ]; }; then
   missing=()
-  for dep in wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review; do
+  for dep in "${DEPENDENCIES[@]}"; do
     has_codex_dependency "$dep" || missing+=("$dep")
   done
 
@@ -131,12 +175,14 @@ fi
 
 case "$TARGET" in
   codex)
+    [ "$SKIP_DEPS" -eq 1 ] || expose_codex_dependencies
     install_codex
     ;;
   claude)
     install_claude
     ;;
   all)
+    [ "$SKIP_DEPS" -eq 1 ] || expose_codex_dependencies
     install_codex
     install_claude
     ;;

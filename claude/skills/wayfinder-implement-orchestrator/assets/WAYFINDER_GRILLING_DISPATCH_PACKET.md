@@ -2,7 +2,7 @@
 
 当 wayfinder map issue 走到未阻塞的 `wayfinder:prototype`、`wayfinder:grilling`、
 HITL `wayfinder:task` child issue，或任何需要实时用户判断的 discovery child issue
-时，填写这个 packet。一个 HITL child issue 对应一个用户运行的 Herdr pane，承载
+时，填写这个 packet。一个 HITL child issue 对应一个用户运行的 pane，承载
 完整真人反馈会话；不要每个问题开一个 pane。
 
 ```text
@@ -15,13 +15,18 @@ Ticket label：wayfinder:prototype | wayfinder:grilling | wayfinder:task
 Ticket mode：HITL
 基线分支：
 基线提交：
+Owner skill name：<prototype | grilling | wayfinder>
+Owner skill SKILL.md：<absolute resolved path>
+Owner skill invocation label：</prototype | /grilling | /wayfinder>
 HITL 目标：
 需要解决的决策/反馈分支：
 -
 进度快照：<当前门禁；discovery 已完成/运行/阻塞/待派发数量；本 ticket 为什么需要用户判断；下一门禁或 blocker>
 
 路由：
-- 使用该 map issue 和 ticket issue 调用 /wayfinder。
+- 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再执行对应
+  contract；invocation label 只用于说明，不依赖 pane catalog。
+- 按 resolved owner处理该 map issue 和 ticket issue。
 - 只解决这个 child issue。
 - Wayfinder 默认是 planning；除非 map Notes 明确授权 execution，产出 decisions、
   evidence 和 linked artifacts，不交付 Destination 本身。
@@ -53,7 +58,7 @@ HITL 目标：
 - 禁止范围：
 
 执行规则：
-- 使用独立 Herdr worker pane。
+- 使用独立 worker pane（由 `/herdr` skill 管理）。
 - 需要分支时，只在本 worktree 目录内创建/切换；不要切换主目录/source worktree 的分支。
 - 如果 ticket 仍 open 且 unassigned，先 assign 给自己并读回确认；如果已分配给
   别的 pane/dev，停止并报告 blocker。

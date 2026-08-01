@@ -16,17 +16,17 @@
 每个 dispatched child 的 registry 保存 role、pane ID、workspace/tab、worktree/branch、
 commit、listener owner 和 lifecycle state。
 
-## Herdr Boundaries
+## Pane Boundaries
 
-- design worker 可以按 ticket 类型使用相应 Claude workflow；implementation ticket 固定派给
+- design worker 可以按 ticket 类型使用相应 workflow；implementation ticket 固定派给
   Codex pane。
-- 每张 implementation ticket 先创建并验证独立 Git worktree，再把该路径作为
-  `herdr tab create --cwd` 或 `herdr pane split --cwd` 的 pane cwd。
+- 每张 implementation ticket 先创建并验证独立 Git worktree，再把该路径传递给
+  `/herdr` skill 作为 pane cwd。
 - source worktree 保持当前 branch。
 - pane 只处理 packet 指定的 ticket；dependency graph 与下一批由 lead 持有。
-- workspace/tab/pane 落点按 `herdr-dispatch.md` 显式解析和验证。
-- 每个 child pane 都按 `child-monitoring.md` 挂 lead-owned listener；新会话从 registry
-  重挂。
+- workspace/tab/pane 落点按 `/herdr` skill 和 `child-monitoring.md` 显式解析和验证。
+- 每个 child pane 都按 `child-monitoring.md` 通过 `/herdr` skill 挂 lead-owned listener；
+  新会话从 registry 重挂。
 - remote authority 缺失不阻塞本地实现与 integration。
 
-Herdr 不可用时，输出完整 durable packets；不要由 lead 代替 execution panes。
+`/herdr` skill 不可用时，输出完整 durable packets；不要由 lead 代替 execution panes。
