@@ -1,4 +1,4 @@
-# Wayfinder Implement Orchestrator
+# Delivery Pipeline
 
 [English README](README.md)
 
@@ -39,13 +39,13 @@ Codex 和 Claude 安装都会软链接到当前 checkout。
 Codex：
 
 ```text
-使用 $wayfinder-implement-orchestrator 继续 <任意 map/spec/ticket issue>。
+使用 $delivery-pipeline 继续 <任意 map/spec/ticket issue>。
 ```
 
 Claude（通过 `/herdr` skill 管理 panes）：
 
 ```text
-使用 /wayfinder-implement-orchestrator <任意 map/spec/ticket issue>。
+使用 /delivery-pipeline <任意 map/spec/ticket issue>。
 ```
 
 ## 校验

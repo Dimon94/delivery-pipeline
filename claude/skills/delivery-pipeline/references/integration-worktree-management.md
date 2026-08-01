@@ -24,7 +24,7 @@ source worktree (main)
 
 ### Creation
 
-**触发：** 用户在 source worktree 运行 `/wayfinder-implement-orchestrator <map-issue>`，
+**触发：** 用户在 source worktree 运行 `/delivery-pipeline <map-issue>`，
 且该 map 还没有 integration worktree。
 
 **路径计算：**

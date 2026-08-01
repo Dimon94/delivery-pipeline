@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CODEX_ROOT = ROOT / "skills" / "wayfinder-implement-orchestrator"
-CLAUDE_ROOT = ROOT / "claude" / "skills" / "wayfinder-implement-orchestrator"
+CODEX_ROOT = ROOT / "skills" / "delivery-pipeline"
+CLAUDE_ROOT = ROOT / "claude" / "skills" / "delivery-pipeline"
 CODEX_SKILL = CODEX_ROOT / "SKILL.md"
 CLAUDE_SKILL = CLAUDE_ROOT / "SKILL.md"
 
@@ -106,11 +106,11 @@ def main() -> None:
     manifest = json.loads((ROOT / "skill-bundle.json").read_text())
     if manifest.get("format") != "codex-claude-skill-bundle/v1":
         fail("bundle format mismatch")
-    if manifest.get("name") != "wayfinder-implement-orchestrator":
+    if manifest.get("name") != "delivery-pipeline":
         fail("bundle name mismatch")
     if manifest.get("entrypoints") != {
-        "codex": "skills/wayfinder-implement-orchestrator/SKILL.md",
-        "claude": "claude/skills/wayfinder-implement-orchestrator/SKILL.md",
+        "codex": "skills/delivery-pipeline/SKILL.md",
+        "claude": "claude/skills/delivery-pipeline/SKILL.md",
     }:
         fail("entrypoints mismatch")
     if [item.get("name") for item in manifest.get("requires") or []] != DEPENDENCIES:
@@ -119,7 +119,7 @@ def main() -> None:
     codex_fm = frontmatter(CODEX_SKILL)
     claude_fm = frontmatter(CLAUDE_SKILL)
     for fm, label in ((codex_fm, "Codex"), (claude_fm, "Claude")):
-        if fm.get("name") != "wayfinder-implement-orchestrator":
+        if fm.get("name") != "delivery-pipeline":
             fail(f"{label} skill name mismatch")
         if not fm.get("description", "").startswith("Orchestrate a loose idea"):
             fail(f"{label} description does not expose the resumable chain")
@@ -284,9 +284,9 @@ def main() -> None:
     require(
         metadata,
         (
-            'display_name: "Wayfinder Implement Orchestrator"',
+            'display_name: "Delivery Pipeline"',
             'short_description: "Resume Wayfinder delivery from any issue"',
-            "$wayfinder-implement-orchestrator",
+            "$delivery-pipeline",
             "allow_implicit_invocation: false",
         ),
     )

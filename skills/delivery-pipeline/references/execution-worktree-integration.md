@@ -69,7 +69,7 @@
      - file2.ts
      
      execution worktree 已保留：<path>
-     手动解决后运行：/wayfinder-implement-orchestrator <map> --retry-integration 123
+     手动解决后运行：/delivery-pipeline <map> --retry-integration 123
      ```
 
 6. 如果 cherry-pick 其他错误：

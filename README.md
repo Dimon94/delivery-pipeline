@@ -1,4 +1,4 @@
-# Wayfinder Implement Orchestrator
+# Delivery Pipeline
 
 [中文说明](README.zh-CN.md)
 
@@ -43,13 +43,13 @@ Both installations are symlinked to this checkout.
 Codex:
 
 ```text
-Use $wayfinder-implement-orchestrator with <any-map-spec-or-ticket-issue>.
+Use $delivery-pipeline with <any-map-spec-or-ticket-issue>.
 ```
 
 Claude（通过 `/herdr` skill 管理 panes）：
 
 ```text
-Use /wayfinder-implement-orchestrator <any-map-spec-or-ticket-issue>.
+Use /delivery-pipeline <any-map-spec-or-ticket-issue>.
 ```
 
 ## Verify

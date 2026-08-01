@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILL_NAME="wayfinder-implement-orchestrator"
+SKILL_NAME="delivery-pipeline"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 AGENTS_HOME_DIR="${AGENTS_HOME:-$HOME/.agents}"
 CLAUDE_HOME_DIR="${CLAUDE_HOME:-$HOME/.claude}"

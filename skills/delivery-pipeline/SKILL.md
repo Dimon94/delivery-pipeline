@@ -1,10 +1,10 @@
 ---
-name: wayfinder-implement-orchestrator
+name: delivery-pipeline
 description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ticket graph through discovery, spec and ticket publication, automatic Codex worktree dispatch, integration, and one summary PR/MR.
 disable-model-invocation: true
 ---
 
-# Wayfinder Implement Orchestrator
+# Delivery Pipeline
 
 把输入推进到一条完整交付链：
 

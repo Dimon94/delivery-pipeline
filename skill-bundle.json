@@ -1,13 +1,13 @@
 {
   "format": "codex-claude-skill-bundle/v1",
-  "name": "wayfinder-implement-orchestrator",
+  "name": "delivery-pipeline",
   "entrypoints": {
-    "codex": "skills/wayfinder-implement-orchestrator/SKILL.md",
-    "claude": "claude/skills/wayfinder-implement-orchestrator/SKILL.md"
+    "codex": "skills/delivery-pipeline/SKILL.md",
+    "claude": "claude/skills/delivery-pipeline/SKILL.md"
   },
   "install": {
-    "codexSkillDirectory": "skills/wayfinder-implement-orchestrator",
-    "claudeSkillDirectory": "claude/skills/wayfinder-implement-orchestrator"
+    "codexSkillDirectory": "skills/delivery-pipeline",
+    "claudeSkillDirectory": "claude/skills/delivery-pipeline"
   },
   "requires": [
     {
