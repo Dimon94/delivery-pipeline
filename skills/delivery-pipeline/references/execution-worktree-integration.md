@@ -61,7 +61,7 @@
    - 中止 cherry-pick：`git cherry-pick --abort`
    - 标记 ticket 为 `integration_conflict`，写入冲突文件列表到 registry
    - **不在这里调用** conflict resolution（用户可能需要更多上下文）
-   - 保留 execution worktree，提示用户可手动解决或调用 `/mattpocock-skills:resolving-merge-conflicts`
+   - 保留 execution worktree，提示用户可手动解决或调用 `$resolving-merge-conflicts`
    - 报告格式：
      ```
      ticket #123 integration conflict:

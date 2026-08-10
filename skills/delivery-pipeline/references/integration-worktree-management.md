@@ -218,7 +218,7 @@ EXECUTION_BRANCH="codex/issue-${TICKET_NUMBER}"
    git status | grep -q "both modified"
    
    # 报告 blocker，不在这里调用 conflict resolution（用户可能需要上下文）
-   # 标记该 ticket 为 blocked，等待用户手动解决或调用 /resolving-merge-conflicts
+   # 标记该 ticket 为 blocked，等待用户手动解决或调用 $resolving-merge-conflicts
    ```
 5. 如果 cherry-pick 成功，运行 focused checks：
    ```bash
@@ -280,7 +280,7 @@ git branch -D "$EXECUTION_BRANCH"
    # 检测冲突
    git status --short | grep -q "^UU "
    
-   # 调用 /mattpocock-skills:resolving-merge-conflicts
+   # 调用 $resolving-merge-conflicts
    # 传递 integration worktree path、conflicting files、map issue context
    ```
 6. 等待 conflict resolution 完成，验证 working tree clean。

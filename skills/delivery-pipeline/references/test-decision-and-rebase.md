@@ -187,9 +187,9 @@ else:
      - file1.ts
      - file2.ts
      
-     委托 /mattpocock-skills:resolving-merge-conflicts 解决冲突...
+     委托 $resolving-merge-conflicts 解决冲突...
      ```
-   - 调用 `/mattpocock-skills:resolving-merge-conflicts`，传递：
+   - 调用 `$resolving-merge-conflicts`，传递：
      - 当前 worktree path（integration worktree）
      - 冲突文件列表
      - Map issue context（map title、description）
@@ -280,7 +280,7 @@ else:
      git rebase origin/main
      ```
    - 如果 rebase 冲突：
-     - 调用 `/mattpocock-skills:resolving-merge-conflicts`（同 Rebase Sequence）
+     - 调用 `$resolving-merge-conflicts`（同 Rebase Sequence）
      - 解决后继续 rebase
    - Retry push：
      ```bash

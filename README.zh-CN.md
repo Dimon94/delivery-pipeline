@@ -53,3 +53,11 @@ Claude（通过 `/herdr` skill 管理 panes）：
 ```bash
 python3 scripts/validate.py
 ```
+
+`scripts/install.sh` 会同时安装 `scripts/hooks/pre-commit`：它对**暂存树**跑校验器，
+红灯直接拒绝 commit。`--no-hooks` 可跳过安装，`--no-verify` 可主动绕过。同一个校验器
+在 CI（`.github/workflows/validate.yml`）里再跑一遍，为新 clone 兜底。
+
+Skill 引用写法按 runtime 区分并强制校验：Codex 树（`skills/`）用 `$name`，
+Claude 树（`claude/skills/`）用 `/mattpocock-skills:name`。Codex 树里出现 Claude
+plugin locator 会被拒绝——那种写法在 Codex 下无法解析。

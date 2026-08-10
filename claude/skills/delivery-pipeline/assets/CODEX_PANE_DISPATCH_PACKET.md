@@ -2,9 +2,13 @@
 
 每张 ready implementation ticket 填写一个 packet，并派给一个独立 execution worktree 的 fresh Codex pane。
 
+**Agent kind**：`codex`（implementation tickets 使用 Codex 引擎执行）
+
+**Tab placement**：X tab（execution）
+
 ```text
 Lead pane：
-Pane location：<由 /herdr skill 管理>
+Pane location：<由 /pane-dispatch skill 管理>
 Owner skill name：implement
 Owner skill SKILL.md：<absolute resolved path>
 Owner skill invocation label：$implement

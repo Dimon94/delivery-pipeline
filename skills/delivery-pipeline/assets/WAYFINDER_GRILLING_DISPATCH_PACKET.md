@@ -5,6 +5,10 @@ HITL `wayfinder:task` child issue，或任何需要实时用户判断的 discove
 时，填写这个 packet。一个 HITL child issue 对应一个用户运行的 fresh task，承载
 完整真人反馈会话；不要每个问题开一个线程。
 
+**Agent kind**：`claude`（HITL tickets 必须使用 Claude 引擎）
+
+**注意**：Codex runtime 不支持 `/herdr` pane 创建。遇到 HITL tickets 时应通过跨环境协调机制委托给 Claude Code runtime，或在 wayfinder-frontier-loop.md 中声明该路径不可用。本 packet 保留作为格式参考。
+
 ```text
 项目：
 Coordinator task：
@@ -32,7 +36,7 @@ HITL 目标：
 - 只解决这个 child issue。
 - Wayfinder 默认是 planning；除非 map Notes 明确授权 execution，产出 decisions、
   evidence 和 linked artifacts，不交付 Destination 本身。
-- 把 /grilling 作为一个连续会话使用；当术语需要钉住时使用 /domain-modeling。
+- 把 $grilling 作为一个连续会话使用；当术语需要钉住时使用 $domain-modeling。
 - 一次只问一个问题并等待用户反馈，然后继续问下一个依赖问题，直到这个 ticket
   resolved 或 blocked。
 - 每个问题都给出你的推荐答案；推荐答案不是用户回答，不能用来替用户确认。
@@ -43,8 +47,8 @@ HITL 目标：
   反馈足够支持 resolution 后才 close。
 - 如果这是 HITL `wayfinder:task`，给出精确 checklist 或执行可自动部分；需要用户
   执行/确认的步骤不能由 agent 代答。
-- ticket resolved 后返回 coordinator；不要进入下一 gate、`/mattpocock-skills:to-spec`、
-  `/mattpocock-skills:to-tickets` 或 `/mattpocock-skills:implement`。
+- ticket resolved 后返回 coordinator；不要进入下一 gate、`$to-spec`、
+  `$to-tickets` 或 `$implement`。
 
 真相源：
 - Map issue：<title/link>
@@ -56,7 +60,7 @@ HITL 目标：
 允许范围：
 - 这个 ticket issue 的 body/comments/labels/assignee/close state
 - Map issue 的 Destination、Decisions-so-far、Not yet specified 和 Out of scope 行
-- 如果 /domain-modeling 需要，可以修改 domain glossary 或 ADR 文件
+- 如果 $domain-modeling 需要，可以修改 domain glossary 或 ADR 文件
 - 禁止范围：
 
 执行规则：

@@ -23,16 +23,34 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 - AFK research、evidence 和自动 task：每个 decision ticket 通过 `Agent` tool 派发为后台
   subagent（`run_in_background: true`）；不创建 Herdr pane。
 - HITL prototype、grilling 和 task：各自独立，用户判断只阻塞该 ticket。
-  仍通过 `/herdr` skill 创建 pane（G/P tab）。
+  通过 `/pane-dispatch` skill 创建 pane（G/P tab），**必须使用 `--kind claude`**。
+  使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 模板（已内置 `--kind claude`）。
 - lead 拥有 map frontier、用户问题和 fan-in；subagent 只拥有自己的 decision ticket。
 
 ## Execution Lanes
 
 - maximal safe batch 中每张 implementation ticket 创建一个 fresh Codex pane。
 - 每张票先创建并验证独立 worktree（Git），再以该 worktree 作为 pane cwd。
+- 通过 `/pane-dispatch` skill 创建 X tab pane，**必须使用 `--kind codex`**。
+  使用 `CODEX_PANE_DISPATCH_PACKET.md` 模板（已内置 `--kind codex`）。
 - Codex pane 只运行该 ticket 的 `/mattpocock-skills:implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 lead 重算下一 batch。
 - 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。
+
+## Agent Kind 绑定规则
+
+**Packet 模板选择**（按 ticket label 查表）：
+- `wayfinder:grilling`、`wayfinder:prototype` → `WAYFINDER_GRILLING_DISPATCH_PACKET.md`（内置 `--kind claude`）
+- implementation tickets → `CODEX_PANE_DISPATCH_PACKET.md`（内置 `--kind codex`）
+
+**Tab-Kind 交叉验证**：
+- G tab（grilling/规划）、P tab（prototype）、R tab（research）→ 必须 `--kind claude`
+- X tab（execution）→ 可以 `--kind claude` 或 `--kind codex`
+- D tab（data/debug）→ 待定，暂不强制
+
+**Fail-closed 原则**：
+- Packet 缺少 `--kind` 参数时，拒绝派发并报错
+- Tab-kind 组合不符合规则时，拒绝派发并报错
 
 ## Terminal Fan-in
 

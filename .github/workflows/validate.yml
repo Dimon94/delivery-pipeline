@@ -1,0 +1,21 @@
+name: validate
+
+# Backstop for the pre-commit hook: .git/hooks is not version-controlled, a fresh
+# clone has no hook until install.sh runs, and --no-verify bypasses it locally.
+# CI cannot be bypassed from a workstation, so a red bundle leaves a trace here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate bundle
+        run: python3 scripts/validate.py

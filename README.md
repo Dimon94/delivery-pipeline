@@ -57,3 +57,13 @@ Use /delivery-pipeline <any-map-spec-or-ticket-issue>.
 ```bash
 python3 scripts/validate.py
 ```
+
+`scripts/install.sh` also installs `scripts/hooks/pre-commit`, which runs the
+validator against the staged tree and refuses a red commit. Pass `--no-hooks` to
+skip, or commit with `--no-verify` to override deliberately. The same validator
+runs in CI (`.github/workflows/validate.yml`) as a backstop for fresh clones.
+
+Skill references are runtime-specific and enforced: the Codex tree (`skills/`)
+uses `$name`, the Claude tree (`claude/skills/`) uses `/mattpocock-skills:name`.
+Claude plugin locators are rejected inside the Codex tree, where they cannot
+resolve.

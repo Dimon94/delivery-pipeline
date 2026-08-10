@@ -21,12 +21,12 @@ commit、listener owner 和 lifecycle state。
 - design worker 可以按 ticket 类型使用相应 workflow；implementation ticket 固定派给
   Codex pane。
 - 每张 implementation ticket 先创建并验证独立 Git worktree，再把该路径传递给
-  `/herdr` skill 作为 pane cwd。
+  `/pane-dispatch` skill 作为 pane cwd。
 - source worktree 保持当前 branch。
 - pane 只处理 packet 指定的 ticket；dependency graph 与下一批由 lead 持有。
-- workspace/tab/pane 落点按 `/herdr` skill 和 `child-monitoring.md` 显式解析和验证。
-- 每个 child pane 都按 `child-monitoring.md` 通过 `/herdr` skill 挂 lead-owned listener；
+- workspace/tab/pane 落点按 `/pane-dispatch` skill 和 `child-monitoring.md` 显式解析和验证。
+- 每个 child pane 都按 `child-monitoring.md` 通过 `/pane-dispatch` skill 挂 lead-owned listener；
   新会话从 registry 重挂。
 - remote authority 缺失不阻塞本地实现与 integration。
 
-`/herdr` skill 不可用时，输出完整 durable packets；不要由 lead 代替 execution panes。
+`/pane-dispatch` skill 不可用时，输出完整 durable packets；不要由 lead 代替 execution panes。

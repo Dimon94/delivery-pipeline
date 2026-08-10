@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Bundle gate. Installed by scripts/install.sh --with-hooks; source of truth lives
+# in scripts/hooks/pre-commit so it is version-controlled (.git/hooks is not).
+#
+# Why this exists: 2238745 landed on main with validate.py red. Its commit message
+# claimed "Verification: ..." and "Risk: Low". Convention alone did not hold, and this
+# repo is a skill bundle that agents rewrite in bulk as a matter of course.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+command -v python3 >/dev/null 2>&1 || {
+  echo "pre-commit: python3 not found, cannot run bundle validator" >&2
+  exit 1
+}
+
+# Validate the tree as it will exist in the commit, not the dirty working tree:
+# unstaged edits must not mask a red staged change, or vouch for one.
+STAGED_TREE="$(mktemp -d)"
+trap 'rm -rf "$STAGED_TREE"' EXIT
+git checkout-index --all --prefix="$STAGED_TREE/"
+
+if ! python3 "$STAGED_TREE/scripts/validate.py"; then
+  cat >&2 <<'MSG'
+
+pre-commit: bundle validator failed on the staged tree. Commit refused.
+
+Fix the violations above, or rerun with --no-verify if you are deliberately
+committing a known-red state.
+MSG
+  exit 1
+fi

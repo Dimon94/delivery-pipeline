@@ -379,13 +379,13 @@ else:
    done
    ```
 
-6. 通过 `/herdr` 关闭所有 panes：
+6. 通过 `/pane-dispatch` 关闭所有 panes：
    ```bash
    # 从 map registry 读取 workspace_id 或 workspace_label
    WORKSPACE_LABEL="<map-title>-map-${MAP_ISSUE}"
    
    # 关闭 workspace 中所有 panes（LEAD + X/G/P tabs）
-   /herdr workspace close-all-panes "$WORKSPACE_LABEL"
+   /pane-dispatch workspace close-all-panes "$WORKSPACE_LABEL"
    
    # 保留 workspace 本身（用于历史访问）
    echo "已关闭 workspace 所有 panes，workspace 已保留：$WORKSPACE_LABEL"
@@ -473,13 +473,13 @@ workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`
 
 4. 验证 Herdr workspace：
    ```bash
-   # 通过 /herdr 验证 workspace 存在
+   # 通过 /pane-dispatch 验证 workspace 存在
    WORKSPACE_EXISTS=$(herdr workspace list | grep -c "$WORKSPACE_LABEL")
    
    if [ "$WORKSPACE_EXISTS" -eq 0 ]; then
      echo "警告：Herdr workspace 不存在，重新创建"
      cd "$INTEGRATION_PATH"
-     /herdr workspace create --label "$WORKSPACE_LABEL"
+     /pane-dispatch workspace create --label "$WORKSPACE_LABEL"
    fi
    ```
 
@@ -517,7 +517,7 @@ workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`
 
 6. 对 `running` state 的 execution tickets：
    ```bash
-   # 通过 /herdr 验证 pane 存在
+   # 通过 /pane-dispatch 验证 pane 存在
    PANE_EXISTS=$(herdr pane list | grep -c "$PANE_ID")
    
    if [ "$PANE_EXISTS" -eq 0 ]; then

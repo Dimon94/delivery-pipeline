@@ -81,7 +81,7 @@ registry 写入或 readback 失败时，关闭尚未接单的 pane（或取消 s
 2. `runtime: subagent`：subagent 完成状态无法跨会话恢复——若 registry 仍为 `running`，
    检查 branch/artifact 是否存在；存在则从持久证据继续 fan-in；不存在则标 `blocked`
    并由 lead 决定是否重新派发。
-3. `runtime: herdr-*`：通过 `/herdr` skill 验证 pane 的 workspace、tab、cwd 和 lifecycle。
+3. `runtime: herdr-*`：通过 `/pane-dispatch` skill 验证 pane 的 workspace、tab、cwd 和 lifecycle。
 4. 用 `git worktree list --porcelain`、branch 和 commit 验证有 Git lane 的坐标。
 5. `running` 且 pane 存在：按 `child-monitoring.md` 给新 lead 重挂 listener。
 6. pane 已 terminal：执行 marker-based Terminal Readback。
@@ -90,7 +90,7 @@ registry 写入或 readback 失败时，关闭尚未接单的 pane（或取消 s
 9. registry 与现实不一致：保留证据并标 stale；确认没有 active writer 后才能 replacement。
 
 没有 registry 的旧 child 只做一次 bounded recovery：按精确 work-item URL/编号、role、branch
-和 cwd 交叉匹配 `/herdr` agent list。唯一匹配且全部验证通过时补写 registry；零个或多个匹配时
+和 cwd 交叉匹配 herdr agent list（通过 `/pane-dispatch` skill）。唯一匹配且全部验证通过时补写 registry；零个或多个匹配时
 报告 unknown，不覆盖可能存在的 writer。
 
 关闭 pane 不删除 worktree；worktree 清理由独立、明确授权的流程负责。

@@ -59,7 +59,7 @@ INTEGRATION_BRANCH="feature/map-${MAP_ISSUE}"
    ```text
    例：issue title "重构用户登录模块" → workspace label "用户登录重构-map-101"
    ```
-6. 委托 `/herdr`：
+6. 委托 `/pane-dispatch`：
    ```bash
    cd "$INTEGRATION_PATH"
    /herdr workspace create --label "<map-title>-map-<issue>"
@@ -181,7 +181,7 @@ EXECUTION_BRANCH="codex/issue-${TICKET_NUMBER}"
 5. 验证创建结果（同 integration worktree）。
 6. 将 execution worktree metadata 写入 ticket issue 的 lane registry comment，
    包含 `integration_worktree_path` 指向 parent。
-7. 委托 `/herdr`：在 workspace `<map-title>-map-<map-issue>` 中创建 pane，
+7. 委托 `/pane-dispatch`：在 workspace `<map-title>-map-<map-issue>` 中创建 pane，
    放入 X tab（执行 capacity management）。
 
 **Herdr capacity management：**
@@ -229,7 +229,7 @@ EXECUTION_BRANCH="codex/issue-${TICKET_NUMBER}"
    git worktree remove "$EXECUTION_PATH"
    git branch -D "$EXECUTION_BRANCH"
    ```
-7. 通过 `/herdr`：关闭 pane，rename tab 移除 issue 编号。
+7. 通过 `/pane-dispatch`：关闭 pane，rename tab 移除 issue 编号。
 8. 更新 ticket registry：`state: integrated`。
 9. 重算 ready frontier（可能有新 tickets 解锁）。
 
@@ -288,7 +288,7 @@ git branch -D "$EXECUTION_BRANCH"
    
    # 从 registry 读取 thread_id 和 state
    # 如果 state = running，通过 thread tools 验证 task 存在
-   # 恢复 /herdr pane listener
+   # 恢复 /pane-dispatch pane listener
    ```
 5. 对 `running` state 的 tasks：重新调用 `wait_threads`。
 6. 对 `terminal` state：读取 final report，进入 fan-in。
@@ -338,6 +338,6 @@ fi
 - [ ] Working tree clean: `git -C "$WORKTREE_PATH" status --short` (空输出)
 - [ ] Base commit correct: `git -C "$WORKTREE_PATH" merge-base HEAD main`
 - [ ] Registry persisted: readback from tracker comment
-- [ ] Herdr workspace/pane exists: verify via `/herdr` tools
+- [ ] Herdr workspace/pane exists: verify via `/pane-dispatch` tools
 
 验证失败时：报告详细错误（哪一步失败、实际 vs 预期），不继续后续 gate。

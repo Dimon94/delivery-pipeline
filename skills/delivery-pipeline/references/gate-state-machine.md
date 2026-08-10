@@ -43,16 +43,16 @@ discovery -> spec -> tickets -> (dispatch -> execute -> collect -> integrate)*
 
 ## Stage Ownership
 
-- `/mattpocock-skills:wayfinder` 负责 map 与 decision tickets。
-- `/mattpocock-skills:to-spec` 负责 spec 内容与发布。
-- `/mattpocock-skills:to-tickets` 负责 implementation tickets 内容、依赖和发布。
-- `/mattpocock-skills:implement` 负责单张 ticket 的实现、验证、review 和 commit。
+- `$wayfinder` 负责 map 与 decision tickets。
+- `$to-spec` 负责 spec 内容与发布。
+- `$to-tickets` 负责 implementation tickets 内容、依赖和发布。
+- `$implement` 负责单张 ticket 的实现、验证、review 和 commit。
 - orchestrator 只验证持久坐标与状态转换，然后自动分配下一 ready batch。
 
 如果 linked implementation tickets 已存在，直接复用。只有精确 parent/backlink 关系算 linked；
-宽关键词或相似标题不算。没有 linked tickets 时才调用 `/mattpocock-skills:to-tickets`，发布后重新 readback。
+宽关键词或相似标题不算。没有 linked tickets 时才调用 `$to-tickets`，发布后重新 readback。
 不得因 ticket 大小、拆分方式、描述详细度、验收内容或主观”合理性”阻止 dispatch；
-这些都属于 `/mattpocock-skills:to-tickets` 的产物所有权。
+这些都属于 `$to-tickets` 的产物所有权。
 
 ## Resume State
 

@@ -11,6 +11,7 @@ CODEX_ROOT = ROOT / "skills" / "delivery-pipeline"
 CLAUDE_ROOT = ROOT / "claude" / "skills" / "delivery-pipeline"
 CODEX_SKILL = CODEX_ROOT / "SKILL.md"
 CLAUDE_SKILL = CLAUDE_ROOT / "SKILL.md"
+PANE_DISPATCH_CLAUDE = ROOT / "claude" / "skills" / "pane-dispatch"
 
 DEPENDENCIES = [
     "wayfinder",
@@ -23,6 +24,18 @@ DEPENDENCIES = [
     "implement",
     "code-review",
 ]
+
+
+ERRORS: list[str] = []
+
+
+def record(message: str) -> None:
+    """Collect a violation instead of aborting, so one run reports every failure.
+
+    Fail-fast hid the true blast radius of 2238745: eight broken invariants
+    across both trees surfaced as a single error line.
+    """
+    ERRORS.append(message)
 
 
 def fail(message: str) -> None:
@@ -44,10 +57,30 @@ def frontmatter(path: Path) -> dict[str, str]:
 
 
 def require(path: Path, strings: tuple[str, ...]) -> None:
-    content = path.read_text()
+    """Assert each string appears in `path`, ignoring how prose is line-wrapped.
+
+    Whitespace is collapsed on both sides so an invariant that happens to straddle
+    a line break still matches. Wrapping carries no meaning in these documents, and
+    a red light nobody believes is how 2238745 shipped.
+    """
+    content = " ".join(path.read_text().split())
     for item in strings:
-        if item not in content:
-            fail(f"missing invariant in {path.relative_to(ROOT)}: {item}")
+        if " ".join(item.split()) not in content:
+            record(f"missing invariant in {path.relative_to(ROOT)}: {item}")
+
+
+def skill_ref(tree: Path, name: str) -> str:
+    """Return the skill invocation form that `tree` must use.
+
+    Codex resolves skills as `$name`; Claude Code resolves the plugin-namespaced
+    `/mattpocock-skills:name`. Asserting the sigil rather than the bare name also
+    removes a false positive: bare `/wayfinder` matched the substring inside
+    `references/wayfinder-frontier-loop.md`, so that invariant never tested
+    anything.
+    """
+    return f"${name}" if tree == CODEX_ROOT else f"/mattpocock-skills:{name}"
+
+
 
 
 def check_references(path: Path) -> None:
@@ -102,6 +135,53 @@ def check_pruned_policy() -> None:
             fail(f"retired policy file restored: {path.relative_to(ROOT)}")
 
 
+def check_runtime_boundaries() -> None:
+    """Codex-side files must not carry Claude Code plugin locators.
+
+    `/mattpocock-skills:<name>` only resolves inside Claude Code, where the plugin
+    supplies the skill. A Codex pane fed that string has nothing to resolve it against,
+    so it belongs to the Claude tree only. Owners reach Codex through the three-field
+    dispatch contract in references/owner-skill-resolution.md instead.
+    """
+    locator = re.compile(r"/mattpocock-skills:")
+    for path in sorted(CODEX_ROOT.rglob("*.md")):
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            if locator.search(line):
+                record(
+                    "Claude plugin locator in Codex tree (only resolves in Claude "
+                    "Code; pass owners as absolute SKILL.md paths instead): "
+                    f"{path.relative_to(ROOT)}:{lineno}:{line.strip()}"
+                )
+
+
+def check_owner_dispatch_contract() -> None:
+    """Every dispatch packet must carry the full three-field owner contract.
+
+    The contract exists in references/owner-skill-resolution.md, but a packet that
+    omits the fields lets a child start a stage without a resolved owner. Assert the
+    fields on all packets in both trees, not just the ones that happened to be covered.
+    """
+    for root in (CODEX_ROOT, CLAUDE_ROOT):
+        for packet in sorted((root / "assets").glob("*DISPATCH_PACKET.md")):
+            require(
+                packet,
+                (
+                    "Owner skill name",
+                    "Owner skill SKILL.md：<absolute resolved path>",
+                    "Owner skill invocation label",
+                    "先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path",
+                ),
+            )
+        require(
+            root / "references" / "owner-skill-resolution.md",
+            (
+                # Line-wrapped in the source; match only up to the wrap point.
+                "Missing or mismatched owner path blocks that",
+                "do not silently replace its contract with generic behavior",
+            ),
+        )
+
+
 def main() -> None:
     manifest = json.loads((ROOT / "skill-bundle.json").read_text())
     if manifest.get("format") != "codex-claude-skill-bundle/v1":
@@ -128,30 +208,37 @@ def main() -> None:
 
     common = (
         "idea/map -> discovery -> spec -> implementation tickets",
-        "/wayfinder",
-        "/to-spec",
-        "/to-tickets",
-        "/implement",
         "maximal safe batch",
         "worktree",
         "summary PR/MR",
         "最早未完成",
     )
-    require(CODEX_SKILL, common + ("fresh Codex", "Source owner projectId"))
+    # Stage owners are spelled differently per runtime: Codex resolves `$name`, Claude Code
+    # resolves the plugin locator. See skill_ref, check_runtime_boundaries and
+    # owner-skill-resolution.md.
+    stage_owners = ("wayfinder", "to-spec", "to-tickets", "implement")
+    require(
+        CODEX_SKILL,
+        common
+        + tuple(skill_ref(CODEX_ROOT, name) for name in stage_owners)
+        + ("fresh Codex", "Source owner projectId"),
+    )
     require(
         CLAUDE_SKILL,
         common
+        + tuple(skill_ref(CLAUDE_ROOT, name) for name in stage_owners)
         + (
-            "/herdr",
+            "/pane-dispatch",
             "attached waiter",
         ),
     )
-    for skill in (CODEX_SKILL, CLAUDE_SKILL):
+    for root, skill in ((CODEX_ROOT, CODEX_SKILL), (CLAUDE_ROOT, CLAUDE_SKILL)):
         require(
             skill,
             (
                 "不评估 ticket 大小",
-                "`/to-tickets` 已发布的 tickets 直接作为待分配 execution graph",
+                f"`{skill_ref(root, 'to-tickets')}` 已发布的 tickets 直接作为待分配 "
+                "execution graph",
                 "不增加内容质量或拆票复审 gate",
             ),
         )
@@ -167,7 +254,7 @@ def main() -> None:
                 "discovery -> spec -> tickets",
                 "Stage Ownership",
                 "不得因 ticket 大小",
-                "属于 `/to-tickets` 的产物所有权",
+                f"属于 `{skill_ref(root, 'to-tickets')}` 的产物所有权",
             ),
         )
         require(
@@ -261,10 +348,10 @@ def main() -> None:
     require(
         CLAUDE_ROOT / "references" / "child-monitoring.md",
         (
-            "/herdr",
+            "/pane-dispatch",
             "FINAL_REPORT_END",
             "listener",
-            "running pane 无条件通过 `/herdr` skill 挂到新 lead listener",
+            "running pane 无条件通过 `/pane-dispatch` skill 挂到新 lead listener",
         ),
     )
     require(
@@ -279,6 +366,8 @@ def main() -> None:
     check_references(CODEX_SKILL)
     check_references(CLAUDE_SKILL)
     check_pruned_policy()
+    check_runtime_boundaries()
+    check_owner_dispatch_contract()
 
     metadata = CODEX_ROOT / "agents" / "openai.yaml"
     require(
@@ -294,18 +383,62 @@ def main() -> None:
     install = (ROOT / "scripts" / "install.sh").read_text()
     require(
         ROOT / "scripts" / "install.sh",
-        (
-            "DEPENDENCIES=(wayfinder grilling domain-modeling prototype research "
-            "to-spec to-tickets implement code-review)",
-            'for dep in "${DEPENDENCIES[@]}"',
-            "expose_codex_dependencies",
-            'ln -s "$source" "$dest"',
-        ),
+        # Owners reach workers as dispatcher-resolved absolute paths (03), so
+        # install.sh carries no dependency gate; only the symlink-install
+        # mechanics themselves remain invariant here.
+        ('ln -s "$source" "$dest"',),
     )
 
     subprocess.run(["bash", "-n", str(ROOT / "scripts" / "install.sh")], check=True)
     if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):
-        fail("validator must remain executable")
+        record("validator must remain executable")
+
+    # Check pane-dispatch skill (Claude-only)
+    pane_dispatch_skill = PANE_DISPATCH_CLAUDE / "SKILL.md"
+    if not pane_dispatch_skill.exists():
+        fail("pane-dispatch skill missing in Claude tree")
+
+    pane_dispatch_fm = frontmatter(pane_dispatch_skill)
+    if pane_dispatch_fm.get("name") != "pane-dispatch":
+        fail("pane-dispatch skill name mismatch")
+    if pane_dispatch_fm.get("disable-model-invocation") != "true":
+        fail("pane-dispatch must have disable-model-invocation: true")
+
+    check_references(pane_dispatch_skill)
+
+    # Scan pane-dispatch for pruned policy violations
+    pane_dispatch_files = list(PANE_DISPATCH_CLAUDE.rglob("*.md"))
+    forbidden = (
+        re.compile(r"估时"),
+        re.compile(r"估档"),
+        re.compile(r"不拆理由"),
+        re.compile(r"\bS/M/L/XL\b"),
+        re.compile(r"\bXL\s*票"),
+        re.compile(r"estimate-log", re.IGNORECASE),
+        re.compile(r"ticket-split-coverage", re.IGNORECASE),
+        re.compile(r"split proposal", re.IGNORECASE),
+        re.compile(r"五因子"),
+        re.compile(r"六面普查"),
+        re.compile(r"小型化跳过"),
+        re.compile(r"大小适合"),
+        re.compile(r"route classifier", re.IGNORECASE),
+        re.compile(r"claude-native"),
+        re.compile(r"herdr wait agent-status"),
+        re.compile(r"herdr agent start --cwd"),
+    )
+    hits = []
+    for path in pane_dispatch_files:
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            if any(pattern.search(line) for pattern in forbidden):
+                hits.append(f"{path.relative_to(ROOT)}:{lineno}:{line}")
+    if hits:
+        fail("pane-dispatch contains pruned policy violations:\n" + "\n".join(hits))
+
+    if ERRORS:
+        fail(
+            f"{len(ERRORS)} violation(s):\n"
+            + "\n".join(f"  - {item}" for item in ERRORS)
+        )
     print("bundle: pass")
 
 

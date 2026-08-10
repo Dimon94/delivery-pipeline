@@ -13,7 +13,7 @@ idea/map -> discovery -> spec -> implementation tickets
   -> automatic Codex dispatch -> collect/integrate -> summary PR/MR
 ```
 
-`/mattpocock-skills:wayfinder`、`/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets`、`/mattpocock-skills:implement` 和 `/mattpocock-skills:code-review` 各自拥有自己的产物
+`$wayfinder`、`$to-spec`、`$to-tickets`、`$implement` 和 `$code-review` 各自拥有自己的产物
 质量。本 skill 只识别当前 gate、调用对应 owner、验证持久坐标并自动分配执行。
 
 ## 输入与 Gate
@@ -68,7 +68,7 @@ idea/map -> discovery -> spec -> implementation tickets
 8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。全部通过时加载
    `references/test-decision-and-rebase.md`，暂停在 test decision point，由用户选择：(1) 在 integration
    worktree 测试，(2) rebase 后在 main 测试，(3) 跳过测试直接 push。用户选择后自动 rebase integration
-   branch 到最新 main，检测冲突时委托 `/mattpocock-skills:resolving-merge-conflicts`。Rebase 成功后
+   branch 到最新 main，检测冲突时委托 `$resolving-merge-conflicts`。Rebase 成功后
    push 到 main（默认直接 push，不创建 PR/MR 除非用户明确要求），删除所有 worktrees（integration +
    残留 execution），删除所有 branches（`feature/map-X` + `codex/issue-*`），关闭 Herdr workspace
    所有 panes（保留 workspace），关闭 map issue 并写入 completion comment。获得 remote publication
@@ -79,7 +79,7 @@ idea/map -> discovery -> spec -> implementation tickets
 
 - ready ticket = open、未被 claim、全部 blockers completed。
 - 不评估 ticket 大小、是否需要拆分、描述/验收是否够详细，或这张票“是否合理”；
-  `/mattpocock-skills:to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
+  `$to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
 - dependency 相连、显式文件/可变资源重叠或写集合无法证明独立的 tickets 串行；其余并发。
 - 按 tracker priority、dependency order、issue ID 做确定性选择。
 - 每张 ticket 一个 execution lane、一个 owner、一个 worktree/branch。lane terminal 后由

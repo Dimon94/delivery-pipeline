@@ -14,7 +14,7 @@
    frontier；按 `frontier-lanes.md` 选择 maximal safe batch，用
    `WAYFINDER_TICKET_DISPATCH_PACKET.md` 通过 `Agent` tool 自动创建并行 subagents。
    `Research` subagent 必须走 `research` owner 路线并返回 `research/<name>` branch +
-   Markdown context pointer；不得统一改走 `/mattpocock-skills:wayfinder`。已 assigned 的 research ticket 不在
+   Markdown context pointer；不得统一改走 `$wayfinder`。已 assigned 的 research ticket 不在
    frontier 内，先读回 owner 坐标，不重复派发。
    `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；没有可参与的用户线程时，
    生成对应 prompt/worker 坐标并停止为 `ask-user`。
@@ -31,15 +31,11 @@
   in-scope Not yet specified fog；停止后回到 coordinator 并进入 `spec` gate；
 - frontier query 为 0，但仍有 open blocked child issues；这不是 route 条件，停在
   discovery 的 blocked/waiting 状态，列出阻塞票和前置票；
-- 下一个 frontier child issue 是 `wayfinder:prototype`、`wayfinder:grilling`、
-  HITL `wayfinder:task`，或需要实时用户判断；加载
-  `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`，输出一个用于完整 HITL 会话的
-  已填写 brief，让 successor 在用户反馈后继续作为 owner。不要每个问题创建一个 task；
 - child 报告 `ask-user`、`blocked` 或 `Unknown`；
 - 两个 tasks 编辑了同一个 child issue，或留下冲突 tracker state。
 
 对非判断类 tickets，`Agent` tool 可用时自动并发派发为后台 subagents；不可用时输出所有
 ready work 的 durable briefs，coordinator 不亲自执行任何 work item。
 
-coordinator 负责 frontier、fan-in 和下一 gate；subagents 不进入 `/mattpocock-skills:to-spec`、
-`/mattpocock-skills:to-tickets` 或 `/mattpocock-skills:implement`。
+coordinator 负责 frontier、fan-in 和下一 gate；subagents 不进入 `$to-spec`、
+`$to-tickets` 或 `$implement`。

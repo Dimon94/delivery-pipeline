@@ -7,8 +7,8 @@
 
 - coordinator：链路重建、当前 gate、用户问题、ready frontier、integration、remote closeout。
 - discovery worker：一个 Wayfinder decision ticket。
-- spec worker：一次 `/mattpocock-skills:to-spec` 调用及其持久 spec。
-- ticket worker：一次 `/mattpocock-skills:to-tickets` 调用及其已发布 ticket graph。
+- spec worker：一次 `$to-spec` 调用及其持久 spec。
+- ticket worker：一次 `$to-tickets` 调用及其已发布 ticket graph。
 - execution worker：一张 implementation ticket、一个 worktree、一个 commit/report。
 
 每个 owner 的输出必须写入 tracker、artifact、Git 或 PR/MR，下一会话才能 readback。

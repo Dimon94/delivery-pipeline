@@ -2,6 +2,8 @@
 
 每张 ready implementation ticket 填写一个 packet，并派给一个独立 execution worktree 的 fresh Codex task。
 
+**Agent kind**：`codex`（implementation tickets 使用 Codex 引擎执行）
+
 ```text
 Coordinator task：
 Source owner projectId：

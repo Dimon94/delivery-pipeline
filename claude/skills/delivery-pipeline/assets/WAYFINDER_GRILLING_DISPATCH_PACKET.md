@@ -5,6 +5,10 @@ HITL `wayfinder:task` child issue，或任何需要实时用户判断的 discove
 时，填写这个 packet。一个 HITL child issue 对应一个用户运行的 pane，承载
 完整真人反馈会话；不要每个问题开一个 pane。
 
+**Agent kind**：`claude`（HITL tickets 必须使用 Claude Code 引擎）
+
+**Tab placement**：G tab（grilling/规划）或 P tab（prototype）
+
 ```text
 项目：
 Lead pane：
@@ -58,7 +62,7 @@ HITL 目标：
 - 禁止范围：
 
 执行规则：
-- 使用独立 worker pane（由 `/herdr` skill 管理）。
+- 本 packet 由 lead 填写并通过 `/pane-dispatch` 投递进新建的 worker pane。
 - 需要分支时，只在本 worktree 目录内创建/切换；不要切换主目录/source worktree 的分支。
 - 如果 ticket 仍 open 且 unassigned，先 assign 给自己并读回确认；如果已分配给
   别的 pane/dev，停止并报告 blocker。

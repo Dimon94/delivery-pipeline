@@ -4,7 +4,7 @@
 
 ```text
 Lead pane：
-Pane location：<由 /herdr skill 管理>
+Pane location：<由 /pane-dispatch skill 管理>
 当前 gate：spec | tickets | review | evidence
 输入 issue：
 Wayfinder map：<url | none>

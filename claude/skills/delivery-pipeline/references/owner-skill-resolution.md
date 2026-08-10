@@ -11,7 +11,11 @@ Before entering a stage, resolve its owner to a real `SKILL.md`:
 2. Otherwise check `${CLAUDE_HOME:-$HOME/.claude}/skills/<name>/SKILL.md`.
 3. Otherwise check `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`.
 4. Otherwise check `${AGENTS_HOME:-$HOME/.agents}/skills/<name>/SKILL.md`.
-5. Resolve symlinks to an absolute path, read the file completely, and verify frontmatter
+5. Otherwise probe the installed Claude Code plugin trees, deepest-last:
+   `${CLAUDE_HOME:-$HOME/.claude}/plugins/marketplaces/*/skills/*/<name>/SKILL.md`.
+   Best effort only — this is plugin-internal layout, not a published contract, so treat a
+   miss as a missing owner and fail closed rather than guessing a path.
+6. Resolve symlinks to an absolute path, read the file completely, and verify frontmatter
    `name: <name>`.
 
 Resolve only the owner needed by the current gate. Missing or mismatched owner path blocks that

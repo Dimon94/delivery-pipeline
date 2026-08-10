@@ -16,8 +16,9 @@
    `Research` subagent 必须走 `research` owner 路线并返回 `research/<name>` branch +
    Markdown context pointer；不得统一改走 `/mattpocock-skills:wayfinder`。已 assigned 的 research ticket 不在
    frontier 内，先读回 owner 坐标，不重复派发。
-   `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；没有可参与的用户 pane 时，
-   生成对应 prompt/worker 坐标并停止为 `ask-user`。
+   `Prototype`、`Grilling` 和 HITL `Task` 通过 `/pane-dispatch` 创建 pane（G/P tab，`--kind claude`），
+   使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 派发，挂载 listener 等待 terminal。
+   每次派发 HITL pane 后，lead 必须输出明确的 pane 坐标提醒（形如 `#02 grilling → w48:p7`）。
 4. 派发后 subagent 在后台运行（`run_in_background: true`）；lead 进入
    `child-monitoring.md` 等待 Agent tool 完成通知；不读取 routine progress。
 5. 每个 subagent 完成通知只读一次 final report，更新对应 ticket/artifact，然后重读 map 与
@@ -32,10 +33,9 @@
   in-scope Not yet specified fog；停止后回到 lead 并进入 `spec` gate；
 - frontier query 为 0，但仍有 open blocked child issues；这不是 route 条件，停在
   discovery 的 blocked/waiting 状态，列出阻塞票和前置票；
-- 下一个 frontier child issue 是 `wayfinder:prototype`、`wayfinder:grilling`、
-  HITL `wayfinder:task`，或需要实时用户判断；加载
-  `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`，输出一个用于完整 HITL 会话的
-  已填写 prompt，然后等待 returned handoff 再继续。不要每个问题创建一个 prompt；
+- frontier 只剩已派发的 HITL panes（grilling、prototype、HITL task），且没有其他 ready work；
+  停止为 `ask-user`，输出等待中的 HITL panes 清单（ticket + pane 坐标），结束当前回合但保持
+  listeners 挂载。HITL pane terminal 后恢复 frontier loop；
 - subagent 报告 `ask-user`、`blocked` 或 `Unknown` 时只暂停对应 item；若其他 ready work 存在则继续；
 - 两个 subagents 编辑了同一个 child issue，或留下冲突 tracker state。
 

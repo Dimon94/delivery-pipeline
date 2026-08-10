@@ -27,7 +27,7 @@ idea/map -> discovery -> spec -> implementation tickets
 
 **Discovery gate：** 松散想法调用 `wayfinder` 建图，AFK decision tickets
 （research、task）自动派发为后台 subagents（`Agent` tool, `run_in_background: true`），
-HITL tickets（grilling、prototype）通过 `/herdr` 创建 pane。完成标准：
+HITL tickets（grilling、prototype）通过 `/pane-dispatch` 创建 pane。完成标准：
 所有 decision issues 已关闭，resolution 可读回。参考 `references/wayfinder-frontier-loop.md`。
 
 **Spec gate：** 无已批准 spec 时调用 `to-spec` owner。完成标准：
@@ -40,7 +40,7 @@ spec 回链和 dependency edges 可读回。`/mattpocock-skills:to-tickets` 已�
 **Dispatch gate：** 从 dependency graph 重算 ready frontier，选择无 mutable-resource
 冲突的 maximal safe batch。从 integration worktree 为每张 ready ticket 创建 execution worktree
 （`<parent>/worktrees/<repo>-map-<M>-issue-<N>/`，branch `codex/issue-<N>`），
-通过 `/herdr` 创建 Codex pane（X tabs，4-pane capacity），派发 `implement` owner packet。
+通过 `/pane-dispatch` 创建 Codex pane（X tabs，4-pane capacity），派发 `implement` owner packet。
 完成标准：registry 已 readback pane ID、worktree path、branch、base commit 和 attached waiter。
 参考 `references/frontier-lanes.md`、`references/integration-worktree-management.md`。
 
@@ -77,7 +77,7 @@ worker 不自领 sibling tickets。
 `references/lane-registry.md`。
 
 **Fallback 模式：** `Agent` tool 不可用时输出完整 packets 作为 copy-paste fallback；
-不假装已派发。`HERDR_ENV` 不可用或 `/herdr` 找不到 workspace 时，HITL panes 同理。
+不假装已派发。`HERDR_ENV` 不可用或 `/pane-dispatch` 找不到 workspace 时，HITL panes 同理。
 
 ## 真相源
 

@@ -8,9 +8,11 @@ catalog. A bare `$implement` or `$to-spec` string is not proof that the skill wa
 Before entering a stage, resolve its owner to a real `SKILL.md`:
 
 1. Use the exact locator from the current session’s available-skills catalog when present.
-2. Otherwise check `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`.
-3. Otherwise check `${AGENTS_HOME:-$HOME/.agents}/skills/<name>/SKILL.md`.
-4. Resolve symlinks to an absolute path, read the file completely, and verify frontmatter
+2. Otherwise use the absolute path the dispatching packet already resolved for you — a Codex
+   pane is not required to hold a local copy of the owner.
+3. Otherwise check `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`.
+4. Otherwise check `${AGENTS_HOME:-$HOME/.agents}/skills/<name>/SKILL.md`.
+5. Resolve symlinks to an absolute path, read the file completely, and verify frontmatter
    `name: <name>`.
 
 Resolve only the owner needed by the current gate. Missing or mismatched owner path blocks that

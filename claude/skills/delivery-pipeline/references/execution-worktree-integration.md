@@ -154,7 +154,7 @@ registry 已更新为 `integrated` state。
    cleanup_at: <ISO-8601-timestamp>
    ```
 
-4. 关闭 Herdr pane（通过 `/herdr` skill）：
+4. 关闭 Herdr pane（通过 `/pane-dispatch` skill）：
    - 从 registry 读取 `herdr_pane_id` 或从 workspace 查找
    - 调用 `herdr pane close <pane-id>`
    - 如果 close 失败，标记为 `pane_close_pending`，不阻塞其他 tickets

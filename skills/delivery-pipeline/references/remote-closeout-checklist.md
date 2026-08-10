@@ -17,7 +17,7 @@ scope 时才读取本文件。
 - 只把已验证 lane commits 按依赖拓扑 cherry-pick 或以其他方式集成到 integration branch。
 - 每集成一个 lane checkpoint 后，运行对应 issue 的 focused verification，并重算 frontier。
 - batch 完成后，运行能证明 spec acceptance 的最小 whole-change check。
-- remote submission 前运行 `/mattpocock-skills:code-review` 或 repo-native review gate。
+- remote submission 前运行 `$code-review` 或 repo-native review gate。
 - 如果 review gate 要并行 sub-agents，优先用 `spawn_agent`。
 - 如果指定 `agent_type`，不要同时做 full-history/context fork。使用 no-context spawn
   或 `fork_context: false`，并显式传入完整 review 包：base commit、integrated diff、
