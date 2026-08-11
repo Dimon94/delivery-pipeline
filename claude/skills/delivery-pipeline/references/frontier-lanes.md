@@ -29,19 +29,21 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Execution Lanes
 
-- maximal safe batch 中每张 implementation ticket 创建一个 fresh Codex pane。
+- maximal safe batch 中每张 implementation ticket 创建一个 fresh execution pane。
 - 每张票先创建并验证独立 worktree（Git），再以该 worktree 作为 pane cwd。
-- 通过 `/pane-dispatch` skill 创建 X tab pane，**必须使用 `--kind codex`**。
-  使用 `CODEX_PANE_DISPATCH_PACKET.md` 模板（已内置 `--kind codex`）。
-- Codex pane 只运行该 ticket 的 `/mattpocock-skills:implement`、focused checks、review 和 commit。
+- 通过 `/pane-dispatch` skill 创建 X tab pane；`--kind` 与 packet 模板按下方
+  「Agent Kind 绑定规则」分流。
+- Execution pane 只运行该 ticket 的 `/mattpocock-skills:implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 lead 重算下一 batch。
 - 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。
 
 ## Agent Kind 绑定规则
 
-**Packet 模板选择**（按 ticket label 查表）：
+**Packet 模板选择**（按 ticket label 与 domain 查表）：
 - `wayfinder:grilling`、`wayfinder:prototype` → `WAYFINDER_GRILLING_DISPATCH_PACKET.md`（内置 `--kind claude`）
-- implementation tickets → `CODEX_PANE_DISPATCH_PACKET.md`（内置 `--kind codex`）
+- implementation tickets 按 domain 分流：
+  - 前端与设计（UI 页面、组件、样式、交互）→ `CLAUDE_PANE_DISPATCH_PACKET.md`（内置 `--kind claude`）
+  - 后端及其余 → `CODEX_PANE_DISPATCH_PACKET.md`（内置 `--kind codex`）
 
 **Tab-Kind 交叉验证**：
 - G tab（grilling/规划）、P tab（prototype）、R tab（research）→ 必须 `--kind claude`

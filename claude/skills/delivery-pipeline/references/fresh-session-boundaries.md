@@ -18,8 +18,8 @@ commit、listener owner 和 lifecycle state。
 
 ## Pane Boundaries
 
-- design worker 可以按 ticket 类型使用相应 workflow；implementation ticket 固定派给
-  Codex pane。
+- design worker 可以按 ticket 类型使用相应 workflow；implementation ticket 按
+  `frontier-lanes.md` 绑定规则派给 Claude 或 Codex pane。
 - 每张 implementation ticket 先创建并验证独立 Git worktree，再把该路径传递给
   `/pane-dispatch` skill 作为 pane cwd。
 - source worktree 保持当前 branch。

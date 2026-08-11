@@ -6,7 +6,7 @@
 
 ```text
 idea/map -> discovery -> spec -> implementation tickets
-  -> 自动分配 Codex worktrees -> integration -> summary PR/MR
+  -> 自动分配 worktrees -> integration -> summary PR/MR
 ```
 
 新会话里给出链路中的任意 issue 即可。skill 会沿 tracker relationships 向上、向下重建
@@ -16,11 +16,12 @@ map/spec/ticket 状态，并从最早未完成的 gate 自动继续。
 负责发布 implementation tickets，`implement` 负责单张票。orchestrator 只验证持久链接和
 状态转换，不再增加第二套票面判断。
 
-执行自动分配：每张 ready ticket 对应一个隔离的 Codex worker 和一个 Git worktree。
+执行自动分配：每张 ready ticket 对应一个隔离的 worker 和一个 Git worktree——前端与设计走
+Claude Code，后端走 Codex。
 dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 每个被派发的 child 都保存 pane/thread ID、worktree、branch、commit 和生命周期状态。
 新会话会先恢复已有 child 并重挂 terminal listener。Claude 在集成与 focused checks 成功后
-自动关闭对应 Codex pane。
+自动关闭对应 worker pane。
 派发包会携带 owner skill 的 resolved `SKILL.md` 路径，因此用户调用型 stage owner 不依赖
 子任务当前加载的 skill catalog。
 

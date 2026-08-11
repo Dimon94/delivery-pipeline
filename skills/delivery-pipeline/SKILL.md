@@ -1,6 +1,6 @@
 ---
 name: delivery-pipeline
-description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ticket graph through discovery, spec and ticket publication, automatic Codex worktree dispatch, integration, and one summary PR/MR.
+description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ticket graph through discovery, spec and ticket publication, automatic worktree dispatch, integration, and one summary PR/MR.
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 ```text
 idea/map -> discovery -> spec -> implementation tickets
-  -> automatic Codex dispatch -> collect/integrate -> summary PR/MR
+  -> automatic dispatch -> collect/integrate -> summary PR/MR
 ```
 
 `$wayfinder`、`$to-spec`、`$to-tickets`、`$implement` 和 `$code-review` 各自拥有自己的产物
@@ -50,8 +50,9 @@ idea/map -> discovery -> spec -> implementation tickets
    完成标准：至少一张真实 ticket 的 ID、spec 回链和 dependency edges 可读回。
 5. **Dispatch execution。** 加载 `references/frontier-lanes.md`、`references/integration-worktree-management.md`、
    `assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
-   选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票：
-   先从 integration worktree 创建 execution worktree（path: `<source-parent>/worktrees/<repo>-map-<M>-issue-<N>/`，
+   选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票先按
+   `references/frontier-lanes.md` 绑定规则分流：前端与设计 ticket 交 Claude Code 侧处理并由该侧登记；
+   后端 ticket：先从 integration worktree 创建 execution worktree（path: `<source-parent>/worktrees/<repo>-map-<M>-issue-<N>/`，
    branch: `codex/issue-<N>` based on integration branch），验证 Git state（worktree registered、branch correct、
    working tree clean），创建 fresh Codex task 和 Herdr pane（X tabs，4-pane capacity，tab label
    自动更新），投递完整 dispatch packet；coordinator 不亲自实现。完成标准：ticket 的 durable registry

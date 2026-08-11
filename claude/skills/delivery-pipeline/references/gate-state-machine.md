@@ -21,7 +21,7 @@
 | `discovery` | map 与 decision child issues | 所有 in-scope child issues closed；resolution 与 artifacts 可读回 |
 | `spec` | published spec issue | spec URL/ID、source map link 和 body 可读回 |
 | `tickets` | published implementation tickets | 至少一张 ticket 的 ID、spec `Parent` 回链和 dependency edges 可读回 |
-| `dispatch` | ticket dependency graph | ready frontier 已派给独立 Codex worktree panes；冲突/blocked tickets 有原因 |
+| `dispatch` | ticket dependency graph | ready frontier 已派给独立 worktree panes（kind 按绑定规则）；冲突/blocked tickets 有原因 |
 | `execute` | worker packets、worktrees | 每个 terminal worker 有 commit/checks/dirty-state report |
 | `collect` | terminal reports | completed commits 已验证；blocked 只影响对应 ticket |
 | `integrate` | verified commits | commits 按 dependency order 集成；每次集成后 focused checks 通过 |

@@ -9,7 +9,7 @@ The user's primary working directory, typically checked out to `main` branch. Th
 A dedicated Git worktree created for one Wayfinder map's entire lifecycle (discovery → spec → tickets → implementation → integration). Lives at `<source-parent>/worktrees/<repo-name>-map-<issue-number>/` on branch `feature/map-<issue-number>`. Serves as the integration point for all implementation tickets belonging to that map. Automatically created when a map is launched from source worktree. Deleted after successful merge to main.
 
 **Execution Worktree**
-A dedicated Git worktree created for one implementation ticket's work. Lives at `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/` on branch `codex/issue-<ticket-number>`. Based on the map's integration worktree branch, not main. Contains a single ticket's changes. Cherry-picked to map integration worktree upon completion, then deleted.
+A dedicated Git worktree created for one implementation ticket's work. Lives at `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/` on branch `codex/issue-<ticket-number>` (Codex lane) or `claude/issue-<ticket-number>` (Claude lane). Based on the map's integration worktree branch, not main. Contains a single ticket's changes. Cherry-picked to map integration worktree upon completion, then deleted.
 
 **Integration**
 The process of collecting completed execution worktree commits into the map integration worktree via `git cherry-pick`. Happens incrementally as tickets complete. Distinct from merging to main.
@@ -32,22 +32,23 @@ Multiple Wayfinder maps running simultaneously, each with its own integration wo
 Creation → work → integration/merge → deletion. Execution worktrees: created at dispatch, deleted after cherry-pick. Integration worktrees: created at map start, deleted after push to main. Failed/blocked worktrees: deleted immediately to avoid pollution.
 
 **Herdr Workspace**
-A Herdr terminal multiplexer workspace corresponding to one map. Label matches `map-<issue-number>`. Created/renamed automatically when map integration worktree is created. Only HITL panes (grilling, prototype) and execution Codex panes land in this workspace. Preserved (not deleted) after map completes, for history access.
+A Herdr terminal multiplexer workspace corresponding to one map. Label matches `map-<issue-number>`. Created/renamed automatically when map integration worktree is created. Only HITL panes (grilling, prototype) and execution panes land in this workspace. Preserved (not deleted) after map completes, for history access.
 
 **Subagent (Discovery)**
 A background `Agent` tool subagent that handles one AFK discovery ticket (research or automatic task). Runs autonomously — no Herdr pane created, no pane resources consumed. Reports results via Agent tool completion notification. Results committed to `research/<ticket-name>` branch and written as ticket resolution comment.
 
 **Dispatch Model**
-- Panes = interactive work requiring user feedback loop (grilling, prototype, HITL task) + Codex execution panes.
+- Panes = interactive work requiring user feedback loop (grilling, prototype, HITL task) + execution panes.
+- Execution pane kind routes by ticket domain: frontend/design tickets → Claude pane (default model), backend tickets → Codex pane. The binding table lives in `references/frontier-lanes.md`.
 - Subagents = autonomous background work that reports results (research, AFK task).
 - Research and AFK tasks do not occupy Herdr tabs — they run as parallel subagents and report back to the lead session.
 
 ## Relationships
 
 - One map → one integration worktree → one Herdr workspace
-- One map → many implementation tickets → many execution worktrees → many Codex panes
+- One map → many implementation tickets → many execution worktrees → many execution panes
 - One map → many discovery tickets → many subagents (no panes)
-- One execution worktree → one Codex pane (in map's Herdr workspace)
+- One execution worktree → one execution pane (in map's Herdr workspace)
 - Execution worktrees branch from integration worktree, not from main
 - Integration worktree eventually rebases to main (not merge)
 - Multiple maps run concurrently, isolated by separate integration worktrees

@@ -29,8 +29,9 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Execution Lanes
 
-- maximal safe batch 中每张 implementation ticket 创建一个 fresh Codex task。
-- 每个 task 使用独立 worktree/branch，**必须使用 `--kind codex`**。
+- maximal safe batch 中每张 implementation ticket 按下方绑定规则分流：前端与设计 ticket 交
+  Claude Code 侧处理；后端 ticket 创建一个 fresh Codex task。
+- 每个 Codex task 使用独立 worktree/branch，**必须使用 `--kind codex`**。
   使用 `ISSUE_IMPLEMENT_DISPATCH_PACKET.md` 模板（已内置 `--kind codex`）。
 - 只运行该 ticket 的 `$implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 coordinator 重算下一 batch。
@@ -38,9 +39,11 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Agent Kind 绑定规则
 
-**Packet 模板选择**（按 ticket label 查表）：
+**Packet 模板选择**（按 ticket label 与 domain 查表）：
 - `wayfinder:grilling`、`wayfinder:prototype` → Claude Code 侧处理（`--kind claude`）
-- implementation tickets → `ISSUE_IMPLEMENT_DISPATCH_PACKET.md`（内置 `--kind codex`）
+- implementation tickets 按 domain 分流：
+  - 前端与设计（UI 页面、组件、样式、交互）→ Claude Code 侧处理（`--kind claude`）
+  - 后端及其余 → `ISSUE_IMPLEMENT_DISPATCH_PACKET.md`（内置 `--kind codex`）
 
 **Fail-closed 原则**：
 - Packet 缺少 `--kind` 参数时，拒绝派发并报错

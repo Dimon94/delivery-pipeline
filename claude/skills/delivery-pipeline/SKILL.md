@@ -1,6 +1,6 @@
 ---
 name: delivery-pipeline
-description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ticket graph through discovery, spec and ticket publication, automatic Codex worktree dispatch, integration, and one summary PR/MR.
+description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ticket graph through discovery, spec and ticket publication, automatic worktree dispatch, integration, and one summary PR/MR.
 ---
 
 # Delivery Pipeline for Claude
@@ -9,7 +9,7 @@ description: Orchestrate a loose idea, Wayfinder map, spec, or implementation ti
 
 ```text
 idea/map -> discovery -> spec -> implementation tickets
-  -> automatic Codex dispatch -> collect/integrate -> summary PR/MR
+  -> automatic dispatch -> collect/integrate -> summary PR/MR
 ```
 
 `/mattpocock-skills:wayfinder`、`/mattpocock-skills:to-spec`、`/mattpocock-skills:to-tickets`、`/mattpocock-skills:implement` 和 `/mattpocock-skills:code-review` 各自拥有自己的产物
@@ -39,8 +39,8 @@ spec 回链和 dependency edges 可读回。`/mattpocock-skills:to-tickets` 已�
 
 **Dispatch gate：** 从 dependency graph 重算 ready frontier，选择无 mutable-resource
 冲突的 maximal safe batch。从 integration worktree 为每张 ready ticket 创建 execution worktree
-（`<parent>/worktrees/<repo>-map-<M>-issue-<N>/`，branch `codex/issue-<N>`），
-通过 `/pane-dispatch` 创建 Codex pane（X tabs，4-pane capacity），派发 `implement` owner packet。
+（`<parent>/worktrees/<repo>-map-<M>-issue-<N>/`），按 `references/frontier-lanes.md` 绑定规则
+分流 kind 与 packet 模板，通过 `/pane-dispatch` 创建 pane（X tabs，4-pane capacity），派发 `implement` owner packet。
 完成标准：registry 已 readback pane ID、worktree path、branch、base commit 和 attached waiter。
 参考 `references/frontier-lanes.md`、`references/integration-worktree-management.md`。
 
@@ -69,7 +69,7 @@ push 到 main，删除所有 worktrees/branches，关闭 panes（保留 workspac
 
 **Worker 隔离：** 每张 ticket 一个 lane、一个 owner、一个 worktree/branch。
 Discovery AFK tickets 用 `Agent` tool subagent + 可选 worktree；implementation tickets
-用 Codex pane + 必需 worktree。Lane terminal 后由 coordinator 重算下一批，
+用 execution pane（claude 或 codex）+ 必需 worktree。Lane terminal 后由 coordinator 重算下一批，
 worker 不自领 sibling tickets。
 
 **Session recovery：** 新会话从 durable lane registry 恢复 existing lanes，

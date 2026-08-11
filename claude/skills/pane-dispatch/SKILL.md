@@ -91,10 +91,10 @@ herdr agent start <agent-name> \
   --pane <pane-id> \
   --cwd <worktree-path> \
   --no-focus \
-  -- --dangerously-skip-permissions --model claude-fable-5
+  -- --dangerously-skip-permissions
 ```
 
-注：G/D/R tab（判断密集型）追加 `--model claude-fable-5`；X/P tab 不追加 model 参数。
+注：Claude pane 一律使用默认模型。
 
 **Codex pane**：
 ```bash
