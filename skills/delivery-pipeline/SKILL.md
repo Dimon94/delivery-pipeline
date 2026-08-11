@@ -39,7 +39,7 @@ idea/map -> discovery -> spec -> implementation tickets
 2. **Run discovery。** 加载 `references/wayfinder-frontier-loop.md`、
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
-   松散想法先调用 `wayfinder` owner 建图，随后自动派发 ready AFK decision tickets（HITL 只阻塞自身）。
+   松散想法先调用 `wayfinder` owner 建图（建图拷问在当前会话进行，不派发），随后自动派发 ready AFK decision tickets（HITL 只阻塞自身）。
    完成标准：所有 in-scope child issues closed、resolution 与 artifacts 可读回。
 3. **Generate spec。** 如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
    提案、用户判断和发布流程。交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。

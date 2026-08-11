@@ -25,7 +25,7 @@ idea/map -> discovery -> spec -> implementation tickets
 `references/gate-state-machine.md`、`references/fresh-session-boundaries.md`、
 `references/lane-registry.md`。
 
-**Discovery gate：** 松散想法调用 `wayfinder` 建图，AFK decision tickets
+**Discovery gate：** 松散想法调用 `wayfinder` 建图（建图拷问在当前会话进行，不派发），AFK decision tickets
 （research、task）自动派发为后台 subagents（`Agent` tool, `run_in_background: true`），
 HITL tickets（grilling、prototype）通过 `/pane-dispatch` 创建 pane。完成标准：
 所有 decision issues 已关闭，resolution 可读回。参考 `references/wayfinder-frontier-loop.md`。
