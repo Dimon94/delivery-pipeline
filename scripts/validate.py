@@ -23,6 +23,8 @@ DEPENDENCIES = [
     "to-tickets",
     "implement",
     "code-review",
+    "resolving-merge-conflicts",
+    "herdr",
 ]
 
 

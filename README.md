@@ -29,17 +29,45 @@ succeed.
 Delegated children receive the owner skill's resolved `SKILL.md` path, so
 user-invoked stage owners do not depend on the child task's active skill catalog.
 
+## Dependencies
+
+**Runtimes** — Claude Code, Codex, or both (dual-runtime bundle; single-side installs work).
+
+**Owner skills** — all from [mattpocock-skills](https://github.com/mattpocock/skills). The machine-readable list lives in `skill-bundle.json` (`requires`); the installer diagnoses missing ones:
+
+- Discovery: `wayfinder`, `grilling`, `domain-modeling`, `prototype`, `research`
+- Delivery: `to-spec`, `to-tickets`, `implement`, `code-review`
+- Integration/closeout: `resolving-merge-conflicts`
+
+**Herdr** — the terminal multiplexer that hosts dispatched sessions (CLI + `herdr` skill). A separate component, not bundled; install it per its own documentation before using pane dispatch.
+
 ## Install
 
-Install the dependencies listed in `skill-bundle.json`, then:
-
-```bash
-./scripts/install.sh --target all
-```
-
-Both installations are symlinked to this checkout.
+1. Install the owner skills.
+   - Claude Code: `/plugin install mattpocock-skills@claude-plugins-official`
+   - Codex: clone the source repo and symlink each owner into the skills home:
+     ```bash
+     git clone https://github.com/mattpocock/skills && cd skills
+     for s in wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review resolving-merge-conflicts; do
+       ln -s "$(find "$PWD/skills" -maxdepth 2 -type d -name "$s")" "${AGENTS_HOME:-$HOME/.agents}/skills/$s"
+     done
+     ```
+2. Install this bundle — both sides symlink to this checkout, plus the pre-commit validator:
+   ```bash
+   ./scripts/install.sh --target all
+   ```
+   The installer ends with a dependency-availability diagnostic (owner skills + Herdr CLI/skill); a `MISSING` line names something still to install.
+3. Before first use in a project repo, run the `setup-matt-pocock-skills` skill there once — it configures the issue tracker, triage labels, and domain docs the owner skills assume.
 
 ## Use
+
+Invoke with any node of the chain — the skill rebuilds the link from tracker relationships and resumes at the earliest incomplete gate, so work joins at any stage:
+
+1. **Discovery** — a loose idea becomes a Wayfinder map (map-creation grilling stays in the current session, never dispatched). Research tickets run as background subagents; grilling and prototype tickets get dedicated Claude panes.
+2. **Spec → tickets** — `to-spec` publishes the spec; `to-tickets` publishes linked implementation tickets.
+3. **Dispatch** — each implementation ticket gets one worktree and one execution pane: frontend/design tickets on Claude Code (default model), backend tickets on Codex.
+4. **Hand-off and fan-in** — dispatched sessions run autonomously (HITL tickets talk to the user directly). When one terminals, its listener wakes the dispatcher, which verifies the final report, integrates the commit, and dispatches the next batch.
+5. **Closeout** — after the graph empties: rebase, push, and one summary PR/MR.
 
 Codex:
 

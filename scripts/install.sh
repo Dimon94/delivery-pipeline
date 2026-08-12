@@ -22,7 +22,7 @@ Installs $SKILL_NAME to one or both (all targets symlink to this checkout):
   \${CODEX_HOME:-~/.codex}/skills/$SKILL_NAME
   \${CLAUDE_HOME:-~/.claude}/skills/$SKILL_NAME
 
-Ends with a non-blocking owner-availability diagnostic. Owners resolve at
+Ends with a non-blocking dependency-availability diagnostic. Owners resolve at
 runtime via references/owner-skill-resolution.md; no local copies required.
 EOF
 }
@@ -147,7 +147,7 @@ install_claude_pane_dispatch() {
 # resolution chain (plugin cache, CODEX_HOME, AGENTS_HOME); the session
 # catalog step is only visible to the runtime, not to a shell script.
 report_owner_availability() {
-  echo "Owner availability (diagnostic only, never blocks):"
+  echo "Dependency availability (diagnostic only, never blocks):"
   if ! command -v python3 >/dev/null 2>&1; then
     echo "  skipped: python3 not available to read skill-bundle.json requires"
     return 0
@@ -165,7 +165,8 @@ with open("'"$ROOT"'/skill-bundle.json") as fh:
   local name found
   for name in $names; do
     found=()
-    compgen -G "$CLAUDE_HOME_DIR/plugins/cache/mattpocock/mattpocock-skills/*/skills/*/$name/SKILL.md" >/dev/null && found+=("plugin-cache")
+    compgen -G "$CLAUDE_HOME_DIR/plugins/cache/*/mattpocock-skills/*/skills/*/$name/SKILL.md" >/dev/null && found+=("plugin-cache")
+    [ -f "$CLAUDE_HOME_DIR/skills/$name/SKILL.md" ] && found+=("claude-home")
     [ -f "$CODEX_HOME_DIR/skills/$name/SKILL.md" ] && found+=("codex-home")
     [ -f "$AGENTS_HOME_DIR/skills/$name/SKILL.md" ] && found+=("agents-home")
     if [ "${#found[@]}" -gt 0 ]; then
@@ -174,6 +175,9 @@ with open("'"$ROOT"'/skill-bundle.json") as fh:
       printf '  %s\tMISSING\n' "$name"
     fi
   done
+  command -v herdr >/dev/null 2>&1 \
+    && printf '  %s\t%s\n' "herdr CLI" "$(command -v herdr)" \
+    || printf '  %s\tMISSING\n' "herdr CLI"
 }
 
 case "$TARGET" in

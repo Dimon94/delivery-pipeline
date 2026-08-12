@@ -25,17 +25,45 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 派发包会携带 owner skill 的 resolved `SKILL.md` 路径，因此用户调用型 stage owner 不依赖
 子任务当前加载的 skill catalog。
 
+## 依赖
+
+**运行时** —— Claude Code、Codex 或两者（双端 bundle，可只装一端）。
+
+**Owner skills** —— 全部来自 [mattpocock-skills](https://github.com/mattpocock/skills)。机器可读清单在 `skill-bundle.json` 的 `requires`，安装器会诊断缺失项：
+
+- Discovery：`wayfinder`、`grilling`、`domain-modeling`、`prototype`、`research`
+- 交付：`to-spec`、`to-tickets`、`implement`、`code-review`
+- 集成/收尾：`resolving-merge-conflicts`
+
+**Herdr** —— 承载派出会话的终端 multiplexer（CLI + `herdr` skill）。独立组件，本仓库不附带；使用 pane 派发前按其自身文档安装。
+
 ## 安装
 
-先安装 `skill-bundle.json` 中的依赖，然后运行：
-
-```bash
-./scripts/install.sh --target all
-```
-
-Codex 和 Claude 安装都会软链接到当前 checkout。
+1. 安装 owner skills。
+   - Claude Code：`/plugin install mattpocock-skills@claude-plugins-official`
+   - Codex：clone 源仓库，把每个 owner 软链进 skills 目录：
+     ```bash
+     git clone https://github.com/mattpocock/skills && cd skills
+     for s in wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review resolving-merge-conflicts; do
+       ln -s "$(find "$PWD/skills" -maxdepth 2 -type d -name "$s")" "${AGENTS_HOME:-$HOME/.agents}/skills/$s"
+     done
+     ```
+2. 安装本 bundle——两端都软链到当前 checkout，并附带 pre-commit 校验器：
+   ```bash
+   ./scripts/install.sh --target all
+   ```
+   安装器末尾输出依赖可用性诊断（owner skills + Herdr CLI/skill）；任何 `MISSING` 行就是还没装的组件。
+3. 在某个项目 repo 首次使用前，先在那里运行一次 `setup-matt-pocock-skills` skill，配置 owner skills 依赖的 issue tracker、triage 标签和 domain 文档。
 
 ## 使用
+
+用链路中的任意节点启动——skill 会沿 tracker 关系重建链路，从最早未完成的 gate 继续，所以任何阶段的 map 都能接入：
+
+1. **Discovery**——松散想法建成 Wayfinder map（建图拷问在当前会话进行，不派发）。调研票派后台 subagent，拷问票和原型票派独立 Claude pane。
+2. **Spec → Tickets**——`to-spec` 发布 spec；`to-tickets` 发布带链接的 implementation tickets。
+3. **Dispatch**——每张 implementation ticket 一个 worktree + 一个 execution pane：前端/设计票走 Claude Code（默认模型），后端票走 Codex。
+4. **托管与回报**——派出的会话自主执行（HITL 票直接与用户对话）。terminal 后 listener 唤醒调度会话，验证 final report、集成 commit，然后派发下一批。
+5. **收尾**——graph 清空后 rebase、push，产出一个 summary PR/MR。
 
 Codex：
 

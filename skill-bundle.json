@@ -54,6 +54,16 @@
       "name": "code-review",
       "source": "mattpocock-skills",
       "reason": "Review integrated changes before remote publication."
+    },
+    {
+      "name": "resolving-merge-conflicts",
+      "source": "mattpocock-skills",
+      "reason": "Resolve cherry-pick and rebase conflicts during integration and closeout."
+    },
+    {
+      "name": "herdr",
+      "source": "herdr",
+      "reason": "Terminal multiplexer hosting dispatched panes; pane-dispatch and lane lifecycle depend on its CLI and skill."
     }
   ]
 }
