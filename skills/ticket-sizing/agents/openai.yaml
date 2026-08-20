@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ticket Sizing"
+  short_description: "Size tickets against the ~150k-token smart zone"
+  default_prompt: "Use $ticket-sizing to check this split's ticket granularity."
+policy:
+  allow_implicit_invocation: true

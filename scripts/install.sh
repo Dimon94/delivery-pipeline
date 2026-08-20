@@ -18,9 +18,11 @@ Default target: codex
 Also installs the repo's pre-commit gate (scripts/hooks/pre-commit -> .git/hooks)
 so a red validator refuses the commit. Pass --no-hooks to skip.
 
-Installs $SKILL_NAME to one or both (all targets symlink to this checkout):
+Installs $SKILL_NAME and ticket-sizing to one or both (all targets symlink to this checkout):
   \${CODEX_HOME:-~/.codex}/skills/$SKILL_NAME
+  \${CODEX_HOME:-~/.codex}/skills/ticket-sizing
   \${CLAUDE_HOME:-~/.claude}/skills/$SKILL_NAME
+  \${CLAUDE_HOME:-~/.claude}/skills/ticket-sizing
 
 Ends with a non-blocking dependency-availability diagnostic. Owners resolve at
 runtime via references/owner-skill-resolution.md; no local copies required.
@@ -141,6 +143,38 @@ install_claude_pane_dispatch() {
   echo "Symlinked Claude pane-dispatch to $dest -> $source"
 }
 
+install_codex_ticket_sizing() {
+  local source="$ROOT/skills/ticket-sizing"
+  local dest="$CODEX_HOME_DIR/skills/ticket-sizing"
+
+  [ -f "$source/SKILL.md" ] || {
+    echo "Cannot find bundled Codex ticket-sizing skill at $source" >&2
+    exit 1
+  }
+
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  ln -s "$source" "$dest"
+
+  echo "Symlinked Codex ticket-sizing to $dest -> $source"
+}
+
+install_claude_ticket_sizing() {
+  local source="$ROOT/claude/skills/ticket-sizing"
+  local dest="$CLAUDE_HOME_DIR/skills/ticket-sizing"
+
+  [ -f "$source/SKILL.md" ] || {
+    echo "Cannot find bundled Claude ticket-sizing skill at $source" >&2
+    exit 1
+  }
+
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  ln -s "$source" "$dest"
+
+  echo "Symlinked Claude ticket-sizing to $dest -> $source"
+}
+
 # Diagnostic only, never blocks: owners reach workers as absolute SKILL.md
 # paths resolved by the dispatcher (references/owner-skill-resolution.md), so
 # no local copy is a prerequisite. Mirrors the filesystem probes of that
@@ -183,15 +217,19 @@ with open("'"$ROOT"'/skill-bundle.json") as fh:
 case "$TARGET" in
   codex)
     install_codex
+    install_codex_ticket_sizing
     ;;
   claude)
     install_claude
     install_claude_pane_dispatch
+    install_claude_ticket_sizing
     ;;
   all)
     install_codex
+    install_codex_ticket_sizing
     install_claude
     install_claude_pane_dispatch
+    install_claude_ticket_sizing
     ;;
 esac
 
