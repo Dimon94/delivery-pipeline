@@ -521,7 +521,7 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
    # 进入 integration 流程（cherry-pick）
    ```
 
-8. 对 `integrated` state 的 execution tickets：
+8. 对 `integrated` / `close_pending` state 的 execution tickets：
    ```bash
    # 验证 execution worktree 和 branch 已删除
    if [ -d "$EXECUTION_PATH" ]; then
@@ -534,6 +534,9 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
      # 尝试重新删除
    fi
    ```
+   - `codex-thread`：用 `list_archived_threads` 验证 task；仍在 active tasks 或 registry 为
+     `close_pending` 时重试 `set_thread_archived`，成功 readback 后写 `closed`。
+   - `herdr-codex-pane` / `herdr-claude-pane`：验证 pane 已关闭；`close_pending` 时重试关闭。
 
 9. 根据 map state 恢复到正确位置：
    - `test_decision_paused`：重新显示 test decision prompt
@@ -583,7 +586,7 @@ terminal tasks 已进入 integration 流程，orchestrator 恢复到正确的 ga
 - [ ] Integration branch deleted: `! git rev-parse --verify "$INTEGRATION_BRANCH" 2>/dev/null`
 - [ ] Execution worktrees deleted: `git worktree list --porcelain` 不包含 `-map-${MAP_ISSUE}-issue-`
 - [ ] Execution branches deleted: registry 中该 map 的 execution branches 均不存在
-- [ ] Runtime transport closed: Codex App tasks terminal；存在 Herdr workspace 时 panes 为空
+- [ ] Runtime transport closed: Codex App execution tasks archived；存在 Herdr workspace 时 panes 为空
 - [ ] Map issue closed: tracker API 确认 issue state = closed
 - [ ] Registry updated: readback `state: closed`
 

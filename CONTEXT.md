@@ -34,6 +34,12 @@ Creation → work → integration/merge → deletion. Execution worktrees: creat
 **Herdr Workspace**
 A Herdr terminal multiplexer workspace corresponding to one map when Herdr Dispatch is selected. Label matches `map-<issue-number>`. Created lazily before the first Herdr lane. HITL panes (grilling, prototype) and execution panes land in this workspace. Preserved (not deleted) after map completes, for history access. Codex App native Dispatch does not create a Herdr Workspace.
 
+**Task Coordinate Title**
+A stable, human-facing Codex App task title that identifies the owning map, lane role, and work item. It is a navigation coordinate; Codex App task lifecycle carries dynamic state, while the lane registry remains the recovery truth.
+
+**Codex Task Archive**
+The post-Integration transport state of a `codex-thread` lane, reached after its terminal commit is cherry-picked and focused checks pass. Archive readback closes the lane; `close_pending` retains recoverable coordinates without blocking ready tickets, while unsuccessful Integration keeps the task visible.
+
 **Subagent (Discovery)**
 A background `Agent` tool subagent that handles one AFK discovery ticket (research or automatic task). Runs autonomously — no Herdr pane created, no pane resources consumed. Reports results via Agent tool completion notification. Results committed to `research/<ticket-name>` branch and written as ticket resolution comment.
 

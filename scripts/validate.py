@@ -13,6 +13,7 @@ CODEX_SKILL = CODEX_ROOT / "SKILL.md"
 CLAUDE_SKILL = CLAUDE_ROOT / "SKILL.md"
 PANE_DISPATCH_CLAUDE = ROOT / "claude" / "skills" / "pane-dispatch"
 CODEX_DISPATCH_ROUTING = CODEX_ROOT / "references" / "dispatch-runtime-routing.md"
+TASK_COORDINATE_TITLE = CODEX_ROOT / "references" / "task-coordinate-title.md"
 RUNTIME_DISPATCH_ADR = ROOT / "docs" / "adr" / "0002-runtime-aware-dispatch.md"
 
 DEPENDENCIES = [
@@ -201,6 +202,7 @@ def check_dispatch_runtime_routing() -> None:
             "`codex-thread`",
             "`herdr-codex-pane`",
             "`herdr-claude-pane`",
+            "Task Coordinate Title",
         ),
     )
     if not CODEX_DISPATCH_ROUTING.exists():
@@ -221,6 +223,11 @@ def check_dispatch_runtime_routing() -> None:
                 "read_thread",
                 "wait_threads",
                 "send_message_to_thread",
+                "set_thread_title",
+                "set_thread_archived",
+                "list_archived_threads",
+                "thread_archived: false",
+                "task-coordinate-title.md",
                 "startingState",
                 "clientThreadId",
                 "runtime: codex-thread",
@@ -228,6 +235,29 @@ def check_dispatch_runtime_routing() -> None:
                 "runtime: herdr-claude-pane",
                 "$herdr",
                 "active writer",
+            ),
+        )
+    if not TASK_COORDINATE_TITLE.exists():
+        record(
+            "missing Task Coordinate Title owner: "
+            f"{TASK_COORDINATE_TITLE.relative_to(ROOT)}"
+        )
+    else:
+        require(
+            TASK_COORDINATE_TITLE,
+            (
+                "<map-key>-<role><work-item-key>-<short-summary>",
+                "<map-key>-LEAD-<short-summary>",
+                "`LEAD`",
+                "`G`",
+                "`X`",
+                "`P`",
+                "`R`",
+                "`D`",
+                "动作＋对象",
+                "set_thread_title",
+                "list_threads",
+                "lane registry",
             ),
         )
     require(
@@ -247,6 +277,28 @@ def check_dispatch_runtime_routing() -> None:
             "coordinator_runtime:",
             "dispatch_runtime:",
             "host_id:",
+            "thread_archived:",
+            "integrated -> close_pending -> closed",
+            "list_archived_threads",
+        ),
+    )
+    require(
+        CODEX_ROOT / "references" / "execution-worktree-integration.md",
+        (
+            "set_thread_archived({threadId, hostId, archived: true})",
+            "list_archived_threads",
+            "thread_archived: true",
+            "state: close_pending",
+            "integration_checks_failed` task 保持未归档",
+        ),
+    )
+    require(
+        CODEX_ROOT / "references" / "test-decision-and-rebase.md",
+        (
+            "integrated` / `close_pending",
+            "list_archived_threads",
+            "set_thread_archived",
+            "Codex App execution tasks archived",
         ),
     )
     require(
@@ -282,6 +334,7 @@ def check_dispatch_runtime_routing() -> None:
             "调度运行时",
             "Codex App 原生 Dispatch",
             "Herdr Dispatch",
+            "Codex Task Archive",
         ),
     )
     require(

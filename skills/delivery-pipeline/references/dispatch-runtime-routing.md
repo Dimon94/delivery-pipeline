@@ -8,7 +8,8 @@ fan-in 保持不变。
 ## 选择顺序
 
 1. **识别 Coordinator Runtime。** 检查 `list_projects`、`create_thread`、`list_threads`、
-   `read_thread`、`wait_threads` 和 `send_message_to_thread` 是否全部可用。全部可用时记录
+   `read_thread`、`wait_threads`、`send_message_to_thread`、`set_thread_title`、
+   `set_thread_archived` 和 `list_archived_threads` 是否全部可用。全部可用时记录
    `coordinator_runtime: codex-app`；否则本 Codex entrypoint 记录
    `coordinator_runtime: codex-cli`。推断：完整原生 task tool set 表示 Codex App。Codex CLI
    原生 thread 能力是 Unknown，本模型不尝试调用它。
@@ -24,26 +25,33 @@ fan-in 保持不变。
 `runtime` 恢复；本次选择只约束新 lane。存在 active writer 时先完成恢复与去重，再创建
 replacement 或切换新 lane 的 transport。
 
+选择 `dispatch_runtime: codex-app` 后加载 `task-coordinate-title.md`。map key 可用时先把当前
+coordinator task 设为 `LEAD` 坐标并 readback；创建、替换、重命名或恢复每条 user-visible
+Codex App task 时沿用同一命名契约。
+
 ## Codex App 原生调度
 
 ### 创建
 
 1. 用 `list_projects` 按 `fresh-session-boundaries.md` 解析 Source owner projectId，并确认项目是
    当前 repo。
-2. 为 lane 生成稳定标题与完整 packet。调用 `create_thread`，target 使用该 project，environment
-   使用 worktree，`startingState` 的 branchName 必须是当前 Integration branch。Codex App 拥有
-   Execution Worktree 的创建与路径；不要预创建同票手工 worktree。
+2. 按 `task-coordinate-title.md` 生成 Task Coordinate Title，并与完整 packet 一起传给
+   `create_thread`；显式设置 `title`。target 使用该 project，environment 使用 worktree，
+   `startingState` 的 branchName 必须是当前 Integration branch。Codex App 拥有 Execution
+   Worktree 的创建与路径；不要预创建同票手工 worktree。
 3. `create_thread` 返回 `threadId` 时记录其 `hostId`。只返回 `clientThreadId` 表示 worktree 仍在
-   setup；`clientThreadId` 不能作为 `thread_id`，用 `list_threads` 按稳定标题、project 和 lane
-   标识找到 ready task。
+   setup；`clientThreadId` 不能作为 `thread_id`，用 `list_threads` 按 Task Coordinate Title、
+   project 和 lane 标识找到 ready task。
 4. 用 `list_threads`、`read_thread`、`git worktree list --porcelain` 和 Git state readback：
-   task 属于 owner project，worktree 的 common dir 属于 source repo，base commit 是 dispatch
-   时 Integration HEAD，cwd 不在 Source Worktree 或 Map Integration Worktree。
+   title 与预期 Task Coordinate Title 精确相等，task 属于 owner project，worktree 的 common dir
+   属于 source repo，base commit 是 dispatch 时 Integration HEAD，cwd 不在 Source Worktree 或
+   Map Integration Worktree。
 5. worker 在首次写入前创建或验证 `codex/issue-<ticket>` branch。把 `project_id`、`host_id`、
-   `thread_id`、实际 worktree、branch 和 base commit 写入 lane registry，并精确 readback。
+   `thread_id`、`thread_archived: false`、实际 worktree、branch 和 base commit 写入 lane registry，
+   并精确 readback。
 
-完成标准：`runtime: codex-thread` lane 的 task、App-managed Execution Worktree 和 registry
-互相一致，startup probe 已读回 owner skill name/path 与 work item。
+完成标准：`runtime: codex-thread` lane 的 Task Coordinate Title、task、App-managed Execution
+Worktree 和 registry 互相一致，startup probe 已读回 owner skill name/path 与 work item。
 
 ### 监控与恢复
 
@@ -53,9 +61,11 @@ replacement 或切换新 lane 的 transport。
   touched files 为准进入 Integration。
 - worker 需要范围内的收口指令或回答时才调用 `send_message_to_thread`；常规进度用
   `wait_threads`，不反复发送催促。
-- 新会话先用 registry 的 `thread_id` + `host_id` 调用 `list_threads` / `read_thread`。task 不可见
-  但 commit 存在时从持久 Git 证据继续；task 和 commit 都不存在且已排除 active writer 后才创建
-  replacement。
+- 新会话对 `running` / `terminal` lane 用 registry 的 `thread_id` + `host_id` 调用
+  `list_threads` / `read_thread`；对 `integrated` / `close_pending` / `closed` lane 调用
+  `list_archived_threads` 验证 archive，`close_pending` 按 `execution-worktree-integration.md` 重试。
+  推断：archived task 不出现在 active task 列表是预期状态。task 不可见但 commit 存在时从持久
+  Git 证据继续；task 和 commit 都不存在且已排除 active writer 后才创建 replacement。
 
 ## Herdr 调度
 

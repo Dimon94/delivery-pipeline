@@ -58,10 +58,11 @@ idea/map -> discovery -> spec -> implementation tickets
    `assets/HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` 或
    `assets/HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
    选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票按已选
-   调度运行时创建唯一 lane：`codex-thread` 用 `create_thread` 从 Integration branch 创建 fresh
-   Codex App task + App-managed Execution Worktree；Herdr 用 `$herdr` 创建手工 Execution
-   Worktree + fresh Codex CLI/Claude Code pane。coordinator 不亲自实现。完成标准：ticket registry 已
-   readback runtime 对应的 task 或 pane 坐标、实际 worktree、branch 与 base commit。
+   调度运行时创建唯一 lane：`codex-thread` 按 Task Coordinate Title 用 `create_thread` 从
+   Integration branch 创建 fresh Codex App task + App-managed Execution Worktree；Herdr 用 `$herdr`
+   创建手工 Execution Worktree + fresh Codex CLI/Claude Code pane。coordinator 不亲自实现。
+   完成标准：ticket registry 已 readback runtime 对应的 task 或 pane 坐标、Task Coordinate Title
+   （Codex App）、实际 worktree、branch 与 base commit。
 6. **Probe startup。** 每个 lane 创建后验证：`cwd` 位于 Execution Worktree、完整 packet 已收到、
    child 已 readback owner name/resolved path；`codex-thread` 还要验证 Source owner projectId，
    Herdr pane 还要验证 workspace/tab/pane placement 与 kind。错误落点或未读 owner file 时沿同一
@@ -70,8 +71,9 @@ idea/map -> discovery -> spec -> implementation tickets
    `references/execution-worktree-integration.md`）。
 7. **Integrate changes。** 加载 `references/execution-worktree-integration.md`。Workers 运行时只消费
    terminal final report；验证 commit、extraction worktree、integration worktree state，按 dependency order
-   执行 cherry-pick。成功后运行 focused checks，通过则删除 execution worktree/branch，按 runtime
-   收口 task 或 Herdr pane，更新 registry 为 `integrated`、立即重算 frontier。冲突时中止 cherry-pick，
+   执行 cherry-pick。成功后运行 focused checks，通过则持久化 `integrated`、删除 execution
+   worktree/branch，并按 runtime 归档 Codex App task 或关闭 Herdr pane；transport readback 成功后
+   registry 写为 `closed`，否则写为 `close_pending`，随后立即重算 frontier。冲突时中止 cherry-pick，
    标记 `integration_conflict`，保留 execution worktree 供调试。Lane blocker 不停止其他 ready tickets。
 8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。全部通过时加载
    `references/test-decision-and-rebase.md`，暂停在 test decision point，由用户选择：(1) 在 integration
