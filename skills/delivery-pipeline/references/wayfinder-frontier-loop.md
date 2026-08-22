@@ -19,7 +19,8 @@
    `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；按当前调度运行时创建 user-visible
    Codex App task 或 Claude pane。没有可参与的用户 task/pane 时，生成对应 prompt/worker
    坐标并停止为 `ask-user`。
-4. coordinator 等 terminal signals，不读 routine progress。
+4. AFK workers 由系统 terminal signal 唤醒；Herdr HITL lane 写 `awaiting_human` 后 coordinator
+   立即 yield，由用户完成会话并回到 Codex App 报告，不读 routine progress。
 5. 任一 worker terminal 后只读一次 final report，重读 map issue 的 Destination、
    Decisions-so-far、Not yet specified、Out of scope 和 frontier query，立即派发新 ready work。
 6. 只要还有新的 open、未阻塞且 unassigned 的 discovery child issues，就从第 1 步重复。
@@ -33,6 +34,7 @@
 - frontier query 为 0，但仍有 open blocked child issues；这不是 route 条件，停在
   discovery 的 blocked/waiting 状态，列出阻塞票和前置票；
 - child 报告 `ask-user`、`blocked` 或 `Unknown`；
+- Herdr HITL lane 已 `awaiting_human`；这是成功 handoff，用户返回后从第 5 步继续；
 - 两个 tasks 编辑了同一个 child issue，或留下冲突 tracker state。
 
 对非判断类 tickets，`Agent` tool 可用时自动并发派发为后台 subagents；不可用时输出所有

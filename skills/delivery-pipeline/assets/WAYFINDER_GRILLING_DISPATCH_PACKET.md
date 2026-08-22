@@ -9,7 +9,8 @@ HITL `wayfinder:task` child issue，或任何需要实时用户判断的 discove
 
 **调度运行时**：`codex-thread` 时投递给 user-visible Codex App task；用户明确选择
 `herdr-claude-pane` 时通过 `references/dispatch-runtime-routing.md` 的 Herdr Control Route
-投递给 Claude pane。
+投递给 user-visible Herdr session 的 Claude pane。Claude 按该路由的完全授权模式启动；coordinator
+完成 bootstrap 后 yield，用户直接在本 pane 回答问题。
 
 ```text
 项目：
@@ -79,8 +80,8 @@ HITL 目标：
   Decisions-so-far。
 
 Terminal：
-- resolved 或 blocked 后输出 final report，并向 coordinator 发送
-  `TERMINAL: <ticket> completed|blocked <一句原因>`。
+- resolved 或 blocked 后在本 pane 输出 final report 和
+  `TERMINAL: <ticket> completed|blocked <一句原因>`；用户随后回到 Codex App 报告完成。
 - 不发送 routine progress。
 
 Final report：

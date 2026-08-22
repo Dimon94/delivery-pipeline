@@ -24,7 +24,8 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
   subagent（`run_in_background: true`）；不创建 pane。
 - HITL prototype、grilling 和 task：各自独立，用户判断只阻塞该 ticket。
   `codex-thread` 使用 user-visible Codex App task；Herdr 使用 `herdr-claude-pane`。
-  两者都使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 填充 owner 与 decision 上下文。
+  两者都使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 填充 owner 与 decision 上下文。Herdr lane
+  startup 后进入 `awaiting_human`，由用户返回 Codex App 触发 terminal fan-in。
 - coordinator 拥有 map frontier、用户问题和 fan-in；subagent 只拥有自己的 decision ticket。
 
 ## Execution Lanes
