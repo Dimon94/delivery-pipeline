@@ -34,7 +34,8 @@ idea/map -> discovery -> spec -> implementation tickets
    `references/dispatch-runtime-routing.md`。Codex App 原生 thread tools 全部可用时默认选择
    `dispatch_runtime: codex-app`；Herdr Control Route 的 capability probe 通过后，用户明确要求
    Herdr 或 CLI runtime 才选择 `dispatch_runtime: herdr`。Codex App 不在 Herdr pane 时使用
-   Codex App Herdr Bridge；Herdr 再按用户指定或 binding table 选择 `herdr-codex-pane` /
+   Codex App Herdr Bridge，并把 transport approval 持久化为 `trusted_execution_bootstrap`；
+   bridge 优先选择运行中的 user-visible `default` Herdr session。Herdr 再按用户指定或 binding table 选择 `herdr-codex-pane` /
    `herdr-claude-pane`。Existing lanes 按各自 registry runtime 恢复，新 lane 才使用本次选择。
    识别当前是 source worktree（main）还是 integration worktree（`feature/map-*`）。
    输入是 map 且在 source worktree 时：检查该 map 的 integration worktree 是否存在（registry + 路径）；
@@ -45,7 +46,9 @@ idea/map -> discovery -> spec -> implementation tickets
 2. **Run discovery。** 加载 `references/wayfinder-frontier-loop.md`、
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
-   松散想法先调用 `wayfinder` owner 建图（建图拷问在当前会话进行，不派发），随后自动派发 ready AFK decision tickets（HITL 只阻塞自身）。
+   松散想法先调用 `wayfinder` owner 建图（建图拷问在当前会话进行，不派发），随后自动派发 ready AFK decision tickets。
+   Herdr HITL lane 完成 startup probe 后写 `awaiting_human` 并立即 yield；用户在 Herdr 完成对话后
+   回到 Codex App，coordinator 才读取一次 final report。HITL 只阻塞自身。
    完成标准：所有 in-scope child issues closed、resolution 与 artifacts 可读回。
 3. **Generate spec。** 如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
    提案、用户判断和发布流程。交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
@@ -66,8 +69,11 @@ idea/map -> discovery -> spec -> implementation tickets
    （Codex App）、实际 worktree、branch 与 base commit。
 6. **Probe startup。** 每个 lane 创建后验证：`cwd` 位于 Execution Worktree、完整 packet 已收到、
    child 已 readback owner name/resolved path；`codex-thread` 还要验证 Source owner projectId，
-   Herdr pane 还要验证 session/workspace/tab/pane placement 与 kind。Claude 首次 trust/question UI
-   是可恢复的 `blocked` lane：保留同一 pane/worktree，取得用户确认后继续，不计作 startup failure。
+   Herdr pane 还要验证 session/workspace/tab/pane placement 与 kind。Claude pane 以
+   `--dangerously-skip-permissions` 启动；`trusted_execution_bootstrap` 自动确认精确匹配的 workspace
+   trust 和 applicable external imports。未知或越界 UI 才是可恢复的 `blocked` lane。
+   packet、owner name/path 与 ticket readback 后，HITL lane 写 `awaiting_human`，startup probe 后
+   coordinator 立即 yield。
    错误落点或未读 owner file 时沿同一
    runtime 重建一次；第二次失败标记 `setup_blocked`，
    按 lane runtime 清理 task/pane 与 execution worktree/branch（参考

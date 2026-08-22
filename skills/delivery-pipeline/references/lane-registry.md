@@ -13,14 +13,13 @@ work_item: <url>
 role: discovery | spec | tickets | implementation | review | map
 lane_id: <stable-id>
 runtime: subagent | codex-thread | herdr-codex-pane | herdr-claude-pane | orchestrator
-state: created | running | terminal | consumed | integrated | closed | blocked | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress
+state: created | running | awaiting_human | terminal | consumed | integrated | closed | blocked | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress
 # --- codex-thread fields (runtime: codex-thread) ---
 project_id: <Source-owner-projectId>
 host_id: <host-id>
 thread_id: <id>
 thread_archived: true | false | unknown
 # --- pane fields (runtime: herdr-codex-pane | herdr-claude-pane) ---
-herdr_session_name: <named-session-or-current-herdr-session>
 workspace_id: <id>
 tab_id: <id>
 pane_id: <id>
@@ -34,6 +33,10 @@ dispatch_runtime: codex-app | herdr | none
 herdr_workspace_label: <map-title-map-N-or-none>
 test_strategy: test_in_integration | rebase_then_test | skip_test_and_push | none
 # --- common fields ---
+herdr_session_name: <explicit-target-session-or-none>
+herdr_session_owned: true | false | none
+bootstrap_authority: trusted_execution_bootstrap | none
+agent_permission_mode: dangerously-skip-permissions | default | none
 worktree: <absolute-path-or-none>
 branch: <branch-or-none>
 base_commit: <hash-or-none>
@@ -55,6 +58,18 @@ created -> running -> terminal -> consumed -> closed
                             \-> blocked
 integrated -> close_pending -> closed
 ```
+
+**Herdr HITL states:**
+
+```text
+created -> running -> awaiting_human -> terminal -> consumed -> closed
+           \-> blocked (startup only)
+```
+
+`awaiting_human` 表示 startup probe 已完成、packet 已消费，用户正在 Herdr 与 worker 交互。
+coordinator 在该状态 yield；用户回到 Codex App 报告完成后才做一次 terminal readback。
+未知或越界 startup UI 才把 registry 写为 `blocked`；handoff 后的业务问题即使 Herdr agent
+呈现 `blocked`，registry 仍保持 `awaiting_human`。
 
 **Map states:**
 
@@ -83,11 +98,14 @@ registry 写入或 readback 失败时，不声称该 child 可恢复。
    readback，成功后写 `closed`。
 4. `runtime: herdr-codex-pane | herdr-claude-pane` 按 `dispatch-runtime-routing.md` 的 Herdr
    Control Route，用 `herdr_session_name` 验证 workspace/tab/pane、worker kind 与 final marker。
-   Codex App bridge lane 缺少 session name 时坐标为 `Unknown`，不得回退到 default session。
-5. 用 Git 验证所有 runtime 的 worktree、branch 和 commits。
-6. lane 已 terminal：读取 final report，进入 fan-in。
-7. task/pane 消失但 commit/artifact 存在：从持久证据继续 fan-in。
-8. registry 与现实不一致：保留证据并标 stale；确认没有 active writer 后才能 replacement。
+   lane 缺少 session name 时坐标为 `Unknown`；`herdr_session_owned: false` 时只收口 lane pane，
+   保留 user-visible session。
+5. `state: awaiting_human` 只在用户返回触发时读取 pane/final marker；恢复过程不挂 listener、
+   不启动定时 wait。
+6. 用 Git 验证所有 runtime 的 worktree、branch 和 commits。
+7. lane 已 terminal：读取 final report，进入 fan-in。
+8. task/pane 消失但 commit/artifact 存在：从持久证据继续 fan-in。
+9. registry 与现实不一致：保留证据并标 stale；确认没有 active writer 后才能 replacement。
 
 没有 registry 的旧 child 只做一次 bounded recovery：用 recent thread lookup 按精确 work-item
 URL、role、projectId、branch 和 worktree 交叉匹配。唯一匹配且全部验证通过时补写 registry；

@@ -391,7 +391,7 @@ else:
    echo "已关闭 workspace 所有 panes，workspace 已保留：$WORKSPACE_LABEL"
    ```
 
-   Codex App bridge 再执行 `herdr session stop "$herdr_session_name" --json`；保留 named session。
+   `herdr_session_owned: false` 时保留 user-visible session 运行；只关闭本 map 创建的 panes。
 
 7. 关闭 map issue，写入 completion comment：
    ```markdown
@@ -511,19 +511,23 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
    fi
    ```
 
-6. 对 `running` state 的 execution tickets 按 lane runtime 恢复：
+6. 对 `awaiting_human` state 的 Herdr HITL tickets：只验证 registry 中已持久化的
+   session/workspace/tab/pane 坐标并向用户报告；不挂 listener、不调用 `herdr agent wait`。用户回到
+   Codex App 报告完成后才读取一次 final report。
+
+7. 对 `running` state 的 execution tickets 按 lane runtime 恢复：
    - `codex-thread`：用 `list_threads` / `read_thread` 验证 task，再带 cursor 调用
      `wait_threads`。
    - `herdr-codex-pane` / `herdr-claude-pane`：通过 Herdr Control Route 验证 pane；pane 存在时重挂
      listener，pane 消失时检查 final marker 与 commit。
 
-7. 对 `terminal` state 的 execution tickets：
+8. 对 `terminal` state 的 execution tickets：
    ```bash
    # 读取 final report（从 registry 或 terminal marker）
    # 进入 integration 流程（cherry-pick）
    ```
 
-8. 对 `integrated` / `close_pending` state 的 execution tickets：
+9. 对 `integrated` / `close_pending` state 的 execution tickets：
    ```bash
    # 验证 execution worktree 和 branch 已删除
    if [ -d "$EXECUTION_PATH" ]; then
@@ -540,15 +544,16 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
      `close_pending` 时重试 `set_thread_archived`，成功 readback 后写 `closed`。
    - `herdr-codex-pane` / `herdr-claude-pane`：验证 pane 已关闭；`close_pending` 时重试关闭。
 
-9. 根据 map state 恢复到正确位置：
+10. 根据 map state 恢复到正确位置：
    - `test_decision_paused`：重新显示 test decision prompt
    - `rebase_in_progress`：验证 rebase 状态，继续或重新开始
    - `push_failed`：重新尝试 push
    - `cleanup_in_progress`：继续 cleanup
    - 其他：根据 execution graph 状态决定下一步
 
-**完成标准：** 所有 valid worktrees 已验证，running tasks 已重新 attach listener 或标记为 blocked，
-terminal tasks 已进入 integration 流程，orchestrator 恢复到正确的 gate。
+**完成标准：** 所有 valid worktrees 已验证，`awaiting_human` lanes 已原样交还用户，running AFK
+tasks 已重新 attach listener 或标记为 blocked，terminal tasks 已进入 integration 流程，orchestrator
+恢复到正确的 gate。
 
 ## Error Handling
 

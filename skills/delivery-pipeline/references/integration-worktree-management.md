@@ -45,7 +45,8 @@ INTEGRATION_BRANCH="feature/map-${MAP_ISSUE}"
 
 4. 验证 path、Git registration、branch、HEAD、common dir 和 clean state。
 5. map registry 写入 `integration_worktree_path`、`integration_branch`、`base_commit` 和当前
-   `dispatch_runtime`；Codex App bridge 同时写 `herdr_session_name`，随后精确 readback。
+   `dispatch_runtime`；Codex App bridge 同时写 `herdr_session_name`、`herdr_session_owned` 与
+   `bootstrap_authority`，随后精确 readback。
 6. coordinator 在 Integration Worktree 继续。只有首条 Herdr lane 需要时才通过
    Herdr Control Route 懒创建 map workspace。
 
