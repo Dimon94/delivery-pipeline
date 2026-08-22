@@ -525,8 +525,8 @@ def main() -> None:
     pane_dispatch_fm = frontmatter(pane_dispatch_skill)
     if pane_dispatch_fm.get("name") != "pane-dispatch":
         fail("pane-dispatch skill name mismatch")
-    if pane_dispatch_fm.get("disable-model-invocation") != "true":
-        fail("pane-dispatch must have disable-model-invocation: true")
+    if pane_dispatch_fm.get("disable-model-invocation") == "true":
+        fail("pane-dispatch must stay model-invocable: the lead dispatches panes via the Skill tool")
 
     check_references(pane_dispatch_skill)
 

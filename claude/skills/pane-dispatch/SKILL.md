@@ -1,7 +1,6 @@
 ---
 name: pane-dispatch
 description: Dispatch work to verified Herdr panes (Claude or Codex) with placement validation, capacity management, and lifecycle pairing
-disable-model-invocation: true
 ---
 
 # Pane Dispatch
