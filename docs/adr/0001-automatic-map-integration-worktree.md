@@ -4,6 +4,9 @@
 **Date:** 2026-08-01  
 **Deciders:** User (Dimon), Kiro
 
+> ADR-0002 supersedes the fixed Herdr workspace/pane and fixed Execution Worktree path clauses.
+> The two-tier worktree isolation and Integration decisions remain accepted.
+
 ## Context
 
 Orchestrator currently requires users to manually manage Git worktrees and branches for Wayfinder maps. This creates friction in high-frequency concurrent development scenarios where 5+ maps run simultaneously. The user is not proficient with Git operations (branch creation, merging, worktree management) and wants AI-assisted automation.

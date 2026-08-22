@@ -5,7 +5,8 @@
 
 ## Integration Sequence
 
-**触发：** execution worker 报告 terminal（通过 final report marker 检测）。
+**触发：** execution worker 报告 terminal。`codex-thread` 从 `read_thread` 读取最终报告；
+`herdr-codex-pane` / `herdr-claude-pane` 验证完整 final report markers。
 
 **前置条件验证：**
 
@@ -154,24 +155,19 @@ registry 已更新为 `integrated` state。
    cleanup_at: <ISO-8601-timestamp>
    ```
 
-4. 关闭 Herdr pane（通过 `/herdr` skill）：
-   - 从 registry 读取 `herdr_pane_id` 或从 workspace 查找
-   - 调用 `herdr pane close <pane-id>`
-   - 如果 close 失败，标记为 `pane_close_pending`，不阻塞其他 tickets
+4. 按 registry runtime 收口 transport：
+   - `codex-thread`：确认 task 已 terminal；保留 task 历史，registry 清除 active writer 状态。
+   - `herdr-codex-pane` / `herdr-claude-pane`：通过 `$herdr` 关闭 pane 并更新 tab label；失败时标记
+     `close_pending`，不阻塞其他 tickets。
 
-5. 更新 Herdr tab label：
-   - 从 tab label 移除该 issue 编号
-   - 例：`X-#201·#202·#203` → `X-#202·#203`（移除 #201）
-   - 如果 tab 变空（所有 panes 已关闭），保留 tab label 为 `X`（不删除 tab）
-
-**完成标准：** execution worktree 已删除、branch 已删除、registry 已更新、pane 已关闭、
-tab label 已更新。
+**完成标准：** Execution Worktree 已删除、branch 已删除、registry 已更新，runtime transport
+已 terminal 或关闭。
 
 ## Failed Worktree Cleanup
 
 **触发条件：**
 
-1. Startup probe 失败两次（pane 未正确启动或未读取 owner file）
+1. Startup probe 失败两次（task/pane 未正确启动或未读取 owner file）
 2. Worktree 路径冲突（路径已存在但不是该 ticket 的 worktree）
 3. Worktree 状态 invalid（branch 不匹配、不在 Git worktree list 中）
 4. Cherry-pick 非冲突失败（其他 Git 错误）
@@ -179,16 +175,15 @@ tab label 已更新。
 **立即删除序列：**
 
 ```bash
-# 强制删除，不检查 dirty state（已知是坏状态）
+# 仅删除已验证属于该 lane 且没有用户变更的 worktree
 if [ -d "$EXECUTION_PATH" ]; then
-  git worktree remove --force "$EXECUTION_PATH" 2>/dev/null || rm -rf "$EXECUTION_PATH"
+  git worktree remove --force "$EXECUTION_PATH"
 fi
 
 # 删除 branch（如果存在）
 git branch -D "$EXECUTION_BRANCH" 2>/dev/null
 
-# 关闭 pane（如果存在）
-herdr pane close <pane-id> 2>/dev/null
+# Herdr runtime 再通过 $herdr 关闭已验证 pane；codex-thread 保留 task 历史
 ```
 
 **标记 ticket 状态：**
@@ -198,16 +193,16 @@ herdr pane close <pane-id> 2>/dev/null
 - `worktree_invalid`（worktree 状态不一致）
 - `integration_failed`（cherry-pick 非冲突失败）
 
-**不保留任何 artifact**（execution worktree、branch、pane 全部删除）。
+已知坏的 Execution Worktree 与 branch 清理；task/pane 依 runtime 收口，tracker/Git 证据保留。
 
 **报告格式：**
 
 ```
 ticket #123 setup blocked: startup probe failed after 2 retries
-- pane 未读取 owner file
+- task/pane 未读取 owner file
 - execution worktree 已删除：<path>
 
-需要手动检查 pane 配置或 worktree 权限。
+需要手动检查 runtime transport 或 worktree 权限。
 ```
 
 ## Conflict Retry Flow
@@ -290,7 +285,6 @@ execution_branch: null  # 已删除
 - [ ] Execution branch deleted: `! git rev-parse --verify "$EXECUTION_BRANCH" 2>/dev/null`
 - [ ] Worktree unregistered: `git worktree list --porcelain` 不包含 `$EXECUTION_PATH`
 - [ ] Registry updated: readback `state: integrated`
-- [ ] Herdr pane closed: verify via `herdr pane list`
-- [ ] Tab label updated: verify via `herdr tab list`
+- [ ] Runtime transport terminal: thread terminal，或 `$herdr` 验证 pane closed/tab updated
 
 验证失败时，报告具体失败项（expected vs actual），标记为 partial cleanup，不继续后续 tickets。

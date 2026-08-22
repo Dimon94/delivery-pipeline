@@ -39,7 +39,7 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Agent Kind 绑定规则
 
-**Packet 模板选择**（按 ticket label 与 domain 查表）：
+**Packet 模板选择**（用户显式 worker kind 优先，否则按 ticket label 与 domain 查表）：
 - `wayfinder:grilling`、`wayfinder:prototype` → `WAYFINDER_GRILLING_DISPATCH_PACKET.md`（内置 `--kind claude`）
 - implementation tickets 按 domain 分流：
   - 前端与设计（UI 页面、组件、样式、交互）→ `CLAUDE_PANE_DISPATCH_PACKET.md`（内置 `--kind claude`）

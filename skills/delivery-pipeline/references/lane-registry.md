@@ -12,16 +12,23 @@ decision issue，spec gate 写在 map，tickets gate 写在 spec，implementatio
 work_item: <url>
 role: discovery | spec | tickets | implementation | review | map
 lane_id: <stable-id>
-runtime: subagent | codex-thread
+runtime: subagent | codex-thread | herdr-codex-pane | herdr-claude-pane | orchestrator
 state: created | running | terminal | consumed | integrated | closed | blocked | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress
 # --- codex-thread fields (runtime: codex-thread) ---
 project_id: <Source-owner-projectId>
+host_id: <host-id>
 thread_id: <id>
+# --- pane fields (runtime: herdr-codex-pane | herdr-claude-pane) ---
+workspace_id: <id>
+tab_id: <id>
+pane_id: <id>
 # --- subagent fields (runtime: subagent) ---
 agent_name: <Agent tool name parameter | none>
-# --- map fields (role: map) ---
+# --- map fields (role: map, runtime: orchestrator) ---
 integration_worktree_path: <absolute-path-or-none>
 integration_branch: <feature/map-N-or-none>
+coordinator_runtime: codex-app | codex-cli | claude-cli | none
+dispatch_runtime: codex-app | herdr | none
 herdr_workspace_label: <map-title-map-N-or-none>
 test_strategy: test_in_integration | rebase_then_test | skip_test_and_push | none
 # --- common fields ---
@@ -65,11 +72,13 @@ registry 写入或 readback 失败时，不声称该 child 可恢复。
 ## Fresh-session Recovery
 
 1. 从 map/spec/tickets 向下枚举 work items，读取每个 `lane_id` 的 latest registry。
-2. 用 thread tools 验证 `thread_id`、`project_id`、task lifecycle 和 worktree。
-3. 用 Git 验证 worktree、branch 和 commits。
-4. `running` 且 task 存在：按 `child-monitoring.md` 重新调用 `wait_threads`。
-5. task 已 terminal：读取 final report，进入 fan-in。
-6. task 消失但 commit/artifact 存在：从持久证据继续 fan-in。
+2. `runtime: codex-thread` 用 thread tools 验证 `thread_id`、`host_id`、`project_id`、task
+   lifecycle 和 worktree；running task 重新调用 `wait_threads`。
+3. `runtime: herdr-codex-pane | herdr-claude-pane` 用 `$herdr` 验证
+   workspace/tab/pane、worker kind 与 final marker。
+4. 用 Git 验证所有 runtime 的 worktree、branch 和 commits。
+5. lane 已 terminal：读取 final report，进入 fan-in。
+6. task/pane 消失但 commit/artifact 存在：从持久证据继续 fan-in。
 7. registry 与现实不一致：保留证据并标 stale；确认没有 active writer 后才能 replacement。
 
 没有 registry 的旧 child 只做一次 bounded recovery：用 recent thread lookup 按精确 work-item

@@ -30,6 +30,8 @@ waiter_owner: <lead-pane-id | none>
 waiter_state: attached | terminal | needs_reattach | none
 waiter_attached_at: <ISO-8601 | none>
 # --- map fields (role: map, runtime: orchestrator) ---
+coordinator_runtime: claude-cli
+dispatch_runtime: herdr
 integration_worktree_path: <absolute-path-or-none>
 integration_branch: <branch-or-none>
 herdr_workspace_label: <label-or-none>

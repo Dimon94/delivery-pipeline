@@ -1,6 +1,7 @@
 # Issue Implementation Dispatch Packet
 
-每张 ready implementation ticket 填写一个 packet，并派给一个独立 execution worktree 的 fresh Codex task。
+每张 ready implementation ticket 填写一个 packet，并派给一个由 Codex App 创建独立
+Execution Worktree 的 fresh Codex task。
 
 **Agent kind**：`codex`（implementation tickets 使用 Codex 引擎执行）
 
@@ -16,8 +17,8 @@ Wayfinder map：<id/url | none>
 Repo：
 Integration worktree：<integration-worktree-path>
 Integration branch：feature/map-<map-issue>
-Execution worktree：<execution-worktree-path>
-Execution branch：codex/issue-<ticket-number>
+Execution worktree：<由 Codex App 创建，startup 后 readback 实际路径>
+Execution branch：codex/issue-<ticket-number>（worker 首次写入前创建或验证）
 Base commit：<integration-branch-HEAD-at-creation>
 允许编辑：
 -
@@ -25,7 +26,8 @@ Base commit：<integration-branch-HEAD-at-creation>
 -
 
 执行：
-- 确认 cwd 位于 execution worktree（not integration worktree，not source worktree）。
+- 确认 cwd 位于 Codex App 创建的 Execution Worktree（not Integration Worktree，not Source Worktree），
+  common dir 属于 Repo，HEAD 包含 Base commit；首次写入前创建或验证 Execution branch。
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再按其 contract
   实现 Ticket。invocation label 只用于说明，不依赖 child catalog。
 - 只处理这张 ticket，不领取 sibling 或 dependent tickets。

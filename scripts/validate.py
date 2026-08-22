@@ -12,6 +12,8 @@ CLAUDE_ROOT = ROOT / "claude" / "skills" / "delivery-pipeline"
 CODEX_SKILL = CODEX_ROOT / "SKILL.md"
 CLAUDE_SKILL = CLAUDE_ROOT / "SKILL.md"
 PANE_DISPATCH_CLAUDE = ROOT / "claude" / "skills" / "pane-dispatch"
+CODEX_DISPATCH_ROUTING = CODEX_ROOT / "references" / "dispatch-runtime-routing.md"
+RUNTIME_DISPATCH_ADR = ROOT / "docs" / "adr" / "0002-runtime-aware-dispatch.md"
 
 DEPENDENCIES = [
     "wayfinder",
@@ -180,6 +182,125 @@ def check_owner_dispatch_contract() -> None:
                 # Line-wrapped in the source; match only up to the wrap point.
                 "Missing or mismatched owner path blocks that",
                 "do not silently replace its contract with generic behavior",
+            ),
+        )
+
+
+def check_dispatch_runtime_routing() -> None:
+    """Use Codex App threads when present and Herdr for CLI panes.
+
+    The dispatch invariant spans the entrypoint, operational reference, registry,
+    and domain model. Checking all four prevents an apparently-correct router from
+    handing execution to stale pane-only recovery or cleanup prose later in the run.
+    """
+    require(
+        CODEX_SKILL,
+        (
+            "调度运行时",
+            "`references/dispatch-runtime-routing.md`",
+            "`codex-thread`",
+            "`herdr-codex-pane`",
+            "`herdr-claude-pane`",
+        ),
+    )
+    if not CODEX_DISPATCH_ROUTING.exists():
+        record(
+            "missing Codex dispatch runtime owner: "
+            f"{CODEX_DISPATCH_ROUTING.relative_to(ROOT)}"
+        )
+    else:
+        require(
+            CODEX_DISPATCH_ROUTING,
+            (
+                "显式指令优先",
+                "Codex App 原生调度",
+                "Codex CLI 原生 thread 能力是 Unknown",
+                "list_projects",
+                "create_thread",
+                "list_threads",
+                "read_thread",
+                "wait_threads",
+                "send_message_to_thread",
+                "startingState",
+                "clientThreadId",
+                "runtime: codex-thread",
+                "runtime: herdr-codex-pane",
+                "runtime: herdr-claude-pane",
+                "$herdr",
+                "active writer",
+            ),
+        )
+    require(
+        CODEX_ROOT / "references" / "frontier-lanes.md",
+        (
+            "调度运行时",
+            "ticket domain 不改写调度运行时",
+            "codex-thread",
+            "herdr-codex-pane",
+            "herdr-claude-pane",
+        ),
+    )
+    require(
+        CODEX_ROOT / "references" / "lane-registry.md",
+        (
+            "runtime: subagent | codex-thread | herdr-codex-pane | herdr-claude-pane | orchestrator",
+            "coordinator_runtime:",
+            "dispatch_runtime:",
+            "host_id:",
+        ),
+    )
+    require(
+        CLAUDE_SKILL,
+        (
+            "Coordinator Runtime",
+            "`references/dispatch-runtime-routing.md`",
+            "`coordinator_runtime: claude-cli`",
+            "`dispatch_runtime: herdr`",
+        ),
+    )
+    require(
+        CLAUDE_ROOT / "references" / "dispatch-runtime-routing.md",
+        (
+            "coordinator_runtime: claude-cli",
+            "dispatch_runtime: herdr",
+            "herdr-codex-pane",
+            "herdr-claude-pane",
+            "/pane-dispatch",
+            "active writer",
+        ),
+    )
+    require(
+        CLAUDE_ROOT / "references" / "lane-registry.md",
+        (
+            "coordinator_runtime: claude-cli",
+            "dispatch_runtime: herdr",
+        ),
+    )
+    require(
+        ROOT / "CONTEXT.md",
+        (
+            "调度运行时",
+            "Codex App 原生 Dispatch",
+            "Herdr Dispatch",
+        ),
+    )
+    require(
+        ROOT / "README.zh-CN.md",
+        (
+            "Codex App 原生 task/worktree",
+            "Herdr/Codex CLI",
+        ),
+    )
+    if not RUNTIME_DISPATCH_ADR.exists():
+        record(f"missing runtime dispatch ADR: {RUNTIME_DISPATCH_ADR.relative_to(ROOT)}")
+    else:
+        require(
+            RUNTIME_DISPATCH_ADR,
+            (
+                "Status:** Accepted",
+                "Codex App",
+                "Herdr",
+                "ADR-0001",
             ),
         )
 
@@ -370,6 +491,7 @@ def main() -> None:
     check_pruned_policy()
     check_runtime_boundaries()
     check_owner_dispatch_contract()
+    check_dispatch_runtime_routing()
 
     metadata = CODEX_ROOT / "agents" / "openai.yaml"
     require(

@@ -7,7 +7,8 @@ HITL `wayfinder:task` child issue，或任何需要实时用户判断的 discove
 
 **Agent kind**：`claude`（HITL tickets 必须使用 Claude 引擎）
 
-**注意**：Codex runtime 不支持 `/herdr` pane 创建。遇到 HITL tickets 时应通过跨环境协调机制委托给 Claude Code runtime，或在 wayfinder-frontier-loop.md 中声明该路径不可用。本 packet 保留作为格式参考。
+**调度运行时**：`codex-thread` 时投递给 user-visible Codex App task；用户明确选择
+`herdr-claude-pane` 时通过 `$herdr` 投递给 Claude pane。
 
 ```text
 项目：

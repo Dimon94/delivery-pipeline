@@ -16,8 +16,9 @@
    `Research` subagent 必须走 `research` owner 路线并返回 `research/<name>` branch +
    Markdown context pointer；不得统一改走 `$wayfinder`。已 assigned 的 research ticket 不在
    frontier 内，先读回 owner 坐标，不重复派发。
-   `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；没有可参与的用户线程时，
-   生成对应 prompt/worker 坐标并停止为 `ask-user`。
+   `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；按当前调度运行时创建 user-visible
+   Codex App task 或 Claude pane。没有可参与的用户 task/pane 时，生成对应 prompt/worker
+   坐标并停止为 `ask-user`。
 4. coordinator 等 terminal signals，不读 routine progress。
 5. 任一 worker terminal 后只读一次 final report，重读 map issue 的 Destination、
    Decisions-so-far、Not yet specified、Out of scope 和 frontier query，立即派发新 ready work。

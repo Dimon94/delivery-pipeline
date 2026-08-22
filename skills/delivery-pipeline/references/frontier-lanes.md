@@ -23,35 +23,42 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 - AFK research、evidence 和自动 task：每个 decision ticket 通过 `Agent` tool 派发为后台
   subagent（`run_in_background: true`）；不创建 pane。
 - HITL prototype、grilling 和 task：各自独立，用户判断只阻塞该 ticket。
-  **必须在 Claude Code 侧处理**（`--kind claude`）。
-  Codex 侧使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 模板仅作为跨环境协调参考。
+  `codex-thread` 使用 user-visible Codex App task；Herdr 使用 `herdr-claude-pane`。
+  两者都使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 填充 owner 与 decision 上下文。
 - coordinator 拥有 map frontier、用户问题和 fan-in；subagent 只拥有自己的 decision ticket。
 
 ## Execution Lanes
 
-- maximal safe batch 中每张 implementation ticket 按下方绑定规则分流：前端与设计 ticket 交
-  Claude Code 侧处理；后端 ticket 创建一个 fresh Codex task。
-- 每个 Codex task 使用独立 worktree/branch，**必须使用 `--kind codex`**。
-  使用 `ISSUE_IMPLEMENT_DISPATCH_PACKET.md` 模板（已内置 `--kind codex`）。
+- maximal safe batch 中每张 implementation ticket 按 `dispatch-runtime-routing.md` 已选的
+  调度运行时创建一个 fresh lane。
+- 每条 lane 都有一个独立 worktree（canonical term: Execution Worktree）和一个 active writer。
+- `codex-thread` 使用 `ISSUE_IMPLEMENT_DISPATCH_PACKET.md`，由 Codex App 创建 task 与独立
+  App-managed Execution Worktree。
+- Herdr 显式 kind 优先；否则前端/设计使用 `herdr-claude-pane` +
+  `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`，后端/其余使用 `herdr-codex-pane` +
+  `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`。两者都由 `$herdr` 创建 pane，并以手工创建的
+  独立 Execution Worktree 为 cwd。ticket domain 不改写调度运行时，只决定 Herdr worker kind。
 - 只运行该 ticket 的 `$implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 coordinator 重算下一 batch。
 - 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。
 
-## Agent Kind 绑定规则
+## 调度运行时绑定
 
-**Packet 模板选择**（按 ticket label 与 domain 查表）：
-- `wayfinder:grilling`、`wayfinder:prototype` → Claude Code 侧处理（`--kind claude`）
-- implementation tickets 按 domain 分流：
-  - 前端与设计（UI 页面、组件、样式、交互）→ Claude Code 侧处理（`--kind claude`）
-  - 后端及其余 → `ISSUE_IMPLEMENT_DISPATCH_PACKET.md`（内置 `--kind codex`）
+| Lane runtime | Worker | Packet | Lifecycle owner |
+| --- | --- | --- | --- |
+| `codex-thread` | Codex App task | `ISSUE_IMPLEMENT_DISPATCH_PACKET.md` | native thread tools |
+| `herdr-codex-pane` | Codex CLI pane | `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` | `$herdr` |
+| `herdr-claude-pane` | Claude pane | `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md` | `$herdr` |
 
-**Fail-closed 原则**：
-- Packet 缺少 `--kind` 参数时，拒绝派发并报错
+registry runtime、packet、worker 与 Execution Worktree transport 必须同一行匹配；不匹配时将
+lane 标记为 `setup_blocked`，完成清理后再重算 frontier。
 
 ## Terminal Fan-in
 
 - normal path 只消费 `completed` / `blocked` terminal event，不读取 routine progress。
 - final report、Git 和 tracker 是证据；notification 只负责唤醒。
+- `codex-thread` 对同批最多 8 个 tasks 使用带 cursor 的 `wait_threads`；terminal 后
+  `read_thread` 一次。两种 Herdr pane 都通过 `$herdr` 读取完整 final markers。
 - coordinator 对每个 terminal lane 读取一次 final report，验证 commit、checks、dirty state
   和 touched files，按 dependency order 集成，然后立即重算 ready frontier。
 - watchdog 只处理启动失败、terminal signal 丢失或工具 timeout；每次异常只做一次状态检查。

@@ -20,10 +20,12 @@ idea/map -> discovery -> spec -> implementation tickets
 从任意输入自动推进到下一个未完成 gate。每个 gate 调用对应的 owner skill，
 验证产物，派发 workers，等待完成。
 
-**输入识别：** 读取 repo tracker 和输入（想法/map/spec/tickets），
+**输入识别与 Coordinator Runtime：** 读取 repo tracker 和输入（想法/map/spec/tickets），
 沿 parent relationships 重建链路，定位最早未完成的 gate。参考
 `references/gate-state-machine.md`、`references/fresh-session-boundaries.md`、
-`references/lane-registry.md`。
+`references/lane-registry.md`、`references/dispatch-runtime-routing.md`。本 entrypoint 记录
+`coordinator_runtime: claude-cli`、`dispatch_runtime: herdr`；worker kind 再按用户指令或
+binding table 选择。
 
 **Discovery gate：** 松散想法调用 `wayfinder` 建图（建图拷问在当前会话进行，不派发），AFK decision tickets
 （research、task）自动派发为后台 subagents（`Agent` tool, `run_in_background: true`），
@@ -42,7 +44,8 @@ spec 回链和 dependency edges 可读回。`/mattpocock-skills:to-tickets` 已�
 （`<parent>/worktrees/<repo>-map-<M>-issue-<N>/`），按 `references/frontier-lanes.md` 绑定规则
 分流 kind 与 packet 模板，通过 `/pane-dispatch` 创建 pane（X tabs，4-pane capacity），派发 `implement` owner packet。
 完成标准：registry 已 readback pane ID、worktree path、branch、base commit 和 attached waiter。
-参考 `references/frontier-lanes.md`、`references/integration-worktree-management.md`。
+参考 `references/dispatch-runtime-routing.md`、`references/frontier-lanes.md`、
+`references/integration-worktree-management.md`。
 
 **Startup probe：** 验证每个 pane 的 workspace/tab/cwd 正确，owner file 已读取。
 错误时重试一次，第二次失败删除 worktree/branch/pane 并标记 `setup_blocked`。

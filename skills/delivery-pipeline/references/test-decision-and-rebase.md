@@ -365,13 +365,13 @@ else:
    done
    ```
 
-5. 删除所有 execution branches（该 map 的 `codex/issue-*` branches）：
+5. 删除该 map registry 列出的所有 execution branches（`codex/issue-*` 或 `claude/issue-*`）：
    ```bash
    # 从 map registry 读取所有 implementation ticket numbers
    TICKET_NUMBERS=$(从 registry 提取所有 ticket IDs)
    
    for TICKET_NUM in $TICKET_NUMBERS; do
-     EXEC_BRANCH="codex/issue-${TICKET_NUM}"
+     EXEC_BRANCH=$(从该 ticket registry 读取 branch)
      if git rev-parse --verify "$EXEC_BRANCH" >/dev/null 2>&1; then
        git branch -D "$EXEC_BRANCH"
        echo "已删除 execution branch: $EXEC_BRANCH"
@@ -379,13 +379,13 @@ else:
    done
    ```
 
-6. 通过 `/herdr` 关闭所有 panes：
+6. map registry 存在 Herdr workspace 时，通过 `$herdr` 关闭所有 panes：
    ```bash
    # 从 map registry 读取 workspace_id 或 workspace_label
    WORKSPACE_LABEL="<map-title>-map-${MAP_ISSUE}"
    
    # 关闭 workspace 中所有 panes（LEAD + X/G/P tabs）
-   /herdr workspace close-all-panes "$WORKSPACE_LABEL"
+   # 通过 $herdr 执行 workspace close-all-panes "$WORKSPACE_LABEL"
    
    # 保留 workspace 本身（用于历史访问）
    echo "已关闭 workspace 所有 panes，workspace 已保留：$WORKSPACE_LABEL"
@@ -416,8 +416,8 @@ else:
 
 8. 更新 map registry 为 `state: closed`。
 
-**完成标准：** 所有 worktrees 已删除（除非 dirty），所有 branches 已删除，
-workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`。
+**完成标准：** 所有 worktrees 已删除（除非 dirty），所有 branches 已删除；存在 Herdr
+workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `closed`。
 
 ## Full Recovery from Registry
 
@@ -429,6 +429,8 @@ workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`
    - `integration_worktree_path`
    - `integration_branch`
    - `base_commit`
+   - `coordinator_runtime`
+   - `dispatch_runtime`
    - `herdr_workspace_label`
    - `state`（可能是 `test_decision_paused`、`rebase_in_progress` 等）
 
@@ -436,8 +438,9 @@ workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`
    - `execution_worktree_path`
    - `execution_branch`
    - `state`（`running`、`terminal`、`integrated` 等）
+   - `runtime`
    - `pane_id`
-   - `thread_id`（如果有）
+   - `thread_id` / `host_id`（如果有）
 
 3. 验证 integration worktree：
    ```bash
@@ -471,17 +474,8 @@ workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`
    fi
    ```
 
-4. 验证 Herdr workspace：
-   ```bash
-   # 通过 /herdr 验证 workspace 存在
-   WORKSPACE_EXISTS=$(herdr workspace list | grep -c "$WORKSPACE_LABEL")
-   
-   if [ "$WORKSPACE_EXISTS" -eq 0 ]; then
-     echo "警告：Herdr workspace 不存在，重新创建"
-     cd "$INTEGRATION_PATH"
-     /herdr workspace create --label "$WORKSPACE_LABEL"
-   fi
-   ```
+4. `dispatch_runtime: herdr` 或存在 Herdr lanes 时通过 `$herdr` 验证 workspace；只有
+   `codex-thread` lanes 时跳过 workspace 操作。
 
 5. 对每个 execution worktree：
    ```bash
@@ -515,26 +509,11 @@ workspace panes 已关闭，map issue 已关闭，registry 已更新为 `closed`
    fi
    ```
 
-6. 对 `running` state 的 execution tickets：
-   ```bash
-   # 通过 /herdr 验证 pane 存在
-   PANE_EXISTS=$(herdr pane list | grep -c "$PANE_ID")
-   
-   if [ "$PANE_EXISTS" -eq 0 ]; then
-     echo "pane 不存在，检查是否有 terminal marker"
-     
-     # 从 execution worktree 读取 terminal marker
-     if [ -f "$EXECUTION_PATH/.wayfinder-terminal" ]; then
-       echo "发现 terminal marker，读取 final report"
-       # 进入 Terminal Readback 流程
-     else
-       echo "pane 和 marker 都不存在，标记为 setup_blocked"
-     fi
-   else
-     echo "pane 存在，重新挂载 listener"
-     # 重新调用 child-monitoring.md 的 listener attachment
-   fi
-   ```
+6. 对 `running` state 的 execution tickets 按 lane runtime 恢复：
+   - `codex-thread`：用 `list_threads` / `read_thread` 验证 task，再带 cursor 调用
+     `wait_threads`。
+   - `herdr-codex-pane` / `herdr-claude-pane`：通过 `$herdr` 验证 pane；pane 存在时重挂
+     listener，pane 消失时检查 final marker 与 commit。
 
 7. 对 `terminal` state 的 execution tickets：
    ```bash
@@ -576,7 +555,7 @@ terminal tasks 已进入 integration 流程，orchestrator 恢复到正确的 ga
 - 从持久证据继续 fan-in
 - 标记该 ticket 为 terminal，进入 integration
 
-**Pane missing but terminal marker exists：**
+**Herdr pane missing but terminal marker exists：**
 - 读取 terminal marker，进入 fan-in
 - 不重新创建 pane
 
@@ -603,8 +582,8 @@ terminal tasks 已进入 integration 流程，orchestrator 恢复到正确的 ga
 - [ ] Integration worktree deleted: `! test -d "$INTEGRATION_PATH"`
 - [ ] Integration branch deleted: `! git rev-parse --verify "$INTEGRATION_BRANCH" 2>/dev/null`
 - [ ] Execution worktrees deleted: `git worktree list --porcelain` 不包含 `-map-${MAP_ISSUE}-issue-`
-- [ ] Execution branches deleted: `git branch --list "codex/issue-*"` 为空
-- [ ] Herdr panes closed: `herdr pane list` 在该 workspace 为空（或只剩 workspace shell）
+- [ ] Execution branches deleted: registry 中该 map 的 execution branches 均不存在
+- [ ] Runtime transport closed: Codex App tasks terminal；存在 Herdr workspace 时 panes 为空
 - [ ] Map issue closed: tracker API 确认 issue state = closed
 - [ ] Registry updated: readback `state: closed`
 

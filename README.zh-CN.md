@@ -16,8 +16,9 @@ map/spec/ticket 状态，并从最早未完成的 gate 自动继续。
 负责发布 implementation tickets，`implement` 负责单张票。orchestrator 只验证持久链接和
 状态转换，不再增加第二套票面判断。
 
-执行自动分配：每张 ready ticket 对应一个隔离的 worker 和一个 Git worktree——前端与设计走
-Claude Code，后端走 Codex。
+执行自动分配先按调度者环境选 transport：Codex App 使用 Codex App 原生 task/worktree；
+Codex CLI 与 Claude CLI 使用 Herdr。进入 Herdr 后，用户显式 worker kind 优先，否则前端/设计
+走 Claude pane，后端/其余走 Codex CLI pane。
 dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 每个被派发的 child 都保存 pane/thread ID、worktree、branch、commit 和生命周期状态。
 新会话会先恢复已有 child 并重挂 terminal listener。Claude 在集成与 focused checks 成功后
@@ -35,7 +36,8 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 - 交付：`to-spec`、`to-tickets`、`implement`、`code-review`
 - 集成/收尾：`resolving-merge-conflicts`
 
-**Herdr** —— 承载派出会话的终端 multiplexer（CLI + `herdr` skill）。独立组件，本仓库不附带；使用 pane 派发前按其自身文档安装。
+**Herdr** —— Codex CLI 和 Claude CLI 调度场景的终端 multiplexer（CLI + `herdr` skill），
+也可由 Codex App 用户显式选择。独立组件，本仓库不附带；纯 Codex App 原生路径不依赖它。
 
 ## 安装
 
@@ -61,17 +63,24 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 
 1. **Discovery**——松散想法建成 Wayfinder map（建图拷问在当前会话进行，不派发）。调研票派后台 subagent，拷问票和原型票派独立 Claude pane。
 2. **Spec → Tickets**——`to-spec` 发布 spec；`to-tickets` 发布带链接的 implementation tickets。
-3. **Dispatch**——每张 implementation ticket 一个 worktree + 一个 execution pane：前端/设计票走 Claude Code（默认模型），后端票走 Codex。
+3. **Dispatch**——每张 implementation ticket 一个 Execution Worktree + 一个 lane。Codex App
+   调度者使用原生 task；Herdr/Codex CLI 或 Herdr/Claude CLI 按 worker kind 创建 pane。
 4. **托管与回报**——派出的会话自主执行（HITL 票直接与用户对话）。terminal 后 listener 唤醒调度会话，验证 final report、集成 commit，然后派发下一批。
 5. **收尾**——graph 清空后 rebase、push，产出一个 summary PR/MR。
 
-Codex：
+Codex App（默认原生 thread/worktree）：
 
 ```text
 使用 $delivery-pipeline 继续 <任意 map/spec/ticket issue>。
 ```
 
-Claude（通过 `/herdr` skill 管理 panes）：
+Codex CLI（通过 Herdr 管理 Codex/Claude panes）：
+
+```text
+使用 $delivery-pipeline 继续 <任意 map/spec/ticket issue>。
+```
+
+Claude CLI（通过 `/pane-dispatch` 管理 Herdr panes）：
 
 ```text
 使用 /delivery-pipeline <任意 map/spec/ticket issue>。

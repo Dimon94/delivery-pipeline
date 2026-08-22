@@ -63,7 +63,7 @@
     {
       "name": "herdr",
       "source": "herdr",
-      "reason": "Terminal multiplexer hosting dispatched panes; pane-dispatch and lane lifecycle depend on its CLI and skill."
+      "reason": "Terminal multiplexer for Codex CLI and Claude CLI coordinators, plus explicit Codex App pane dispatch."
     }
   ]
 }

@@ -1,7 +1,12 @@
 # Fresh Session 与 Ownership
 
 每次新会话从用户给出的任意 issue 重建 map → spec → tickets → execution 链。读取
-`gate-state-machine.md` 的持久关系和 `lane-registry.md` 的执行坐标。
+`gate-state-machine.md` 的持久关系、`lane-registry.md` 的执行坐标和
+`dispatch-runtime-routing.md` 的调度运行时选择。
+
+Codex entrypoint 中，完整 App thread tool set 表示 `coordinator_runtime: codex-app`；否则是
+`coordinator_runtime: codex-cli` 并走 Herdr。Claude entrypoint 的 coordinator runtime 由其自身
+routing reference 记录为 `claude-cli`。
 
 ## Stage Owners
 
@@ -12,10 +17,10 @@
 - execution worker：一张 implementation ticket、一个 worktree、一个 commit/report。
 
 每个 owner 的输出必须写入 tracker、artifact、Git 或 PR/MR，下一会话才能 readback。
-每个 dispatched child 的 registry 保存 role、thread ID、projectId、worktree/branch、commit
-和 lifecycle state。
+每个 dispatched child 的 registry 保存 role、runtime、task 或 pane 坐标、worktree/branch、
+commit 和 lifecycle state。
 
-## Codex Project Targeting
+## Codex Project Targeting (`runtime: codex-thread`)
 
 派发前用 `list_projects` 找到源码 repo 的 `Source owner projectId`。按以下顺序解析：
 
@@ -41,5 +46,8 @@
 - source worktree 保持当前 branch。
 - worker 只处理 packet 指定的 ticket；dependency graph 与下一批由 coordinator 持有。
 - remote authority 缺失不阻塞本地实现与 integration。
+- Codex App 原生调度让 `create_thread` 创建 App-managed worktree；Herdr 调度手工创建
+  固定路径 worktree。两者都从当前 Integration branch HEAD 开始。
 
-thread tools 不可用时，输出完整 durable packets；不要由 coordinator 代替 execution workers。
+thread tools 不可用时按 `codex-cli` 使用 Herdr；Herdr 也不可用时输出完整 durable packets，
+不要由 coordinator 代替 execution workers。

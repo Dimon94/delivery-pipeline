@@ -27,15 +27,20 @@ idea/map -> discovery -> spec -> implementation tickets
 裸 issue 编号必须能从当前 repo 的 tracker 配置唯一解析。每次新会话都沿持久 relationships
 重建链路，从最早未完成的 gate 自动继续。
 
-1. **识别输入与 worktree routing。** 读取 repo instructions、tracker operations 和输入 artifact。
+1. **识别输入、worktree 与调度运行时。** 读取 repo instructions、tracker operations 和输入 artifact。
    加载 `references/gate-state-machine.md`、`references/integration-worktree-management.md`、
    `references/fresh-session-boundaries.md`、`references/lane-registry.md`、
-   `references/child-monitoring.md` 和 `references/owner-skill-resolution.md`。
+   `references/child-monitoring.md`、`references/owner-skill-resolution.md` 和
+   `references/dispatch-runtime-routing.md`。Codex App 原生 thread tools 全部可用时默认选择
+   `dispatch_runtime: codex-app`；用户明确要求 Herdr，或 App tools 不完整但 Herdr 可用时选择
+   `dispatch_runtime: herdr`。Herdr 再按用户指定或 binding table 选择 `herdr-codex-pane` /
+   `herdr-claude-pane`。Existing lanes 按各自 registry runtime 恢复，新 lane 才使用本次选择。
    识别当前是 source worktree（main）还是 integration worktree（`feature/map-*`）。
    输入是 map 且在 source worktree 时：检查该 map 的 integration worktree 是否存在（registry + 路径）；
-   存在且 valid 则提示 resume，不存在则创建 integration worktree + Herdr workspace，切换过去。
+   存在且 valid 则提示 resume，不存在则创建 integration worktree 并切换过去；Herdr workspace
+   只在首次 Herdr lane 前懒创建。
    已在 integration worktree 时直接继续。完成标准：worktree 位置正确（integration worktree 或已确认在 source）、
-   输入已识别类型（map/spec/tickets）、所有 existing child 坐标已 readback。
+   输入已识别类型（map/spec/tickets）、本次 `dispatch_runtime` 已持久化、所有 existing child 坐标已 readback。
 2. **Run discovery。** 加载 `references/wayfinder-frontier-loop.md`、
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
@@ -49,30 +54,32 @@ idea/map -> discovery -> spec -> implementation tickets
    交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
    完成标准：至少一张真实 ticket 的 ID、spec 回链和 dependency edges 可读回。
 5. **Dispatch execution。** 加载 `references/frontier-lanes.md`、`references/integration-worktree-management.md`、
-   `assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
-   选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票先按
-   `references/frontier-lanes.md` 绑定规则分流：前端与设计 ticket 交 Claude Code 侧处理并由该侧登记；
-   后端 ticket：先从 integration worktree 创建 execution worktree（path: `<source-parent>/worktrees/<repo>-map-<M>-issue-<N>/`，
-   branch: `codex/issue-<N>` based on integration branch），验证 Git state（worktree registered、branch correct、
-   working tree clean），创建 fresh Codex task 和 Herdr pane（X tabs，4-pane capacity，tab label
-   自动更新），投递完整 dispatch packet；coordinator 不亲自实现。完成标准：ticket 的 durable registry
-   已 readback thread ID、projectId、execution_worktree_path、branch、base commit 和 herdr_pane_id。
-6. **Probe startup。** 每个 task 创建后验证：`Source owner projectId` 属于同一 repo、`cwd` 位于
-   execution worktree、完整 packet 已收到、child 已 readback owner name/resolved path。
-   错误落点或未读 owner file 时用同一 projectId 重建一次；第二次失败标记 `setup_blocked`，
-   立即删除 execution worktree/branch/pane（参考 `references/execution-worktree-integration.md`）。
+   `assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`；Herdr 路由再按 worker kind 加载
+   `assets/HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` 或
+   `assets/HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
+   选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票按已选
+   调度运行时创建唯一 lane：`codex-thread` 用 `create_thread` 从 Integration branch 创建 fresh
+   Codex App task + App-managed Execution Worktree；Herdr 用 `$herdr` 创建手工 Execution
+   Worktree + fresh Codex CLI/Claude Code pane。coordinator 不亲自实现。完成标准：ticket registry 已
+   readback runtime 对应的 task 或 pane 坐标、实际 worktree、branch 与 base commit。
+6. **Probe startup。** 每个 lane 创建后验证：`cwd` 位于 Execution Worktree、完整 packet 已收到、
+   child 已 readback owner name/resolved path；`codex-thread` 还要验证 Source owner projectId，
+   Herdr pane 还要验证 workspace/tab/pane placement 与 kind。错误落点或未读 owner file 时沿同一
+   runtime 重建一次；第二次失败标记 `setup_blocked`，
+   按 lane runtime 清理 task/pane 与 execution worktree/branch（参考
+   `references/execution-worktree-integration.md`）。
 7. **Integrate changes。** 加载 `references/execution-worktree-integration.md`。Workers 运行时只消费
    terminal final report；验证 commit、extraction worktree、integration worktree state，按 dependency order
-   执行 cherry-pick。成功后运行 focused checks，通过则删除 execution worktree/branch、关闭 Herdr pane、
-   更新 tab label、更新 registry 为 `integrated`、立即重算 frontier。冲突时中止 cherry-pick，
+   执行 cherry-pick。成功后运行 focused checks，通过则删除 execution worktree/branch，按 runtime
+   收口 task 或 Herdr pane，更新 registry 为 `integrated`、立即重算 frontier。冲突时中止 cherry-pick，
    标记 `integration_conflict`，保留 execution worktree 供调试。Lane blocker 不停止其他 ready tickets。
 8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。全部通过时加载
    `references/test-decision-and-rebase.md`，暂停在 test decision point，由用户选择：(1) 在 integration
    worktree 测试，(2) rebase 后在 main 测试，(3) 跳过测试直接 push。用户选择后自动 rebase integration
    branch 到最新 main，检测冲突时委托 `$resolving-merge-conflicts`。Rebase 成功后
    push 到 main（默认直接 push，不创建 PR/MR 除非用户明确要求），删除所有 worktrees（integration +
-   残留 execution），删除所有 branches（`feature/map-X` + `codex/issue-*`），关闭 Herdr workspace
-   所有 panes（保留 workspace），关闭 map issue 并写入 completion comment。获得 remote publication
+   残留 execution），删除所有 branches（`feature/map-X` + execution branches）；map 曾使用
+   Herdr 时关闭 workspace 所有 panes（保留 workspace）。关闭 map issue并写入 completion comment。获得 remote publication
    authority 时加载 `references/remote-closeout-checklist.md`，push/open summary PR/MR，
    并等待 CI/CD 与 remote review verdict。
 
@@ -86,7 +93,9 @@ idea/map -> discovery -> spec -> implementation tickets
 - 每张 ticket 一个 execution lane、一个 owner、一个 worktree/branch。lane terminal 后由
   coordinator 重算下一批，不让 worker 自领 sibling tickets。
 - 新会话先从每张 ticket 的 durable lane registry 恢复 existing tasks，再创建 replacement。
-- thread tools 不可用时，输出每张 ready ticket 的完整 dispatch packet；不假装已经派发。
+- 调度运行时按 `references/dispatch-runtime-routing.md` 选择；ticket domain 不改写调度运行时。
+- Codex App thread tools 不完整时按 `codex-cli` 使用 Herdr；Herdr 也不可用时输出每张 ready
+  ticket 的完整 dispatch packet，不假装已经派发。
 
 ## 真相源与权限
 
