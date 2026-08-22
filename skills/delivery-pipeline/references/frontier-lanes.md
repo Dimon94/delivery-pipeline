@@ -36,7 +36,7 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
   App-managed Execution Worktree。
 - Herdr 显式 kind 优先；否则前端/设计使用 `herdr-claude-pane` +
   `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`，后端/其余使用 `herdr-codex-pane` +
-  `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`。两者都由 `$herdr` 创建 pane，并以手工创建的
+  `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`。两者都由 Herdr Control Route 创建 pane，并以手工创建的
   独立 Execution Worktree 为 cwd。ticket domain 不改写调度运行时，只决定 Herdr worker kind。
 - 只运行该 ticket 的 `$implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 coordinator 重算下一 batch。
@@ -47,8 +47,8 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 | Lane runtime | Worker | Packet | Lifecycle owner |
 | --- | --- | --- | --- |
 | `codex-thread` | Codex App task | `ISSUE_IMPLEMENT_DISPATCH_PACKET.md` | native thread tools |
-| `herdr-codex-pane` | Codex CLI pane | `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` | `$herdr` |
-| `herdr-claude-pane` | Claude pane | `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md` | `$herdr` |
+| `herdr-codex-pane` | Codex CLI pane | `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` | Herdr Control Route |
+| `herdr-claude-pane` | Claude pane | `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md` | Herdr Control Route |
 
 registry runtime、packet、worker 与 Execution Worktree transport 必须同一行匹配；不匹配时将
 lane 标记为 `setup_blocked`，完成清理后再重算 frontier。
@@ -58,7 +58,7 @@ lane 标记为 `setup_blocked`，完成清理后再重算 frontier。
 - normal path 只消费 `completed` / `blocked` terminal event，不读取 routine progress。
 - final report、Git 和 tracker 是证据；notification 只负责唤醒。
 - `codex-thread` 对同批最多 8 个 tasks 使用带 cursor 的 `wait_threads`；terminal 后
-  `read_thread` 一次。两种 Herdr pane 都通过 `$herdr` 读取完整 final markers。
+  `read_thread` 一次。两种 Herdr pane 都通过 Herdr Control Route 读取完整 final markers。
 - coordinator 对每个 terminal lane 读取一次 final report，验证 commit、checks、dirty state
   和 touched files，按 dependency order 集成，然后立即重算 ready frontier。
 - watchdog 只处理启动失败、terminal signal 丢失或工具 timeout；每次异常只做一次状态检查。

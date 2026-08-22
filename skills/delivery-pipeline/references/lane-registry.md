@@ -20,6 +20,7 @@ host_id: <host-id>
 thread_id: <id>
 thread_archived: true | false | unknown
 # --- pane fields (runtime: herdr-codex-pane | herdr-claude-pane) ---
+herdr_session_name: <named-session-or-current-herdr-session>
 workspace_id: <id>
 tab_id: <id>
 pane_id: <id>
@@ -80,8 +81,9 @@ registry 写入或 readback 失败时，不声称该 child 可恢复。
 3. `runtime: codex-thread` 的 `integrated` / `close_pending` / `closed` lane 用
    `list_archived_threads` 验证 `thread_archived`；`close_pending` 重试 `set_thread_archived` 并
    readback，成功后写 `closed`。
-4. `runtime: herdr-codex-pane | herdr-claude-pane` 用 `$herdr` 验证
-   workspace/tab/pane、worker kind 与 final marker。
+4. `runtime: herdr-codex-pane | herdr-claude-pane` 按 `dispatch-runtime-routing.md` 的 Herdr
+   Control Route，用 `herdr_session_name` 验证 workspace/tab/pane、worker kind 与 final marker。
+   Codex App bridge lane 缺少 session name 时坐标为 `Unknown`，不得回退到 default session。
 5. 用 Git 验证所有 runtime 的 worktree、branch 和 commits。
 6. lane 已 terminal：读取 final report，进入 fan-in。
 7. task/pane 消失但 commit/artifact 存在：从持久证据继续 fan-in。

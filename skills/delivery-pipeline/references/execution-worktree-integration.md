@@ -161,7 +161,7 @@ registry 已更新为 `integrated` state。
      `list_archived_threads`，直到按 `thread_id` 找到目标或分页耗尽。readback 成功时写
      `thread_archived: true`、`state: closed` 并清除 active writer；工具失败或分页耗尽时写
      `thread_archived: unknown`、`state: close_pending`，保留 thread 坐标供恢复重试。
-   - `herdr-codex-pane` / `herdr-claude-pane`：通过 `$herdr` 关闭 pane 并更新 tab label；失败时标记
+   - `herdr-codex-pane` / `herdr-claude-pane`：通过 Herdr Control Route 关闭 pane 并更新 tab label；失败时标记
      `close_pending`；成功时标记 `closed`。
 
 transport 的 `close_pending` 不阻塞其他 ready tickets。`integration_conflict`、`integration_failed`
@@ -190,7 +190,7 @@ fi
 # 删除 branch（如果存在）
 git branch -D "$EXECUTION_BRANCH" 2>/dev/null
 
-# Herdr runtime 再通过 $herdr 关闭已验证 pane；codex-thread 保留未归档 task 以暴露失败
+# Herdr runtime 再通过 Herdr Control Route 关闭已验证 pane；codex-thread 保留未归档 task 以暴露失败
 ```
 
 **标记 ticket 状态：**
@@ -293,7 +293,7 @@ thread_archived: true  # 仅 runtime: codex-thread
 - [ ] Execution branch deleted: `! git rev-parse --verify "$EXECUTION_BRANCH" 2>/dev/null`
 - [ ] Worktree unregistered: `git worktree list --porcelain` 不包含 `$EXECUTION_PATH`
 - [ ] Registry updated: `integrated_commit` 存在，readback `state: closed` 或 `close_pending`
-- [ ] Runtime transport closed: `list_archived_threads` 验证 Codex App task archived，或 `$herdr`
+- [ ] Runtime transport closed: `list_archived_threads` 验证 Codex App task archived，或 Herdr Control Route
       验证 pane closed/tab updated
 
 Git、worktree 或 registry 验证失败时报告 expected vs actual，标记为 partial cleanup，不继续该

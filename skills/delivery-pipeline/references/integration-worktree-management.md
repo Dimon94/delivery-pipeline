@@ -45,9 +45,9 @@ INTEGRATION_BRANCH="feature/map-${MAP_ISSUE}"
 
 4. 验证 path、Git registration、branch、HEAD、common dir 和 clean state。
 5. map registry 写入 `integration_worktree_path`、`integration_branch`、`base_commit` 和当前
-   `dispatch_runtime`，随后精确 readback。
+   `dispatch_runtime`；Codex App bridge 同时写 `herdr_session_name`，随后精确 readback。
 6. coordinator 在 Integration Worktree 继续。只有首条 Herdr lane 需要时才通过
-   `$herdr` 懒创建 map workspace。
+   Herdr Control Route 懒创建 map workspace。
 
 完成标准：Integration Worktree 唯一、clean、基于预期 Source HEAD，registry 与 Git 一致。
 
@@ -138,7 +138,7 @@ fi
 
 1. 从 map/spec/tickets 枚举 latest lane registries。
 2. 逐条验证 worktree path、common dir、branch、base/head commit 和 dirty state。
-3. `codex-thread` 用原生 thread tools 恢复；两种 Herdr pane 都用 `$herdr` 恢复。
+3. `codex-thread` 用原生 thread tools 恢复；两种 Herdr pane 都用 Herdr Control Route 恢复。
 4. lane transport 消失但 commit 存在时从 Git 证据进入 terminal fan-in；两者都不存在且已排除
    active writer 时才允许 replacement。
 5. `integrated` lane 应已清理 Execution Worktree；残留且 clean 时重试 cleanup，dirty 时保留并

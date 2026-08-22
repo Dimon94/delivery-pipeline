@@ -379,17 +379,19 @@ else:
    done
    ```
 
-6. map registry 存在 Herdr workspace 时，通过 `$herdr` 关闭所有 panes：
+6. map registry 存在 Herdr workspace 时，通过 Herdr Control Route 关闭所有 panes：
    ```bash
    # 从 map registry 读取 workspace_id 或 workspace_label
    WORKSPACE_LABEL="<map-title>-map-${MAP_ISSUE}"
    
    # 关闭 workspace 中所有 panes（LEAD + X/G/P tabs）
-   # 通过 $herdr 执行 workspace close-all-panes "$WORKSPACE_LABEL"
+   # 通过 Herdr Control Route 关闭 workspace 的全部 panes
    
    # 保留 workspace 本身（用于历史访问）
    echo "已关闭 workspace 所有 panes，workspace 已保留：$WORKSPACE_LABEL"
    ```
+
+   Codex App bridge 再执行 `herdr session stop "$herdr_session_name" --json`；保留 named session。
 
 7. 关闭 map issue，写入 completion comment：
    ```markdown
@@ -474,7 +476,7 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
    fi
    ```
 
-4. `dispatch_runtime: herdr` 或存在 Herdr lanes 时通过 `$herdr` 验证 workspace；只有
+4. `dispatch_runtime: herdr` 或存在 Herdr lanes 时通过 Herdr Control Route 验证 workspace；只有
    `codex-thread` lanes 时跳过 workspace 操作。
 
 5. 对每个 execution worktree：
@@ -512,7 +514,7 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
 6. 对 `running` state 的 execution tickets 按 lane runtime 恢复：
    - `codex-thread`：用 `list_threads` / `read_thread` 验证 task，再带 cursor 调用
      `wait_threads`。
-   - `herdr-codex-pane` / `herdr-claude-pane`：通过 `$herdr` 验证 pane；pane 存在时重挂
+   - `herdr-codex-pane` / `herdr-claude-pane`：通过 Herdr Control Route 验证 pane；pane 存在时重挂
      listener，pane 消失时检查 final marker 与 commit。
 
 7. 对 `terminal` state 的 execution tickets：

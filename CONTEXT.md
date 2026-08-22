@@ -31,8 +31,11 @@ Multiple Wayfinder maps running simultaneously, each with its own integration wo
 **Worktree Lifecycle**
 Creation → work → integration/merge → deletion. Execution worktrees: created at dispatch, deleted after cherry-pick. Integration worktrees: created at map start, deleted after push to main. Failed/blocked worktrees: deleted immediately to avoid pollution.
 
+**Herdr Named Session**
+A persistent Herdr server session used by the Codex App Herdr Bridge. Its deterministic name belongs to one map and is stored as `herdr_session_name`; every out-of-Herdr CLI call targets it with `herdr --session <name>`. The server is started after the user selects Herdr, stopped after map closeout, and retained for recovery.
+
 **Herdr Workspace**
-A Herdr terminal multiplexer workspace corresponding to one map when Herdr Dispatch is selected. Label matches `map-<issue-number>`. Created lazily before the first Herdr lane. HITL panes (grilling, prototype) and execution panes land in this workspace. Preserved (not deleted) after map completes, for history access. Codex App native Dispatch does not create a Herdr Workspace.
+A Herdr terminal multiplexer workspace corresponding to one map when Herdr Dispatch is selected. Label matches `map-<issue-number>`. Created lazily inside the selected Herdr session before the first Herdr lane. HITL panes (grilling, prototype) and execution panes land in this workspace. Preserved (not deleted) after map completes, for history access. Codex App native Dispatch does not create a Herdr Workspace.
 
 **Task Coordinate Title**
 A stable, human-facing Codex App task title that identifies the owning map, lane role, and work item. It is a navigation coordinate; Codex App task lifecycle carries dynamic state, while the lane registry remains the recovery truth.
@@ -47,9 +50,10 @@ A background `Agent` tool subagent that handles one AFK discovery ticket (resear
 The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, or `claude-cli`. It is distinct from the worker kind. Codex App exposes native task/thread orchestration; Codex CLI and Claude CLI use Herdr Dispatch.
 
 **Dispatch Model**
-- Coordinator Runtime 先决定调度 transport：`codex-app` 默认 Codex App 原生 Dispatch，`codex-cli` 与 `claude-cli` 使用 Herdr Dispatch；Codex App 用户可显式覆盖为 Herdr。
+- Coordinator Runtime 先决定调度 transport：`codex-app` 默认 Codex App 原生 Dispatch，`codex-cli` 与 `claude-cli` 使用 Herdr Dispatch；Codex App 用户可在 capability probe 通过后显式覆盖为 Herdr。
 - Codex App 原生 Dispatch = Codex App task + App-managed Execution Worktree，lane runtime 为 `codex-thread`。
 - Herdr Dispatch = map Herdr Workspace 中的 Codex CLI 或 Claude CLI pane；lane runtime 为 `herdr-codex-pane` 或 `herdr-claude-pane`。显式 worker kind 优先，否则 frontend/design → Claude，backend/other → Codex。
+- Codex App coordinator 不在 Herdr pane 时，通过 Codex App Herdr Bridge 启动并显式控制 map 的 Herdr Named Session；用户批准后由原 coordinator 继续派发。
 - 每条 lane 在 registry 持久化自己的 runtime；恢复时以 lane runtime 为准。Coordinator Runtime 与 worker kind 是两条独立轴。
 - Codex CLI 是否具备与 Codex App 相同的原生 thread 能力是 Unknown；本模型不依赖该能力。
 - Subagents = autonomous background work that reports results (research, AFK task). Research and AFK tasks do not occupy Codex App tasks or Herdr tabs.
@@ -57,7 +61,7 @@ The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, or `
 
 ## Relationships
 
-- One map → one integration worktree → zero or one Herdr workspace
+- One map → one integration worktree → zero or one Herdr named session → zero or one Herdr workspace
 - One map → many implementation tickets → many execution worktrees → many runtime-owned lanes
 - One map → many discovery tickets → many subagents (no panes)
 - One execution worktree → one Codex App task or one Herdr-hosted Codex CLI/Claude Code pane

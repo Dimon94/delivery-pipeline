@@ -8,7 +8,8 @@ HITL `wayfinder:task` child issue，或任何需要实时用户判断的 discove
 **Agent kind**：`claude`（HITL tickets 必须使用 Claude 引擎）
 
 **调度运行时**：`codex-thread` 时投递给 user-visible Codex App task；用户明确选择
-`herdr-claude-pane` 时通过 `$herdr` 投递给 Claude pane。
+`herdr-claude-pane` 时通过 `references/dispatch-runtime-routing.md` 的 Herdr Control Route
+投递给 Claude pane。
 
 ```text
 项目：

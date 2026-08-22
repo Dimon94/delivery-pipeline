@@ -5,6 +5,11 @@ Runtime adapter：区分 `codex-app` 与 `codex-cli`。Coordinator Runtime 只�
 worker kind 是第二条轴。ready frontier、单写者、Execution Worktree、Integration 和 terminal
 fan-in 保持不变。
 
+**Herdr Control Route** 是本文件唯一的 pane lifecycle owner：coordinator 已在 Herdr pane
+（`HERDR_ENV=1`）时解析并调用 `$herdr`；Codex App coordinator 不在 Herdr pane 时走
+**Codex App Herdr Bridge**，所有 CLI 调用显式携带 map 的 named session。下游文件提到
+Herdr Control Route 时都回到本节，不自行选择 default/focused session。
+
 ## 选择顺序
 
 1. **识别 Coordinator Runtime。** 检查 `list_projects`、`create_thread`、`list_threads`、
@@ -13,15 +18,21 @@ fan-in 保持不变。
    `coordinator_runtime: codex-app`；否则本 Codex entrypoint 记录
    `coordinator_runtime: codex-cli`。推断：完整原生 task tool set 表示 Codex App。Codex CLI
    原生 thread 能力是 Unknown，本模型不尝试调用它。
-2. **显式指令优先。** `codex-app` 用户明确要求本次使用 Herdr 时选择
+2. **探测 Herdr capability。** 可能需要 Claude/Herdr 的分支先检查 `herdr` 与目标 agent binary。
+   `HERDR_ENV=1` 时验证当前 `$herdr` session 可读；`codex-app` 且 `HERDR_ENV!=1` 时验证
+   `command -v herdr`、`command -v <claude|codex>`、`herdr session list --json`，并确认
+   `herdr --help` 暴露 `--session` 与 `server`。先完成 capability probe，再向用户呈现 Herdr/Claude
+   选择。probe 失败时直接报告 `dispatch unavailable` 和 durable packet。
+3. **显式指令优先。** `codex-app` 用户明确要求本次使用 Herdr 时选择
    `dispatch_runtime: herdr`；否则选择 `dispatch_runtime: codex-app`，新 lane 使用
    `runtime: codex-thread`。`codex-cli` 固定选择 `dispatch_runtime: herdr`。
-3. **选择 Herdr worker kind。** 用户指定 Codex CLI 或 Claude CLI 时固定对应 pane；否则按
+4. **选择 Herdr worker kind。** 用户指定 Codex CLI 或 Claude CLI 时固定对应 pane；否则按
    `frontier-lanes.md` 的 domain binding。
-4. 已选择 Herdr 但 `$herdr` 不可用时，输出 ready lanes 的完整 durable packets，报告
-   `dispatch unavailable`，不由 coordinator 代替 worker。
+5. 用户批准后由当前 coordinator 在同一 turn 继续派发；批准只改变 transport，当前 Codex App
+   task 立即进入 Bridge 启动步骤。
 
-把 `coordinator_runtime` 与 `dispatch_runtime` 写入 map registry。每条 existing lane 仍按自己的
+把 `coordinator_runtime`、`dispatch_runtime` 与 bridge 使用的 `herdr_session_name` 写入 map
+registry。每条 existing lane 仍按自己的
 `runtime` 恢复；本次选择只约束新 lane。存在 active writer 时先完成恢复与去重，再创建
 replacement 或切换新 lane 的 transport。
 
@@ -69,27 +80,49 @@ Worktree 和 registry 互相一致，startup probe 已读回 owner skill name/pa
 
 ## Herdr 调度
 
-此分支由用户明确选择，或在 Codex App thread tools 不完整而 `$herdr` 可用时选择。解析并调用
-`$herdr`，在 Map Integration Worktree 对应 workspace 中创建 Codex CLI 或 Claude Code pane。
+此分支由用户明确选择，或在 Codex App thread tools 不完整而 Herdr Control Route 可用时选择。
+在 Map Integration Worktree 对应 workspace 中创建 Codex CLI 或 Claude Code pane。
 显式 worker kind 优先；否则按 `frontier-lanes.md` 的 Herdr binding：前端/设计用 Claude Code，
 后端及其余用 Codex CLI。
 
-1. workspace 缺失时懒创建；已有 workspace 先 readback。
+### Codex App Herdr Bridge
+
+`codex-app` 且 `HERDR_ENV!=1` 时，从 repo 与 map/root work-item key 生成只含 ASCII 字母、数字、
+`.`、`_`、`-` 的稳定 `herdr_session_name`，例如 `delivery-pagugu-map-1`。禁止使用 default session。
+
+1. 用 `herdr session list --json` readback named session。server 未运行时，通过非阻塞 terminal
+   启动 `herdr --session "$herdr_session_name" server`，读到 `api socket:` 后再继续。
+2. 后续 workspace/tab/pane/agent/read/wait/cleanup 命令统一使用
+   `herdr --session "$herdr_session_name" <group> ...`，每次从 JSON 读回真实 ID。
+3. `agent start` 返回 `agent_not_ready` 且 `agent get` 为 `blocked` 时保留 lane；读取 UI，向用户
+   请求精确确认，确认后用同一 named session 和 agent/pane 继续 startup probe。
+4. bridge capability、session readiness 或 agent binary 缺失时输出完整 durable packet 并报告
+   `dispatch unavailable`；已创建的空 Execution Worktree 按 cleanup contract 收口。
+
+完成标准：Codex App coordinator 无需进入 Herdr pane即可读回 named session，且 user approval
+之后创建的 Claude/Codex pane 到达 `idle`、`working` 或可恢复的 `blocked`。
+
+### Lane 创建与生命周期
+
+1. workspace 缺失时通过 Herdr Control Route 懒创建；已有 workspace 先 readback。
 2. 从当前 Integration HEAD 手工创建 `codex/issue-<ticket>` 或 `claude/issue-<ticket>`
    Execution Worktree。
 3. Codex CLI 填写 `assets/HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`；Claude Code 填写
    `assets/HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`。以 Execution Worktree 为 cwd 启动 pane，
    并验证 placement、owner skill 和 work item。
 4. registry 写入 `runtime: herdr-codex-pane` 或 `runtime: herdr-claude-pane`，以及
-   workspace/tab/pane、worktree、branch 与 base commit。
-5. terminal、recovery 和 pane cleanup 通过 `$herdr` 完成；该 lane 不调用 Codex App thread tools。
+   `herdr_session_name`、workspace/tab/pane、worktree、branch 与 base commit。
+5. terminal、recovery 和 pane cleanup 通过 Herdr Control Route 完成；该 lane 不调用 Codex App
+   thread tools。
 
 完成标准：每条 Herdr lane 都有唯一 kind-matched pane、唯一 Execution Worktree 和可读回 registry。
 
 ## 模式切换
 
 - active `codex-thread` 继续由 thread tools fan-in；active `herdr-codex-pane` 和
-  `herdr-claude-pane` 继续由 `$herdr` fan-in。切换不会迁移或复制 running lane。
+  `herdr-claude-pane` 继续由 registry 指定的 Herdr Control Route fan-in。切换不会迁移或复制
+  running lane。
 - replacement 沿原 lane runtime，除非用户明确改变该票且已证实原 active writer 不存在。
 - cleanup 按每条 lane 的 runtime 执行；只在 map 曾创建 Herdr workspace 时关闭其 panes并保留
-  workspace。
+  workspace。Codex App Herdr Bridge 在 panes 收口后执行
+  `herdr session stop "$herdr_session_name" --json`，保留 named session 供历史恢复。
