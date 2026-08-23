@@ -8,15 +8,19 @@ design 派发、implementation dispatch 或任一 worker terminal 后读取本�
 每次派发和 terminal event 都从 tracker/Git 重算。
 ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细度或验收文本质量。
 
-从 ready frontier 按 tracker priority、dependency order、issue ID 选择
-`maximal safe batch`。以下 items 串行：
+从 ready frontier 按 tracker priority、dependency order、issue ID 确定
+`maximal safe batch`。无前序依赖的 ready tickets 同批并发派发；只有以下已验证的运行期冲突把
+item 排除出本批：
 
-- blockers 尚未 completed；
-- 显式文件、migration、lock 或 external mutable resource 重叠；
-- 写集合无法证明相互独立；
-- 同一 tracker item 需要并发写入。
+- 同一 tracker item 已有 active writer；
+- 多条 lane 会同时改写无法由 Execution Worktree 隔离的 external mutable resource、运行中的
+  migration、deployment target 或 global lock；
+- 用户明确要求串行。
 
-其余 items 并发。
+普通 repo 文件路径重叠只进入 Integration 冲突检测，不构成 dispatch blocker；`CONTEXT.md`、ADR、
+source migration files 等都由独立 Execution Worktree 隔离。若一张票的结果确实是另一张票的输入，
+必须以 tracker dependency 表达；可能重叠或无法预知写集合不产生隐式 dependency。Integration 在
+Map Integration Worktree 中按 dependency order 串行 fan-in，真实冲突 fail closed。
 
 ## Design Fan-out
 
@@ -30,10 +34,12 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
 
 ## Dispatch Handoff
 
-user-visible lane 的 task/pane、Execution Worktree、packet、owner/work item 与 registry 已互相验证，
-worker 已进入真实 `working`，registry 已 readback 为 `running` 或 `awaiting_human`，即完成 Dispatch
-Handoff。这是 coordinator 本轮 terminal：向用户报告坐标后立即 yield，不等待 worker 的 routine
-progress、首个问题或最终结果。用户完成信号、真实 terminal event 或显式 monitor 请求才重新进入 fan-in。
+每条 user-visible lane 的 task/pane、Execution Worktree、packet、owner/work item 与 registry 已互相
+验证，worker 已进入真实 `working`，registry 已 readback 为 `running` 或 `awaiting_human`，即完成该
+lane 的 startup。单条 lane 完成后继续派发本批其余 items；所有成功 lanes 完成 startup、失败 items 已
+隔离为 `setup_blocked`，才完成整批 Dispatch Handoff。这是 coordinator 本轮 terminal：一次报告本批
+全部坐标与失败项后立即 yield，不等待 worker 的 routine progress、首个问题或最终结果。用户完成信号、
+真实 terminal event 或显式 monitor 请求才重新进入 fan-in。
 
 ## Execution Lanes
 
@@ -49,7 +55,7 @@ progress、首个问题或最终结果。用户完成信号、真实 terminal ev
 - 只运行该 ticket 的 `$implement`、focused checks、review 和 commit。
 - worker 不领取 sibling 或 dependent ticket。terminal 后由 coordinator 重算下一 batch。
 - 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。
-- 每条 user-visible execution lane 到达 Dispatch Handoff 后停止调度 turn；长任务不占用 coordinator。
+- 整批 Dispatch Handoff 后停止调度 turn；长任务不占用 coordinator。
 
 ## 调度运行时绑定
 

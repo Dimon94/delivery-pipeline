@@ -18,10 +18,11 @@
    Markdown context pointer；不得统一改走 `$wayfinder`。已 assigned 的 research ticket 不在
    frontier 内，先读回 owner 坐标，不重复派发。
    `Prototype`、`Grilling` 和 HITL `Task` 必须有真人参与；按当前调度运行时创建 user-visible
-   Codex App task 或 Claude pane。没有可参与的用户 task/pane 时，生成对应 prompt/worker
-   坐标并停止为 `ask-user`。
-4. AFK workers 由系统 terminal signal 唤醒；Herdr HITL lane 写 `awaiting_human` 后 coordinator
-   立即 yield，由用户完成会话并回到 Codex App 报告，不读 routine progress。
+   Codex App task 或 Claude pane；无 dependency blocker 的 HITL tickets 属于同一个 batch。没有可参与的
+   用户 task/pane 时，只把对应 lane 记为 `ask-user`，继续派发批内其他 items。
+4. AFK workers 由系统 terminal signal 唤醒；Herdr HITL lane 写 `awaiting_human` 后继续派发本批其他
+   items。先完成整个 maximal safe batch 的派发，再 yield，由用户完成会话并回到 Codex App 报告，
+   不读 routine progress。
 5. 任一 worker terminal 或用户完成信号到达后，按 `frontier-lanes.md` 消费持久证据，再用 Map Run
    Authority 执行一个 tracker transaction：先取一次 affected issues snapshot；同一 dependency layer 的
    独立 writes 并行，只有新 issue ID、resolution-before-close 等真实依赖才进入下一层；每个 dependency
@@ -43,8 +44,8 @@
   in-scope Not yet specified fog；停止后回到 coordinator 并进入 `spec` gate；
 - frontier query 为 0，但仍有 open blocked child issues；这不是 route 条件，停在
   discovery 的 blocked/waiting 状态，列出阻塞票和前置票；
-- child 报告 `ask-user`、`blocked` 或 `Unknown`；
-- Herdr HITL lane 已 `awaiting_human`；这是成功 handoff，用户返回后从第 5 步继续；
+- 本批所有 items 都已 `ask-user`、`blocked`、`Unknown` 或完成 startup，且没有其他 ready item 可派；
+- 整批 Herdr HITL lanes 已 `awaiting_human`；这是成功 handoff，用户返回后从第 5 步继续；
 - 两个 tasks 编辑了同一个 child issue，或留下冲突 tracker state。
 
 对非判断类 tickets，`Agent` tool 可用时自动并发派发为后台 subagents；不可用时输出所有

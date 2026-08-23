@@ -47,6 +47,8 @@ Codex App task 时沿用同一命名契约。
 每个 maximal safe batch 只做一次并行 preflight snapshot：同时读取 target ticket/claim/registry、
 Integration HEAD/clean state、worktree path/branch collision 和已选 transport capability。snapshot 中
 相互独立的 checks 并行；写入导致某个字段失效时只刷新该字段，不重读整个 map、合同或 owner body。
+preflight 通过后一次准备本批全部 packet/registry；同批 lane 并发创建和启动。单条 lane 到达
+`working` 不提前 yield，直到整批均完成 startup readback 或已隔离为 `setup_blocked`。
 
 安全不变量保持不变：一个 active writer、registry 先于 worker、Execution Worktree 隔离、真实路径与
 base commit readback、未知/dirty/conflict fail closed。routine success 不逐步播报；一次开始状态与一次
@@ -58,8 +60,8 @@ Dispatch Handoff 足够。
 
 1. map registry 没有已验证的 Source owner projectId 时，才用 `list_projects` 按
    `fresh-session-boundaries.md` 解析并持久化；后续 lanes 复用，project/path 变化时才刷新。
-2. 按 `task-coordinate-title.md` 生成 Task Coordinate Title，并与完整 packet 一起传给
-   `create_thread`；显式设置 `title`。target 使用该 project，environment 使用 worktree，
+2. 按 `task-coordinate-title.md` 为本批生成 Task Coordinate Title 和完整 packet；同批 `codex-thread`
+   并行调用 `create_thread`，每次显式设置 `title`。target 使用该 project，environment 使用 worktree，
    `startingState` 的 branchName 必须是当前 Integration branch。Codex App 拥有 Execution
    Worktree 的创建与路径；不要预创建同票手工 worktree。
 3. `create_thread` 返回 `threadId` 时记录其 `hostId`。只返回 `clientThreadId` 表示 worktree 仍在
@@ -73,9 +75,10 @@ Dispatch Handoff 足够。
    `thread_id`、`thread_archived: false`、实际 worktree、branch 和 base commit 写入 lane registry，
    并精确 readback；task 已接受 prompt 且出现首次真实 progress 后写 `state: running`。
 
-完成标准：`runtime: codex-thread` lane 的 Task Coordinate Title、task、App-managed Execution
-Worktree 和 registry 互相一致，packet 带 resolved owner/work item，task 已运行。registry readback 后
-立即 yield；Dispatch Handoff 是 coordinator 本轮 terminal。
+完成标准：本批每条 `runtime: codex-thread` lane 的 Task Coordinate Title、task、App-managed
+Execution Worktree 和 registry 互相一致，packet 带 resolved owner/work item，task 已运行；失败项已
+隔离为 `setup_blocked`。完成整批 registry 聚合 readback 后才 yield；Dispatch Handoff 是 coordinator
+本轮 terminal。
 
 ### 监控与恢复
 
@@ -131,7 +134,8 @@ Worktree 和 registry 互相一致，packet 带 resolved owner/work item，task 
    持久化 owner、ticket 和坐标。HITL lane 跳过 `running` checkpoint，直接执行
    `created -> awaiting_human` 并写 `state: awaiting_human` 后精确 readback；非 HITL lane 写
    `state: running` 并 readback。
-   registry readback 后立即 yield；Dispatch Handoff 是 coordinator 本轮 terminal。不等待首个业务问题，
+   单条 lane 的 registry readback 后继续本批其余 lanes；整批 readback 后才 yield，Dispatch Handoff 是
+   coordinator 本轮 terminal。不等待首个业务问题，
    不读取 routine terminal、可见屏幕或进程信息，也不启动 `agent wait` 或 listener。用户在 Herdr
    直接回答；用户回到 Codex App 报告完成后，按 `frontier-lanes.md` 做 terminal fan-in。
 6. bridge capability、session readiness 或 agent binary 缺失时输出完整 durable packet 并报告
@@ -143,9 +147,10 @@ Worktree 和 registry 互相一致，packet 带 resolved owner/work item，task 
 
 ### Lane 创建与生命周期
 
-1. workspace 缺失时通过 Herdr Control Route 懒创建；已有 workspace 先 readback。
-2. 从当前 Integration HEAD 手工创建 `codex/issue-<ticket>` 或 `claude/issue-<ticket>`
-   Execution Worktree。
+1. workspace 缺失时通过 Herdr Control Route 懒创建；已有 workspace 先 readback。workspace 是本批
+   唯一串行前置，readback 后同批 Herdr lanes 并行创建。
+2. 从同一个当前 Integration HEAD 并行创建各票的 `codex/issue-<ticket>` 或
+   `claude/issue-<ticket>` Execution Worktree。
 3. Codex CLI 填写 `assets/HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`；Claude Code 填写
    `assets/HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`。以 Execution Worktree 为 cwd 启动 pane，
    并验证 placement、owner skill 和 work item。
@@ -154,7 +159,8 @@ Worktree 和 registry 互相一致，packet 带 resolved owner/work item，task 
    workspace/tab/pane、worktree、branch 与 base commit。
 5. agent 启动并接受 packet 后，HITL 直接写 `awaiting_human`，其他 lanes 写 `running`；terminal、
    recovery 和 pane cleanup 通过 Herdr Control Route 完成；该 lane 不调用 Codex App
-   thread tools。
+   thread tools。单条 lane 完成 startup 后继续处理本批其余 lanes，整批聚合 readback 后统一
+   Dispatch Handoff。
 
 完成标准：每条 Herdr lane 都有唯一 kind-matched pane、唯一 Execution Worktree 和可读回 registry。
 

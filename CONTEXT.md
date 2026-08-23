@@ -47,7 +47,7 @@ The durable authority created when the user starts or resumes one named map. It 
 One bounded tracker snapshot, the minimum dependency-ordered write layers, and one aggregate readback per layer. Independent writes share a layer. It preserves exact expected/actual verification without serial per-field reads or progress narration; unrelated document repair stays outside its critical path.
 
 **Dispatch Handoff**
-The control-plane terminal after one user-visible lane has verified coordinates and isolation, accepted its packet, entered `working`, and persisted the runtime state. The coordinator reports the coordinates and ends its turn. It resumes only on a user completion signal, a real terminal event, or an explicit monitor request.
+Dispatch Handoff is batch-scoped. It is the control-plane terminal after every item in the selected maximal safe batch is accounted for: each successful user-visible lane has verified coordinates and isolation, accepted its packet, entered `working`, and persisted the runtime state; each failed setup is durably isolated as `setup_blocked`. The coordinator reports the batch coordinates and ends its turn only after the whole batch, then resumes on a user completion signal, a real terminal event, or an explicit monitor request; repository file overlap is an Integration risk handled by isolated Execution Worktrees and serial fan-in, not a dispatch blocker.
 
 **HITL Handoff**
 The Herdr specialization of Dispatch Handoff. A fully permissioned Claude pane has accepted its packet and moved from `idle` to `working`; its lane persists `awaiting_human`. The user completes the live discussion in Herdr, then returns to Codex App to trigger terminal fan-in from durable evidence.
@@ -70,7 +70,7 @@ The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, or `
 - Herdr Dispatch = map Herdr Workspace 中的 Codex CLI 或 Claude CLI pane；lane runtime 为 `herdr-codex-pane` 或 `herdr-claude-pane`。显式 worker kind 优先，否则 frontend/design → Claude，backend/other → Codex。
 - Codex App coordinator 不在 Herdr pane 时，通过 Codex App Herdr Bridge 显式控制 Herdr Session Target；用户批准后由原 coordinator 完成 Trusted Execution Bootstrap。
 - Herdr HITL lane 到达 HITL Handoff 后由用户直接参与；Codex App coordinator 不占用运行期 monitoring token。
-- 所有 user-visible lanes 到达 Dispatch Handoff 后都是 coordinator 本轮 terminal；长任务由用户或真实 terminal event 重新唤醒。
+- 同一 maximal safe batch 的所有 user-visible lanes 都完成 startup readback 后才到达 Dispatch Handoff；长任务由用户或真实 terminal event 重新唤醒。
 - Map Run Authority 覆盖 named map 的 canonical tracker transitions 和下一 ready frontier 派发；最终 publication 仍是独立门禁。
 - 每条 lane 在 registry 持久化自己的 runtime；恢复时以 lane runtime 为准。Coordinator Runtime 与 worker kind 是两条独立轴。
 - Codex CLI 是否具备与 Codex App 相同的原生 thread 能力是 Unknown；本模型不依赖该能力。

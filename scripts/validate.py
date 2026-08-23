@@ -252,7 +252,6 @@ def check_dispatch_runtime_routing() -> None:
                 "并行 preflight snapshot",
                 "`created -> awaiting_human`",
                 "Dispatch Handoff 是 coordinator 本轮 terminal",
-                "registry readback 后立即 yield",
                 "用户明确要求 monitor",
                 "不等待首个业务问题",
                 "不读取 routine terminal、可见屏幕或进程信息",
@@ -261,6 +260,9 @@ def check_dispatch_runtime_routing() -> None:
                 "同一次 approval 写为 `bootstrap_authority: trusted_execution_bootstrap`",
                 "$herdr",
                 "active writer",
+                "同批 `codex-thread` 并行调用 `create_thread`",
+                "同批 Herdr lanes 并行创建",
+                "单条 lane 到达 `working` 不提前 yield",
             ),
         )
         routing_text = " ".join(CODEX_DISPATCH_ROUTING.read_text().split())
@@ -299,6 +301,9 @@ def check_dispatch_runtime_routing() -> None:
             "codex-thread",
             "herdr-codex-pane",
             "herdr-claude-pane",
+            "无前序依赖的 ready tickets 同批并发派发",
+            "普通 repo 文件路径重叠只进入 Integration 冲突检测",
+            "整批 Dispatch Handoff",
         ),
     )
     frontier_text = " ".join(
@@ -306,6 +311,10 @@ def check_dispatch_runtime_routing() -> None:
     )
     if "Herdr pane 都通过 Herdr Control Route 读取完整 final markers" in frontier_text:
         record("legacy Herdr fan-in still requires complete final markers")
+    if "显式文件、migration、lock 或 external mutable resource 重叠" in frontier_text:
+        record("普通 repo 文件路径重叠仍被错误当成 dispatch blocker")
+    if "写集合无法证明相互独立" in frontier_text:
+        record("无法证明 repo 写集合独立仍会把 safe batch 退化为单 lane")
     recovery_text = " ".join(
         (CODEX_ROOT / "references" / "test-decision-and-rebase.md").read_text().split()
     )
@@ -363,6 +372,21 @@ def check_dispatch_runtime_routing() -> None:
             "dependency blocker",
             "follow-up decision ticket",
             "不等待用户回复“继续”",
+            "先完成整个 maximal safe batch 的派发，再 yield",
+        ),
+    )
+    require(
+        CODEX_SKILL,
+        (
+            "无前序依赖的 ready tickets 同批并发派发",
+            "整批完成 startup readback 后统一 Dispatch Handoff",
+        ),
+    )
+    require(
+        ROOT / "CONTEXT.md",
+        (
+            "Dispatch Handoff is batch-scoped",
+            "repository file overlap is an Integration risk",
         ),
     )
     require(

@@ -53,7 +53,8 @@ idea/map -> discovery -> spec -> implementation tickets
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
    松散想法先调用 `wayfinder` owner 建图（建图拷问在当前会话进行，不派发），随后自动派发 ready AFK decision tickets。
-   Herdr HITL lane 完成 startup terminal 后写 `awaiting_human` 并立即 yield；用户在 Herdr 完成对话后
+   Herdr HITL lane 完成 startup terminal 后写 `awaiting_human`，继续派发同批其他 ready work；整批
+   Dispatch Handoff 后才 yield。用户在 Herdr 完成对话后
    回到 Codex App，coordinator 按持久证据 fan-in，自动完成 canonical tracker transitions、重算并派发
    下一 ready frontier。HITL 只阻塞自身。
    完成标准：所有 in-scope child issues closed、resolution 与 artifacts 可读回。
@@ -68,8 +69,9 @@ idea/map -> discovery -> spec -> implementation tickets
    `assets/ISSUE_IMPLEMENT_DISPATCH_PACKET.md`；Herdr 路由再按 worker kind 加载
    `assets/HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` 或
    `assets/HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`。从 dependency graph 重算 ready frontier，
-   选择无 mutable-resource 冲突的 maximal safe batch。解析 `implement` owner 后，每张入选票按已选
-   调度运行时创建唯一 lane：`codex-thread` 按 Task Coordinate Title 用 `create_thread` 从
+   选择无 external mutable-resource 冲突的 maximal safe batch。无前序依赖的 ready tickets 同批并发派发。
+   解析 `implement` owner 后，每张入选票按已选调度运行时创建唯一 lane：`codex-thread` 按 Task
+   Coordinate Title 并行调用 `create_thread`，从
    Integration branch 创建 fresh Codex App task + App-managed Execution Worktree；Herdr Control Route
    创建手工 Execution Worktree + fresh Codex CLI/Claude Code pane。coordinator 不亲自实现。
    完成标准：ticket registry 已以 `created` readback runtime 对应的 task 或 pane 坐标、Task Coordinate
@@ -81,12 +83,12 @@ idea/map -> discovery -> spec -> implementation tickets
    `--dangerously-skip-permissions` 启动；`trusted_execution_bootstrap` 自动确认精确匹配的 workspace
    trust 和 applicable external imports。未知或越界 UI 才是可恢复的 `blocked` lane。
    Herdr HITL 的 `agent prompt` accepted 且状态从 `idle` 进入 `working` 即 startup terminal：
-   直接写 `awaiting_human` 并 yield，不等待首个业务问题，也不读取 routine terminal、可见屏幕或进程信息。
+   直接写 `awaiting_human` 并继续批内派发，不等待首个业务问题，也不读取 routine terminal、可见屏幕或进程信息。
    错误落点或未读 owner file 时沿同一
    runtime 重建一次；第二次失败标记 `setup_blocked`，
    按 lane runtime 清理 task/pane 与 execution worktree/branch（参考
    `references/execution-worktree-integration.md`）。完成标准：达到 `references/frontier-lanes.md` 的
-   Dispatch Handoff；报告坐标并立即结束本轮。
+   Dispatch Handoff；整批完成 startup readback 后统一 Dispatch Handoff，一次报告全部坐标并立即结束本轮。
 7. **Integrate changes。** 加载 `references/execution-worktree-integration.md`。用户完成信号或 worker
    terminal event 只负责唤醒；以 Git、tracker、artifact 和 registry 验证 commit、Execution Worktree、
    Integration Worktree state，按 dependency order
@@ -110,7 +112,9 @@ idea/map -> discovery -> spec -> implementation tickets
 - ready ticket = open、未被 claim、全部 blockers completed。
 - 不评估 ticket 大小、是否需要拆分、描述/验收是否够详细，或这张票“是否合理”；
   `$to-tickets` 已发布的 tickets 直接作为待分配 execution graph。
-- dependency 相连、显式文件/可变资源重叠或写集合无法证明独立的 tickets 串行；其余并发。
+- dependency 相连的 tickets 按 tracker graph 先后派发；同一 tracker item/active writer、无法由 Execution
+  Worktree 隔离的 external mutable resource 或用户明确要求串行时排除出本批。普通 repo 文件路径重叠
+  留给 Integration 冲突检测，不产生隐式 dependency。
 - 按 tracker priority、dependency order、issue ID 做确定性选择。
 - 每张 ticket 一个 execution lane、一个 owner、一个 worktree/branch。lane terminal 后由
   coordinator 重算下一批，不让 worker 自领 sibling tickets。
