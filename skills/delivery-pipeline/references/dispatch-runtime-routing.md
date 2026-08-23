@@ -115,16 +115,17 @@ Worktree 和 registry 互相一致，startup probe 已读回 owner skill name/pa
    每次匹配后调用 `herdr --session "$herdr_session_name" agent send-keys "$agent_name" enter`，再读
    `agent get` / `agent read`。授权状态按 `blocked -> idle -> working` 推进；其他 question/approval UI
    保留为 `blocked` 并交给用户。
-5. Claude 到达 `idle` 后，通过 `agent prompt` 投递 packet 的单行绝对路径引用；必须观察到
-   `working`，并读回 owner frontmatter name、resolved path 与 ticket。随后 HITL lane 写
-   `state: awaiting_human`，startup probe 后 coordinator 立即 yield，不启动 `agent wait` 或轮询。
-   packet readback 后 worker 因首个业务问题进入 `blocked` 是正常 HITL Handoff。用户在 Herdr
-   直接回答业务问题；用户回到 Codex App 报告完成后，coordinator 才读取一次 final report 并 fan-in。
+5. Claude 到达 `idle` 后，通过 `agent prompt` 投递 packet 的单行绝对路径引用并观察到 `working`。
+   首个范围内业务问题是 startup probe 的成功终点：用 dispatch packet、registry 与首次可见输出
+   核对 owner、ticket 和坐标；alternate-screen 已滚走的 scrollback 缺失字段记为 `Unknown`。
+   coordinator 直接写 `state: awaiting_human` 并 yield，不补发任何消息，不启动 `agent wait` 或轮询。
+   worker 因业务问题呈现 `blocked` 是正常 HITL Handoff。用户在 Herdr 直接回答；用户回到
+   Codex App 报告完成后，coordinator 才读取一次 final report 并 fan-in。
 6. bridge capability、session readiness 或 agent binary 缺失时输出完整 durable packet 并报告
    `dispatch unavailable`；已创建的空 Execution Worktree 按 cleanup contract 收口。
 
 完成标准：Claude pane 在 visible Herdr session 中可见，以 `--dangerously-skip-permissions` 运行，
-已消费 packet 并完成 owner/ticket readback；HITL registry 为 `awaiting_human`，Codex App 已 yield。
+已消费 packet 并进入业务问题；HITL registry 为 `awaiting_human`，Codex App 已 yield。
 
 ### Lane 创建与生命周期
 

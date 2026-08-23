@@ -7,8 +7,9 @@ Implementation lanes 的 fan-in 规则见 `frontier-lanes.md` § Terminal Fan-in
 
 ## Herdr HITL Handoff
 
-Herdr HITL pane 由 `dispatch-runtime-routing.md` 完成 bootstrap。startup probe 读回 packet、owner
-name/path 与 ticket 后，registry 写 `state: awaiting_human`，coordinator 立即 yield 并向用户回报
+Herdr HITL pane 由 `dispatch-runtime-routing.md` 完成 bootstrap。首个范围内业务问题证明 packet 已
+消费；coordinator 用 packet、registry 和现有输出核对坐标，scrollback 缺失字段记为 `Unknown`，
+不补发 readback。registry 写 `state: awaiting_human` 后，coordinator 立即 yield 并向用户回报
 session/workspace/tab/pane 坐标。运行期由用户在 Herdr 直接回答 worker；此状态不创建 listener，
 不调用 `herdr agent wait`，不读取 routine progress。
 

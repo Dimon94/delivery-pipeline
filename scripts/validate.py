@@ -245,7 +245,9 @@ def check_dispatch_runtime_routing() -> None:
                 "不要求 `HERDR_ENV=1`",
                 "--dangerously-skip-permissions",
                 "state: awaiting_human",
-                "startup probe 后 coordinator 立即 yield",
+                "首个范围内业务问题是 startup probe 的成功终点",
+                "不补发任何消息",
+                "scrollback 缺失字段记为 `Unknown`",
                 "用户回到 Codex App 报告完成后",
                 "先完成 capability probe，再向用户呈现 Herdr/Claude 选择",
                 "同一次 approval 写为 `bootstrap_authority: trusted_execution_bootstrap`",
@@ -309,6 +311,7 @@ def check_dispatch_runtime_routing() -> None:
             "state: awaiting_human",
             "coordinator 立即 yield",
             "不调用 `herdr agent wait`",
+            "不补发 readback",
             "用户回到 Codex App 报告完成后",
         ),
     )

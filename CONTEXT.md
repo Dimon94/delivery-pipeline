@@ -41,7 +41,7 @@ A Herdr terminal multiplexer workspace corresponding to one map when Herdr Dispa
 A narrow authority granted with the user's Herdr/Claude transport approval. It lets the coordinator confirm Claude workspace trust for the exact verified Execution Worktree and allow already-read imports owned by the resolved worker skill or applicable ancestor repo instructions. It does not grant remote publication or approval of unrelated prompts.
 
 **HITL Handoff**
-The point after a Herdr Claude pane is visible, fully permissioned, has consumed its packet, and has read back its owner and ticket. The lane becomes `awaiting_human`; the Codex App coordinator yields, the user completes the live discussion in Herdr, then returns to Codex App to trigger one terminal readback.
+The point after a Herdr Claude pane is visible, fully permissioned, and has consumed its packet. Its first in-scope business question is sufficient handoff evidence; owner, ticket, and coordinates come from the dispatch packet, registry, and already-visible output. Missing terminal scrollback is `Unknown`, not a reason to prompt the worker again. The lane becomes `awaiting_human`; the Codex App coordinator yields, the user completes the live discussion in Herdr, then returns to Codex App to trigger one terminal readback.
 
 **Task Coordinate Title**
 A stable, human-facing Codex App task title that identifies the owning map, lane role, and work item. It is a navigation coordinate; Codex App task lifecycle carries dynamic state, while the lane registry remains the recovery truth.

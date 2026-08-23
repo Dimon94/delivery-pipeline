@@ -68,12 +68,13 @@ idea/map -> discovery -> spec -> implementation tickets
    完成标准：ticket registry 已 readback runtime 对应的 task 或 pane 坐标、Task Coordinate Title
    （Codex App）、实际 worktree、branch 与 base commit。
 6. **Probe startup。** 每个 lane 创建后验证：`cwd` 位于 Execution Worktree、完整 packet 已收到、
-   child 已 readback owner name/resolved path；`codex-thread` 还要验证 Source owner projectId，
+   owner name/resolved path 与 ticket 可由 packet、registry 或首次 worker 输出确认；`codex-thread`
+   还要验证 Source owner projectId，
    Herdr pane 还要验证 session/workspace/tab/pane placement 与 kind。Claude pane 以
    `--dangerously-skip-permissions` 启动；`trusted_execution_bootstrap` 自动确认精确匹配的 workspace
    trust 和 applicable external imports。未知或越界 UI 才是可恢复的 `blocked` lane。
-   packet、owner name/path 与 ticket readback 后，HITL lane 写 `awaiting_human`，startup probe 后
-   coordinator 立即 yield。
+   Herdr HITL worker 出现首个范围内业务问题后，直接写 `awaiting_human` 并 yield；终端顶部握手
+   已滚出 scrollback 时记录 `Unknown`，不要求 worker 重显或重答。
    错误落点或未读 owner file 时沿同一
    runtime 重建一次；第二次失败标记 `setup_blocked`，
    按 lane runtime 清理 task/pane 与 execution worktree/branch（参考
