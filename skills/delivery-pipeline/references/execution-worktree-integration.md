@@ -5,12 +5,15 @@
 
 ## Integration Sequence
 
-**触发：** execution worker 报告 terminal。`codex-thread` 从 `read_thread` 读取最终报告；
-`herdr-codex-pane` / `herdr-claude-pane` 验证完整 final report markers。
+**触发：** execution worker 报告 terminal，或用户报告 Herdr HITL 已完成。`codex-thread` 从
+`read_thread` 读取最终报告一次；Herdr pane 最多做一次 bounded read。final report 是可丢失的
+transport cache，terminal truth 归 registry、Git、tracker 与 artifacts。
 
 **前置条件验证：**
 
-1. 从 final report 提取 commit hash、ticket number、worktree path。
+1. 从 registry 读取 ticket、worktree、base commit；final report 完整时提取其 commit 并用 Git 验证。
+   final marker 缺失时把对应字段记为 `Unknown`，不要求 worker 重显；从 `base_commit..HEAD`、diff 和
+   dirty state 识别 terminal commit。候选不唯一或 worktree dirty 时停止 Integration 并报告真实缺口。
 2. 验证 execution worktree 存在且 commit valid：
    ```bash
    test -d "$EXECUTION_PATH"

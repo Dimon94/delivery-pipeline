@@ -38,10 +38,19 @@ The running, user-visible Herdr session selected by the Codex App Herdr Bridge. 
 A Herdr terminal multiplexer workspace corresponding to one map when Herdr Dispatch is selected. Label matches `map-<issue-number>`. Created lazily inside the selected Herdr session before the first Herdr lane. HITL panes (grilling, prototype) and execution panes land in this workspace. Preserved (not deleted) after map completes, for history access. Codex App native Dispatch does not create a Herdr Workspace.
 
 **Trusted Execution Bootstrap**
-A narrow authority granted with the user's Herdr/Claude transport approval. It lets the coordinator confirm Claude workspace trust for the exact verified Execution Worktree and allow already-read imports owned by the resolved worker skill or applicable ancestor repo instructions. It does not grant remote publication or approval of unrelated prompts.
+A narrow authority granted with the user's Herdr/Claude transport approval. It lets the coordinator confirm Claude workspace trust for the exact verified Execution Worktree and allow imports whose realpaths are mechanically bounded to the resolved worker skill, its direct references, or applicable ancestor repo instructions. The worker reads those bodies; the coordinator does not preload them. This authority does not grant unrelated prompts or final publication.
+
+**Map Run Authority**
+The durable authority created when the user starts or resumes one named map. It covers that map's canonical tracker transitions: claim and registry checkpoints, child resolution and close, map Decisions/Out of scope gist, dependency blocker maintenance, owner-required follow-up decision tickets, and dispatch of the next ready frontier. It does not cover unrelated issues, ambiguous or destructive tracker rewrites, push, main, PR/MR, merge, or final publication closeout.
+
+**Tracker Transaction**
+One bounded tracker snapshot, the minimum dependency-ordered write layers, and one aggregate readback per layer. Independent writes share a layer. It preserves exact expected/actual verification without serial per-field reads or progress narration; unrelated document repair stays outside its critical path.
+
+**Dispatch Handoff**
+The control-plane terminal after one user-visible lane has verified coordinates and isolation, accepted its packet, entered `working`, and persisted the runtime state. The coordinator reports the coordinates and ends its turn. It resumes only on a user completion signal, a real terminal event, or an explicit monitor request.
 
 **HITL Handoff**
-The point after a Herdr Claude pane is visible, fully permissioned, and has consumed its packet. Its first in-scope business question is sufficient handoff evidence; owner, ticket, and coordinates come from the dispatch packet, registry, and already-visible output. Missing terminal scrollback is `Unknown`, not a reason to prompt the worker again. The lane becomes `awaiting_human`; the Codex App coordinator yields, the user completes the live discussion in Herdr, then returns to Codex App to trigger one terminal readback.
+The Herdr specialization of Dispatch Handoff. A fully permissioned Claude pane has accepted its packet and moved from `idle` to `working`; its lane persists `awaiting_human`. The user completes the live discussion in Herdr, then returns to Codex App to trigger terminal fan-in from durable evidence.
 
 **Task Coordinate Title**
 A stable, human-facing Codex App task title that identifies the owning map, lane role, and work item. It is a navigation coordinate; Codex App task lifecycle carries dynamic state, while the lane registry remains the recovery truth.
@@ -61,6 +70,8 @@ The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, or `
 - Herdr Dispatch = map Herdr Workspace 中的 Codex CLI 或 Claude CLI pane；lane runtime 为 `herdr-codex-pane` 或 `herdr-claude-pane`。显式 worker kind 优先，否则 frontend/design → Claude，backend/other → Codex。
 - Codex App coordinator 不在 Herdr pane 时，通过 Codex App Herdr Bridge 显式控制 Herdr Session Target；用户批准后由原 coordinator 完成 Trusted Execution Bootstrap。
 - Herdr HITL lane 到达 HITL Handoff 后由用户直接参与；Codex App coordinator 不占用运行期 monitoring token。
+- 所有 user-visible lanes 到达 Dispatch Handoff 后都是 coordinator 本轮 terminal；长任务由用户或真实 terminal event 重新唤醒。
+- Map Run Authority 覆盖 named map 的 canonical tracker transitions 和下一 ready frontier 派发；最终 publication 仍是独立门禁。
 - 每条 lane 在 registry 持久化自己的 runtime；恢复时以 lane runtime 为准。Coordinator Runtime 与 worker kind 是两条独立轴。
 - Codex CLI 是否具备与 Codex App 相同的原生 thread 能力是 Unknown；本模型不依赖该能力。
 - Subagents = autonomous background work that reports results (research, AFK task). Research and AFK tasks do not occupy Codex App tasks or Herdr tabs.
@@ -89,4 +100,4 @@ Git worktrees fundamentally require branches. "No branches" is impossible — th
 Uses rebase to main, not merge commits. Keeps linear history per map.
 
 **Pane Dispatch**
-The skill that materializes a filled dispatch packet into a verified Herdr pane. Claude-only, kind-generic (claude | codex). Receives a packet file path, resolves workspace/tab, creates the pane, starts the agent, delivers the packet, verifies placement, and reports coordinates. AFK lanes may attach a listener; HITL lanes hand off at `awaiting_human` without one. It does not compute maximal safe batch, manage worktrees, or parse terminal reports — those stay in the orchestrator. Replaces the retired `dispatch-to-codex` skill.
+The skill that materializes a filled dispatch packet into a verified Herdr pane. Claude-only, kind-generic (claude | codex). Receives a packet file path, resolves workspace/tab, creates the pane, starts the agent, delivers the packet, verifies placement, and reports coordinates. A listener is attached only under an explicit monitor request; normal user-visible lanes end at Dispatch Handoff. It does not compute maximal safe batch, manage worktrees, or parse terminal reports — those stay in the orchestrator. Replaces the retired `dispatch-to-codex` skill.

@@ -198,6 +198,8 @@ def check_dispatch_runtime_routing() -> None:
         CODEX_SKILL,
         (
             "调度运行时",
+            "按当前 gate 渐进加载 references",
+            "同一 coordinator task 不因下一 lane 重读未变化的共享合同",
             "`references/dispatch-runtime-routing.md`",
             "`codex-thread`",
             "`herdr-codex-pane`",
@@ -245,9 +247,15 @@ def check_dispatch_runtime_routing() -> None:
                 "不要求 `HERDR_ENV=1`",
                 "--dangerously-skip-permissions",
                 "state: awaiting_human",
-                "首个范围内业务问题是 startup probe 的成功终点",
-                "不补发任何消息",
-                "scrollback 缺失字段记为 `Unknown`",
+                "`agent prompt` accepted",
+                "`idle -> working` 即 startup terminal",
+                "并行 preflight snapshot",
+                "`created -> awaiting_human`",
+                "Dispatch Handoff 是 coordinator 本轮 terminal",
+                "registry readback 后立即 yield",
+                "用户明确要求 monitor",
+                "不等待首个业务问题",
+                "不读取 routine terminal、可见屏幕或进程信息",
                 "用户回到 Codex App 报告完成后",
                 "先完成 capability probe，再向用户呈现 Herdr/Claude 选择",
                 "同一次 approval 写为 `bootstrap_authority: trusted_execution_bootstrap`",
@@ -255,6 +263,11 @@ def check_dispatch_runtime_routing() -> None:
                 "active writer",
             ),
         )
+        routing_text = " ".join(CODEX_DISPATCH_ROUTING.read_text().split())
+        if "首个范围内业务问题是 startup probe 的成功终点" in routing_text:
+            record("legacy Herdr startup gate still waits for the first business question")
+        if "对同批 1–8 个 running tasks 用一次 `wait_threads`" in routing_text:
+            record("legacy Codex dispatch still waits on running tasks by default")
     if not TASK_COORDINATE_TITLE.exists():
         record(
             "missing Task Coordinate Title owner: "
@@ -288,6 +301,16 @@ def check_dispatch_runtime_routing() -> None:
             "herdr-claude-pane",
         ),
     )
+    frontier_text = " ".join(
+        (CODEX_ROOT / "references" / "frontier-lanes.md").read_text().split()
+    )
+    if "Herdr pane 都通过 Herdr Control Route 读取完整 final markers" in frontier_text:
+        record("legacy Herdr fan-in still requires complete final markers")
+    recovery_text = " ".join(
+        (CODEX_ROOT / "references" / "test-decision-and-rebase.md").read_text().split()
+    )
+    if "重挂 listener" in recovery_text or "重新 attach listener" in recovery_text:
+        record("legacy recovery still attaches monitoring after Dispatch Handoff")
     require(
         CODEX_ROOT / "references" / "lane-registry.md",
         (
@@ -299,6 +322,7 @@ def check_dispatch_runtime_routing() -> None:
             "herdr_session_name:",
             "herdr_session_owned:",
             "agent_permission_mode:",
+            "map_run_authority:",
             "host_id:",
             "thread_archived:",
             "integrated -> close_pending -> closed",
@@ -308,11 +332,45 @@ def check_dispatch_runtime_routing() -> None:
     require(
         CODEX_ROOT / "references" / "child-monitoring.md",
         (
-            "state: awaiting_human",
-            "coordinator 立即 yield",
-            "不调用 `herdr agent wait`",
-            "不补发 readback",
-            "用户回到 Codex App 报告完成后",
+            "`dispatch-runtime-routing.md`",
+            "`frontier-lanes.md`",
+        ),
+    )
+    require(
+        CODEX_ROOT / "references" / "frontier-lanes.md",
+        (
+            "Dispatch Handoff",
+            "用户完成信号",
+            "Git、tracker 与 artifact",
+            "final marker 缺失字段记为 `Unknown`",
+            "不要求 worker 重显",
+            "自动重算并派发下一 ready frontier",
+        ),
+    )
+    require(
+        CODEX_ROOT / "references" / "wayfinder-frontier-loop.md",
+        (
+            "tracker transaction",
+            "独立 writes 并行",
+            "每个 dependency layer 一次聚合 readback",
+            "同一 turn 不重复 Nowledge 或 contract lookup",
+            "不把文档漂移修复放在发布/派发 critical path",
+            "不把 canonical tracker scope 降级为 read-only",
+            "map_run_authority: canonical_tracker_transitions",
+            "resolution comment",
+            "关闭 child",
+            "Decisions-so-far / Out of scope gist",
+            "dependency blocker",
+            "follow-up decision ticket",
+            "不等待用户回复“继续”",
+        ),
+    )
+    require(
+        CODEX_ROOT / "references" / "owner-skill-resolution.md",
+        (
+            "coordinator 只解析 realpath、frontmatter name 和 direct reference paths",
+            "coordinator 不把 owner body 加载进上下文",
+            "child 完整读取",
         ),
     )
     require(

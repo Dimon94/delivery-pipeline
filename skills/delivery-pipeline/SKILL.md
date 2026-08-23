@@ -27,28 +27,35 @@ idea/map -> discovery -> spec -> implementation tickets
 裸 issue 编号必须能从当前 repo 的 tracker 配置唯一解析。每次新会话都沿持久 relationships
 重建链路，从最早未完成的 gate 自动继续。
 
-1. **识别输入、worktree 与调度运行时。** 读取 repo instructions、tracker operations 和输入 artifact。
-   加载 `references/gate-state-machine.md`、`references/integration-worktree-management.md`、
-   `references/fresh-session-boundaries.md`、`references/lane-registry.md`、
-   `references/child-monitoring.md`、`references/owner-skill-resolution.md` 和
-   `references/dispatch-runtime-routing.md`。Codex App 原生 thread tools 全部可用时默认选择
+1. **识别输入、worktree 与调度运行时。** 读取 repo instructions、tracker operations 和输入 artifact，
+   按当前 gate 渐进加载 references：fresh coordinator task 才加载 `references/gate-state-machine.md`、
+   `references/fresh-session-boundaries.md` 与 `references/lane-registry.md`；worktree create/recovery 才加载
+   `references/integration-worktree-management.md`；lane dispatch 才加载
+   `references/owner-skill-resolution.md` 与 `references/dispatch-runtime-routing.md`；AFK discovery 才加载
+   `references/child-monitoring.md`。同一 coordinator task 不因下一 lane 重读未变化的共享合同；只有
+   owner path、文件内容、registry/Git 证据或 coordinator task 改变时才重读对应 owner。
+   Codex App 原生 thread tools 全部可用时默认选择
    `dispatch_runtime: codex-app`；Herdr Control Route 的 capability probe 通过后，用户明确要求
    Herdr 或 CLI runtime 才选择 `dispatch_runtime: herdr`。Codex App 不在 Herdr pane 时使用
    Codex App Herdr Bridge，并把 transport approval 持久化为 `trusted_execution_bootstrap`；
    bridge 优先选择运行中的 user-visible `default` Herdr session。Herdr 再按用户指定或 binding table 选择 `herdr-codex-pane` /
    `herdr-claude-pane`。Existing lanes 按各自 registry runtime 恢复，新 lane 才使用本次选择。
+   用户启动或恢复 named map 时，把 `map_run_authority: canonical_tracker_transitions` 写入 map registry；
+   后续 canonical tracker 收口和下一 ready frontier 不再逐项询问。
    识别当前是 source worktree（main）还是 integration worktree（`feature/map-*`）。
    输入是 map 且在 source worktree 时：检查该 map 的 integration worktree 是否存在（registry + 路径）；
    存在且 valid 则提示 resume，不存在则创建 integration worktree 并切换过去；Herdr workspace
    只在首次 Herdr lane 前懒创建。
    已在 integration worktree 时直接继续。完成标准：worktree 位置正确（integration worktree 或已确认在 source）、
-   输入已识别类型（map/spec/tickets）、本次 `dispatch_runtime` 已持久化、所有 existing child 坐标已 readback。
+   输入已识别类型（map/spec/tickets）、本次 `dispatch_runtime` 已持久化；fresh recovery 已 readback 所有
+   active writers，同一 task 续派只 readback target lane 与资源冲突 lanes。
 2. **Run discovery。** 加载 `references/wayfinder-frontier-loop.md`、
    `assets/WAYFINDER_TICKET_DISPATCH_PACKET.md`、
    `assets/WAYFINDER_GRILLING_DISPATCH_PACKET.md`（因果/冲突/假设时再加载 `references/toc-thinking-processes.md`）。
    松散想法先调用 `wayfinder` owner 建图（建图拷问在当前会话进行，不派发），随后自动派发 ready AFK decision tickets。
-   Herdr HITL lane 完成 startup probe 后写 `awaiting_human` 并立即 yield；用户在 Herdr 完成对话后
-   回到 Codex App，coordinator 才读取一次 final report。HITL 只阻塞自身。
+   Herdr HITL lane 完成 startup terminal 后写 `awaiting_human` 并立即 yield；用户在 Herdr 完成对话后
+   回到 Codex App，coordinator 按持久证据 fan-in，自动完成 canonical tracker transitions、重算并派发
+   下一 ready frontier。HITL 只阻塞自身。
    完成标准：所有 in-scope child issues closed、resolution 与 artifacts 可读回。
 3. **Generate spec。** 如果当前链路还没有已批准 spec，解析并执行 `to-spec` owner，遵守它自己的
    提案、用户判断和发布流程。交给 fresh worker 时加载 `assets/GATE_CHILD_DISPATCH_PACKET.md`。
@@ -65,25 +72,28 @@ idea/map -> discovery -> spec -> implementation tickets
    调度运行时创建唯一 lane：`codex-thread` 按 Task Coordinate Title 用 `create_thread` 从
    Integration branch 创建 fresh Codex App task + App-managed Execution Worktree；Herdr Control Route
    创建手工 Execution Worktree + fresh Codex CLI/Claude Code pane。coordinator 不亲自实现。
-   完成标准：ticket registry 已 readback runtime 对应的 task 或 pane 坐标、Task Coordinate Title
-   （Codex App）、实际 worktree、branch 与 base commit。
+   完成标准：ticket registry 已以 `created` readback runtime 对应的 task 或 pane 坐标、Task Coordinate
+   Title（Codex App）、实际 worktree、branch 与 base commit。
 6. **Probe startup。** 每个 lane 创建后验证：`cwd` 位于 Execution Worktree、完整 packet 已收到、
-   owner name/resolved path 与 ticket 可由 packet、registry 或首次 worker 输出确认；`codex-thread`
+   owner name/resolved path 与 ticket 由 coordinator 的 realpath/frontmatter、packet 与 registry 确认；`codex-thread`
    还要验证 Source owner projectId，
    Herdr pane 还要验证 session/workspace/tab/pane placement 与 kind。Claude pane 以
    `--dangerously-skip-permissions` 启动；`trusted_execution_bootstrap` 自动确认精确匹配的 workspace
    trust 和 applicable external imports。未知或越界 UI 才是可恢复的 `blocked` lane。
-   Herdr HITL worker 出现首个范围内业务问题后，直接写 `awaiting_human` 并 yield；终端顶部握手
-   已滚出 scrollback 时记录 `Unknown`，不要求 worker 重显或重答。
+   Herdr HITL 的 `agent prompt` accepted 且状态从 `idle` 进入 `working` 即 startup terminal：
+   直接写 `awaiting_human` 并 yield，不等待首个业务问题，也不读取 routine terminal、可见屏幕或进程信息。
    错误落点或未读 owner file 时沿同一
    runtime 重建一次；第二次失败标记 `setup_blocked`，
    按 lane runtime 清理 task/pane 与 execution worktree/branch（参考
-   `references/execution-worktree-integration.md`）。
-7. **Integrate changes。** 加载 `references/execution-worktree-integration.md`。Workers 运行时只消费
-   terminal final report；验证 commit、extraction worktree、integration worktree state，按 dependency order
+   `references/execution-worktree-integration.md`）。完成标准：达到 `references/frontier-lanes.md` 的
+   Dispatch Handoff；报告坐标并立即结束本轮。
+7. **Integrate changes。** 加载 `references/execution-worktree-integration.md`。用户完成信号或 worker
+   terminal event 只负责唤醒；以 Git、tracker、artifact 和 registry 验证 commit、Execution Worktree、
+   Integration Worktree state，按 dependency order
    执行 cherry-pick。成功后运行 focused checks，通过则持久化 `integrated`、删除 execution
    worktree/branch，并按 runtime 归档 Codex App task 或关闭 Herdr pane；transport readback 成功后
-   registry 写为 `closed`，否则写为 `close_pending`，随后立即重算 frontier。冲突时中止 cherry-pick，
+   registry 写为 `closed`，否则写为 `close_pending`；随后按 Map Run Authority 完成 tracker 收口，自动重算并
+   派发下一 ready frontier，不等待“继续”。冲突时中止 cherry-pick，
    标记 `integration_conflict`，保留 execution worktree 供调试。Lane blocker 不停止其他 ready tickets。
 8. **Close out remotely。** Execution graph 清空后，运行 whole-change checks。全部通过时加载
    `references/test-decision-and-rebase.md`，暂停在 test decision point，由用户选择：(1) 在 integration
@@ -115,9 +125,11 @@ idea/map -> discovery -> spec -> implementation tickets
   lane reports、Git commits 和 checks 是执行证据；PR/MR 是远程收尾真相源。
 - spec 与 tickets 的内容由对应 skill 决定。orchestrator 的 gate 只检查存在性、回链、依赖
   和发布 readback，不增加内容质量或拆票复审 gate。
-- 自动分配包含 lane registry checkpoint 的 tracker write authority。本地 worktree、文件
-  修改与 commit 使用 local execution authority；其他 remote comment、push 和 PR/MR 需要
-  remote publication authority。
+- Map Run Authority 覆盖 named map 的 claim/registry、child resolution/close、map gist、dependency
+  blocker、owner-required follow-up decision ticket 和下一 ready frontier。每个 dependency layer 聚合
+  readback；并发改写、越界或 destructive ambiguity fail closed。
+- 本地 worktree、文件修改与 commit 使用 local execution authority；push、main、PR/MR、merge 和最终
+  publication closeout 需要 remote publication authority。
 - 所有面向用户、workers、tracker 和 PR/MR 的自然语言使用中文；skill/tool/status/path/hash
   保持原样。
 

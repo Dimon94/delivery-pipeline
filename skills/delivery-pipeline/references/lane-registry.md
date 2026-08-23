@@ -30,6 +30,7 @@ integration_worktree_path: <absolute-path-or-none>
 integration_branch: <feature/map-N-or-none>
 coordinator_runtime: codex-app | codex-cli | claude-cli | none
 dispatch_runtime: codex-app | herdr | none
+map_run_authority: canonical_tracker_transitions | none
 herdr_workspace_label: <map-title-map-N-or-none>
 test_strategy: test_in_integration | rebase_then_test | skip_test_and_push | none
 # --- common fields ---
@@ -62,12 +63,12 @@ integrated -> close_pending -> closed
 **Herdr HITL states:**
 
 ```text
-created -> running -> awaiting_human -> terminal -> consumed -> closed
-           \-> blocked (startup only)
+created -> awaiting_human -> terminal -> consumed -> closed
+       \-> blocked (startup only)
 ```
 
-`awaiting_human` 表示 startup probe 已完成、packet 已消费，用户正在 Herdr 与 worker 交互。
-coordinator 在该状态 yield；用户回到 Codex App 报告完成后才做一次 terminal readback。
+`awaiting_human` 表示 `agent prompt` 已 accepted、agent 已从 `idle` 进入 `working`，用户正在 Herdr 与 worker 交互。
+coordinator 在该状态 yield；用户回到 Codex App 报告完成后才启动 terminal fan-in。
 未知或越界 startup UI 才把 registry 写为 `blocked`；handoff 后的业务问题即使 Herdr agent
 呈现 `blocked`，registry 仍保持 `awaiting_human`。
 
@@ -87,23 +88,26 @@ created -> discovery_complete -> spec_complete -> tickets_complete
 
 registry 写入或 readback 失败时，不声称该 child 可恢复。
 
+`running` 或 `awaiting_human` 的 user-visible lane 完成 registry readback 即 Dispatch Handoff；coordinator
+结束本轮。running 不是要求持续 monitoring 的状态。
+
 ## Fresh-session Recovery
 
 1. 从 map/spec/tickets 向下枚举 work items，读取每个 `lane_id` 的 latest registry。
 2. `runtime: codex-thread` 的 `running` / `terminal` lane 用 active thread tools 验证
-   `thread_id`、`host_id`、`project_id`、task lifecycle 和 worktree；running task 重新调用
-   `wait_threads`。
+   `thread_id`、`host_id`、`project_id`、task lifecycle 和 worktree；running task 只报告坐标，
+   用户完成信号或显式 monitor 请求才调用 `wait_threads`。
 3. `runtime: codex-thread` 的 `integrated` / `close_pending` / `closed` lane 用
    `list_archived_threads` 验证 `thread_archived`；`close_pending` 重试 `set_thread_archived` 并
    readback，成功后写 `closed`。
 4. `runtime: herdr-codex-pane | herdr-claude-pane` 按 `dispatch-runtime-routing.md` 的 Herdr
-   Control Route，用 `herdr_session_name` 验证 workspace/tab/pane、worker kind 与 final marker。
+   Control Route，用 `herdr_session_name` 验证 workspace/tab/pane 与 worker kind。
    lane 缺少 session name 时坐标为 `Unknown`；`herdr_session_owned: false` 时只收口 lane pane，
    保留 user-visible session。
-5. `state: awaiting_human` 只在用户返回触发时读取 pane/final marker；恢复过程不挂 listener、
-   不启动定时 wait。
+5. `state: awaiting_human` 只在用户返回触发时按 `frontier-lanes.md` fan-in；恢复过程不读取 pane、
+   不挂 listener、不启动定时 wait。
 6. 用 Git 验证所有 runtime 的 worktree、branch 和 commits。
-7. lane 已 terminal：读取 final report，进入 fan-in。
+7. lane 已 terminal：按 `frontier-lanes.md` 从持久证据进入 fan-in。
 8. task/pane 消失但 commit/artifact 存在：从持久证据继续 fan-in。
 9. registry 与现实不一致：保留证据并标 stale；确认没有 active writer 后才能 replacement。
 

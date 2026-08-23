@@ -7,15 +7,8 @@ Implementation lanes 的 fan-in 规则见 `frontier-lanes.md` § Terminal Fan-in
 
 ## Herdr HITL Handoff
 
-Herdr HITL pane 由 `dispatch-runtime-routing.md` 完成 bootstrap。首个范围内业务问题证明 packet 已
-消费；coordinator 用 packet、registry 和现有输出核对坐标，scrollback 缺失字段记为 `Unknown`，
-不补发 readback。registry 写 `state: awaiting_human` 后，coordinator 立即 yield 并向用户回报
-session/workspace/tab/pane 坐标。运行期由用户在 Herdr 直接回答 worker；此状态不创建 listener，
-不调用 `herdr agent wait`，不读取 routine progress。
-
-用户回到 Codex App 报告完成后，coordinator 读取 pane final report 一次，验证 tracker/artifact/Git，
-再写 `terminal` → `consumed` 并重算 frontier。用户尚未返回时，`awaiting_human` 是正常终点，
-不是 blocker 或 setup failure。
+Herdr HITL startup terminal 与 yield 只由 `dispatch-runtime-routing.md` 定义；用户完成信号后的证据
+消费、Integration 和自动续派只由 `frontier-lanes.md` 定义。本文件不复制这两个状态机。
 
 ## Startup
 

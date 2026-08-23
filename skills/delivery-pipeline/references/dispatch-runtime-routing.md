@@ -42,12 +42,22 @@ replacement 或切换新 lane 的 transport。
 coordinator task 设为 `LEAD` 坐标并 readback；创建、替换、重命名或恢复每条 user-visible
 Codex App task 时沿用同一命名契约。
 
+## Dispatch critical path
+
+每个 maximal safe batch 只做一次并行 preflight snapshot：同时读取 target ticket/claim/registry、
+Integration HEAD/clean state、worktree path/branch collision 和已选 transport capability。snapshot 中
+相互独立的 checks 并行；写入导致某个字段失效时只刷新该字段，不重读整个 map、合同或 owner body。
+
+安全不变量保持不变：一个 active writer、registry 先于 worker、Execution Worktree 隔离、真实路径与
+base commit readback、未知/dirty/conflict fail closed。routine success 不逐步播报；一次开始状态与一次
+Dispatch Handoff 足够。
+
 ## Codex App 原生调度
 
 ### 创建
 
-1. 用 `list_projects` 按 `fresh-session-boundaries.md` 解析 Source owner projectId，并确认项目是
-   当前 repo。
+1. map registry 没有已验证的 Source owner projectId 时，才用 `list_projects` 按
+   `fresh-session-boundaries.md` 解析并持久化；后续 lanes 复用，project/path 变化时才刷新。
 2. 按 `task-coordinate-title.md` 生成 Task Coordinate Title，并与完整 packet 一起传给
    `create_thread`；显式设置 `title`。target 使用该 project，environment 使用 worktree，
    `startingState` 的 branchName 必须是当前 Integration branch。Codex App 拥有 Execution
@@ -55,25 +65,26 @@ Codex App task 时沿用同一命名契约。
 3. `create_thread` 返回 `threadId` 时记录其 `hostId`。只返回 `clientThreadId` 表示 worktree 仍在
    setup；`clientThreadId` 不能作为 `thread_id`，用 `list_threads` 按 Task Coordinate Title、
    project 和 lane 标识找到 ready task。
-4. 用 `list_threads`、`read_thread`、`git worktree list --porcelain` 和 Git state readback：
+4. 用一次聚合 readback 并行调用 `list_threads` / `read_thread` 与 Git state：
    title 与预期 Task Coordinate Title 精确相等，task 属于 owner project，worktree 的 common dir
    属于 source repo，base commit 是 dispatch 时 Integration HEAD，cwd 不在 Source Worktree 或
    Map Integration Worktree。
 5. worker 在首次写入前创建或验证 `codex/issue-<ticket>` branch。把 `project_id`、`host_id`、
    `thread_id`、`thread_archived: false`、实际 worktree、branch 和 base commit 写入 lane registry，
-   并精确 readback。
+   并精确 readback；task 已接受 prompt 且出现首次真实 progress 后写 `state: running`。
 
 完成标准：`runtime: codex-thread` lane 的 Task Coordinate Title、task、App-managed Execution
-Worktree 和 registry 互相一致，startup probe 已读回 owner skill name/path 与 work item。
+Worktree 和 registry 互相一致，packet 带 resolved owner/work item，task 已运行。registry readback 后
+立即 yield；Dispatch Handoff 是 coordinator 本轮 terminal。
 
 ### 监控与恢复
 
-- 对同批 1–8 个 running tasks 用一次 `wait_threads`；后续等待携带每个 task 的最新 cursor。
-  routine commentary 不触发 fan-in，只在 completed 或 needs-attention 时读取。
+- 默认不等待 running task。只有用户明确要求 monitor/wait，或用户返回并给出完成信号时，才对同批
+  1–8 个 tasks 用一次带 cursor 的 `wait_threads` snapshot；routine commentary 不触发 fan-in。
 - terminal 后用 `read_thread` 读取一次 final report，随后以 Git commit、checks、dirty state 和
   touched files 为准进入 Integration。
-- worker 需要范围内的收口指令或回答时才调用 `send_message_to_thread`；常规进度用
-  `wait_threads`，不反复发送催促。
+- worker 需要范围内的收口指令或回答时才调用 `send_message_to_thread`；显式 monitor 使用
+  `wait_threads` snapshot，不反复发送催促。
 - 新会话对 `running` / `terminal` lane 用 registry 的 `thread_id` + `host_id` 调用
   `list_threads` / `read_thread`；对 `integrated` / `close_pending` / `closed` lane 调用
   `list_archived_threads` 验证 archive，`close_pending` 按 `execution-worktree-integration.md` 重试。
@@ -108,24 +119,27 @@ Worktree 和 registry 互相一致，startup probe 已读回 owner skill name/pa
 4. `bootstrap_authority: trusted_execution_bootstrap` 只自动处理两个已知 UI：
    - **workspace trust**：UI 路径必须完全等于 registry 的 Execution Worktree，且 Git common dir、
      branch 与 base commit 已通过 startup probe；
-   - **external imports**：列出的每个文件都必须已由 coordinator 完整读取，并且是 packet 中的
-     resolved owner skill、该 skill 直接引用的资源，或同时适用于 Source Worktree 与 Execution
-     Worktree 的共同祖先 repo instructions。
+   - **external imports**：列出的每个文件必须属于 packet 的 resolved owner skill realpath、机械解析出的
+     direct reference paths，或同时适用于 Source Worktree 与 Execution Worktree 的共同祖先 repo
+     instructions；worker 自己完整读取，coordinator 不预加载 owner body。
 
    每次匹配后调用 `herdr --session "$herdr_session_name" agent send-keys "$agent_name" enter`，再读
    `agent get` / `agent read`。授权状态按 `blocked -> idle -> working` 推进；其他 question/approval UI
    保留为 `blocked` 并交给用户。
-5. Claude 到达 `idle` 后，通过 `agent prompt` 投递 packet 的单行绝对路径引用并观察到 `working`。
-   首个范围内业务问题是 startup probe 的成功终点：用 dispatch packet、registry 与首次可见输出
-   核对 owner、ticket 和坐标；alternate-screen 已滚走的 scrollback 缺失字段记为 `Unknown`。
-   coordinator 直接写 `state: awaiting_human` 并 yield，不补发任何消息，不启动 `agent wait` 或轮询。
-   worker 因业务问题呈现 `blocked` 是正常 HITL Handoff。用户在 Herdr 直接回答；用户回到
-   Codex App 报告完成后，coordinator 才读取一次 final report 并 fan-in。
+5. Claude 到达 `idle` 后，通过 `agent prompt` 投递 packet 的单行绝对路径引用。命令返回
+   `agent prompt` accepted，且观察到 `idle -> working` 即 startup terminal；packet 与 registry 已
+   持久化 owner、ticket 和坐标。HITL lane 跳过 `running` checkpoint，直接执行
+   `created -> awaiting_human` 并写 `state: awaiting_human` 后精确 readback；非 HITL lane 写
+   `state: running` 并 readback。
+   registry readback 后立即 yield；Dispatch Handoff 是 coordinator 本轮 terminal。不等待首个业务问题，
+   不读取 routine terminal、可见屏幕或进程信息，也不启动 `agent wait` 或 listener。用户在 Herdr
+   直接回答；用户回到 Codex App 报告完成后，按 `frontier-lanes.md` 做 terminal fan-in。
 6. bridge capability、session readiness 或 agent binary 缺失时输出完整 durable packet 并报告
    `dispatch unavailable`；已创建的空 Execution Worktree 按 cleanup contract 收口。
 
 完成标准：Claude pane 在 visible Herdr session 中可见，以 `--dangerously-skip-permissions` 运行，
-已消费 packet 并进入业务问题；HITL registry 为 `awaiting_human`，Codex App 已 yield。
+`agent prompt` 已 accepted 且 agent 为 `working`；registry 为 `running` 或 `awaiting_human`，Codex App
+已结束本轮，不监控 worker。
 
 ### Lane 创建与生命周期
 
@@ -135,10 +149,11 @@ Worktree 和 registry 互相一致，startup probe 已读回 owner skill name/pa
 3. Codex CLI 填写 `assets/HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`；Claude Code 填写
    `assets/HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`。以 Execution Worktree 为 cwd 启动 pane，
    并验证 placement、owner skill 和 work item。
-4. registry 写入 `runtime: herdr-codex-pane` 或 `runtime: herdr-claude-pane`，以及
+4. registry 先以 `state: created` 写入 `runtime: herdr-codex-pane` 或 `runtime: herdr-claude-pane`，以及
    `herdr_session_name`、`herdr_session_owned`、`bootstrap_authority`、`agent_permission_mode`、
    workspace/tab/pane、worktree、branch 与 base commit。
-5. terminal、recovery 和 pane cleanup 通过 Herdr Control Route 完成；该 lane 不调用 Codex App
+5. agent 启动并接受 packet 后，HITL 直接写 `awaiting_human`，其他 lanes 写 `running`；terminal、
+   recovery 和 pane cleanup 通过 Herdr Control Route 完成；该 lane 不调用 Codex App
    thread tools。
 
 完成标准：每条 Herdr lane 都有唯一 kind-matched pane、唯一 Execution Worktree 和可读回 registry。

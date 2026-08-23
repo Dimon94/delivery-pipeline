@@ -20,6 +20,15 @@ routing reference 记录为 `claude-cli`。
 每个 dispatched child 的 registry 保存 role、runtime、task 或 pane 坐标、worktree/branch、
 commit 和 lifecycle state。
 
+## Context reuse
+
+- fresh coordinator task 从持久证据重建一次；同一 task 的后续 lane 复用已解析的 map、runtime、
+  projectId、owner realpath 和共享合同。
+- 只有对应文件/realpath 改变、registry/Git 与缓存矛盾或 action 需要此前未加载的 branch reference 时，
+  才重读精确文件。compaction、下一 lane 或 routine tracker write 本身不触发全量重读。
+- continuation/prior-decision 需要 Nowledge 时，每个 user turn 一次 targeted lookup 足够；后续动作复用
+  结果，除非出现矛盾证据。
+
 ## Codex Project Targeting (`runtime: codex-thread`)
 
 派发前用 `list_projects` 找到源码 repo 的 `Source owner projectId`。按以下顺序解析：

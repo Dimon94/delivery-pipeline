@@ -513,13 +513,13 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
 
 6. 对 `awaiting_human` state 的 Herdr HITL tickets：只验证 registry 中已持久化的
    session/workspace/tab/pane 坐标并向用户报告；不挂 listener、不调用 `herdr agent wait`。用户回到
-   Codex App 报告完成后才读取一次 final report。
+   Codex App 报告完成后按 `frontier-lanes.md` 从持久证据 fan-in。
 
 7. 对 `running` state 的 execution tickets 按 lane runtime 恢复：
-   - `codex-thread`：用 `list_threads` / `read_thread` 验证 task，再带 cursor 调用
-     `wait_threads`。
-   - `herdr-codex-pane` / `herdr-claude-pane`：通过 Herdr Control Route 验证 pane；pane 存在时重挂
-     listener，pane 消失时检查 final marker 与 commit。
+   - `codex-thread`：用 `list_threads` / `read_thread` 验证 task lifecycle 与坐标；只在用户完成信号或
+     显式 monitor 请求后调用 `wait_threads` snapshot。
+   - `herdr-codex-pane` / `herdr-claude-pane`：通过 Herdr Control Route 验证 pane 坐标并交还用户，
+     随后结束 recovery turn。pane 消失时从 Git/registry/artifact 证据 fan-in。
 
 8. 对 `terminal` state 的 execution tickets：
    ```bash
@@ -551,9 +551,8 @@ workspace 时其 panes 已关闭；map issue 已关闭，registry 已更新为 `
    - `cleanup_in_progress`：继续 cleanup
    - 其他：根据 execution graph 状态决定下一步
 
-**完成标准：** 所有 valid worktrees 已验证，`awaiting_human` lanes 已原样交还用户，running AFK
-tasks 已重新 attach listener 或标记为 blocked，terminal tasks 已进入 integration 流程，orchestrator
-恢复到正确的 gate。
+**完成标准：** 所有 valid worktrees 已验证，`awaiting_human` / user-visible `running` lanes 已原样
+交还用户，terminal tasks 已进入 integration 流程，orchestrator 恢复到正确的 gate 后结束本轮。
 
 ## Error Handling
 
