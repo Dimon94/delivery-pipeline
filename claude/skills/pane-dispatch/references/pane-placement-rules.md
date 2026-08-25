@@ -69,9 +69,9 @@ map 对应的 space。用户随时在切换视图，裸命令等于把 worker �
 
 ## 生命周期配对（每次派发/收尾的强制动作）
 
-tab label 必须永远只反映**存活中**的 issue/lane。与 create+send-text 原子对同级强制：
+tab label 必须永远只反映**存活中**的 issue/lane。与 create+prompt 原子对同级强制：
 
-- **派发**：创建 pane → `send-text` 投递 → 按 design/execute 格式 rename →
+- **派发**：创建 pane → `agent prompt` 投递 → 按 design/execute 格式 rename →
   `herdr tab rename` 同步存活 issue/lane IDs。
 - **收尾**：terminal fan-in 完成后 `pane close` → `tab rename`（剔除该 ID）→ 最后一个 pane 关闭时
   tab 会自动消失，**不需要**手动 `herdr tab close <tab_id>`。
@@ -95,8 +95,7 @@ print(panes[-1]['pane_id'])
 # 2. 把默认 pane 变成第一个 worker
 herdr pane rename "$default_pane" '<design #编号 | execution #编号> <极短摘要>'
 herdr agent start '<agent-name>' --kind <kind> --pane "$default_pane" --cwd <path> --no-focus -- <args>
-herdr pane send-text "$default_pane" '<packet-reference-command>'
-herdr pane send-keys "$default_pane" Enter
+herdr agent prompt '<agent-name>' '<packet-reference-command>' --wait --until working --timeout 15000
 
 # 3. tab rename + 验证落点（见下节）
 ```
@@ -109,9 +108,8 @@ herdr pane send-keys "$default_pane" Enter
 # 1. 在目标 space + tab 创建 pane 并启动 worker agent
 # (如果是新 workspace/tab，复用默认 pane；如果是既有 tab，split 既有 pane)
 
-# 2. 投递 dispatch packet（写文件 + 单行引用，避免多行文本丢失）
-herdr pane send-text <pane_id> "完整读取 <packet-file-path> 并严格按其中全部指令执行。"
-herdr pane send-keys <pane_id> Enter
+# 2. 投递 dispatch packet（写文件 + 单行引用 + working 确认；机制见 pane-dispatch SKILL.md"投递机制"）
+herdr agent prompt <agent-name> "完整读取 <packet-file-path> 并严格按其中全部指令执行。" --wait --until working --timeout 15000
 
 # 3. 同步 tab label（追加编号）
 herdr tab rename <tab_id> '<字母>-<存活 issue 或 lane ID 列表>'

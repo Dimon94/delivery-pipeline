@@ -14,7 +14,7 @@ description: Dispatch work to verified Herdr panes (Claude or Codex) with placem
 - 解析/创建目标 tab（按类型字母 + 容量 <4）
 - 创建 pane（复用默认 pane 或 split 既有 pane）
 - 启动 agent（`--kind claude` 或 `--kind codex`）
-- 投递 packet（写文件 + 单行引用，避免多行文本丢失）
+- 投递 packet（写文件 + 单行引用 + working 确认）
 - Rename pane + 同步 tab label（lifecycle 配对）
 - 验证落点（`herdr pane get` 确认 workspace/tab 匹配）
 - 挂载 listener（`herdr agent wait` 后台进程）
@@ -70,14 +70,20 @@ description: Dispatch work to verified Herdr panes (Claude or Codex) with placem
 
 ## 投递机制
 
-**多行文本丢失问题**：`herdr pane send-text` 送多行文本会静默丢失（第一次尝试 prompt 是空的）。
+Packet 已由调用方写入文件（如 `/tmp/wf_packet_04.txt`），只投单行引用指令，经 agent 面原子提交：
 
-**可靠做法**（已验证）：
-1. Packet 已由调用方写入文件（如 `/tmp/wf_packet_04.txt`）
-2. 只 send 一行引用指令：`完整读取 <path> 并严格按其中全部指令执行。`
-3. `herdr pane send-keys <pane-id> Enter` 提交
+```bash
+herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。" --wait --until working --timeout 15000
+```
 
-不要直接 `send-text` 多行 packet 内容。
+`agent prompt` 原子提交 text + Enter 并遵守 pane 的 bracketed-paste；`--wait --until working` 兼作 startup 验证——返回成功即 agent 确认 working。
+
+投递失败处理（`agent_blocked` / `agent_prompt_stalled` / timeout）：
+1. `herdr agent get` + `herdr agent read` 查 pane 状态；首启设置页或权限 UI 用 `herdr agent send-keys <agent-name> esc` 清掉
+2. 重试一次上面的 prompt
+3. 仍失败 → 标记 `setup_blocked`，继续其他 panes
+
+不要用裸 `pane send-text` + `pane send-keys Enter` 投递：多行文本静默丢失，且首个 Enter 经常只聚焦不提交（文本滞留 composer，链路停摆）。
 
 ## Agent 启动命令
 
@@ -171,11 +177,9 @@ Split 方向：宽 pane 用 `right`，窄或高 pane 用 `down`。避免重复�
 1. **解析或创建 target tab**（见上节"Tab 容量管理"）
 2. **获取可用 pane**（复用默认 pane 或 split）
 3. **启动 agent**（见"Agent 启动命令"）
-4. **投递 packet**：
+4. **投递 packet**（失败处理见"投递机制"）：
    ```bash
-   herdr pane send-text "$pane_id" "完整读取 $packet_file 并严格按其中全部指令执行。"
-   herdr pane send-keys "$pane_id" Enter
-   sleep 0.5
+   herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。" --wait --until working --timeout 15000
    ```
 5. **Rename pane**：
    ```bash
@@ -233,6 +237,8 @@ listener_pid=$!
 ```
 
 **为什么后台**：Codex sandbox 可能拦 socket 访问，Codex pane 无法主动 `herdr agent prompt` 回 lead。Lead-side polling 是可靠的 terminal signal。
+
+**挂载前提**：agent 已确认 `working`（投递步骤已保证）。idle 态挂 `agent wait --until done` 会立即返回假 WAKE。
 
 **Timeout**：默认 2 小时（7200000ms）。
 
