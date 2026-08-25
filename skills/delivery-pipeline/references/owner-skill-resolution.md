@@ -1,37 +1,33 @@
 # Owner Skill Resolution
 
-Stage owners may be user-invoked skills and therefore absent from a delegated child’s active skill
-catalog. A bare `$implement` or `$to-spec` string is not proof that the skill was attached.
+Stage owners may be user-invoked skills and absent from a delegated worker catalog. Invocation text
+is never proof that an owner is installed; the absolute resolved `SKILL.md` path is authoritative.
 
 ## Resolve
 
-Before entering a stage, resolve its owner to a real `SKILL.md`:
+Before entering a stage, resolve only that stage's owner:
 
-1. Use the exact locator from the current session’s available-skills catalog when present.
-2. Otherwise use the absolute path the dispatching packet already resolved for you — a Codex
-   pane is not required to hold a local copy of the owner.
-3. Otherwise check `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`.
-4. Otherwise check `${AGENTS_HOME:-$HOME/.agents}/skills/<name>/SKILL.md`.
-5. Resolve symlinks to an absolute path. coordinator 只解析 realpath、frontmatter name 和 direct reference paths，
-   coordinator 不把 owner body 加载进上下文；packet 负责把真实路径交给 worker。
+1. Use the exact locator from the current session available-skills catalog when present.
+2. Otherwise check runtime homes: `${PI_HOME:-$HOME/.pi}/agent/skills/<name>/SKILL.md`,
+   `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`,
+   `${CLAUDE_HOME:-$HOME/.claude}/skills/<name>/SKILL.md`, and
+   `${AGENTS_HOME:-$HOME/.agents}/skills/<name>/SKILL.md`.
+3. Include provider/plugin caches only when repo instructions name their exact root.
+4. Resolve symlinks; verify frontmatter `name`; record the absolute path and direct reference paths.
 
-Resolve only the owner needed by the current gate. Missing or mismatched owner path blocks that
-gate; do not silently replace its contract with generic behavior.
+Coordinator只解析 realpath、frontmatter name 与 direct reference paths，不预加载 owner body。路径缺失
+或 name 不匹配时阻塞该 gate，不用 generic behavior 代替。
 
 ## Dispatch Contract
 
-Every child packet must include:
+每个 packet 包含：
 
 ```text
 Owner skill name：<name>
 Owner skill SKILL.md：<absolute resolved path>
-Owner skill invocation label：$<name> | /<name>
+Owner skill invocation label：<runtime-specific label; metadata only>
 ```
 
-The child must read the passed `SKILL.md` completely before task actions and follow it as the stage
-contract. The invocation label is descriptive only; availability of that label in the child catalog
-is not a prerequisite and must not trigger a fallback workflow.
-
-child 完整读取 owner 与所需 direct references；coordinator 的 dispatch packet、resolved realpath 与
-frontmatter readback 证明 owner 坐标，worker 的 terminal evidence 证明 contract 消费。缺失或不匹配时
-该 lane blocked；startup 不为等待 owner 复述而持续读取 worker 输出。
+label 按 worker runtime 记录：Codex 常用 `$name`，Claude 常用 plugin/skill label，pi 常用
+`/skill:name`；label 不参与文件查找。Worker 在动作前完整读取 passed SKILL.md及所需 direct
+references并回报 frontmatter name + resolved path。不匹配时 lane blocked；不得触发 fallback workflow。

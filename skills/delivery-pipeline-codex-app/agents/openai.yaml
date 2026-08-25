@@ -1,0 +1,6 @@
+interface:
+  display_name: "Delivery Pipeline (Codex App)"
+  short_description: "Use native App tasks/worktrees for delivery"
+  default_prompt: "Use $delivery-pipeline-codex-app to resume this issue's delivery chain with native Codex App tasks."
+policy:
+  allow_implicit_invocation: false

@@ -11,11 +11,12 @@
    | Role | 职责 |
    | --- | --- |
    | `LEAD` | coordinator |
-   | `G` | grilling / planning |
-   | `X` | execution |
-   | `P` | prototype |
-   | `R` | review |
-   | `D` | diagnosis / research |
+   | `PLN` | planning |
+   | `DES` | design / HITL |
+   | `FE` | frontend implementation |
+   | `BE` | backend/other implementation |
+   | `TST` | testing |
+   | `REV` | review |
 
 3. 非 `LEAD` task 解析自己的 tracker work-item key，保留 `#<number>` 形态。
 4. 从 tracker title 压缩 short summary：优先“动作＋对象”，保留领域词，省略 identifier、state
@@ -27,7 +28,8 @@
    coordinator: <map-key>-LEAD-<short-summary>
    ```
 
-   例如：`#86-X#957-修复恢复去重`、`#86-LEAD-派发通道确认`。
+   例如：`#86-BE#957-修复恢复去重`、`#86-TST#1002-运行全量测试`、
+   `#86-LEAD-派发通道确认`。
 
 ## 生命周期与 Readback
 

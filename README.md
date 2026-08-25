@@ -2,102 +2,99 @@
 
 [中文说明](README.zh-CN.md)
 
-A resumable Codex/Claude skill bundle for one durable delivery chain:
+A resumable, configuration-driven multi-runtime delivery chain:
 
 ```text
 idea/map -> discovery -> spec -> implementation tickets
-  -> automatic worktree dispatch -> integration -> summary PR/MR
+  -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-Start a fresh session with any issue from the chain. The skill follows tracker
-relationships upward and downward, reconstructs map/spec/ticket state, and
-continues from the earliest incomplete gate.
+`skills/delivery-pipeline` is the single canonical CLI/Herdr core, installed unchanged for pi,
+Codex CLI, and Claude CLI. The calling session is the coordinator; worker agent/model/effort comes
+from user configuration. Codex App native tasks/worktrees are the sole transport exception,
+exposed by `delivery-pipeline-codex-app` with all App-specific packets and references co-located
+inside that shell.
 
-Stage-owning skills remain authoritative: `wayfinder` owns discovery,
-`to-spec` owns the spec, `to-tickets` owns ticket publication, and `implement`
-owns one ticket. The orchestrator verifies durable links and state transitions;
-it does not add a second ticket-shaping policy.
+## Worker Configuration
 
-Implementation dispatch first selects transport from the coordinator runtime:
-Codex App uses native tasks/worktrees; Codex CLI and Claude CLI use Herdr. Inside
-Herdr, an explicit worker kind wins; otherwise frontend/design uses Claude and
-backend/other work uses Codex CLI. Dependencies and mutable-resource conflicts
-serialize only the affected tickets.
-Each dispatched child persists its pane/thread ID, worktree, branch, commit, and
-lifecycle state. Fresh sessions recover children and reattach terminal listeners
-first. Claude closes the matching worker pane after integration and focused checks
-succeed.
-Delegated children receive the owner skill's resolved `SKILL.md` path, so
-user-invoked stage owners do not depend on the child task's active skill catalog.
+Before the first CLI dispatch, run `delivery-pipeline-setup`. It probes:
+
+- pi: `pi --list-models`
+- Codex CLI: `codex debug models`
+- Claude CLI: model mappings and effort from `~/.claude/settings.json` `env`
+
+The user explicitly chooses `agent + model + effort` for six roles:
+
+```text
+planning  design  frontend  backend  testing  review
+```
+
+The version 2 configuration is stored at `~/.config/delivery-pipeline/model-roles.json`. Skills
+contain no default models. Missing, old, incomplete, or invalid configuration blocks dispatch and
+re-enters setup. The coordinator is not configured: whichever agent/model invoked the skill remains
+coordinator.
+
+Agent selects lane kind:
+
+- pi → `herdr-pi-pane`
+- codex → `herdr-codex-pane`
+- claude → `herdr-claude-pane`
 
 ## Dependencies
 
-**Runtimes** — Claude Code, Codex, pi, or any combination (multi-runtime bundle; single-side installs work).
+- At least one of pi, Codex CLI, or Claude CLI as coordinator; every worker CLI named in config must exist.
+- Herdr CLI as the canonical core's terminal multiplexer.
+- Owner skills: `wayfinder`, `grilling`, `domain-modeling`, `prototype`, `research`, `to-spec`,
+  `to-tickets`, `implement`, `code-review`, and `resolving-merge-conflicts`.
 
-**Owner skills** — all from [mattpocock-skills](https://github.com/mattpocock/skills). The machine-readable list lives in `skill-bundle.json` (`requires`); the installer diagnoses missing ones:
-
-- Discovery: `wayfinder`, `grilling`, `domain-modeling`, `prototype`, `research`
-- Delivery: `to-spec`, `to-tickets`, `implement`, `code-review`
-- Integration/closeout: `resolving-merge-conflicts`
-
-**Herdr** — the terminal multiplexer for Codex CLI, Claude CLI, and pi coordinator
-scenarios (CLI + `herdr` skill), also available as an explicit Codex App override.
-It is separate and not bundled; the native Codex App path does not require it.
+The machine-readable list is `skill-bundle.json` (`requires`). The installer diagnoses owners and
+all four CLIs without blocking installation.
 
 ## Install
 
-1. Install the owner skills.
-   - Claude Code: `/plugin install mattpocock-skills@claude-plugins-official`
-   - Codex: clone the source repo and symlink each owner into the skills home:
-     ```bash
-     git clone https://github.com/mattpocock/skills && cd skills
-     for s in wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review resolving-merge-conflicts; do
-       ln -s "$(find "$PWD/skills" -maxdepth 2 -type d -name "$s")" "${AGENTS_HOME:-$HOME/.agents}/skills/$s"
-     done
-     ```
-2. Install this bundle — both sides symlink to this checkout, plus the pre-commit validator:
-   ```bash
-   ./scripts/install.sh --target all
-   ```
-   The installer ends with a dependency-availability diagnostic (owner skills + Herdr CLI/skill); a `MISSING` line names something still to install.
-3. Before first use in a project repo, run the `setup-matt-pocock-skills` skill there once — it configures the issue tracker, triage labels, and domain docs the owner skills assume.
+```bash
+./scripts/install.sh --target all
+```
+
+The installer symlinks the same `skills/delivery-pipeline` directory into Codex, Claude, and pi
+skill homes and installs setup in all three. Codex additionally receives
+`delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
+to skip it.
+
+Before first use in a project repo, also run `setup-matt-pocock-skills` for tracker, triage, and
+domain-doc configuration. That is separate from `delivery-pipeline-setup` worker routing.
 
 ## Use
 
-Invoke with any node of the chain — the skill rebuilds the link from tracker relationships and resumes at the earliest incomplete gate, so work joins at any stage:
+### pi / Codex CLI / Claude CLI
 
-1. **Discovery** — a loose idea becomes a Wayfinder map (map-creation grilling stays in the current session, never dispatched). Research tickets run as background subagents; grilling and prototype tickets get dedicated Claude panes.
-2. **Spec → tickets** — `to-spec` publishes the spec; `to-tickets` publishes linked implementation tickets.
-3. **Dispatch** — each implementation ticket gets one Execution Worktree and one
-   lane. A Codex App coordinator uses a native task; Herdr coordinators create a
-   Codex CLI or Claude CLI pane according to the worker-kind binding.
-4. **Hand-off and fan-in** — dispatched sessions run autonomously (HITL tickets talk to the user directly). When one terminals, its listener wakes the dispatcher, which verifies the final report, integrates the commit, and dispatches the next batch.
-5. **Closeout** — after the graph empties: rebase, push, and one summary PR/MR.
-
-Codex App (native tasks/worktrees by default):
+Initialize once:
 
 ```text
-Use $delivery-pipeline with <any-map-spec-or-ticket-issue>.
+Use delivery-pipeline-setup to initialize or reconfigure worker routing.
 ```
 
-Codex CLI (Herdr-hosted Codex/Claude panes):
+Then invoke the canonical `delivery-pipeline` with any map/spec/ticket issue. It reconstructs the
+chain from tracker relationships and dispatches planning/design/frontend/backend/testing/review
+lanes according to version 2 configuration.
+
+### Codex App
 
 ```text
-Use $delivery-pipeline with <any-map-spec-or-ticket-issue>.
+Use $delivery-pipeline-codex-app with <any-map-spec-or-ticket-issue>.
 ```
 
-Claude CLI (`/pane-dispatch` manages Herdr panes):
+The App shell uses native tasks and App-managed Execution Worktrees and does not read the CLI worker
+role configuration. To use Herdr from a Codex App session, exit the App shell and invoke canonical
+`delivery-pipeline`.
 
-```text
-Use /delivery-pipeline <any-map-spec-or-ticket-issue>.
-```
+## Invariants
 
-pi (thin-delta entry; pi panes carry per-role models — frontend/design → `junbo/kimi-k3:max`,
-backend/other → `openai-codex/gpt-5.6-sol:xhigh`):
-
-```text
-Use delivery-pipeline-pi with <any-map-spec-or-ticket-issue>.
-```
+- One Execution Worktree, lane, and active writer per work item.
+- Ordinary repository path overlap is an Integration risk, not an implicit dispatch dependency.
+- Same-batch startup readback completes before Dispatch Handoff; long workers do not occupy coordinator time.
+- Terminal fan-in trusts Git, tracker, artifacts, and registry evidence.
+- Push/main/PR/MR/merge/final publication requires separate remote authority.
 
 ## Verify
 
@@ -105,12 +102,4 @@ Use delivery-pipeline-pi with <any-map-spec-or-ticket-issue>.
 python3 scripts/validate.py
 ```
 
-`scripts/install.sh` also installs `scripts/hooks/pre-commit`, which runs the
-validator against the staged tree and refuses a red commit. Pass `--no-hooks` to
-skip, or commit with `--no-verify` to override deliberately. The same validator
-runs in CI (`.github/workflows/validate.yml`) as a backstop for fresh clones.
-
-Skill references are runtime-specific and enforced: the Codex tree (`skills/`)
-uses `$name`, the Claude tree (`claude/skills/`) uses `/mattpocock-skills:name`.
-Claude plugin locators are rejected inside the Codex tree, where they cannot
-resolve.
+The same validator is enforced by the pre-commit hook and CI (`.github/workflows/validate.yml`).

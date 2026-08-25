@@ -1,38 +1,28 @@
-# Terminal Fan-in 与 Subagent Recovery
+# Configured Lane Monitoring
 
-任何 discovery child subagent 派发前读取本文件。discovery AFK tickets（research、task）通过
-`Agent` tool 以后台 subagent 派发（`run_in_background: true`）。
+默认运行终点是 Dispatch Handoff，不持续监控。用户完成信号、真实 terminal event 或显式
+monitor 请求才进入本文件。
 
-Implementation lanes 的 fan-in 规则见 `frontier-lanes.md` § Terminal Fan-in。
+## Herdr Lanes
 
-## Herdr HITL Handoff
+- 从 registry 恢复 session/workspace/tab/pane、role、output_mode、agent/model/effort 与 worktree。
+- 显式 monitor 时对目标 lane 做一次 bounded get/read；routine progress不触发 fan-in。
+- final marker 缺字段记 Unknown；Git、tracker、artifact与 registry 是持久证据，不要求重显。
+- HITL `awaiting_human` 只由用户返回触发；恢复不挂新 listener、不定时 wait。
 
-Herdr HITL startup terminal 与 yield 只由 `dispatch-runtime-routing.md` 定义；用户完成信号后的证据
-消费、Integration 和自动续派只由 `frontier-lanes.md` 定义。本文件不复制这两个状态机。
+## Role-aware Terminal Outcomes
 
-## Startup
+| Output mode | Required terminal evidence | Fan-in state |
+|---|---|---|
+| `commit` | terminal commit + clean/declared dirty state + touched files | cherry-pick → `integrated` |
+| `artifact` | tracker/artifact坐标 + clean worktree | `consumed` |
+| `checks` | commands/results + clean worktree | `consumed`，失败阻塞 review |
+| `verdict` | verdict/findings + clean worktree | `consumed`，blocking finding阻塞 closeout |
 
-1. 填写 `WAYFINDER_TICKET_DISPATCH_PACKET.md` 模板作为 prompt。
-2. 调用 `Agent` tool：`description` = ticket title、`prompt` = 填写后的 packet、
-   `run_in_background: true`、`name` = `research-<ticket-number>` 或 `task-<ticket-number>`。
-3. 写入 `created` → `running` registry 并 readback。
+只有 `commit` mode 进入 cherry-pick。其他 mode 不要求 commit；出现未说明文件变更时 fail closed。
 
-完成标准：每个 running child 都有 durable registry 和 `agent_name`。
+## Fan-in
 
-无需 listener 挂载——`Agent` tool 完成时系统自动推送通知给 lead 会话。
-
-## Terminal Fan-in
-
-- `Agent` tool 完成通知到达后，从返回 result 读取 final report 一次；
-  验证 `FINAL_REPORT_BEGIN` … `FINAL_REPORT_END` markers。
-- 验证 status、commit、branch、artifact 和 blocker。
-- completed 写入 `terminal` → `consumed` → `closed`。
-- blocked 只暂停自身。
-- fan-in 后立即重算 frontier，不等待同批其他 children。
-
-## Recovery
-
-- subagent 完成状态无法跨会话恢复。新会话读取所有 `running` registries 时：
-  检查 branch/artifact 是否存在；存在则从持久证据继续 fan-in；不存在则标 `blocked`
-  并由 lead 决定是否重新派发。
-- 全部 lanes terminal 且 frontier 为空后 durable registry 保留。
+按 output mode 验证 work item acceptance与持久证据；成功后调用
+`execution-worktree-integration.md` 的对应 cleanup。lane blocked不停止其他 ready work。一次异常只做
+一次状态检查；未知 active writer fail closed。

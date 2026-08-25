@@ -1,15 +1,15 @@
 {
-  "format": "codex-claude-skill-bundle/v1",
+  "format": "multi-runtime-skill-bundle/v2",
   "name": "delivery-pipeline",
   "entrypoints": {
-    "codex": "skills/delivery-pipeline/SKILL.md",
-    "claude": "claude/skills/delivery-pipeline/SKILL.md",
-    "pi": "skills/delivery-pipeline-pi/SKILL.md"
+    "cli": "skills/delivery-pipeline/SKILL.md",
+    "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
+    "setup": "skills/delivery-pipeline-setup/SKILL.md"
   },
   "install": {
-    "codexSkillDirectory": "skills/delivery-pipeline",
-    "claudeSkillDirectory": "claude/skills/delivery-pipeline",
-    "piSkillDirectory": "skills/delivery-pipeline-pi"
+    "sharedSkillDirectory": "skills/delivery-pipeline",
+    "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
+    "setupSkillDirectory": "skills/delivery-pipeline-setup"
   },
   "requires": [
     {
@@ -50,7 +50,7 @@
     {
       "name": "implement",
       "source": "mattpocock-skills",
-      "reason": "Issue-level implementation directive sent to each dispatched Codex worker."
+      "reason": "Issue-level implementation directive sent to each configured worker."
     },
     {
       "name": "code-review",
@@ -65,7 +65,7 @@
     {
       "name": "herdr",
       "source": "herdr",
-      "reason": "Terminal multiplexer for Codex CLI and Claude CLI coordinators, plus explicit Codex App pane dispatch."
+      "reason": "Terminal multiplexer for configured pi, Codex CLI, and Claude CLI workers."
     }
   ]
 }

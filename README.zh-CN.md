@@ -2,96 +2,94 @@
 
 [English README](README.md)
 
-一个可恢复的 Codex/Claude 交付链：
+一个可恢复、配置驱动的多 runtime 交付链：
 
 ```text
 idea/map -> discovery -> spec -> implementation tickets
-  -> 自动分配 worktrees -> integration -> summary PR/MR
+  -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-新会话里给出链路中的任意 issue 即可。skill 会沿 tracker relationships 向上、向下重建
-map/spec/ticket 状态，并从最早未完成的 gate 自动继续。
+`skills/delivery-pipeline` 是唯一 canonical CLI/Herdr 主干，同一份物理 skill 供 pi、Codex CLI、
+Claude CLI 使用。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
+Codex App native task/worktree 是唯一特殊 transport，入口为 `delivery-pipeline-codex-app`，其 packet
+与 references 全部共置在该壳内。
 
-各阶段 owner 保持权威：`wayfinder` 负责 discovery，`to-spec` 负责 spec，`to-tickets`
-负责发布 implementation tickets，`implement` 负责单张票。orchestrator 只验证持久链接和
-状态转换，不再增加第二套票面判断。
+## Worker 配置
 
-执行自动分配先按调度者环境选 transport：Codex App 使用 Codex App 原生 task/worktree；
-Codex CLI 与 Claude CLI 使用 Herdr。进入 Herdr 后，用户显式 worker kind 优先，否则前端/设计
-走 Claude pane，后端/其余走 Codex CLI pane。
-dependency 与 mutable-resource 冲突只串行受影响的 tickets。
-每个被派发的 child 都保存 pane/thread ID、worktree、branch、commit 和生命周期状态。
-新会话会先恢复已有 child 并重挂 terminal listener。Claude 在集成与 focused checks 成功后
-自动关闭对应 worker pane。
-派发包会携带 owner skill 的 resolved `SKILL.md` 路径，因此用户调用型 stage owner 不依赖
-子任务当前加载的 skill catalog。
+首次 CLI Dispatch 前运行 `delivery-pipeline-setup`。它探测：
+
+- pi：`pi --list-models`
+- Codex CLI：`codex debug models`
+- Claude CLI：`~/.claude/settings.json` 的 `env` 模型映射与 effort
+
+然后要求用户为六个角色明确选择 `agent + model + effort`：
+
+```text
+planning  design  frontend  backend  testing  review
+```
+
+配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 2）。Skill 不包含默认模型；
+配置缺失、旧 version、缺角色或字段非法都会阻塞派发并重新进入 setup。Coordinator 不在配置中，
+当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
+
+agent 决定 lane kind：
+
+- pi → `herdr-pi-pane`
+- codex → `herdr-codex-pane`
+- claude → `herdr-claude-pane`
 
 ## 依赖
 
-**Runtimes** —— Claude Code、Codex、pi 或任意组合（多端 bundle，可只装一端）。
+- pi、Codex CLI、Claude CLI 中至少安装一个作为 coordinator；配置引用的 worker CLI 必须存在。
+- Herdr CLI：canonical CLI 主干的 terminal multiplexer。
+- Owner skills：`wayfinder`、`grilling`、`domain-modeling`、`prototype`、`research`、`to-spec`、
+  `to-tickets`、`implement`、`code-review`、`resolving-merge-conflicts`。
 
-**Owner skills** —— 全部来自 [mattpocock-skills](https://github.com/mattpocock/skills)。机器可读清单在 `skill-bundle.json` 的 `requires`，安装器会诊断缺失项：
-
-- Discovery：`wayfinder`、`grilling`、`domain-modeling`、`prototype`、`research`
-- 交付：`to-spec`、`to-tickets`、`implement`、`code-review`
-- 集成/收尾：`resolving-merge-conflicts`
-
-**Herdr** —— Codex CLI、Claude CLI 与 pi 调度场景的终端 multiplexer（CLI + `herdr` skill），
-也可由 Codex App 用户显式选择。独立组件，本仓库不附带；纯 Codex App 原生路径不依赖它。
+机器可读清单在 `skill-bundle.json` 的 `requires`；安装器末尾会诊断 owner skills 和四个 CLI。
 
 ## 安装
 
-1. 安装 owner skills。
-   - Claude Code：`/plugin install mattpocock-skills@claude-plugins-official`
-   - Codex：clone 源仓库，把每个 owner 软链进 skills 目录：
-     ```bash
-     git clone https://github.com/mattpocock/skills && cd skills
-     for s in wayfinder grilling domain-modeling prototype research to-spec to-tickets implement code-review resolving-merge-conflicts; do
-       ln -s "$(find "$PWD/skills" -maxdepth 2 -type d -name "$s")" "${AGENTS_HOME:-$HOME/.agents}/skills/$s"
-     done
-     ```
-2. 安装本 bundle——各端都软链到当前 checkout（pi 面安装到 `~/.pi/agent/skills/`），并附带 pre-commit 校验器：
-   ```bash
-   ./scripts/install.sh --target all
-   ```
-   安装器末尾输出依赖可用性诊断（owner skills + Herdr CLI/skill）；任何 `MISSING` 行就是还没装的组件。
-3. 在某个项目 repo 首次使用前，先在那里运行一次 `setup-matt-pocock-skills` skill，配置 owner skills 依赖的 issue tracker、triage 标签和 domain 文档。
+```bash
+./scripts/install.sh --target all
+```
+
+安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup 也安装到
+三端。Codex 额外获得 `delivery-pipeline-codex-app`。默认安装 pre-commit validator；
+`--no-hooks` 可跳过。
+
+首次使用项目 repo 前，还需运行 `setup-matt-pocock-skills`，配置 owner skills 使用的 tracker、
+triage labels 与 domain docs；这与 worker model routing 的 `delivery-pipeline-setup` 是两件事。
 
 ## 使用
 
-用链路中的任意节点启动——skill 会沿 tracker 关系重建链路，从最早未完成的 gate 继续，所以任何阶段的 map 都能接入：
+### pi / Codex CLI / Claude CLI
 
-1. **Discovery**——松散想法建成 Wayfinder map（建图拷问在当前会话进行，不派发）。调研票派后台 subagent，拷问票和原型票派独立 Claude pane。
-2. **Spec → Tickets**——`to-spec` 发布 spec；`to-tickets` 发布带链接的 implementation tickets。
-3. **Dispatch**——每张 implementation ticket 一个 Execution Worktree + 一个 lane。Codex App
-   调度者使用原生 task；Herdr/Codex CLI 或 Herdr/Claude CLI 按 worker kind 创建 pane。
-4. **托管与回报**——派出的会话自主执行（HITL 票直接与用户对话）。terminal 后 listener 唤醒调度会话，验证 final report、集成 commit，然后派发下一批。
-5. **收尾**——graph 清空后 rebase、push，产出一个 summary PR/MR。
-
-Codex App（默认原生 thread/worktree）：
+先初始化一次：
 
 ```text
-使用 $delivery-pipeline 继续 <任意 map/spec/ticket issue>。
+使用 delivery-pipeline-setup 初始化或重配 worker 路由。
 ```
 
-Codex CLI（通过 Herdr 管理 Codex/Claude panes）：
+随后在任一 CLI 中用 canonical `delivery-pipeline` 继续 map/spec/ticket。Skill 会沿 tracker
+relationships 从最早未完成 gate 恢复，并按配置派发 planning/design/frontend/backend/testing/review
+lanes。
+
+### Codex App
 
 ```text
-使用 $delivery-pipeline 继续 <任意 map/spec/ticket issue>。
+使用 $delivery-pipeline-codex-app 继续 <任意 map/spec/ticket issue>。
 ```
 
-Claude CLI（通过 `/pane-dispatch` 管理 Herdr panes）：
+App 壳使用 native task + App-managed Execution Worktree，不读取 CLI worker-role config。若希望
+Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipeline`。
 
-```text
-使用 /delivery-pipeline <任意 map/spec/ticket issue>。
-```
+## 不变量
 
-pi（薄 delta 入口，pi pane 按角色携带模型——frontend/design → `junbo/kimi-k3:max`，
-backend/other → `openai-codex/gpt-5.6-sol:xhigh`）：
-
-```text
-使用 delivery-pipeline-pi 继续 <任意 map/spec/ticket issue>。
-```
+- 每个 work item 一个 Execution Worktree、一个 lane、一个 active writer。
+- ready frontier 的普通 repo 路径重叠留给 Integration，不隐式串行。
+- 同批 startup readback 后统一 Dispatch Handoff；长任务不持续占用 coordinator。
+- terminal fan-in 以 Git、tracker、artifact 和 registry 为证据。
+- push/main/PR/MR/merge/final publication 需要独立 remote authority。
 
 ## 校验
 
@@ -99,10 +97,4 @@ backend/other → `openai-codex/gpt-5.6-sol:xhigh`）：
 python3 scripts/validate.py
 ```
 
-`scripts/install.sh` 会同时安装 `scripts/hooks/pre-commit`：它对**暂存树**跑校验器，
-红灯直接拒绝 commit。`--no-hooks` 可跳过安装，`--no-verify` 可主动绕过。同一个校验器
-在 CI（`.github/workflows/validate.yml`）里再跑一遍，为新 clone 兜底。
-
-Skill 引用写法按 runtime 区分并强制校验：Codex 树（`skills/`）用 `$name`，
-Claude 树（`claude/skills/`）用 `/mattpocock-skills:name`。Codex 树里出现 Claude
-plugin locator 会被拒绝——那种写法在 Codex 下无法解析。
+同一个 validator 由 pre-commit hook 与 CI（`.github/workflows/validate.yml`）强制执行。

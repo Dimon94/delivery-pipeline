@@ -1,93 +1,68 @@
 # Pane 生命周期规则
 
-投递机制、落点验证、Working 确认、lifecycle 配对和 listener 挂载前提的唯一定义点。
-dispatch-runtime-routing 的 Herdr 章节引用本文件，不再内联命令块。
+投递机制、落点验证、Working 确认、lifecycle 配对与 listener 前提的唯一定义点。
+Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 
-## 投递机制
+## 批级并发序列
 
-Packet 已由调用方写入文件，只投单行引用指令，经 agent 面原子提交。投递不阻塞——
-不带 `--wait`，提交后立即返回，agent 冷启动在后台进行：
+1. **批级前置（唯一串行段）**：解析并 readback Herdr session/workspace。
+2. **并发段 A**：同批 pane create/split（`--cwd <Execution Worktree>`）+ 落点验证。
+3. **并发段 B**：按配置并发 agent start + packet 投递；投递不阻塞。
+4. **记账段**：rename pane + sync tab label，与 agent 冷启动重叠。
+5. **聚合 Working 确认**：并行等待各 agent working；单项失败独立隔离。
+6. **Listener + 聚合 readback**：确认 working 后挂 listener，聚合 registry readback，到达
+   Dispatch Handoff。
+
+## 投递
+
+Packet 已写入文件，只投递单行绝对路径引用：
 
 ```bash
 herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。"
 ```
 
-`agent prompt` 原子提交 text + Enter 并遵守 pane 的 bracketed-paste。
+不带 `--wait`。失败时 get/read 一次、重试一次；仍失败写 `setup_blocked`。不用裸
+`pane send-text` + Enter 投递多行文本。
 
-投递失败处理（`agent_blocked` / `agent_prompt_stalled` / error 返回）：
-1. `herdr agent get` + `herdr agent read` 查 pane 状态；首启设置页或权限 UI 用 `herdr agent send-keys <agent-name> esc` 清掉
-2. 重试一次上面的 prompt
-3. 仍失败 → 标记 `setup_blocked`，继续其他 lanes
+## Agent 启动
 
-不要用裸 `pane send-text` + `pane send-keys Enter` 投递：多行文本静默丢失，且首个 Enter 经常只聚焦不提交（文本滞留 composer，链路停摆）。
+从 registry readback 的 agent/model/effort 构造命令；不得用 skill 内默认值：
 
-## Agent 启动命令
-
-按 kind 分支。`agent start` 不支持 `--cwd` 与 `--no-focus`；**每条 lane 的独立
-worktree 不丢——在 `pane split --cwd <worktree-path>` 创建时绑定**（workspace/tab
-默认继承 repo root，不能用作 lane cwd）。worktree 隔离约束不变，只是绑定位置从启动步
-前移到创建步。
-
-**Claude pane**：
 ```bash
-herdr agent start <agent-name> \
-  --kind claude \
-  --pane <pane-id> \
-  -- --dangerously-skip-permissions
+# pi
+herdr agent start "$agent_name" --kind pi --pane "$pane_id" -- \
+  --approve --model "$model" --thinking "$effort"
+
+# Codex CLI
+herdr agent start "$agent_name" --kind codex --pane "$pane_id" -- \
+  --model "$model" -c "model_reasoning_effort=\"$effort\"" \
+  -s danger-full-access -a never
+
+# Claude CLI
+herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
+  --model "$model" --effort "$effort" --dangerously-skip-permissions
 ```
 
-注：Claude pane 一律使用默认模型。
-
-**Codex pane**：
-```bash
-herdr agent start <agent-name> \
-  --kind codex \
-  --pane <pane-id> \
-  -- -s danger-full-access -a never
-```
-
-`agent start` 对 shell 未就绪的 pane 返回 `agent_pane_busy`；批级并发时先确认各 pane
-shell 就绪（`agent_status` 非 `unknown`）再 start。Agent 名字必须 lowercase
-alphanumeric + hyphens，格式如 `codex-957` 或 `grilling-42`。
+`agent start` 不支持 `--cwd`；cwd 在 pane split/create 时绑定。shell 未就绪时先等待
+`agent_status` 非 unknown。Agent name 使用 lowercase alphanumeric + hyphens。
 
 ## 落点验证
 
-创建后立即验证（只依赖 pane 存在，不依赖 agent 状态；可在 agent start 之前执行，与冷启动重叠）：
-```bash
-pane_info=$(herdr pane get "$pane_id")
-actual_ws=$(echo "$pane_info" | jq -r '.result.pane.workspace_id')
-actual_tab=$(echo "$pane_info" | jq -r '.result.pane.tab_id')
-```
-
-断言：
-- `actual_ws` == 目标 `workspace_id`
-- `actual_tab` == 目标 `tab_id`
-
-**落点不符时**：
-1. `herdr pane close "$pane_id"` — 不留孤儿 pane
-2. 用显式 `--workspace`/`--tab` 重试一次
-3. 第二次仍失败 → 标记为 `setup_blocked`，log 坐标和 Herdr state，继续其他 lanes
-
-**为什么验证**：裸 `herdr agent start` 或 `herdr pane split` 不带显式坐标时会落在用户聚焦的 pane（可能是别的 space）。显式坐标 + 验证防止静默错放。
+创建后立即 `herdr pane get "$pane_id"`，断言 workspace_id、tab_id 与目标一致。落点错误时关闭
+pane并用显式 workspace/tab 重试一次；第二次失败写 `setup_blocked`，继续 siblings。
 
 ## Working 确认
 
-rename + tab label 同步完成后，统一确认 agent 已进入 working：
+记账段完成后聚合执行：
 
 ```bash
 herdr agent wait "$agent_name" --until working --timeout 15000
 ```
 
-确认失败处理（timeout / stalled）：
-1. `herdr agent get` + `herdr agent read` 查 pane 状态；首启设置页或权限 UI 用 `herdr agent send-keys <agent-name> esc` 清掉
-2. 重试一次投递（见"投递机制"）后再次确认
-3. 仍失败 → 标记 `setup_blocked`，已 rename 的 pane 按"Lifecycle 配对"的 close + label 对账收口，继续其他 lanes
+失败时 get/read 一次、重投 packet 一次、再确认一次；仍失败执行 close + label 对账并写
+`setup_blocked`。确认前不挂 listener。
 
-确认通过前不得挂载 listener（见下节前提）。
-
-## Listener 挂载
-
-Claude pane 和 Codex pane 都挂 lead-side listener：
+## Listener
 
 ```bash
 (
@@ -96,25 +71,13 @@ Claude pane 和 Codex pane 都挂 lead-side listener：
     herdr agent prompt "$lead_pane_id" "WAKE: $pane_label done"
   fi
 ) &
-listener_pid=$!
 ```
 
-**为什么后台**：Codex sandbox 可能拦 socket 访问，Codex pane 无法主动 `herdr agent prompt` 回 lead。Lead-side polling 是可靠的 terminal signal。
-
-**挂载前提**：agent 已确认 `working`（"Working 确认"步骤已保证）。idle 态挂 `agent wait --until done` 会立即返回假 WAKE。
-
-**Timeout**：默认 2 小时（7200000ms）。
-
-**WAKE 语义**：WAKE 只是唤醒信号，不承载完成证据。Lead 收到 WAKE 后读 pane 内的 final report 和真相源（Git、tracker），不认 WAKE 正文。
+WAKE 只负责唤醒；Git、tracker、artifact 与 registry 承载完成证据。默认 timeout 两小时；
+不建立固定轮询。
 
 ## Lifecycle 配对
 
-Tab label 必须永远只反映**存活中**的 issue/lane。与 create+prompt 原子对同级强制：
-
-**派发时**：
-- 创建 pane → 验证落点 → 启动 agent → 投递 packet（不阻塞） → rename pane → **sync tab label（追加 issue）** → 确认 working → 挂载 listener
-
-**收尾时**（由编排层调用）：
-- `herdr pane close <pane_id>` → **sync tab label（剔除 issue）** → 最后一个 pane 关闭时 tab 会自动消失，**不需要**手动 `herdr tab close`
-
-**异常对账**：startup probe、terminal fan-in 或 watchdog 触发时，用 `herdr pane list` / `herdr pane get` 核对；不建立固定轮询。
+派发：create → placement verify → start → non-blocking prompt → rename/label → aggregate working
+→ listener。收尾：pane close → tab label 剔除；最后 pane 关闭时 tab 自动消失，保留 map workspace。
+startup/fan-in/watchdog 只做一次 bounded pane 对账。

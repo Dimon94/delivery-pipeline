@@ -1,303 +1,45 @@
-# Execution Worktree Integration via Cherry-pick
+# Role-aware Execution Worktree Fan-in
 
-每个 execution worktree 的 terminal commit 必须通过 cherry-pick 集成到 integration worktree，
-再删除 execution worktree。本文件描述完整的集成序列、冲突处理和清理逻辑。
+Configured Herdr lane terminal 后读取。WAKE/final report只负责唤醒；Git、tracker、artifact、registry、
+checks与 verdict 是执行真相源。
 
-## Integration Sequence
+## Common Preflight
 
-**触发：** execution worker 报告 terminal，或用户报告 Herdr HITL 已完成。`codex-thread` 从
-`read_thread` 读取最终报告一次；Herdr pane 最多做一次 bounded read。final report 是可丢失的
-transport cache，terminal truth 归 registry、Git、tracker 与 artifacts。
+1. 从 registry读取 role、output_mode、agent/model/effort、runtime、pane、worktree、branch、base commit。
+2. 验证 pane kind/runtime、worktree common dir、branch、HEAD、dirty state与 final evidence。
+3. final marker 缺字段记 Unknown；不要求 worker 重显。
+4. output_mode 与 role/gate packet 不一致时阻塞；unknown active writer时不 cleanup。
 
-**前置条件验证：**
+## Commit Mode
 
-1. 从 registry 读取 ticket、worktree、base commit；final report 完整时提取其 commit 并用 Git 验证。
-   final marker 缺失时把对应字段记为 `Unknown`，不要求 worker 重显；从 `base_commit..HEAD`、diff 和
-   dirty state 识别 terminal commit。候选不唯一或 worktree dirty 时停止 Integration 并报告真实缺口。
-2. 验证 execution worktree 存在且 commit valid：
-   ```bash
-   test -d "$EXECUTION_PATH"
-   git -C "$EXECUTION_PATH" rev-parse --verify "$COMMIT_HASH" >/dev/null 2>&1
-   ```
-3. 从 ticket registry 读取 `parent_integration_worktree_path`。
-4. 验证 integration worktree 存在且 working tree clean：
-   ```bash
-   test -d "$INTEGRATION_PATH"
-   [ -z "$(git -C "$INTEGRATION_PATH" status --short)" ]
-   ```
+适用于 design/frontend/backend implementation。
 
-**集成步骤：**
+1. 要求 terminal commit包含 base commit，且只承载 packet work item；无 commit或 dirty未说明时阻塞。
+2. 在 Map Integration Worktree按 dependency order执行 `git cherry-pick "$TERMINAL_COMMIT"`。
+3. 冲突时 `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
+   `resolving-merge-conflicts` owner。
+4. cherry-pick 后运行 focused checks；失败写 `integration_checks_failed`并保留现场；通过写
+   `integrated`。
 
-1. 切换到 integration worktree（如果不在）：
-   ```bash
-   cd "$INTEGRATION_PATH"
-   ```
+## Artifact / Checks / Verdict Modes
 
-2. Cherry-pick execution commit：
-   ```bash
-   git cherry-pick "$COMMIT_HASH" 2>&1
-   ```
+- `artifact`：验证 tracker/artifact URL/ID/body与 expected work item一致。
+- `checks`：验证完整命令、结果与失败细节；失败写 `blocked`并阻止 review。
+- `verdict`：验证 verdict/findings；blocking finding写 `blocked`并阻止 closeout。
 
-3. 检测 cherry-pick 结果：
-   ```bash
-   # 成功：working tree clean，no CHERRY_PICK_HEAD
-   if [ -z "$(git status --short)" ] && [ ! -f .git/CHERRY_PICK_HEAD ]; then
-     echo "cherry-pick successful"
-   
-   # 冲突：working tree 有 "UU" 或 "AA" 文件
-   elif git status --short | grep -qE "^(UU|AA) "; then
-     echo "cherry-pick conflict"
-     # 获取冲突文件列表
-     CONFLICTING_FILES=$(git status --short | grep -E "^(UU|AA) " | awk '{print $2}')
-   
-   # 其他错误：cherry-pick 失败但无冲突标记
-   else
-     echo "cherry-pick failed"
-   fi
-   ```
+三类都不要求 commit、不 cherry-pick。worktree必须 clean；若 owner确实需要 repo 变更，packet应改成
+`commit` mode并重派，不能把 dirty state当 artifact。成功写 `consumed`。
 
-4. 如果 cherry-pick 成功：
-   - 运行 focused checks（基于 touched files）
-   - Checks 通过后进入 cleanup 序列
-   - Checks 失败时标记 ticket 为 `integration_checks_failed`，保留 execution worktree 供调试
+## Cleanup
 
-5. 如果 cherry-pick 冲突：
-   - 中止 cherry-pick：`git cherry-pick --abort`
-   - 标记 ticket 为 `integration_conflict`，写入冲突文件列表到 registry
-   - **不在这里调用** conflict resolution（用户可能需要更多上下文）
-   - 保留 execution worktree，提示用户可手动解决或调用 `$resolving-merge-conflicts`
-   - 报告格式：
-     ```
-     ticket #123 integration conflict:
-     - file1.ts
-     - file2.ts
-     
-     execution worktree 已保留：<path>
-     手动解决后运行：/delivery-pipeline <map> --retry-integration 123
-     ```
+`integrated` 或 `consumed` 后统一：
 
-6. 如果 cherry-pick 其他错误：
-   - 中止 cherry-pick：`git cherry-pick --abort`
-   - 标记 ticket 为 `integration_failed`
-   - 立即删除 execution worktree（已知坏状态）
+1. 关闭 pane并同步 tab label。
+2. 删除 clean Execution Worktree。
+3. 删除对应 agent-prefixed branch。
+4. readback pane/worktree registration/branch均不存在。
+5. cleanup失败写 `close_pending`并保留坐标；已完成的 Integration/consumption不回滚。
+6. cleanup readback成功写 `closed`，完成 tracker resolution并自动重算 ready frontier。
 
-**完成标准：** execution commit 已 cherry-pick 到 integration worktree，checks 通过，
-registry 已更新为 `integrated` state。
-
-## Focused Checks
-
-**触发：** cherry-pick 成功后，在 integration worktree 运行。
-
-**检查范围：** 只针对 touched files 运行相关 checks，不运行全量 test suite。
-
-**检查类型：**
-
-1. Type checking（如果 touched files 是 TypeScript/类型化语言）：
-   ```bash
-   # TypeScript 示例
-   npx tsc --noEmit
-   ```
-
-2. Linting（针对 touched files）：
-   ```bash
-   # ESLint 示例
-   npx eslint $TOUCHED_FILES
-   ```
-
-3. Unit tests（针对 touched files 的 test files）：
-   ```bash
-   # Jest 示例
-   npx jest --findRelatedTests $TOUCHED_FILES
-   ```
-
-4. 格式检查（如果 repo 有格式化要求）：
-   ```bash
-   # Prettier 示例
-   npx prettier --check $TOUCHED_FILES
-   ```
-
-**Checks 失败处理：**
-
-- 保留 integration worktree 当前状态（commit 已 cherry-pick）
-- 保留 execution worktree 供对比
-- 标记 ticket 为 `integration_checks_failed`
-- 报告具体失败的 check 和错误信息
-- 用户需要手动修复 integration worktree，然后运行 `--continue-integration`
-
-**完成标准：** 所有 focused checks 通过，working tree clean。
-
-## Cleanup Sequence
-
-**触发：** cherry-pick 成功且 focused checks 通过。
-
-**删除步骤：**
-
-1. 删除 execution worktree：
-   ```bash
-   # 先检查 worktree 是否 clean（防御性检查）
-   if [ -z "$(git -C "$EXECUTION_PATH" status --short)" ]; then
-     git worktree remove "$EXECUTION_PATH"
-   else
-     echo "警告：execution worktree 有未提交变更，跳过删除"
-     # 标记为 cleanup_pending，不阻塞其他 tickets
-   fi
-   ```
-
-2. 删除 execution branch：
-   ```bash
-   # 只在 worktree 成功删除后删除 branch
-   if [ ! -d "$EXECUTION_PATH" ]; then
-     git branch -D "$EXECUTION_BRANCH"
-   fi
-   ```
-
-3. 更新 ticket registry：
-   ```yaml
-   state: integrated
-   integrated_commit: <integration-worktree-commit-hash>
-   cleanup_at: <ISO-8601-timestamp>
-   ```
-
-4. 按 registry runtime 收口 transport：
-   - `codex-thread`：确认 task 已 terminal 且 final report 已消费；调用
-     `set_thread_archived({threadId, hostId, archived: true})`，再用同一 `hostId` 分页读取
-     `list_archived_threads`，直到按 `thread_id` 找到目标或分页耗尽。readback 成功时写
-     `thread_archived: true`、`state: closed` 并清除 active writer；工具失败或分页耗尽时写
-     `thread_archived: unknown`、`state: close_pending`，保留 thread 坐标供恢复重试。
-   - `herdr-codex-pane` / `herdr-claude-pane`：通过 Herdr Control Route 关闭 pane 并更新 tab label；失败时标记
-     `close_pending`；成功时标记 `closed`。
-
-transport 的 `close_pending` 不阻塞其他 ready tickets。`integration_conflict`、`integration_failed`
-和 `integration_checks_failed` task 保持未归档，使待处理 lane 继续出现在 active task 列表。
-
-**完成标准：** Execution Worktree 与 branch 已删除，Integration registry 已持久化，runtime
-transport 已归档/关闭并 readback `state: closed`；归档/关闭未确认时为可恢复的 `close_pending`。
-
-## Failed Worktree Cleanup
-
-**触发条件：**
-
-1. Startup probe 失败两次（task/pane 未正确启动或未读取 owner file）
-2. Worktree 路径冲突（路径已存在但不是该 ticket 的 worktree）
-3. Worktree 状态 invalid（branch 不匹配、不在 Git worktree list 中）
-4. Cherry-pick 非冲突失败（其他 Git 错误）
-
-**立即删除序列：**
-
-```bash
-# 仅删除已验证属于该 lane 且没有用户变更的 worktree
-if [ -d "$EXECUTION_PATH" ]; then
-  git worktree remove --force "$EXECUTION_PATH"
-fi
-
-# 删除 branch（如果存在）
-git branch -D "$EXECUTION_BRANCH" 2>/dev/null
-
-# Herdr runtime 再通过 Herdr Control Route 关闭已验证 pane；codex-thread 保留未归档 task 以暴露失败
-```
-
-**标记 ticket 状态：**
-
-- `setup_blocked`（startup probe 失败）
-- `path_conflict`（路径冲突）
-- `worktree_invalid`（worktree 状态不一致）
-- `integration_failed`（cherry-pick 非冲突失败）
-
-已知坏的 Execution Worktree 与 branch 清理；task/pane 依 runtime 收口，tracker/Git 证据保留。
-
-**报告格式：**
-
-```
-ticket #123 setup blocked: startup probe failed after 2 retries
-- task/pane 未读取 owner file
-- execution worktree 已删除：<path>
-
-需要手动检查 runtime transport 或 worktree 权限。
-```
-
-## Conflict Retry Flow
-
-**触发：** 用户手动解决 integration conflict 后，运行 `--retry-integration <ticket>`。
-
-**Retry 序列：**
-
-1. 从 registry 读取 ticket 的 `execution_worktree_path` 和 conflict details。
-2. 验证 ticket state 是 `integration_conflict`。
-3. 切换到 integration worktree。
-4. 用户已手动修改 integration worktree 来解决冲突（或调用了 conflict resolution skill）。
-5. 验证 working tree clean（冲突已解决）。
-6. 重新运行 focused checks。
-7. Checks 通过后进入 cleanup 序列。
-
-**不重新 cherry-pick**（用户已手动应用了变更）。
-
-## Dependency Order Integration
-
-**触发：** 多个 execution tickets terminal，需按 dependency order 集成。
-
-**排序规则：**
-
-1. 读取所有 terminal tickets 的 dependency edges（从 tracker 或 spec）。
-2. 拓扑排序：dependents 必须在 dependencies 之后集成。
-3. 同一层级的 tickets 可并发集成（无相互依赖）。
-4. 某个 ticket integration 失败或冲突时，标记其 dependents 为 `blocked_by_dependency`。
-
-**集成顺序示例：**
-
-```
-ticket #201 (no dependencies) → integrate first
-ticket #202 (no dependencies) → integrate first (parallel with #201)
-ticket #203 (depends on #201) → integrate after #201 succeeds
-ticket #204 (depends on #202, #203) → integrate after both #202 and #203 succeed
-```
-
-**Blocked by dependency 处理：**
-
-- 如果 #201 integration conflict，#203 和 #204 标记为 `blocked_by_dependency`。
-- 用户解决 #201 conflict 后，#203 自动解锁并尝试集成。
-- #203 成功后，#204 自动解锁。
-
-**完成标准：** 所有 tickets 按正确的 dependency order 集成，或已标记明确 blocker。
-
-## Registry Persistence
-
-**每次状态变更都更新 ticket registry comment。**
-
-**State transitions：**
-
-```
-running → terminal → integrating → integrated
-                  → integration_conflict → (manual fix) → integrated
-                  → integration_failed → (immediate cleanup)
-                  → integration_checks_failed → (manual fix) → integrated
-```
-
-**Registry fields 更新：**
-
-```yaml
-state: integrated
-integrated_commit: <integration-worktree-commit-hash>
-integration_at: <ISO-8601-timestamp>
-focused_checks: passed
-execution_worktree_path: null  # 已删除
-execution_branch: null  # 已删除
-thread_archived: true  # 仅 runtime: codex-thread
-```
-
-**Readback 验证：** 每次写入后立即 readback，验证字段正确持久化。
-
-## Verification Checklist
-
-每次 cherry-pick 和 cleanup 后验证：
-
-- [ ] Integration commit exists: `git -C "$INTEGRATION_PATH" rev-parse HEAD`
-- [ ] Working tree clean: `git -C "$INTEGRATION_PATH" status --short` 空输出
-- [ ] Execution worktree deleted: `! test -d "$EXECUTION_PATH"`
-- [ ] Execution branch deleted: `! git rev-parse --verify "$EXECUTION_BRANCH" 2>/dev/null`
-- [ ] Worktree unregistered: `git worktree list --porcelain` 不包含 `$EXECUTION_PATH`
-- [ ] Registry updated: `integrated_commit` 存在，readback `state: closed` 或 `close_pending`
-- [ ] Runtime transport closed: `list_archived_threads` 验证 Codex App task archived，或 Herdr Control Route
-      验证 pane closed/tab updated
-
-Git、worktree 或 registry 验证失败时报告 expected vs actual，标记为 partial cleanup，不继续该
-ticket；只有 runtime transport 归档/关闭失败时标记 `close_pending`，继续调度其他 ready tickets。
+完成标准：output-mode evidence已验证，状态为 integrated/consumed/closed，transport/worktree/branch
+cleanup一致；失败时现场与精确 blocker被保留。

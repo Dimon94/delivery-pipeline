@@ -7,16 +7,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CODEX_ROOT = ROOT / "skills" / "delivery-pipeline"
-CLAUDE_ROOT = ROOT / "claude" / "skills" / "delivery-pipeline"
-PI_ROOT = ROOT / "skills" / "delivery-pipeline-pi"
-CODEX_SKILL = CODEX_ROOT / "SKILL.md"
-CLAUDE_SKILL = CLAUDE_ROOT / "SKILL.md"
-PI_SKILL = PI_ROOT / "SKILL.md"
-PANE_DISPATCH_CLAUDE = ROOT / "claude" / "skills" / "pane-dispatch"
-CODEX_DISPATCH_ROUTING = CODEX_ROOT / "references" / "dispatch-runtime-routing.md"
-TASK_COORDINATE_TITLE = CODEX_ROOT / "references" / "task-coordinate-title.md"
-RUNTIME_DISPATCH_ADR = ROOT / "docs" / "adr" / "0002-runtime-aware-dispatch.md"
+CORE = ROOT / "skills" / "delivery-pipeline"
+APP = ROOT / "skills" / "delivery-pipeline-codex-app"
+SETUP = ROOT / "skills" / "delivery-pipeline-setup"
+PANE_DISPATCH = ROOT / "claude" / "skills" / "pane-dispatch"
 
 DEPENDENCIES = [
     "wayfinder",
@@ -31,17 +25,18 @@ DEPENDENCIES = [
     "resolving-merge-conflicts",
     "herdr",
 ]
-
-
+ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}
+OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "none"}
+STATES = {
+    "created", "running", "awaiting_human", "terminal", "consumed", "integrated",
+    "blocked", "setup_blocked", "integration_conflict", "integration_checks_failed",
+    "path_conflict", "stale", "close_pending", "test_decision_paused",
+    "rebase_in_progress", "push_failed", "cleanup_in_progress", "closed",
+}
 ERRORS: list[str] = []
 
 
 def record(message: str) -> None:
-    """Collect a violation instead of aborting, so one run reports every failure.
-
-    Fail-fast hid the true blast radius of 2238745: eight broken invariants
-    across both trees surfaced as a single error line.
-    """
     ERRORS.append(message)
 
 
@@ -51,10 +46,12 @@ def fail(message: str) -> None:
 
 
 def frontmatter(path: Path) -> dict[str, str]:
+    if not path.exists():
+        fail(f"missing skill: {path.relative_to(ROOT)}")
     match = re.match(r"^---\n(.*?)\n---\n", path.read_text(), re.DOTALL)
     if not match:
         fail(f"invalid frontmatter: {path.relative_to(ROOT)}")
-    result = {}
+    result: dict[str, str] = {}
     for line in match.group(1).splitlines():
         key, separator, value = line.partition(":")
         if not separator:
@@ -64,862 +61,510 @@ def frontmatter(path: Path) -> dict[str, str]:
 
 
 def require(path: Path, strings: tuple[str, ...]) -> None:
-    """Assert each string appears in `path`, ignoring how prose is line-wrapped.
-
-    Whitespace is collapsed on both sides so an invariant that happens to straddle
-    a line break still matches. Wrapping carries no meaning in these documents, and
-    a red light nobody believes is how 2238745 shipped.
-    """
+    if not path.exists():
+        record(f"missing file: {path.relative_to(ROOT)}")
+        return
     content = " ".join(path.read_text().split())
     for item in strings:
         if " ".join(item.split()) not in content:
             record(f"missing invariant in {path.relative_to(ROOT)}: {item}")
 
 
-def skill_ref(tree: Path, name: str) -> str:
-    """Return the skill invocation form that `tree` must use.
-
-    Codex resolves skills as `$name`; Claude Code resolves the plugin-namespaced
-    `/mattpocock-skills:name`. Asserting the sigil rather than the bare name also
-    removes a false positive: bare `/wayfinder` matched the substring inside
-    `references/wayfinder-frontier-loop.md`, so that invariant never tested
-    anything.
-    """
-    return f"${name}" if tree == CODEX_ROOT else f"/mattpocock-skills:{name}"
+def check_skill_links(path: Path) -> None:
+    for token in re.findall(r"`([^`]+\.md)`", path.read_text()):
+        if token.startswith(("references/", "assets/", "../")):
+            target = (path.parent / token).resolve()
+            if not target.exists():
+                record(f"missing reference from {path.relative_to(ROOT)}: {token}")
 
 
+def check_manifest() -> None:
+    manifest = json.loads((ROOT / "skill-bundle.json").read_text())
+    if manifest.get("format") != "multi-runtime-skill-bundle/v2":
+        record("bundle format must be multi-runtime-skill-bundle/v2")
+    if manifest.get("name") != "delivery-pipeline":
+        record("bundle name mismatch")
+    if manifest.get("entrypoints") != {
+        "cli": "skills/delivery-pipeline/SKILL.md",
+        "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
+        "setup": "skills/delivery-pipeline-setup/SKILL.md",
+    }:
+        record("v2 entrypoints mismatch")
+    if manifest.get("install") != {
+        "sharedSkillDirectory": "skills/delivery-pipeline",
+        "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
+        "setupSkillDirectory": "skills/delivery-pipeline-setup",
+    }:
+        record("v2 install directories mismatch")
+    if [item.get("name") for item in manifest.get("requires") or []] != DEPENDENCIES:
+        record("dependency order mismatch")
 
 
-def check_references(path: Path) -> None:
-    for relative in re.findall(r"`((?:references|assets)/[^`]+)`", path.read_text()):
-        if not (path.parent / relative).exists():
-            fail(f"missing reference from {path.relative_to(ROOT)}: {relative}")
-
-
-def check_pruned_policy() -> None:
-    active = [
-        ROOT / "README.md",
-        ROOT / "README.zh-CN.md",
-        *CODEX_ROOT.rglob("*.md"),
-        *CLAUDE_ROOT.rglob("*.md"),
-        *PI_ROOT.rglob("*.md"),
-    ]
-    forbidden = (
-        re.compile(r"估时"),
-        re.compile(r"估档"),
-        re.compile(r"不拆理由"),
-        re.compile(r"\bS/M/L/XL\b"),
-        re.compile(r"\bXL\s*票"),
-        re.compile(r"estimate-log", re.IGNORECASE),
-        re.compile(r"ticket-split-coverage", re.IGNORECASE),
-        re.compile(r"split proposal", re.IGNORECASE),
-        re.compile(r"五因子"),
-        re.compile(r"六面普查"),
-        re.compile(r"小型化跳过"),
-        re.compile(r"大小适合"),
-        re.compile(r"route classifier", re.IGNORECASE),
-        re.compile(r"claude-native"),
-        re.compile(r"herdr wait agent-status"),
-        re.compile(r"herdr agent start --cwd"),
+def check_frontmatter() -> None:
+    expected = (
+        (CORE / "SKILL.md", "delivery-pipeline"),
+        (APP / "SKILL.md", "delivery-pipeline-codex-app"),
+        (SETUP / "SKILL.md", "delivery-pipeline-setup"),
     )
-    hits = []
-    for path in active:
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
-            if any(pattern.search(line) for pattern in forbidden):
-                hits.append(f"{path.relative_to(ROOT)}:{lineno}:{line}")
-    if hits:
-        fail("removed ticket policy remains:\n" + "\n".join(hits))
+    for path, name in expected:
+        fm = frontmatter(path)
+        if fm.get("name") != name:
+            record(f"frontmatter name mismatch: {path.relative_to(ROOT)}")
+        if fm.get("disable-model-invocation") != "true":
+            record(f"skill must remain user-invoked: {path.relative_to(ROOT)}")
+        if not fm.get("description"):
+            record(f"skill description missing: {path.relative_to(ROOT)}")
+        check_skill_links(path)
 
+
+def check_core_contract() -> None:
+    require(
+        CORE / "SKILL.md",
+        (
+            "唯一 canonical CLI/Herdr 编排主干",
+            "当前调用会话就是 coordinator",
+            "coordinator_runtime: pi-cli | codex-cli | claude-cli",
+            "dispatch_runtime: herdr",
+            "~/.config/delivery-pipeline/model-roles.json",
+            "scripts/model_config.py validate <config>",
+            "version 2",
+            "agent`、`model`、`effort",
+            "planning",
+            "design",
+            "frontend",
+            "backend",
+            "testing",
+            "review",
+            "maximal safe batch",
+            "Dispatch Handoff",
+            "Execution Worktree",
+            "Integration",
+            "assets/HERDR_ROLE_DISPATCH_PACKET.md",
+            "Role-aware Fan-in / Integration",
+            "output_mode: artifact",
+            "output_mode: commit",
+            "output_mode: checks",
+            "output_mode: verdict",
+            "写 `consumed`",
+            "不静默回落",
+        ),
+    )
+    require(
+        CORE / "references" / "dispatch-runtime-routing.md",
+        (
+            "worker kind 完全由 version 2 role config",
+            "pi → `herdr-pi-pane`",
+            "codex → `herdr-codex-pane`",
+            "claude → `herdr-claude-pane`",
+            "workspace 解析是 maximal safe batch 的唯一串行前置",
+            "整批成功/失败项都完成 startup readback",
+        ),
+    )
+    require(
+        CORE / "references" / "frontier-lanes.md",
+        (
+            "普通 repo 文件路径重叠只进入 Integration 冲突检测",
+            "Role Binding",
+            "HERDR_ROLE_DISPATCH_PACKET.md",
+            "整批成功 lanes 完成 startup",
+        ),
+    )
+    registry = CORE / "references" / "lane-registry.md"
+    require(
+        registry,
+        (
+            "<!-- wayfinder-lane-registry:v2 -->",
+            "role: planning | design | frontend | backend | testing | review | map",
+            "output_mode: commit | artifact | checks | verdict | none",
+            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator",
+            "integration_conflict",
+            "integration_checks_failed",
+            "path_conflict",
+            "stale",
+            "test_decision_paused",
+            "rebase_in_progress",
+            "push_failed",
+            "cleanup_in_progress",
+            "test_strategy:",
+            "agent_permission_mode: approve | danger-full-access | dangerously-skip-permissions | none",
+            "model_evidence:",
+        ),
+    )
+    registry_text = registry.read_text()
+    state_match = re.search(r"^state: (.+)$", registry_text, re.MULTILINE)
+    mode_match = re.search(r"^output_mode: (.+)$", registry_text, re.MULTILINE)
+    if not state_match or {part.strip() for part in state_match.group(1).split("|")} != STATES:
+        record("lane-registry state enum is not closed over every documented state")
+    if not mode_match or {part.strip() for part in mode_match.group(1).split("|")} != OUTPUT_MODES:
+        record("lane-registry output_mode enum mismatch")
+    require(
+        CORE / "references" / "child-monitoring.md",
+        (
+            "Role-aware Terminal Outcomes",
+            "`commit`",
+            "`artifact`",
+            "`checks`",
+            "`verdict`",
+            "只有 `commit` mode 进入 cherry-pick",
+        ),
+    )
+    require(
+        CORE / "references" / "execution-worktree-integration.md",
+        (
+            "Commit Mode",
+            "Artifact / Checks / Verdict Modes",
+            "不要求 commit、不 cherry-pick",
+            "成功写 `consumed`",
+            "integrated` 或 `consumed",
+        ),
+    )
+
+
+def check_runtime_neutrality() -> None:
+    app_only = re.compile(
+        r"codex-thread|create_thread|list_threads|read_thread|wait_threads|"
+        r"send_message_to_thread|set_thread_(?:title|archived)|list_archived_threads|"
+        r"App-managed|Codex App"
+    )
+    owner_sigil = re.compile(
+        r"\$(?:wayfinder|to-spec|to-tickets|implement|code-review|"
+        r"resolving-merge-conflicts|grilling|prototype|research|domain-modeling)\b"
+    )
+    claude_locator = re.compile(r"/mattpocock-skills:")
+    hardcoded_model = re.compile(
+        r"junbo/kimi-k3|gpt-5\.6|claude-(?:opus|sonnet|haiku)-\d",
+        re.IGNORECASE,
+    )
+    for root in (CORE, SETUP):
+        for path in sorted(root.rglob("*.md")):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if root == CORE and app_only.search(line):
+                    record(f"App transport leaked into canonical core: {path.relative_to(ROOT)}:{lineno}")
+                if owner_sigil.search(line) or claude_locator.search(line):
+                    record(f"runtime-specific owner locator in neutral skill: {path.relative_to(ROOT)}:{lineno}")
+                if hardcoded_model.search(line):
+                    record(f"hard-coded model default in skill/config contract: {path.relative_to(ROOT)}:{lineno}")
+
+
+def extract_schema_example(path: Path) -> dict:
+    match = re.search(r"```json\n(.*?)\n```", path.read_text(), re.DOTALL)
+    if not match:
+        fail(f"missing JSON schema example: {path.relative_to(ROOT)}")
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError as error:
+        fail(f"invalid JSON schema example in {path.relative_to(ROOT)}: {error}")
+
+
+def check_model_contract() -> None:
+    routing = CORE / "references" / "model-role-routing.md"
+    require(
+        routing,
+        (
+            "schema version 2",
+            "六个角色全部必填",
+            "agent`、`model`、`effort",
+            "skill 与 reference 不提供默认 agent/model/effort",
+            "pi --list-models",
+            "codex debug models",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_MODEL",
+            "CLAUDE_CODE_SUBAGENT_MODEL",
+            "CLAUDE_CODE_EFFORT_LEVEL",
+            "--approve --model \"$model\" --thinking \"$effort\"",
+            "model_reasoning_effort",
+            "--model \"$model\" --effort \"$effort\"",
+        ),
+    )
+    schema = extract_schema_example(routing)
+    if schema.get("version") != 2:
+        record("model-role schema version must be 2")
+    roles = schema.get("roles") or {}
+    if set(roles) != ROLES:
+        record(f"model-role schema must define exactly {sorted(ROLES)}, got {sorted(roles)}")
+    for role, value in roles.items():
+        if set(value) != {"agent", "model", "effort"}:
+            record(f"role {role} must define exactly agent/model/effort")
+    if "orchestration" in routing.read_text() or "orchestration" in (SETUP / "SKILL.md").read_text():
+        record("coordinator/orchestration must not appear as a configured worker role")
+    if "user-confirmed" in routing.read_text() or "user-confirmed" in (SETUP / "SKILL.md").read_text():
+        record("Claude setup must select from settings.json env candidates; user-confirmed side channel is undefined")
+
+    require(
+        SETUP / "SKILL.md",
+        (
+            "version 2",
+            "不派发 lane",
+            "pi --list-models",
+            "codex debug models",
+            "~/.claude/settings.json",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_MODEL",
+            "CLAUDE_CODE_SUBAGENT_MODEL",
+            "CLAUDE_CODE_EFFORT_LEVEL",
+            "scripts/model_config.py validate",
+            "顶层 key 精确为 `version` + `roles`",
+            "role key 精确",
+            "每个 role object 的 key 精确",
+            "agent 属于 `pi|codex|claude`",
+            "不把非法既有 v2 文件当作完成",
+            "Claude model只从 settings.json env候选选择",
+            "不提供内置默认",
+            "用户必须明确选择全部六角色",
+            "写入并 readback",
+        ),
+    )
+    config_validator = SETUP / "scripts" / "model_config.py"
+    if not config_validator.exists() or not os.access(config_validator, os.X_OK):
+        record("model_config.py must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(config_validator), "self-test"],
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            record(f"model config fixture self-test failed: {result.stdout}{result.stderr}")
+
+
+def check_packets() -> None:
+    packet = CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
+    require(
+        packet,
+        (
+            "Role：<planning | design | frontend | backend | testing | review>",
+            "Output mode：<commit | artifact | checks | verdict>",
+            "Agent：<pi | codex | claude>",
+            "Model：<configured native model id>",
+            "Effort：<configured native effort>",
+            "Owner skill name",
+            "Owner skill SKILL.md：<absolute resolved path>",
+            "Owner skill invocation label",
+            "先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path",
+            "FINAL_REPORT_BEGIN",
+            "FINAL_REPORT_END",
+        ),
+    )
+
+
+def check_app_shell() -> None:
+    require(
+        APP / "SKILL.md",
+        (
+            "薄 delta",
+            "../delivery-pipeline/SKILL.md",
+            "coordinator_runtime: codex-app",
+            "dispatch_runtime: codex-app",
+            "跳过 canonical CLI 主干的 model-role 配置 gate",
+            "canonical 的六个 delegated roles 全部使用 `runtime: codex-thread`",
+            "planning → `output_mode: artifact`",
+            "design/frontend/backend implementation → `output_mode: commit`",
+            "testing → `output_mode: checks`",
+            "review → `output_mode: verdict`",
+            "App-managed Execution Worktree",
+            "references/codex-app-dispatch.md",
+            "assets/APP_ROLE_DISPATCH_PACKET.md",
+        ),
+    )
+    require(
+        APP / "references" / "codex-app-dispatch.md",
+        (
+            "list_projects",
+            "create_thread",
+            "list_threads",
+            "read_thread",
+            "wait_threads",
+            "send_message_to_thread",
+            "set_thread_title",
+            "set_thread_archived",
+            "list_archived_threads",
+            "runtime: codex-thread",
+            "App Registry Overlay",
+            "project_id:",
+            "host_id:",
+            "thread_id:",
+            "thread_archived:",
+            "Role-aware Fan-in",
+            "非 commit lane 不要求 commit",
+            "task-coordinate-title.md",
+        ),
+    )
+    require(
+        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
+        (
+            "Codex App",
+            "Role：<planning | design | frontend | backend | testing | review>",
+            "Output mode：<commit | artifact | checks | verdict>",
+            "Owner skill name",
+            "Owner skill SKILL.md：<absolute resolved path>",
+            "FINAL_REPORT_BEGIN",
+            "FINAL_REPORT_END",
+        ),
+    )
+    for path in (APP / "SKILL.md", APP / "references" / "codex-app-dispatch.md"):
+        check_skill_links(path)
+
+
+def check_tree_ownership() -> None:
     retired = (
-        CODEX_ROOT / "references" / "ticket-split-coverage.md",
-        CODEX_ROOT / "references" / "map-dashboard.md",
-        CODEX_ROOT / "assets" / "map-dashboard-shell.html",
-        CLAUDE_ROOT / "references" / "ticket-split-coverage.md",
-        CLAUDE_ROOT / "references" / "map-dashboard.md",
-        CLAUDE_ROOT / "assets" / "map-dashboard-shell.html",
+        ROOT / "skills" / "delivery-pipeline-pi",
+        ROOT / "claude" / "skills" / "delivery-pipeline",
     )
     for path in retired:
         if path.exists():
-            fail(f"retired policy file restored: {path.relative_to(ROOT)}")
-
-
-def check_runtime_boundaries() -> None:
-    """Codex-side files must not carry Claude Code plugin locators.
-
-    `/mattpocock-skills:<name>` only resolves inside Claude Code, where the plugin
-    supplies the skill. A Codex pane fed that string has nothing to resolve it against,
-    so it belongs to the Claude tree only. Owners reach Codex through the three-field
-    dispatch contract in references/owner-skill-resolution.md instead.
-    """
-    locator = re.compile(r"/mattpocock-skills:")
-    for root in (CODEX_ROOT, PI_ROOT):
-        for path in sorted(root.rglob("*.md")):
-            for lineno, line in enumerate(path.read_text().splitlines(), 1):
-                if locator.search(line):
-                    record(
-                        "Claude plugin locator in Codex/pi tree (only resolves in Claude "
-                        "Code; pass owners as absolute SKILL.md paths instead): "
-                        f"{path.relative_to(ROOT)}:{lineno}:{line.strip()}"
-                    )
-
-
-def check_owner_dispatch_contract() -> None:
-    """Every dispatch packet must carry the full three-field owner contract.
-
-    The contract exists in references/owner-skill-resolution.md, but a packet that
-    omits the fields lets a child start a stage without a resolved owner. Assert the
-    fields on all packets in both trees, not just the ones that happened to be covered.
-    """
-    for root in (CODEX_ROOT, CLAUDE_ROOT, PI_ROOT):
-        for packet in sorted((root / "assets").glob("*DISPATCH_PACKET.md")):
-            require(
-                packet,
-                (
-                    "Owner skill name",
-                    "Owner skill SKILL.md：<absolute resolved path>",
-                    "Owner skill invocation label",
-                    "先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path",
-                ),
-            )
-    for root in (CODEX_ROOT, CLAUDE_ROOT):
-        require(
-            root / "references" / "owner-skill-resolution.md",
-            (
-                # Line-wrapped in the source; match only up to the wrap point.
-                "Missing or mismatched owner path blocks that",
-                "do not silently replace its contract with generic behavior",
-            ),
-        )
-
-
-def check_pane_lifecycle_single_source() -> None:
-    """Each tree defines pane lifecycle rules in exactly one reference.
-
-    投递机制、落点验证、lifecycle 配对和 listener 挂载前提只能在
-    pane-lifecycle-rules.md 中出现完整命令块；其他文件以指针引用，
-    不再内联。防止 6857f83 式的双端人工对齐漂移。
-    """
-    # Command blocks that define the pane lifecycle.  If any file other than
-    # the reference contains one of these as an executable command, it's a
-    # duplicated inline block.  We match the command prefix followed by
-    # whitespace/newline to avoid matching prose mentions in backticks.
-    lifecycle_commands = (
-        'herdr agent prompt "$agent_name" "完整读取',
-        "--wait --until working --timeout 15000",
-    )
-
-    for tree_name, tree_root, reference_path in (
-        (
-            "Claude",
-            PANE_DISPATCH_CLAUDE,
-            PANE_DISPATCH_CLAUDE / "references" / "pane-lifecycle-rules.md",
-        ),
-        (
-            "Codex",
-            CODEX_ROOT,
-            CODEX_ROOT / "references" / "pane-lifecycle-rules.md",
-        ),
-    ):
-        if not reference_path.exists():
-            record(
-                f"missing pane lifecycle reference in {tree_name} tree: "
-                f"{reference_path.relative_to(ROOT)}"
-            )
-            continue
-
-        for path in sorted(tree_root.rglob("*.md")):
-            if path == reference_path:
-                continue
-            content = " ".join(path.read_text().split())
-            for cmd in lifecycle_commands:
-                if cmd in content:
-                    record(
-                        f"{tree_name} tree: {path.relative_to(ROOT)} contains "
-                        f"inline lifecycle command '{cmd}' (should only be in "
-                        f"pane-lifecycle-rules.md)"
-                    )
-                    break
-
-
-def pane_dispatch_files() -> list[Path]:
-    """Every file that carries the pane dispatch sequence, in both trees."""
-    return [
-        PANE_DISPATCH_CLAUDE / "SKILL.md",
-        PANE_DISPATCH_CLAUDE / "references" / "pane-lifecycle-rules.md",
-        PANE_DISPATCH_CLAUDE / "references" / "pane-placement-rules.md",
-        CODEX_ROOT / "references" / "pane-lifecycle-rules.md",
-    ]
-
-
-def check_batch_dispatch_concurrency() -> None:
-    """Both trees must state one batch concurrency semantics.
-
-    The serial unit is the batch-level workspace/tab resolution prerequisite,
-    not the pane: after it completes, same-batch panes create/start/deliver
-    concurrently, working confirmation runs once as an aggregate parallel wait
-    at batch end, and serial fan-in stays at Integration. Prevents the drift
-    where the routing doc promised batch concurrency while pane-dispatch
-    demanded pane-by-pane serial dispatch.
-    """
+            record(f"retired duplicate runtime tree restored: {path.relative_to(ROOT)}")
     for path in (
-        CODEX_ROOT / "references" / "frontier-lanes.md",
-        CLAUDE_ROOT / "references" / "frontier-lanes.md",
+        CORE / "references" / "codex-app-dispatch.md",
+        CORE / "references" / "task-coordinate-title.md",
+        CORE / "assets" / "ISSUE_IMPLEMENT_DISPATCH_PACKET.md",
+        APP / "assets" / "ISSUE_IMPLEMENT_DISPATCH_PACKET.md",
     ):
-        require(
-            path,
-            (
-                "无前序依赖的 ready tickets 同批并发派发",
-                "普通 repo 文件路径重叠只进入 Integration 冲突检测",
-                "整批 Dispatch Handoff",
-            ),
-        )
-    for path in (
-        PANE_DISPATCH_CLAUDE / "SKILL.md",
-        PANE_DISPATCH_CLAUDE / "references" / "pane-placement-rules.md",
-    ):
-        require(
-            path,
-            (
-                "workspace 解析是批级唯一串行前置",
-                "并发发出",
-                "聚合 working 确认",
-                "聚合 readback",
-            ),
-        )
-        content = " ".join(path.read_text().split())
-        if "每个 pane 必须走完这个序列才能开始下一个" in content:
-            record(
-                f"{path.relative_to(ROOT)} still requires pane-by-pane serial "
-                "dispatch; the serial unit is the batch-level workspace "
-                "prerequisite, not the pane"
-            )
+        if path.exists():
+            record(f"App-owned file leaked into canonical core: {path.relative_to(ROOT)}")
 
 
-def check_atomic_dispatch_sequence() -> None:
-    """Bookkeeping must overlap agent cold start; listener stays anchored last.
-
-    The reordered per-pane sequence is: pane create/split -> placement verification
-    (only needs the pane to exist) -> agent start -> non-blocking packet delivery
-    -> rename + tab label sync (runs during cold start) -> working confirmation
-    -> listener mount. Delivery no longer inlines `--wait --until working`; that
-    wait moved behind the bookkeeping as one confirmation step.
-    """
-    for path in pane_dispatch_files():
-        content = " ".join(path.read_text().split())
-        if '--wait --until working --timeout 15000' in content:
-            record(
-                f"{path.relative_to(ROOT)} still delivers the packet with an "
-                "inline blocking `--wait --until working`; delivery must not "
-                "block on cold start (working confirmation is a later unified step)"
-            )
-        if "投递不阻塞" not in content:
-            record(
-                f"{path.relative_to(ROOT)} is missing the non-blocking delivery "
-                "invariant '投递不阻塞'"
-            )
-        if "Working 确认" not in content:
-            record(
-                f"{path.relative_to(ROOT)} is missing the unified working "
-                "confirmation step 'Working 确认'"
-            )
-
-    skill_text = " ".join((PANE_DISPATCH_CLAUDE / "SKILL.md").read_text().split())
-    sequence = (
-        "**批级前置（唯一串行段）**",
-        "**并发段 A**",
-        "**并发段 B**",
-        "**记账段**",
-        "**聚合 working 确认**",
-        "**Listener + 聚合 readback**",
+def check_installer() -> None:
+    install_path = ROOT / "scripts" / "install.sh"
+    text = install_path.read_text()
+    require(
+        install_path,
+        (
+            'link_skill "$ROOT/skills/delivery-pipeline"',
+            '"$CODEX_HOME_DIR/skills/delivery-pipeline"',
+            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline"',
+            '"$PI_HOME_DIR/agent/skills/delivery-pipeline"',
+            'link_skill "$ROOT/skills/delivery-pipeline-setup"',
+            '"$CODEX_HOME_DIR/skills/delivery-pipeline-setup"',
+            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-setup"',
+            '"$PI_HOME_DIR/agent/skills/delivery-pipeline-setup"',
+            'link_skill "$ROOT/skills/delivery-pipeline-codex-app"',
+            '"$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app"',
+            'rm -rf "$PI_HOME_DIR/agent/skills/delivery-pipeline-pi"',
+        ),
     )
-    positions = [skill_text.find(item) for item in sequence]
-    if -1 in positions or positions != sorted(positions):
-        record(
-            "pane-dispatch SKILL.md batch pipeline order violated; expected "
-            "批级前置 -> 并发段 A（create/split + 落点验证） -> 并发段 B（agent start + 投递） -> "
-            f"记账段（rename + tab label） -> 聚合 working 确认 -> listener + 聚合 readback, "
-            f"got positions {positions}"
-        )
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline"') != 3:
+        record("canonical core must be installed from one source into exactly three CLI homes")
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline-setup"') != 3:
+        record("setup skill must be installed into exactly three CLI homes")
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline-codex-app"') != 1:
+        record("Codex App shell must be installed exactly once")
+    subprocess.run(["bash", "-n", str(install_path)], check=True)
 
 
-def check_dispatch_runtime_routing() -> None:
-    """Use Codex App threads when present and Herdr for CLI panes.
-
-    The dispatch invariant spans the entrypoint, operational reference, registry,
-    and domain model. Checking all four prevents an apparently-correct router from
-    handing execution to stale pane-only recovery or cleanup prose later in the run.
-    """
-    require(
-        CODEX_SKILL,
-        (
-            "调度运行时",
-            "按当前 gate 渐进加载 references",
-            "同一 coordinator task 不因下一 lane 重读未变化的共享合同",
-            "`references/dispatch-runtime-routing.md`",
-            "`codex-thread`",
-            "`herdr-codex-pane`",
-            "`herdr-claude-pane`",
-            "Task Coordinate Title",
-        ),
-    )
-    if not CODEX_DISPATCH_ROUTING.exists():
-        record(
-            "missing Codex dispatch runtime owner: "
-            f"{CODEX_DISPATCH_ROUTING.relative_to(ROOT)}"
-        )
-    else:
-        require(
-            CODEX_DISPATCH_ROUTING,
-            (
-                "显式指令优先",
-                "Codex App 原生调度",
-                "Codex CLI 原生 thread 能力是 Unknown",
-                "list_projects",
-                "create_thread",
-                "list_threads",
-                "read_thread",
-                "wait_threads",
-                "send_message_to_thread",
-                "set_thread_title",
-                "set_thread_archived",
-                "list_archived_threads",
-                "thread_archived: false",
-                "task-coordinate-title.md",
-                "startingState",
-                "clientThreadId",
-                "runtime: codex-thread",
-                "runtime: herdr-codex-pane",
-                "runtime: herdr-claude-pane",
-                "Codex App Herdr Bridge",
-                "trusted_execution_bootstrap",
-                "workspace trust",
-                "external imports",
-                "resolved owner skill",
-                "agent send-keys",
-                "blocked -> idle -> working",
-                "visible Herdr session",
-                "不调用、不修改 `$herdr` skill",
-                "不要求 `HERDR_ENV=1`",
-                "--dangerously-skip-permissions",
-                "state: awaiting_human",
-                "`agent prompt` accepted",
-                "`idle -> working` 即 startup terminal",
-                "并行 preflight snapshot",
-                "`created -> awaiting_human`",
-                "Dispatch Handoff 是 coordinator 本轮 terminal",
-                "用户明确要求 monitor",
-                "不等待首个业务问题",
-                "不读取 routine terminal、可见屏幕或进程信息",
-                "用户回到 Codex App 报告完成后",
-                "先完成 capability probe，再向用户呈现 Herdr/Claude 选择",
-                "同一次 approval 写为 `bootstrap_authority: trusted_execution_bootstrap`",
-                "$herdr",
-                "active writer",
-                "同批 `codex-thread` 并行调用 `create_thread`",
-                "同批 Herdr lanes 并行创建",
-                "单条 lane 到达 `working` 不提前 yield",
-            ),
-        )
-        routing_text = " ".join(CODEX_DISPATCH_ROUTING.read_text().split())
-        if "首个范围内业务问题是 startup probe 的成功终点" in routing_text:
-            record("legacy Herdr startup gate still waits for the first business question")
-        if "对同批 1–8 个 running tasks 用一次 `wait_threads`" in routing_text:
-            record("legacy Codex dispatch still waits on running tasks by default")
-    if not TASK_COORDINATE_TITLE.exists():
-        record(
-            "missing Task Coordinate Title owner: "
-            f"{TASK_COORDINATE_TITLE.relative_to(ROOT)}"
-        )
-    else:
-        require(
-            TASK_COORDINATE_TITLE,
-            (
-                "<map-key>-<role><work-item-key>-<short-summary>",
-                "<map-key>-LEAD-<short-summary>",
-                "`LEAD`",
-                "`G`",
-                "`X`",
-                "`P`",
-                "`R`",
-                "`D`",
-                "动作＋对象",
-                "set_thread_title",
-                "list_threads",
-                "lane registry",
-            ),
-        )
-    require(
-        CODEX_ROOT / "references" / "frontier-lanes.md",
-        (
-            "调度运行时",
-            "ticket domain 不改写调度运行时",
-            "codex-thread",
-            "herdr-codex-pane",
-            "herdr-claude-pane",
-            "无前序依赖的 ready tickets 同批并发派发",
-            "普通 repo 文件路径重叠只进入 Integration 冲突检测",
-            "整批 Dispatch Handoff",
-        ),
-    )
-    frontier_text = " ".join(
-        (CODEX_ROOT / "references" / "frontier-lanes.md").read_text().split()
-    )
-    if "Herdr pane 都通过 Herdr Control Route 读取完整 final markers" in frontier_text:
-        record("legacy Herdr fan-in still requires complete final markers")
-    if "显式文件、migration、lock 或 external mutable resource 重叠" in frontier_text:
-        record("普通 repo 文件路径重叠仍被错误当成 dispatch blocker")
-    if "写集合无法证明相互独立" in frontier_text:
-        record("无法证明 repo 写集合独立仍会把 safe batch 退化为单 lane")
-    recovery_text = " ".join(
-        (CODEX_ROOT / "references" / "test-decision-and-rebase.md").read_text().split()
-    )
-    if "重挂 listener" in recovery_text or "重新 attach listener" in recovery_text:
-        record("legacy recovery still attaches monitoring after Dispatch Handoff")
-    require(
-        CODEX_ROOT / "references" / "lane-registry.md",
-        (
-            "runtime: subagent | codex-thread | herdr-codex-pane | herdr-claude-pane | orchestrator",
-            "awaiting_human",
-            "coordinator_runtime:",
-            "dispatch_runtime:",
-            "bootstrap_authority:",
-            "herdr_session_name:",
-            "herdr_session_owned:",
-            "agent_permission_mode:",
-            "map_run_authority:",
-            "host_id:",
-            "thread_archived:",
-            "integrated -> close_pending -> closed",
-            "list_archived_threads",
-        ),
-    )
-    require(
-        CODEX_ROOT / "references" / "child-monitoring.md",
-        (
-            "`dispatch-runtime-routing.md`",
-            "`frontier-lanes.md`",
-        ),
-    )
-    require(
-        CODEX_ROOT / "references" / "frontier-lanes.md",
-        (
-            "Dispatch Handoff",
-            "用户完成信号",
-            "Git、tracker 与 artifact",
-            "final marker 缺失字段记为 `Unknown`",
-            "不要求 worker 重显",
-            "自动重算并派发下一 ready frontier",
-        ),
-    )
-    require(
-        CODEX_ROOT / "references" / "wayfinder-frontier-loop.md",
-        (
-            "tracker transaction",
-            "独立 writes 并行",
-            "每个 dependency layer 一次聚合 readback",
-            "同一 turn 不重复 Nowledge 或 contract lookup",
-            "不把文档漂移修复放在发布/派发 critical path",
-            "不把 canonical tracker scope 降级为 read-only",
-            "map_run_authority: canonical_tracker_transitions",
-            "resolution comment",
-            "关闭 child",
-            "Decisions-so-far / Out of scope gist",
-            "dependency blocker",
-            "follow-up decision ticket",
-            "不等待用户回复“继续”",
-            "先完成整个 maximal safe batch 的派发，再 yield",
-        ),
-    )
-    require(
-        CODEX_SKILL,
-        (
-            "无前序依赖的 ready tickets 同批并发派发",
-            "整批完成 startup readback 后统一 Dispatch Handoff",
-        ),
-    )
+def check_context_and_docs() -> None:
     require(
         ROOT / "CONTEXT.md",
         (
-            "Dispatch Handoff is batch-scoped",
+            "Configured Planning Lane",
+            "Worker Role Configuration",
+            "exactly six worker roles",
+            "current calling session is the coordinator",
+            "skills/delivery-pipeline-codex-app",
+            "There are no built-in agent/model/effort defaults",
             "repository file overlap is an Integration risk",
         ),
     )
     require(
-        CODEX_ROOT / "references" / "owner-skill-resolution.md",
+        ROOT / "AGENTS.md",
         (
-            "coordinator 只解析 realpath、frontmatter name 和 direct reference paths",
-            "coordinator 不把 owner body 加载进上下文",
-            "child 完整读取",
+            "Canonical CLI/Herdr 主干",
+            "delivery-pipeline-codex-app",
+            "Canonical 主干保持 runtime-neutral",
+            "`codex-thread` 只存在于 delivery-pipeline-codex-app 树",
         ),
     )
-    require(
-        CODEX_ROOT / "references" / "execution-worktree-integration.md",
-        (
-            "set_thread_archived({threadId, hostId, archived: true})",
-            "list_archived_threads",
-            "thread_archived: true",
-            "state: close_pending",
-            "integration_checks_failed` task 保持未归档",
-        ),
-    )
-    require(
-        CODEX_ROOT / "references" / "test-decision-and-rebase.md",
-        (
-            "integrated` / `close_pending",
-            "list_archived_threads",
-            "set_thread_archived",
-            "Codex App execution tasks archived",
-        ),
-    )
-    require(
-        CLAUDE_SKILL,
-        (
-            "Coordinator Runtime",
-            "`references/dispatch-runtime-routing.md`",
-            "`coordinator_runtime: claude-cli`",
-            "`dispatch_runtime: herdr`",
-        ),
-    )
-    require(
-        CLAUDE_ROOT / "references" / "dispatch-runtime-routing.md",
-        (
-            "coordinator_runtime: claude-cli",
-            "dispatch_runtime: herdr",
-            "herdr-codex-pane",
-            "herdr-claude-pane",
-            "/pane-dispatch",
-            "active writer",
-        ),
-    )
-    require(
-        CLAUDE_ROOT / "references" / "lane-registry.md",
-        (
-            "coordinator_runtime: claude-cli",
-            "dispatch_runtime: herdr",
-        ),
-    )
-    require(
-        ROOT / "CONTEXT.md",
-        (
-            "调度运行时",
-            "Codex App 原生 Dispatch",
-            "Herdr Dispatch",
-            "Herdr Session Target",
-            "Trusted Execution Bootstrap",
-            "HITL Handoff",
-            "Codex Task Archive",
-        ),
-    )
-    require(
-        ROOT / "README.zh-CN.md",
-        (
-            "Codex App 原生 task/worktree",
-            "Herdr/Codex CLI",
-        ),
-    )
-    if not RUNTIME_DISPATCH_ADR.exists():
-        record(f"missing runtime dispatch ADR: {RUNTIME_DISPATCH_ADR.relative_to(ROOT)}")
-    else:
+    for readme in (ROOT / "README.md", ROOT / "README.zh-CN.md"):
         require(
-            RUNTIME_DISPATCH_ADR,
+            readme,
             (
-                "Status:** Accepted",
-                "Codex App",
-                "Herdr",
-                "ADR-0001",
+                "delivery-pipeline-setup",
+                "delivery-pipeline-codex-app",
+                "model-roles.json",
+                "planning",
+                "design",
+                "frontend",
+                "backend",
+                "testing",
+                "review",
             ),
         )
-
-
-def main() -> None:
-    manifest = json.loads((ROOT / "skill-bundle.json").read_text())
-    if manifest.get("format") != "codex-claude-skill-bundle/v1":
-        fail("bundle format mismatch")
-    if manifest.get("name") != "delivery-pipeline":
-        fail("bundle name mismatch")
-    if manifest.get("entrypoints") != {
-        "codex": "skills/delivery-pipeline/SKILL.md",
-        "claude": "claude/skills/delivery-pipeline/SKILL.md",
-        "pi": "skills/delivery-pipeline-pi/SKILL.md",
-    }:
-        fail("entrypoints mismatch")
-    if [item.get("name") for item in manifest.get("requires") or []] != DEPENDENCIES:
-        fail("dependency order mismatch")
-
-    codex_fm = frontmatter(CODEX_SKILL)
-    claude_fm = frontmatter(CLAUDE_SKILL)
-    for fm, label in ((codex_fm, "Codex"), (claude_fm, "Claude")):
-        if fm.get("name") != "delivery-pipeline":
-            fail(f"{label} skill name mismatch")
-        if not fm.get("description", "").startswith("Orchestrate a loose idea"):
-            fail(f"{label} description does not expose the resumable chain")
-    if codex_fm.get("disable-model-invocation") != "true":
-        fail("Codex skill must remain user-invoked")
-
-    # pi face: thin delta living beside the other skills (ADR-0003). It must
-    # stay user-invoked, reference the shared body by the tree sigil, and pin
-    # the pi-specific runtime cells so the delta cannot silently hollow out.
-    pi_fm = frontmatter(PI_SKILL)
-    if pi_fm.get("name") != "delivery-pipeline-pi":
-        fail("pi skill name mismatch")
-    if pi_fm.get("disable-model-invocation") != "true":
-        fail("pi skill must remain user-invoked")
     require(
-        PI_SKILL,
+        ROOT / "docs" / "adr" / "0004-config-driven-runtime-routing.md",
         (
-            "$delivery-pipeline",
-            "薄 delta",
-            "coordinator_runtime: pi-cli",
-            "dispatch_runtime: herdr",
-            "herdr-pi-pane",
-            "junbo/kimi-k3:max",
-            "openai-codex/gpt-5.6-sol:xhigh",
-            "--kind pi",
-            "显式 worker kind 优先",
-            "references/dispatch-runtime-routing.md",
-            "references/pane-lifecycle-rules.md",
-            "assets/HERDR_PI_IMPLEMENT_DISPATCH_PACKET.md",
-        ),
-    )
-    check_references(PI_SKILL)
-
-    common = (
-        "idea/map -> discovery -> spec -> implementation tickets",
-        "maximal safe batch",
-        "worktree",
-        "summary PR/MR",
-        "最早未完成",
-    )
-    # Stage owners are spelled differently per runtime: Codex resolves `$name`, Claude Code
-    # resolves the plugin locator. See skill_ref, check_runtime_boundaries and
-    # owner-skill-resolution.md.
-    stage_owners = ("wayfinder", "to-spec", "to-tickets", "implement")
-    require(
-        CODEX_SKILL,
-        common
-        + tuple(skill_ref(CODEX_ROOT, name) for name in stage_owners)
-        + ("fresh Codex", "Source owner projectId"),
-    )
-    require(
-        CLAUDE_SKILL,
-        common
-        + tuple(skill_ref(CLAUDE_ROOT, name) for name in stage_owners)
-        + (
-            "/pane-dispatch",
-            "attached waiter",
-        ),
-    )
-    for root, skill in ((CODEX_ROOT, CODEX_SKILL), (CLAUDE_ROOT, CLAUDE_SKILL)):
-        require(
-            skill,
-            (
-                "不评估 ticket 大小",
-                f"`{skill_ref(root, 'to-tickets')}` 已发布的 tickets 直接作为待分配 "
-                "execution graph",
-                "不增加内容质量或拆票复审 gate",
-            ),
-        )
-
-    for root in (CODEX_ROOT, CLAUDE_ROOT):
-        require(
-            root / "references" / "gate-state-machine.md",
-            (
-                "从任意 Issue 重建",
-                "向上追踪 parent",
-                "向下读取",
-                "最早未完成的 gate",
-                "discovery -> spec -> tickets",
-                "Stage Ownership",
-                "不得因 ticket 大小",
-                f"属于 `{skill_ref(root, 'to-tickets')}` 的产物所有权",
-            ),
-        )
-        require(
-            root / "references" / "frontier-lanes.md",
-            (
-                "maximal safe batch",
-                "每张 implementation ticket",
-                "独立 worktree",
-                "不领取 sibling",
-                "Terminal Fan-in",
-                "ready 计算不读取 ticket 长度",
-            ),
-        )
-        require(
-            root / "references" / "lane-registry.md",
-            (
-                "<!-- wayfinder-lane-registry:v1 -->",
-                "worktree:",
-                "branch:",
-                "base_commit:",
-                "updated_at:",
-                "Fresh-session Recovery",
-                "active writer",
-            ),
-        )
-        require(
-            root / "references" / "owner-skill-resolution.md",
-            (
-                "user-invoked skills",
-                "Owner skill name",
-                "Owner skill SKILL.md",
-                "Owner skill invocation label",
-                "read the passed `SKILL.md` completely",
-                "must not trigger a fallback workflow",
-            ),
-        )
-        require(
-            root / "assets" / "GATE_CHILD_DISPATCH_PACKET.md",
-            (
-                "$to-spec" if root == CODEX_ROOT else "/to-spec",
-                "Parent links",
-                "Owner skill SKILL.md：<absolute resolved path>",
-                "不依赖 child catalog",
-            ),
-        )
-
-    require(
-        CODEX_ROOT / "assets" / "ISSUE_IMPLEMENT_DISPATCH_PACKET.md",
-        (
-            "Owner skill name：implement",
-            "Owner skill SKILL.md：<absolute resolved path>",
-            "不依赖 child catalog",
-            "只处理这张 ticket",
-            "send_message_to_thread",
-        ),
-    )
-    require(
-        CLAUDE_ROOT / "assets" / "CODEX_PANE_DISPATCH_PACKET.md",
-        (
-            "$implement",
-            "Owner skill name：implement",
-            "Owner skill SKILL.md：<absolute resolved path>",
-            "不依赖 Codex pane catalog",
-            "只处理这张 ticket",
-            "Codex pane",
-            "FINAL_REPORT_BEGIN",
-            "FINAL_REPORT_END",
-        ),
-    )
-    for packet in (
-        CLAUDE_ROOT / "assets" / "GATE_CHILD_DISPATCH_PACKET.md",
-        CLAUDE_ROOT / "assets" / "WAYFINDER_TICKET_DISPATCH_PACKET.md",
-        CLAUDE_ROOT / "assets" / "WAYFINDER_GRILLING_DISPATCH_PACKET.md",
-    ):
-        require(packet, ("FINAL_REPORT_BEGIN", "FINAL_REPORT_END"))
-    require(
-        CLAUDE_ROOT / "references" / "lane-registry.md",
-        (
-            "pane_id:",
-            "workspace_id:",
-            "tab_id:",
-            "waiter_owner:",
-            "terminal_report_pending",
-            "integrated -> close_pending -> closed",
-        ),
-    )
-    require(
-        CODEX_ROOT / "references" / "lane-registry.md",
-        ("thread_id:", "project_id:", "runtime: subagent | codex-thread"),
-    )
-    require(
-        CLAUDE_ROOT / "references" / "child-monitoring.md",
-        (
-            "/pane-dispatch",
-            "FINAL_REPORT_END",
-            "listener",
-            "running pane 无条件通过 `/pane-dispatch` skill 挂到新 lead listener",
-        ),
-    )
-    require(
-        CODEX_ROOT / "references" / "child-monitoring.md",
-        (
-            "Agent` tool",
-            "run_in_background: true",
-            "FINAL_REPORT_BEGIN",
+            "Status:** Accepted",
+            "current calling session is always the coordinator",
+            "exactly six worker roles",
+            "skills/delivery-pipeline-codex-app",
+            "supersedes ADR-0003",
         ),
     )
 
-    check_references(CODEX_SKILL)
-    check_references(CLAUDE_SKILL)
-    check_pruned_policy()
-    check_runtime_boundaries()
-    check_owner_dispatch_contract()
-    check_dispatch_runtime_routing()
-    check_pane_lifecycle_single_source()
-    check_atomic_dispatch_sequence()
-    check_batch_dispatch_concurrency()
 
-    metadata = CODEX_ROOT / "agents" / "openai.yaml"
-    require(
-        metadata,
-        (
-            'display_name: "Delivery Pipeline"',
-            'short_description: "Resume Wayfinder delivery from any issue"',
-            "$delivery-pipeline",
-            "allow_implicit_invocation: false",
-        ),
-    )
-
-    install = (ROOT / "scripts" / "install.sh").read_text()
-    require(
-        ROOT / "scripts" / "install.sh",
-        # Owners reach workers as dispatcher-resolved absolute paths (03), so
-        # install.sh carries no dependency gate; only the symlink-install
-        # mechanics themselves remain invariant here.
-        ('ln -s "$source" "$dest"', "delivery-pipeline-pi", "/agent/skills/"),
-    )
-
-    subprocess.run(["bash", "-n", str(ROOT / "scripts" / "install.sh")], check=True)
-    if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):
-        record("validator must remain executable")
-
-    # Check pane-dispatch skill (Claude-only)
-    pane_dispatch_skill = PANE_DISPATCH_CLAUDE / "SKILL.md"
-    if not pane_dispatch_skill.exists():
-        fail("pane-dispatch skill missing in Claude tree")
-
-    pane_dispatch_fm = frontmatter(pane_dispatch_skill)
-    if pane_dispatch_fm.get("name") != "pane-dispatch":
-        fail("pane-dispatch skill name mismatch")
-    if pane_dispatch_fm.get("disable-model-invocation") == "true":
-        fail("pane-dispatch must stay model-invocable: the lead dispatches panes via the Skill tool")
-
-    check_references(pane_dispatch_skill)
-
-    # Scan pane-dispatch for pruned policy violations
-    pane_dispatch_files = list(PANE_DISPATCH_CLAUDE.rglob("*.md"))
+def check_pruned_policy() -> None:
+    roots = (CORE, APP, SETUP, ROOT / "claude" / "skills" / "pane-dispatch")
     forbidden = (
         re.compile(r"估时"),
         re.compile(r"估档"),
         re.compile(r"不拆理由"),
         re.compile(r"\bS/M/L/XL\b"),
-        re.compile(r"\bXL\s*票"),
-        re.compile(r"estimate-log", re.IGNORECASE),
         re.compile(r"ticket-split-coverage", re.IGNORECASE),
-        re.compile(r"split proposal", re.IGNORECASE),
-        re.compile(r"五因子"),
-        re.compile(r"六面普查"),
-        re.compile(r"小型化跳过"),
-        re.compile(r"大小适合"),
         re.compile(r"route classifier", re.IGNORECASE),
-        re.compile(r"claude-native"),
         re.compile(r"herdr wait agent-status"),
         re.compile(r"herdr agent start --cwd"),
     )
-    hits = []
-    for path in pane_dispatch_files:
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
-            if any(pattern.search(line) for pattern in forbidden):
-                hits.append(f"{path.relative_to(ROOT)}:{lineno}:{line}")
-    if hits:
-        fail("pane-dispatch contains pruned policy violations:\n" + "\n".join(hits))
+    for root in roots:
+        for path in root.rglob("*.md"):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if any(pattern.search(line) for pattern in forbidden):
+                    record(f"pruned policy restored: {path.relative_to(ROOT)}:{lineno}:{line}")
+
+
+def check_metadata_and_helpers() -> None:
+    require(
+        CORE / "agents" / "openai.yaml",
+        (
+            'display_name: "Delivery Pipeline"',
+            "$delivery-pipeline",
+            "allow_implicit_invocation: false",
+        ),
+    )
+    require(
+        APP / "agents" / "openai.yaml",
+        (
+            'display_name: "Delivery Pipeline (Codex App)"',
+            "$delivery-pipeline-codex-app",
+            "allow_implicit_invocation: false",
+        ),
+    )
+    pane_fm = frontmatter(PANE_DISPATCH / "SKILL.md")
+    if pane_fm.get("name") != "pane-dispatch":
+        record("pane-dispatch compatibility helper name mismatch")
+    if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):
+        record("validator must remain executable")
+
+
+def main() -> None:
+    check_manifest()
+    check_frontmatter()
+    check_core_contract()
+    check_runtime_neutrality()
+    check_model_contract()
+    check_packets()
+    check_app_shell()
+    check_tree_ownership()
+    check_installer()
+    check_context_and_docs()
+    check_pruned_policy()
+    check_metadata_and_helpers()
 
     if ERRORS:
-        fail(
-            f"{len(ERRORS)} violation(s):\n"
-            + "\n".join(f"  - {item}" for item in ERRORS)
-        )
+        fail(f"{len(ERRORS)} violation(s):\n" + "\n".join(f"  - {item}" for item in ERRORS))
     print("bundle: pass")
 
 

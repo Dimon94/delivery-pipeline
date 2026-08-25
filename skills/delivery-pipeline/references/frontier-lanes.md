@@ -1,88 +1,59 @@
-# Frontier、Execution Lane 与 Terminal Fan-in
+# Frontier、Configured Role Lane 与 Terminal Fan-in
 
-design 派发、implementation dispatch 或任一 worker terminal 后读取本文件。
+任一 gate dispatch、implementation dispatch 或 worker terminal 后读取。
 
 ## Ready Frontier
 
 `ready frontier` 是当前真相源中所有 open、未被 dependency 阻塞且未被 claim 的 work items。
-每次派发和 terminal event 都从 tracker/Git 重算。
-ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细度或验收文本质量。
+每次派发和 terminal event 都从 tracker/Git 重算；ready 计算只使用 tracker state、dependencies 与 claim。
 
-从 ready frontier 按 tracker priority、dependency order、issue ID 确定
-`maximal safe batch`。无前序依赖的 ready tickets 同批并发派发；只有以下已验证的运行期冲突把
-item 排除出本批：
+按 tracker priority、dependency order、issue ID 选 maximal safe batch。无前序依赖的 ready items
+同批并发派发；只有 active writer、无法由 Execution Worktree 隔离的 external mutable resource，
+或用户明确要求串行时排除。普通 repo 文件路径重叠只进入 Integration 冲突检测，不构成
+Dispatch blocker。
 
-- 同一 tracker item 已有 active writer；
-- 多条 lane 会同时改写无法由 Execution Worktree 隔离的 external mutable resource、运行中的
-  migration、deployment target 或 global lock；
-- 用户明确要求串行。
+## Role Binding
 
-普通 repo 文件路径重叠只进入 Integration 冲突检测，不构成 dispatch blocker；`CONTEXT.md`、ADR、
-source migration files 等都由独立 Execution Worktree 隔离。若一张票的结果确实是另一张票的输入，
-必须以 tracker dependency 表达；可能重叠或无法预知写集合不产生隐式 dependency。Integration 在
-Map Integration Worktree 中按 dependency order 串行 fan-in，真实冲突 fail closed。
+| 工作 | Role | Output mode |
+|---|---|---|
+| AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |
+| grilling/prototype HITL | `design` | `artifact` |
+| design implementation | `design` | `commit` |
+| frontend implementation | `frontend` | `commit` |
+| backend/other implementation | `backend` | `commit` |
+| whole-change tests | `testing` | `checks` |
+| code review | `review` | `verdict` |
 
-## Design Fan-out
-
-- AFK research、evidence 和自动 task：每个 decision ticket 通过 `Agent` tool 派发为后台
-  subagent（`run_in_background: true`）；不创建 pane。
-- HITL prototype、grilling 和 task：各自独立，用户判断只阻塞该 ticket。
-  `codex-thread` 使用 user-visible Codex App task；Herdr 使用 `herdr-claude-pane`。
-  两者都使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 填充 owner 与 decision 上下文。Herdr lane
-  startup 后进入 `awaiting_human`，由用户返回 Codex App 触发 terminal fan-in。
-- coordinator 拥有 map frontier、用户问题和 fan-in；subagent 只拥有自己的 decision ticket。
-
-## Dispatch Handoff
-
-每条 user-visible lane 的 task/pane、Execution Worktree、packet、owner/work item 与 registry 已互相
-验证，worker 已进入真实 `working`，registry 已 readback 为 `running` 或 `awaiting_human`，即完成该
-lane 的 startup。单条 lane 完成后继续派发本批其余 items；所有成功 lanes 完成 startup、失败 items 已
-隔离为 `setup_blocked`，才完成整批 Dispatch Handoff。这是 coordinator 本轮 terminal：一次报告本批
-全部坐标与失败项后立即 yield，不等待 worker 的 routine progress、首个问题或最终结果。用户完成信号、
-真实 terminal event 或显式 monitor 请求才重新进入 fan-in。
+role 只选择 config entry，不暗含 agent。agent/model/effort 只从
+`model-role-routing.md` 的 version 2 配置读取。
 
 ## Execution Lanes
 
-- maximal safe batch 中每张 implementation ticket 按 `dispatch-runtime-routing.md` 已选的
-  调度运行时创建一个 fresh lane。
-- 每条 lane 都有一个独立 worktree（canonical term: Execution Worktree）和一个 active writer。
-- `codex-thread` 使用 `ISSUE_IMPLEMENT_DISPATCH_PACKET.md`，由 Codex App 创建 task 与独立
-  App-managed Execution Worktree。
-- Herdr 显式 kind 优先；否则前端/设计使用 `herdr-claude-pane` +
-  `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md`，后端/其余使用 `herdr-codex-pane` +
-  `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md`。两者都由 Herdr Control Route 创建 pane，并以手工创建的
-  独立 Execution Worktree 为 cwd。ticket domain 不改写调度运行时，只决定 Herdr worker kind。
-- 只运行该 ticket 的 `$implement`、focused checks、review 和 commit。
-- worker 不领取 sibling 或 dependent ticket。terminal 后由 coordinator 重算下一 batch。
-- 某 lane blocked 只暂停对应 ticket；其余 ready work 继续。
-- 整批 Dispatch Handoff 后停止调度 turn；长任务不占用 coordinator。
+- 每个 work item 一个 fresh Herdr lane、一个 Execution Worktree、一个 active writer。
+- pi → `herdr-pi-pane`；codex → `herdr-codex-pane`；claude → `herdr-claude-pane`。
+- 所有 kind 使用 `HERDR_ROLE_DISPATCH_PACKET.md`；packet 持久化 role + output_mode，owner path 是绝对路径。
+- worker 只处理 packet 的 work item，不领取 sibling/dependent item或进入下一 gate。
+- blocked 只暂停对应 item；其余 ready work继续。
 
-## 调度运行时绑定
+## Dispatch Handoff
 
-| Lane runtime | Worker | Packet | Lifecycle owner |
-| --- | --- | --- | --- |
-| `codex-thread` | Codex App task | `ISSUE_IMPLEMENT_DISPATCH_PACKET.md` | native thread tools |
-| `herdr-codex-pane` | Codex CLI pane | `HERDR_CODEX_IMPLEMENT_DISPATCH_PACKET.md` | Herdr Control Route |
-| `herdr-claude-pane` | Claude pane | `HERDR_CLAUDE_IMPLEMENT_DISPATCH_PACKET.md` | Herdr Control Route |
-
-registry runtime、packet、worker 与 Execution Worktree transport 必须同一行匹配；不匹配时将
-lane 标记为 `setup_blocked`，完成清理后再重算 frontier。
+每条 lane 的 pane、Execution Worktree、packet、owner/work item、role config 与 registry 已互相验证，
+worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`，即完成该 lane startup。
+整批成功 lanes 完成 startup、失败项隔离为 `setup_blocked` 后，统一报告全部坐标并立即 yield；
+不等待 routine progress、首个问题或最终结果。
 
 ## Terminal Fan-in
 
-- normal path 只消费 `completed` / `blocked` terminal event；Herdr HITL 以用户完成信号唤醒。两者都不读取 routine progress。
-- final report 是可丢失的 transport cache；Git、tracker 与 artifact 是持久证据，notification 只负责唤醒。
-- `codex-thread` 对同批最多 8 个 tasks 使用带 cursor 的 `wait_threads`；terminal 后
-  `read_thread` 一次。Herdr pane 在用户返回后最多做一次 bounded read；final marker 缺失字段记为 `Unknown`，
-  不要求 worker 重显、补发或继续输出。
-- coordinator 用 registry、Execution Worktree 的 base/head/diff/dirty state、tracker 与 artifacts 验证
-  terminal 结果；证据足够时即使 final report 不完整也按 dependency order 集成。
-- Integration 后调用 `wayfinder-frontier-loop.md` 完成 canonical tracker transitions，随后
-  自动重算并派发下一 ready frontier，不等待用户回复“继续”。
-- watchdog 只处理启动失败、terminal signal 丢失或工具 timeout；每次异常只做一次状态检查。
+- normal path 只消费 completed/blocked terminal event；HITL 由用户完成信号唤醒。
+- final report 是 transport cache；Git、tracker 与 artifact 是持久证据。
+- 用户返回后对 pane 做一次 bounded read；final marker 缺字段记 Unknown，不要求 worker 重显。
+- coordinator 用 registry、worktree base/head/diff/dirty state、tracker 与 artifacts 验证，按 dependency
+  order串行 Integration。
+- Integration 后完成 canonical tracker transitions，自动重算下一 ready frontier，不等待“继续”。
+- watchdog 只处理 startup failure、terminal signal 丢失或工具 timeout；不固定轮询。
 
 ## Authority
 
-- local execution authority 覆盖 worktree、文件修改和本地 commit。
-- Map Run Authority 覆盖 named map 的 canonical tracker transitions；remote publication authority
-  只在 push、main、PR/MR、merge 和最终 publication closeout 前检查，不阻塞本地 lanes。
+local execution authority 覆盖 worktree、文件修改与本地 commit；Map Run Authority 覆盖 named map
+canonical tracker transitions；remote publication authority 只在 push/main/PR/MR/merge/final closeout
+前检查。
