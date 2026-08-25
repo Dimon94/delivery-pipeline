@@ -246,6 +246,50 @@ def pane_dispatch_files() -> list[Path]:
     ]
 
 
+def check_batch_dispatch_concurrency() -> None:
+    """Both trees must state one batch concurrency semantics.
+
+    The serial unit is the batch-level workspace/tab resolution prerequisite,
+    not the pane: after it completes, same-batch panes create/start/deliver
+    concurrently, working confirmation runs once as an aggregate parallel wait
+    at batch end, and serial fan-in stays at Integration. Prevents the drift
+    where the routing doc promised batch concurrency while pane-dispatch
+    demanded pane-by-pane serial dispatch.
+    """
+    for path in (
+        CODEX_ROOT / "references" / "frontier-lanes.md",
+        CLAUDE_ROOT / "references" / "frontier-lanes.md",
+    ):
+        require(
+            path,
+            (
+                "无前序依赖的 ready tickets 同批并发派发",
+                "普通 repo 文件路径重叠只进入 Integration 冲突检测",
+                "整批 Dispatch Handoff",
+            ),
+        )
+    for path in (
+        PANE_DISPATCH_CLAUDE / "SKILL.md",
+        PANE_DISPATCH_CLAUDE / "references" / "pane-placement-rules.md",
+    ):
+        require(
+            path,
+            (
+                "workspace 解析是批级唯一串行前置",
+                "并发发出",
+                "聚合 working 确认",
+                "聚合 readback",
+            ),
+        )
+        content = " ".join(path.read_text().split())
+        if "每个 pane 必须走完这个序列才能开始下一个" in content:
+            record(
+                f"{path.relative_to(ROOT)} still requires pane-by-pane serial "
+                "dispatch; the serial unit is the batch-level workspace "
+                "prerequisite, not the pane"
+            )
+
+
 def check_atomic_dispatch_sequence() -> None:
     """Bookkeeping must overlap agent cold start; listener stays anchored last.
 
@@ -276,20 +320,20 @@ def check_atomic_dispatch_sequence() -> None:
 
     skill_text = " ".join((PANE_DISPATCH_CLAUDE / "SKILL.md").read_text().split())
     sequence = (
-        "**验证落点**",
-        "**启动 agent**",
-        "**投递 packet**",
-        "**Rename pane**",
-        "**同步 tab label**",
-        "**确认 working**",
-        "**挂载 listener**",
+        "**批级前置（唯一串行段）**",
+        "**并发段 A**",
+        "**并发段 B**",
+        "**记账段**",
+        "**聚合 working 确认**",
+        "**Listener + 聚合 readback**",
     )
     positions = [skill_text.find(item) for item in sequence]
     if -1 in positions or positions != sorted(positions):
         record(
-            "pane-dispatch SKILL.md atomic sequence order violated; expected "
-            "落点验证 -> 启动 agent -> 投递 packet -> rename -> tab label -> "
-            f"确认 working -> 挂载 listener, got positions {positions}"
+            "pane-dispatch SKILL.md batch pipeline order violated; expected "
+            "批级前置 -> 并发段 A（create/split + 落点验证） -> 并发段 B（agent start + 投递） -> "
+            f"记账段（rename + tab label） -> 聚合 working 确认 -> listener + 聚合 readback, "
+            f"got positions {positions}"
         )
 
 
@@ -771,6 +815,7 @@ def main() -> None:
     check_dispatch_runtime_routing()
     check_pane_lifecycle_single_source()
     check_atomic_dispatch_sequence()
+    check_batch_dispatch_concurrency()
 
     metadata = CODEX_ROOT / "agents" / "openai.yaml"
     require(

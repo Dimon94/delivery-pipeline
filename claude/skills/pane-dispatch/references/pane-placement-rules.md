@@ -101,24 +101,26 @@ print(panes[-1]['pane_id'])
 herdr pane rename "$default_pane" '<design #编号 | execution #编号> <极短摘要>'
 ```
 
-## 标准创建命令（原子对：创建 + 验证 + 启动 + 投递 + 改名）
+## 标准创建命令（批级并发派发）
 
-每个 worker 必须走完下面步骤再开始下一个 worker，不要批量建完再统一发 prompt。
-验证落点只依赖 pane 存在；rename/label 与 agent 冷启动重叠；投递不阻塞等待 working：
+workspace 解析是批级唯一串行前置：space 与 tab 解析每批只做一次并 readback；readback 后同批
+pane 的 create/split、agent start、packet 投递并发发出，批末一次聚合 working 确认，挂 listener
+后做一次聚合 readback。不要批量建完再统一发 prompt 以外的串行化——pane 之间不互为前置。
 
 ```bash
-# 1. 在目标 space + tab 创建 pane（如果是新 workspace/tab，复用默认 pane；如果是既有 tab，split 既有 pane）
+# 批级前置（唯一串行段）：解析/创建 space 与各 item 的目标 tab，readback 坐标
 
-# 2. 验证落点（见 pane-lifecycle-rules.md"落点验证"）
+# 1. 各 pane create/split 并发发出（新 workspace/tab 复用默认 pane；既有 tab split 既有 pane）
+#    每个 pane 创建后立即验证落点（见 pane-lifecycle-rules.md"落点验证"，只依赖 pane 存在）
 
-# 3. 启动 agent（见 pane-lifecycle-rules.md"Agent 启动命令"）
+# 2. 各 pane 的 agent start 与 packet 投递并发发出（见 pane-lifecycle-rules.md；投递不阻塞）
 
-# 4. 投递 dispatch packet（见 pane-lifecycle-rules.md"投递机制"；投递不阻塞）
-
-# 5. rename pane + 同步 tab label（追加编号；在 agent 冷启动期间完成）
+# 3. rename pane + 同步 tab label（追加编号；在 agent 冷启动期间完成）
 herdr tab rename <tab_id> '<字母>-<存活 issue 或 lane ID 列表>'
 
-# 6. 确认 working（见 pane-lifecycle-rules.md"Working 确认"）
+# 4. 批末聚合 working 确认：并行等待各 pane（见 pane-lifecycle-rules.md"Working 确认"）
+
+# 5. 逐 pane 挂 listener（前提：该 pane 已确认 working），整批聚合 readback 坐标
 ```
 
 ## 回信地址与 WAKE 信号

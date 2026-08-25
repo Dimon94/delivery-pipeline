@@ -47,8 +47,12 @@ Codex App task 时沿用同一命名契约。
 每个 maximal safe batch 只做一次并行 preflight snapshot：同时读取 target ticket/claim/registry、
 Integration HEAD/clean state、worktree path/branch collision 和已选 transport capability。snapshot 中
 相互独立的 checks 并行；写入导致某个字段失效时只刷新该字段，不重读整个 map、合同或 owner body。
-preflight 通过后一次准备本批全部 packet/registry；同批 lane 并发创建和启动。单条 lane 到达
-`working` 不提前 yield，直到整批均完成 startup readback 或已隔离为 `setup_blocked`。
+preflight 通过后一次准备本批全部 packet/registry；同批 lane 并发创建和启动。Herdr lanes 的
+workspace 解析是批级唯一串行前置，readback 后同批 pane 的 create/split、agent start 与投递
+并发发出，批末一次聚合 working 确认（并行等待各 pane），确认后挂 listener，聚合 readback 后到达
+Dispatch Handoff——串行单位是批级前置，不是 pane。单条 lane 到达
+`working` 不提前 yield，直到整批均完成 startup readback 或已隔离为 `setup_blocked`；单 pane
+失败独立隔离为 `setup_blocked`，sibling pane 不受影响。
 
 安全不变量保持不变：一个 active writer、registry 先于 worker、Execution Worktree 隔离、真实路径与
 base commit readback、未知/dirty/conflict fail closed。routine success 不逐步播报；一次开始状态与一次
@@ -154,8 +158,8 @@ Execution Worktree 和 registry 互相一致，packet 带 resolved owner/work it
    workspace/tab/pane、worktree、branch 与 base commit。
 5. agent 启动并接受 packet 后，HITL 直接写 `awaiting_human`，其他 lanes 写 `running`；terminal、
    recovery 和 pane cleanup 通过 Herdr Control Route 完成；该 lane 不调用 Codex App
-   thread tools。单条 lane 完成 startup 后继续处理本批其余 lanes，整批聚合 readback 后统一
-   Dispatch Handoff。
+   thread tools。批末一次聚合 working 确认（并行等待各 pane），确认后挂 listener；整批聚合
+   readback 后统一 Dispatch Handoff。
 
 完成标准：每条 Herdr lane 都有唯一 kind-matched pane、唯一 Execution Worktree 和可读回 registry。
 

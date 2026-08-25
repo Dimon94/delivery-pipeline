@@ -130,25 +130,20 @@ new_pane=$(echo "$split_result" | jq -r '.result.pane.pane_id')
 
 Split 方向：宽 pane 用 `right`，窄或高 pane 用 `down`。避免重复同方向 split。
 
-## 原子派发序列
+## 批级并发派发
 
-每个 pane 必须走完这个序列才能开始下一个。记账步骤（落点验证、rename、tab label）
-不依赖 agent 状态，排在投递阻塞点之前，与 agent 冷启动重叠；只有 listener 挂载
-锚定在 Working 确认之后：
+workspace 解析是批级唯一串行前置（每批一次 workspace/tab 解析与 readback）；串行单位是
+批级前置，不是 pane。此后同批 pane 并发派发：
 
-1. **解析或创建 target tab**（见上节"Tab 容量管理"）
-2. **获取可用 pane**（复用默认 pane 或 split）
-3. **验证落点**（见 `references/pane-lifecycle-rules.md`"落点验证"；只依赖 pane 存在，
-   不依赖 agent 状态，创建后即可执行）
-4. **启动 agent**（见 `references/pane-lifecycle-rules.md`"Agent 启动命令"）
-5. **投递 packet**（见 `references/pane-lifecycle-rules.md`"投递机制"；投递不阻塞，
-   不在此等待 working）
-6. **Rename pane**：
+1. **批级前置（唯一串行段）**：解析/创建 workspace，为每个 item 解析/创建目标 tab 并
+   readback 坐标（见上节"Workspace 解析""Tab 容量管理"）。
+2. **并发段 A**：同批各 pane 的 create/split（复用默认 pane 或 split）并发发出；每个 pane
+   创建后立即做落点验证（只依赖 pane 存在，见 `references/pane-lifecycle-rules.md`"落点验证"）。
+3. **并发段 B**：agent start 与 packet 投递并发发出（投递不阻塞，见
+   `references/pane-lifecycle-rules.md`"投递机制"）。
+4. **记账段**：rename pane + 同步 tab label（追加 issue 编号），在 agent 冷启动期间完成：
    ```bash
    herdr pane rename "$pane_id" "$pane_label"
-   ```
-7. **同步 tab label**（追加 issue 编号）：
-   ```bash
    current_label=$(herdr tab get "$tab_id" | jq -r '.result.tab.label // ""')
    if [[ -z "$current_label" || "$current_label" == "null" ]]; then
      new_label="<字母>-#<issue>"
@@ -157,14 +152,16 @@ Split 方向：宽 pane 用 `right`，窄或高 pane 用 `down`。避免重复�
    fi
    herdr tab rename "$tab_id" "$new_label"
    ```
-   （rename + tab label 同步在 agent 冷启动期间完成，不占冷启动之后的尾巴）
-8. **确认 working**（见 `references/pane-lifecycle-rules.md`"Working 确认"；统一在
-   rename/label 之后执行）
-9. **挂载 listener**（见 `references/pane-lifecycle-rules.md`"Listener 挂载"；前提不变——
-   agent 已确认 working，锚定在最后）
-10. **回报坐标**
+5. **聚合 working 确认**：批末一次并行等待各 pane 进入 working（见
+   `references/pane-lifecycle-rules.md`"Working 确认"），等待时长约为 max(各 pane 冷启动)
+   而非 sum。
+6. **Listener + 聚合 readback**：对确认 working 的 pane 挂载 listener（前提不变，见
+   `references/pane-lifecycle-rules.md`"Listener 挂载"），整批坐标做一次聚合 readback 后
+   回报，到达 Dispatch Handoff。
 
-**失败隔离**：某个 pane 的原子序列失败（即使重试后），标记为 skipped，继续其他 panes。
+**失败隔离**：某 pane 的落点验证、投递或 Working 确认失败（重试后仍失败），该 lane 标记
+`setup_blocked`，已 rename 的 pane 按 close + label 对账收口；sibling pane 不受影响，
+继续完成自己的序列。批级前置本身失败则整批 `setup_blocked`。
 
 ## 输出格式
 

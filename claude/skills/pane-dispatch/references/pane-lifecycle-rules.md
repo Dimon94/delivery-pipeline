@@ -23,15 +23,16 @@ herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中�
 
 ## Agent 启动命令
 
-按 kind 分支：
+按 kind 分支。`agent start` 不支持 `--cwd` 与 `--no-focus`；**每条 lane 的独立
+worktree 不丢——在 `pane split --cwd <worktree-path>` 创建时绑定**（workspace/tab
+默认继承 repo root，不能用作 lane cwd）。worktree 隔离约束不变，只是绑定位置从启动步
+前移到创建步。
 
 **Claude pane**：
 ```bash
 herdr agent start <agent-name> \
   --kind claude \
   --pane <pane-id> \
-  --cwd <worktree-path> \
-  --no-focus \
   -- --dangerously-skip-permissions
 ```
 
@@ -42,12 +43,12 @@ herdr agent start <agent-name> \
 herdr agent start <agent-name> \
   --kind codex \
   --pane <pane-id> \
-  --cwd <worktree-path> \
-  --no-focus \
   -- -s danger-full-access -a never
 ```
 
-Agent 名字必须 lowercase alphanumeric + hyphens，格式如 `codex-957` 或 `grilling-42`。
+`agent start` 对 shell 未就绪的 pane 返回 `agent_pane_busy`；批级并发时先确认各 pane
+shell 就绪（`agent_status` 非 `unknown`）再 start。Agent 名字必须 lowercase
+alphanumeric + hyphens，格式如 `codex-957` 或 `grilling-42`。
 
 ## 落点验证
 

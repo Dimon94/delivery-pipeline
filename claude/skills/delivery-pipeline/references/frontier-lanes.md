@@ -8,15 +8,19 @@ design 派发、implementation dispatch 或任一 worker terminal 后读取本�
 每次派发和 terminal event 都从 tracker/Git 重算。
 ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细度或验收文本质量。
 
-从 ready frontier 按 tracker priority、dependency order、issue ID 选择
-`maximal safe batch`。以下 items 串行：
+从 ready frontier 按 tracker priority、dependency order、issue ID 确定
+`maximal safe batch`。无前序依赖的 ready tickets 同批并发派发；只有以下已验证的运行期冲突把
+item 排除出本批：
 
-- blockers 尚未 completed；
-- 显式文件、migration、lock 或 external mutable resource 重叠；
-- 写集合无法证明相互独立；
-- 同一 tracker item 需要并发写入。
+- 同一 tracker item 已有 active writer；
+- 多条 lane 会同时改写无法由独立 worktree 隔离的 external mutable resource、运行中的
+  migration、deployment target 或 global lock；
+- 用户明确要求串行。
 
-其余 items 并发。
+普通 repo 文件路径重叠只进入 Integration 冲突检测，不构成 dispatch blocker；可能重叠或
+无法预知写集合不产生隐式 dependency。Integration 在 Map Integration Worktree 中按
+dependency order 串行 fan-in，真实冲突 fail closed。串行单位是批级前置（workspace 解析），
+不是 pane。
 
 ## Design Fan-out
 
@@ -26,6 +30,14 @@ ready 计算不读取 ticket 长度、工期判断、拆分建议、描述详细
   通过 `/pane-dispatch` skill 创建 pane（G/P tab），**必须使用 `--kind claude`**。
   使用 `WAYFINDER_GRILLING_DISPATCH_PACKET.md` 模板（已内置 `--kind claude`）。
 - lead 拥有 map frontier、用户问题和 fan-in；subagent 只拥有自己的 decision ticket。
+
+## Dispatch Handoff
+
+每条 lane 的 pane、worktree、packet、owner/work item 与 registry 已互相验证，worker 已进入
+真实 `working`，registry 已 readback，即完成该 lane 的 startup。所有成功 lanes 完成 startup、
+失败 items 已隔离为 `setup_blocked`，才完成整批 Dispatch Handoff：lead 一次报告本批全部坐标
+与失败项后立即 yield，不等待 worker 的 routine progress 或最终结果。用户完成信号、真实
+terminal event 或显式 monitor 请求才重新进入 fan-in。
 
 ## Execution Lanes
 
