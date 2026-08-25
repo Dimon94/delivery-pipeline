@@ -28,7 +28,7 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 
 ## 依赖
 
-**运行时** —— Claude Code、Codex 或两者（双端 bundle，可只装一端）。
+**Runtimes** —— Claude Code、Codex、pi 或任意组合（多端 bundle，可只装一端）。
 
 **Owner skills** —— 全部来自 [mattpocock-skills](https://github.com/mattpocock/skills)。机器可读清单在 `skill-bundle.json` 的 `requires`，安装器会诊断缺失项：
 
@@ -36,7 +36,7 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
 - 交付：`to-spec`、`to-tickets`、`implement`、`code-review`
 - 集成/收尾：`resolving-merge-conflicts`
 
-**Herdr** —— Codex CLI 和 Claude CLI 调度场景的终端 multiplexer（CLI + `herdr` skill），
+**Herdr** —— Codex CLI、Claude CLI 与 pi 调度场景的终端 multiplexer（CLI + `herdr` skill），
 也可由 Codex App 用户显式选择。独立组件，本仓库不附带；纯 Codex App 原生路径不依赖它。
 
 ## 安装
@@ -50,7 +50,7 @@ dependency 与 mutable-resource 冲突只串行受影响的 tickets。
        ln -s "$(find "$PWD/skills" -maxdepth 2 -type d -name "$s")" "${AGENTS_HOME:-$HOME/.agents}/skills/$s"
      done
      ```
-2. 安装本 bundle——两端都软链到当前 checkout，并附带 pre-commit 校验器：
+2. 安装本 bundle——各端都软链到当前 checkout（pi 面安装到 `~/.pi/agent/skills/`），并附带 pre-commit 校验器：
    ```bash
    ./scripts/install.sh --target all
    ```
@@ -84,6 +84,13 @@ Claude CLI（通过 `/pane-dispatch` 管理 Herdr panes）：
 
 ```text
 使用 /delivery-pipeline <任意 map/spec/ticket issue>。
+```
+
+pi（薄 delta 入口，pi pane 按角色携带模型——frontend/design → `junbo/kimi-k3:max`，
+backend/other → `openai-codex/gpt-5.6-sol:xhigh`）：
+
+```text
+使用 delivery-pipeline-pi 继续 <任意 map/spec/ticket issue>。
 ```
 
 ## 校验

@@ -32,7 +32,7 @@ user-invoked stage owners do not depend on the child task's active skill catalog
 
 ## Dependencies
 
-**Runtimes** — Claude Code, Codex, or both (dual-runtime bundle; single-side installs work).
+**Runtimes** — Claude Code, Codex, pi, or any combination (multi-runtime bundle; single-side installs work).
 
 **Owner skills** — all from [mattpocock-skills](https://github.com/mattpocock/skills). The machine-readable list lives in `skill-bundle.json` (`requires`); the installer diagnoses missing ones:
 
@@ -40,7 +40,7 @@ user-invoked stage owners do not depend on the child task's active skill catalog
 - Delivery: `to-spec`, `to-tickets`, `implement`, `code-review`
 - Integration/closeout: `resolving-merge-conflicts`
 
-**Herdr** — the terminal multiplexer for Codex CLI and Claude CLI coordinator
+**Herdr** — the terminal multiplexer for Codex CLI, Claude CLI, and pi coordinator
 scenarios (CLI + `herdr` skill), also available as an explicit Codex App override.
 It is separate and not bundled; the native Codex App path does not require it.
 
@@ -90,6 +90,13 @@ Claude CLI (`/pane-dispatch` manages Herdr panes):
 
 ```text
 Use /delivery-pipeline <any-map-spec-or-ticket-issue>.
+```
+
+pi (thin-delta entry; pi panes carry per-role models — frontend/design → `junbo/kimi-k3:max`,
+backend/other → `openai-codex/gpt-5.6-sol:xhigh`):
+
+```text
+Use delivery-pipeline-pi with <any-map-spec-or-ticket-issue>.
 ```
 
 ## Verify

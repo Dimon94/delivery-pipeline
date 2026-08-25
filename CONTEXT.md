@@ -62,12 +62,13 @@ The post-Integration transport state of a `codex-thread` lane, reached after its
 A background `Agent` tool subagent that handles one AFK discovery ticket (research or automatic task). Runs autonomously — no Herdr pane created, no pane resources consumed. Reports results via Agent tool completion notification. Results committed to `research/<ticket-name>` branch and written as ticket resolution comment.
 
 **Coordinator Runtime**
-The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, or `claude-cli`. It is distinct from the worker kind. Codex App exposes native task/thread orchestration; Codex CLI and Claude CLI use Herdr Dispatch.
+The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, `claude-cli`, or `pi-cli`. It is distinct from the worker kind. Codex App exposes native task/thread orchestration; Codex CLI, Claude CLI, and pi use Herdr Dispatch.
 
 **Dispatch Model**
-- Coordinator Runtime 先决定调度 transport：`codex-app` 默认 Codex App 原生 Dispatch，`codex-cli` 与 `claude-cli` 使用 Herdr Dispatch；Codex App 用户可在 capability probe 通过后显式覆盖为 Herdr。
-- Codex App 原生 Dispatch = Codex App task + App-managed Execution Worktree，lane runtime 为 `codex-thread`。
-- Herdr Dispatch = map Herdr Workspace 中的 Codex CLI 或 Claude CLI pane；lane runtime 为 `herdr-codex-pane` 或 `herdr-claude-pane`。显式 worker kind 优先，否则 frontend/design → Claude，backend/other → Codex。
+- Coordinator Runtime 先决定调度 transport:`codex-app` 默认 Codex App 原生 Dispatch,`codex-cli`、`claude-cli` 与 `pi-cli` 使用 Herdr Dispatch;Codex App 用户可在 capability probe 通过后显式覆盖为 Herdr。
+- Codex App 原生 Dispatch = Codex App task + App-managed Execution Worktree,lane runtime 为 `codex-thread`。
+- Herdr Dispatch = map Herdr Workspace 中的 Codex CLI、Claude CLI 或 pi pane;lane runtime 为 `herdr-codex-pane`、`herdr-claude-pane` 或 `herdr-pi-pane`。显式 worker kind 优先,否则 frontend/design → Claude(Codex/Claude 调度)或 pi `junbo/kimi-k3:max`(pi 调度),backend/other → Codex(Codex/Claude 调度)或 pi `openai-codex/gpt-5.6-sol:xhigh`(pi 调度)。
+- pi 模式入口 skill 为 `skills/delivery-pipeline-pi`:薄 delta,引用 `delivery-pipeline` 主体编排,只覆盖 Coordinator Runtime、worker kind 与模型路由;pi pane 通过 `pi --model provider/id:<thinking>` 按角色携带模型。
 - Codex App coordinator 不在 Herdr pane 时，通过 Codex App Herdr Bridge 显式控制 Herdr Session Target；用户批准后由原 coordinator 完成 Trusted Execution Bootstrap。
 - Herdr HITL lane 到达 HITL Handoff 后由用户直接参与；Codex App coordinator 不占用运行期 monitoring token。
 - 同一 maximal safe batch 的所有 user-visible lanes 都完成 startup readback 后才到达 Dispatch Handoff；长任务由用户或真实 terminal event 重新唤醒。
@@ -83,7 +84,7 @@ The environment hosting the delivery coordinator: `codex-app`, `codex-cli`, or `
 - One map → one integration worktree → zero or one Herdr workspace
 - One map → many implementation tickets → many execution worktrees → many runtime-owned lanes
 - One map → many discovery tickets → many subagents (no panes)
-- One execution worktree → one Codex App task or one Herdr-hosted Codex CLI/Claude Code pane
+- One execution worktree → one Codex App task or one Herdr-hosted Codex CLI/Claude Code/pi pane
 - Execution worktrees branch from integration worktree, not from main
 - Integration worktree eventually rebases to main (not merge)
 - Multiple maps run concurrently, isolated by separate integration worktrees

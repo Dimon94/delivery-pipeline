@@ -9,8 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CODEX_ROOT = ROOT / "skills" / "delivery-pipeline"
 CLAUDE_ROOT = ROOT / "claude" / "skills" / "delivery-pipeline"
+PI_ROOT = ROOT / "skills" / "delivery-pipeline-pi"
 CODEX_SKILL = CODEX_ROOT / "SKILL.md"
 CLAUDE_SKILL = CLAUDE_ROOT / "SKILL.md"
+PI_SKILL = PI_ROOT / "SKILL.md"
 PANE_DISPATCH_CLAUDE = ROOT / "claude" / "skills" / "pane-dispatch"
 CODEX_DISPATCH_ROUTING = CODEX_ROOT / "references" / "dispatch-runtime-routing.md"
 TASK_COORDINATE_TITLE = CODEX_ROOT / "references" / "task-coordinate-title.md"
@@ -100,6 +102,7 @@ def check_pruned_policy() -> None:
         ROOT / "README.zh-CN.md",
         *CODEX_ROOT.rglob("*.md"),
         *CLAUDE_ROOT.rglob("*.md"),
+        *PI_ROOT.rglob("*.md"),
     ]
     forbidden = (
         re.compile(r"估时"),
@@ -149,14 +152,15 @@ def check_runtime_boundaries() -> None:
     dispatch contract in references/owner-skill-resolution.md instead.
     """
     locator = re.compile(r"/mattpocock-skills:")
-    for path in sorted(CODEX_ROOT.rglob("*.md")):
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
-            if locator.search(line):
-                record(
-                    "Claude plugin locator in Codex tree (only resolves in Claude "
-                    "Code; pass owners as absolute SKILL.md paths instead): "
-                    f"{path.relative_to(ROOT)}:{lineno}:{line.strip()}"
-                )
+    for root in (CODEX_ROOT, PI_ROOT):
+        for path in sorted(root.rglob("*.md")):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if locator.search(line):
+                    record(
+                        "Claude plugin locator in Codex/pi tree (only resolves in Claude "
+                        "Code; pass owners as absolute SKILL.md paths instead): "
+                        f"{path.relative_to(ROOT)}:{lineno}:{line.strip()}"
+                    )
 
 
 def check_owner_dispatch_contract() -> None:
@@ -166,7 +170,7 @@ def check_owner_dispatch_contract() -> None:
     omits the fields lets a child start a stage without a resolved owner. Assert the
     fields on all packets in both trees, not just the ones that happened to be covered.
     """
-    for root in (CODEX_ROOT, CLAUDE_ROOT):
+    for root in (CODEX_ROOT, CLAUDE_ROOT, PI_ROOT):
         for packet in sorted((root / "assets").glob("*DISPATCH_PACKET.md")):
             require(
                 packet,
@@ -177,6 +181,7 @@ def check_owner_dispatch_contract() -> None:
                     "先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path",
                 ),
             )
+    for root in (CODEX_ROOT, CLAUDE_ROOT):
         require(
             root / "references" / "owner-skill-resolution.md",
             (
@@ -635,6 +640,7 @@ def main() -> None:
     if manifest.get("entrypoints") != {
         "codex": "skills/delivery-pipeline/SKILL.md",
         "claude": "claude/skills/delivery-pipeline/SKILL.md",
+        "pi": "skills/delivery-pipeline-pi/SKILL.md",
     }:
         fail("entrypoints mismatch")
     if [item.get("name") for item in manifest.get("requires") or []] != DEPENDENCIES:
@@ -649,6 +655,33 @@ def main() -> None:
             fail(f"{label} description does not expose the resumable chain")
     if codex_fm.get("disable-model-invocation") != "true":
         fail("Codex skill must remain user-invoked")
+
+    # pi face: thin delta living beside the other skills (ADR-0003). It must
+    # stay user-invoked, reference the shared body by the tree sigil, and pin
+    # the pi-specific runtime cells so the delta cannot silently hollow out.
+    pi_fm = frontmatter(PI_SKILL)
+    if pi_fm.get("name") != "delivery-pipeline-pi":
+        fail("pi skill name mismatch")
+    if pi_fm.get("disable-model-invocation") != "true":
+        fail("pi skill must remain user-invoked")
+    require(
+        PI_SKILL,
+        (
+            "$delivery-pipeline",
+            "薄 delta",
+            "coordinator_runtime: pi-cli",
+            "dispatch_runtime: herdr",
+            "herdr-pi-pane",
+            "junbo/kimi-k3:max",
+            "openai-codex/gpt-5.6-sol:xhigh",
+            "--kind pi",
+            "显式 worker kind 优先",
+            "references/dispatch-runtime-routing.md",
+            "references/pane-lifecycle-rules.md",
+            "assets/HERDR_PI_IMPLEMENT_DISPATCH_PACKET.md",
+        ),
+    )
+    check_references(PI_SKILL)
 
     common = (
         "idea/map -> discovery -> spec -> implementation tickets",
@@ -834,7 +867,7 @@ def main() -> None:
         # Owners reach workers as dispatcher-resolved absolute paths (03), so
         # install.sh carries no dependency gate; only the symlink-install
         # mechanics themselves remain invariant here.
-        ('ln -s "$source" "$dest"',),
+        ('ln -s "$source" "$dest"', "delivery-pipeline-pi", "/agent/skills/"),
     )
 
     subprocess.run(["bash", "-n", str(ROOT / "scripts" / "install.sh")], check=True)

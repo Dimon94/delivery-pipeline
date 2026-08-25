@@ -3,11 +3,13 @@
   "name": "delivery-pipeline",
   "entrypoints": {
     "codex": "skills/delivery-pipeline/SKILL.md",
-    "claude": "claude/skills/delivery-pipeline/SKILL.md"
+    "claude": "claude/skills/delivery-pipeline/SKILL.md",
+    "pi": "skills/delivery-pipeline-pi/SKILL.md"
   },
   "install": {
     "codexSkillDirectory": "skills/delivery-pipeline",
-    "claudeSkillDirectory": "claude/skills/delivery-pipeline"
+    "claudeSkillDirectory": "claude/skills/delivery-pipeline",
+    "piSkillDirectory": "skills/delivery-pipeline-pi"
   },
   "requires": [
     {

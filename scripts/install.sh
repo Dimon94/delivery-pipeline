@@ -6,23 +6,25 @@ SKILL_NAME="delivery-pipeline"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 AGENTS_HOME_DIR="${AGENTS_HOME:-$HOME/.agents}"
 CLAUDE_HOME_DIR="${CLAUDE_HOME:-$HOME/.claude}"
+PI_HOME_DIR="${PI_HOME:-$HOME/.pi}"
 TARGET="codex"
 WITH_HOOKS=1
 
 usage() {
   cat <<EOF
-Usage: ./scripts/install.sh [--target codex|claude|all] [--no-hooks]
+Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 
 Default target: codex
 
 Also installs the repo's pre-commit gate (scripts/hooks/pre-commit -> .git/hooks)
 so a red validator refuses the commit. Pass --no-hooks to skip.
 
-Installs $SKILL_NAME and ticket-sizing to one or both (all targets symlink to this checkout):
+Installs $SKILL_NAME and ticket-sizing to one or both, plus delivery-pipeline-pi to pi (all targets symlink to this checkout):
   \${CODEX_HOME:-~/.codex}/skills/$SKILL_NAME
   \${CODEX_HOME:-~/.codex}/skills/ticket-sizing
   \${CLAUDE_HOME:-~/.claude}/skills/$SKILL_NAME
   \${CLAUDE_HOME:-~/.claude}/skills/ticket-sizing
+  ~/.pi/agent/skills/delivery-pipeline-pi
 
 Ends with a non-blocking dependency-availability diagnostic. Owners resolve at
 runtime via references/owner-skill-resolution.md; no local copies required.
@@ -35,9 +37,12 @@ while [ "$#" -gt 0 ]; do
       WITH_HOOKS=0
       ;;
     --target)
-      [ "$#" -ge 2 ] || { echo "--target requires codex, claude, or all" >&2; exit 1; }
+      [ "$#" -ge 2 ] || { echo "--target requires codex, claude, pi, or all" >&2; exit 1; }
       TARGET="$2"
       shift
+      ;;
+    --pi)
+      TARGET="pi"
       ;;
     --codex)
       TARGET="codex"
@@ -62,7 +67,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$TARGET" in
-  codex|claude|all) ;;
+  codex|claude|pi|all) ;;
   *)
     echo "Invalid --target: $TARGET" >&2
     usage
@@ -125,6 +130,22 @@ install_claude() {
   ln -s "$skill_source" "$skill_dest"
 
   echo "Symlinked Claude $SKILL_NAME to $skill_dest -> $skill_source"
+}
+
+install_pi() {
+  local source="$ROOT/skills/delivery-pipeline-pi"
+  local dest="$PI_HOME_DIR/agent/skills/delivery-pipeline-pi"
+
+  [ -f "$source/SKILL.md" ] || {
+    echo "Cannot find bundled pi skill at $source" >&2
+    exit 1
+  }
+
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  ln -s "$source" "$dest"
+
+  echo "Symlinked pi delivery-pipeline-pi to $dest -> $source"
 }
 
 install_claude_pane_dispatch() {
@@ -224,12 +245,16 @@ case "$TARGET" in
     install_claude_pane_dispatch
     install_claude_ticket_sizing
     ;;
+  pi)
+    install_pi
+    ;;
   all)
     install_codex
     install_codex_ticket_sizing
     install_claude
     install_claude_pane_dispatch
     install_claude_ticket_sizing
+    install_pi
     ;;
 esac
 
