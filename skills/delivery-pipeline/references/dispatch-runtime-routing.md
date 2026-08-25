@@ -124,8 +124,8 @@ Execution Worktree 和 registry 互相一致，packet 带 resolved owner/work it
    每次匹配后调用 `herdr --session "$herdr_session_name" agent send-keys "$agent_name" enter`，再读
    `agent get` / `agent read`。授权状态按 `blocked -> idle -> working` 推进；其他 question/approval UI
    保留为 `blocked` 并交给用户。
-5. Claude 到达 `idle` 后，按 `pane-lifecycle-rules.md` 的投递机制投递 packet 的单行绝对路径引用。命令返回
-   `agent prompt` accepted，且观察到 `idle -> working` 即 startup terminal；packet 与 registry 已
+5. Claude 到达 `idle` 后，按 `pane-lifecycle-rules.md` 的投递机制投递 packet 的单行绝对路径引用（投递不阻塞），再按该文件的
+   Working 确认观察到 `idle -> working` 即 startup terminal（前置：`agent prompt` accepted；packet 与 registry 已
    持久化 owner、ticket 和坐标。HITL lane 跳过 `running` checkpoint，直接执行
    `created -> awaiting_human` 并写 `state: awaiting_human` 后精确 readback；非 HITL lane 写
    `state: running` 并 readback。

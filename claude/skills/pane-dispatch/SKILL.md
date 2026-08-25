@@ -14,7 +14,7 @@ description: Dispatch work to verified Herdr panes (Claude or Codex) with placem
 - 解析/创建目标 tab（按类型字母 + 容量 <4）
 - 创建 pane（复用默认 pane 或 split 既有 pane）
 - 启动 agent（`--kind claude` 或 `--kind codex`）
-- 投递 packet（写文件 + 单行引用 + working 确认）
+- 投递 packet（写文件 + 投递不阻塞 + Working 确认）
 - Rename pane + 同步 tab label（lifecycle 配对）
 - 验证落点（`herdr pane get` 确认 workspace/tab 匹配）
 - 挂载 listener（`herdr agent wait` 后台进程）
@@ -70,7 +70,7 @@ description: Dispatch work to verified Herdr panes (Claude or Codex) with placem
 
 ## 生命周期规则
 
-投递机制、agent 启动命令、落点验证、listener 挂载和 lifecycle 配对见 `references/pane-lifecycle-rules.md`。
+投递机制、agent 启动命令、落点验证、Working 确认、listener 挂载和 lifecycle 配对见 `references/pane-lifecycle-rules.md`。
 本 skill 不再内联这些命令块；修改生命周期规则只动该 reference。
 
 ## Workspace 解析
@@ -132,17 +132,22 @@ Split 方向：宽 pane 用 `right`，窄或高 pane 用 `down`。避免重复�
 
 ## 原子派发序列
 
-每个 pane 必须走完这个序列才能开始下一个：
+每个 pane 必须走完这个序列才能开始下一个。记账步骤（落点验证、rename、tab label）
+不依赖 agent 状态，排在投递阻塞点之前，与 agent 冷启动重叠；只有 listener 挂载
+锚定在 Working 确认之后：
 
 1. **解析或创建 target tab**（见上节"Tab 容量管理"）
 2. **获取可用 pane**（复用默认 pane 或 split）
-3. **启动 agent**（见 `references/pane-lifecycle-rules.md`"Agent 启动命令"）
-4. **投递 packet**（见 `references/pane-lifecycle-rules.md`"投递机制"）
-5. **Rename pane**：
+3. **验证落点**（见 `references/pane-lifecycle-rules.md`"落点验证"；只依赖 pane 存在，
+   不依赖 agent 状态，创建后即可执行）
+4. **启动 agent**（见 `references/pane-lifecycle-rules.md`"Agent 启动命令"）
+5. **投递 packet**（见 `references/pane-lifecycle-rules.md`"投递机制"；投递不阻塞，
+   不在此等待 working）
+6. **Rename pane**：
    ```bash
    herdr pane rename "$pane_id" "$pane_label"
    ```
-6. **同步 tab label**（追加 issue 编号）：
+7. **同步 tab label**（追加 issue 编号）：
    ```bash
    current_label=$(herdr tab get "$tab_id" | jq -r '.result.tab.label // ""')
    if [[ -z "$current_label" || "$current_label" == "null" ]]; then
@@ -152,9 +157,12 @@ Split 方向：宽 pane 用 `right`，窄或高 pane 用 `down`。避免重复�
    fi
    herdr tab rename "$tab_id" "$new_label"
    ```
-7. **验证落点**（见 `references/pane-lifecycle-rules.md`"落点验证"）
-8. **挂载 listener**（见 `references/pane-lifecycle-rules.md`"Listener 挂载"）
-9. **回报坐标**
+   （rename + tab label 同步在 agent 冷启动期间完成，不占冷启动之后的尾巴）
+8. **确认 working**（见 `references/pane-lifecycle-rules.md`"Working 确认"；统一在
+   rename/label 之后执行）
+9. **挂载 listener**（见 `references/pane-lifecycle-rules.md`"Listener 挂载"；前提不变——
+   agent 已确认 working，锚定在最后）
+10. **回报坐标**
 
 **失败隔离**：某个 pane 的原子序列失败（即使重试后），标记为 skipped，继续其他 panes。
 
@@ -226,4 +234,4 @@ fi
 ## 参考
 
 - `references/pane-placement-rules.md` — Space/tab/pane 三层模型、tab 字母、容量规则
-- `references/pane-lifecycle-rules.md` — 投递机制、落点验证、lifecycle 配对、listener 挂载前提
+- `references/pane-lifecycle-rules.md` — 投递机制、落点验证、Working 确认、lifecycle 配对、listener 挂载前提

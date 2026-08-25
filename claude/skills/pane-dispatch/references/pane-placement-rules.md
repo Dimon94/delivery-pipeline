@@ -71,8 +71,8 @@ map 对应的 space。用户随时在切换视图，裸命令等于把 worker �
 
 tab label 必须永远只反映**存活中**的 issue/lane。与 create+prompt 原子对同级强制：
 
-- **派发**：创建 pane → `agent prompt` 投递（机制见 pane-lifecycle-rules.md"投递机制"）→ 按 design/execute 格式 rename →
-  `herdr tab rename` 同步存活 issue/lane IDs。
+- **派发**：创建 pane → 验证落点 → 启动 agent → 投递 packet（投递不阻塞，机制见 pane-lifecycle-rules.md"投递机制"）→ 按 design/execute 格式 rename →
+  `herdr tab rename` 同步存活 issue/lane IDs → 确认 working（见 pane-lifecycle-rules.md"Working 确认"）→ 挂载 listener。
 - **收尾**：terminal fan-in 完成后 `pane close` → `tab rename`（剔除该 ID）→ 最后一个 pane 关闭时
   tab 会自动消失，**不需要**手动 `herdr tab close <tab_id>`。
 - **异常对账**：只在 startup probe、terminal fan-in 或 watchdog 触发时，用 pane list/get 核对；
@@ -92,27 +92,33 @@ import json,sys; panes=json.load(sys.stdin)['result']['panes']
 print(panes[-1]['pane_id'])
 ")
 
-# 2. 把默认 pane 变成第一个 worker（agent start 与投递命令见 pane-lifecycle-rules.md）
-herdr pane rename "$default_pane" '<design #编号 | execution #编号> <极短摘要>'
-# 启动 agent 并投递 packet（见 pane-lifecycle-rules.md）
+# 2. 验证落点（见 pane-lifecycle-rules.md"落点验证"；只依赖 pane 存在）
 
-# 3. tab rename + 验证落点（见 pane-lifecycle-rules.md"落点验证"）
+# 3. 把默认 pane 变成第一个 worker（agent start 与投递命令见 pane-lifecycle-rules.md）
+#    启动 agent → 投递 packet（不阻塞）
+
+# 4. pane rename + tab rename 同步 label（与冷启动重叠），然后确认 working
+herdr pane rename "$default_pane" '<design #编号 | execution #编号> <极短摘要>'
 ```
 
-## 标准创建命令（原子对：创建 + 投递 + 改名）
+## 标准创建命令（原子对：创建 + 验证 + 启动 + 投递 + 改名）
 
 每个 worker 必须走完下面步骤再开始下一个 worker，不要批量建完再统一发 prompt。
+验证落点只依赖 pane 存在；rename/label 与 agent 冷启动重叠；投递不阻塞等待 working：
 
 ```bash
-# 1. 在目标 space + tab 创建 pane 并启动 worker agent
-# (如果是新 workspace/tab，复用默认 pane；如果是既有 tab，split 既有 pane)
+# 1. 在目标 space + tab 创建 pane（如果是新 workspace/tab，复用默认 pane；如果是既有 tab，split 既有 pane）
 
-# 2. 投递 dispatch packet（见 pane-lifecycle-rules.md"投递机制"）
+# 2. 验证落点（见 pane-lifecycle-rules.md"落点验证"）
 
-# 3. 同步 tab label（追加编号）
+# 3. 启动 agent（见 pane-lifecycle-rules.md"Agent 启动命令"）
+
+# 4. 投递 dispatch packet（见 pane-lifecycle-rules.md"投递机制"；投递不阻塞）
+
+# 5. rename pane + 同步 tab label（追加编号；在 agent 冷启动期间完成）
 herdr tab rename <tab_id> '<字母>-<存活 issue 或 lane ID 列表>'
 
-# 4. 验证落点（见 pane-lifecycle-rules.md"落点验证"）
+# 6. 确认 working（见 pane-lifecycle-rules.md"Working 确认"）
 ```
 
 ## 回信地址与 WAKE 信号

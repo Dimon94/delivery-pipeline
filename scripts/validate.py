@@ -236,6 +236,63 @@ def check_pane_lifecycle_single_source() -> None:
                     break
 
 
+def pane_dispatch_files() -> list[Path]:
+    """Every file that carries the pane dispatch sequence, in both trees."""
+    return [
+        PANE_DISPATCH_CLAUDE / "SKILL.md",
+        PANE_DISPATCH_CLAUDE / "references" / "pane-lifecycle-rules.md",
+        PANE_DISPATCH_CLAUDE / "references" / "pane-placement-rules.md",
+        CODEX_ROOT / "references" / "pane-lifecycle-rules.md",
+    ]
+
+
+def check_atomic_dispatch_sequence() -> None:
+    """Bookkeeping must overlap agent cold start; listener stays anchored last.
+
+    The reordered per-pane sequence is: pane create/split -> placement verification
+    (only needs the pane to exist) -> agent start -> non-blocking packet delivery
+    -> rename + tab label sync (runs during cold start) -> working confirmation
+    -> listener mount. Delivery no longer inlines `--wait --until working`; that
+    wait moved behind the bookkeeping as one confirmation step.
+    """
+    for path in pane_dispatch_files():
+        content = " ".join(path.read_text().split())
+        if '--wait --until working --timeout 15000' in content:
+            record(
+                f"{path.relative_to(ROOT)} still delivers the packet with an "
+                "inline blocking `--wait --until working`; delivery must not "
+                "block on cold start (working confirmation is a later unified step)"
+            )
+        if "投递不阻塞" not in content:
+            record(
+                f"{path.relative_to(ROOT)} is missing the non-blocking delivery "
+                "invariant '投递不阻塞'"
+            )
+        if "Working 确认" not in content:
+            record(
+                f"{path.relative_to(ROOT)} is missing the unified working "
+                "confirmation step 'Working 确认'"
+            )
+
+    skill_text = " ".join((PANE_DISPATCH_CLAUDE / "SKILL.md").read_text().split())
+    sequence = (
+        "**验证落点**",
+        "**启动 agent**",
+        "**投递 packet**",
+        "**Rename pane**",
+        "**同步 tab label**",
+        "**确认 working**",
+        "**挂载 listener**",
+    )
+    positions = [skill_text.find(item) for item in sequence]
+    if -1 in positions or positions != sorted(positions):
+        record(
+            "pane-dispatch SKILL.md atomic sequence order violated; expected "
+            "落点验证 -> 启动 agent -> 投递 packet -> rename -> tab label -> "
+            f"确认 working -> 挂载 listener, got positions {positions}"
+        )
+
+
 def check_dispatch_runtime_routing() -> None:
     """Use Codex App threads when present and Herdr for CLI panes.
 
@@ -713,6 +770,7 @@ def main() -> None:
     check_owner_dispatch_contract()
     check_dispatch_runtime_routing()
     check_pane_lifecycle_single_source()
+    check_atomic_dispatch_sequence()
 
     metadata = CODEX_ROOT / "agents" / "openai.yaml"
     require(

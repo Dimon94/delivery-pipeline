@@ -1,19 +1,20 @@
 # Pane 生命周期规则
 
-投递机制、落点验证、lifecycle 配对和 listener 挂载前提的唯一定义点。
+投递机制、落点验证、Working 确认、lifecycle 配对和 listener 挂载前提的唯一定义点。
 dispatch-runtime-routing 的 Herdr 章节引用本文件，不再内联命令块。
 
 ## 投递机制
 
-Packet 已由调用方写入文件，只投单行引用指令，经 agent 面原子提交：
+Packet 已由调用方写入文件，只投单行引用指令，经 agent 面原子提交。投递不阻塞——
+不带 `--wait`，提交后立即返回，agent 冷启动在后台进行：
 
 ```bash
-herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。" --wait --until working --timeout 15000
+herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。"
 ```
 
-`agent prompt` 原子提交 text + Enter 并遵守 pane 的 bracketed-paste；`--wait --until working` 兼作 startup 验证——返回成功即 agent 确认 working。
+`agent prompt` 原子提交 text + Enter 并遵守 pane 的 bracketed-paste。
 
-投递失败处理（`agent_blocked` / `agent_prompt_stalled` / timeout）：
+投递失败处理（`agent_blocked` / `agent_prompt_stalled` / error 返回）：
 1. `herdr agent get` + `herdr agent read` 查 pane 状态；首启设置页或权限 UI 用 `herdr agent send-keys <agent-name> esc` 清掉
 2. 重试一次上面的 prompt
 3. 仍失败 → 标记 `setup_blocked`，继续其他 lanes
@@ -50,7 +51,7 @@ Agent 名字必须 lowercase alphanumeric + hyphens，格式如 `codex-957` 或 
 
 ## 落点验证
 
-创建后立即验证：
+创建后立即验证（只依赖 pane 存在，不依赖 agent 状态；可在 agent start 之前执行，与冷启动重叠）：
 ```bash
 pane_info=$(herdr pane get "$pane_id")
 actual_ws=$(echo "$pane_info" | jq -r '.result.pane.workspace_id')
@@ -68,6 +69,21 @@ actual_tab=$(echo "$pane_info" | jq -r '.result.pane.tab_id')
 
 **为什么验证**：裸 `herdr agent start` 或 `herdr pane split` 不带显式坐标时会落在用户聚焦的 pane（可能是别的 space）。显式坐标 + 验证防止静默错放。
 
+## Working 确认
+
+rename + tab label 同步完成后，统一确认 agent 已进入 working：
+
+```bash
+herdr agent wait "$agent_name" --until working --timeout 15000
+```
+
+确认失败处理（timeout / stalled）：
+1. `herdr agent get` + `herdr agent read` 查 pane 状态；首启设置页或权限 UI 用 `herdr agent send-keys <agent-name> esc` 清掉
+2. 重试一次投递（见"投递机制"）后再次确认
+3. 仍失败 → 标记 `setup_blocked`，已 rename 的 pane 按"Lifecycle 配对"的 close + label 对账收口，继续其他 lanes
+
+确认通过前不得挂载 listener（见下节前提）。
+
 ## Listener 挂载
 
 Claude pane 和 Codex pane 都挂 lead-side listener：
@@ -84,7 +100,7 @@ listener_pid=$!
 
 **为什么后台**：Codex sandbox 可能拦 socket 访问，Codex pane 无法主动 `herdr agent prompt` 回 lead。Lead-side polling 是可靠的 terminal signal。
 
-**挂载前提**：agent 已确认 `working`（投递步骤已保证）。idle 态挂 `agent wait --until done` 会立即返回假 WAKE。
+**挂载前提**：agent 已确认 `working`（"Working 确认"步骤已保证）。idle 态挂 `agent wait --until done` 会立即返回假 WAKE。
 
 **Timeout**：默认 2 小时（7200000ms）。
 
@@ -95,7 +111,7 @@ listener_pid=$!
 Tab label 必须永远只反映**存活中**的 issue/lane。与 create+prompt 原子对同级强制：
 
 **派发时**：
-- 创建 pane → 投递 packet → rename pane → **sync tab label（追加 issue）**
+- 创建 pane → 验证落点 → 启动 agent → 投递 packet（不阻塞） → rename pane → **sync tab label（追加 issue）** → 确认 working → 挂载 listener
 
 **收尾时**（由编排层调用）：
 - `herdr pane close <pane_id>` → **sync tab label（剔除 issue）** → 最后一个 pane 关闭时 tab 会自动消失，**不需要**手动 `herdr tab close`
