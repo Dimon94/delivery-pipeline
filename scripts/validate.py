@@ -123,6 +123,9 @@ def check_core_contract() -> None:
         (
             "唯一 canonical CLI/Herdr 编排主干",
             "当前调用会话就是 coordinator",
+            "Coordinator Pane",
+            "只有用户显式要求新 Workspace",
+            "不切换 Coordinator Pane 当前目录的 branch",
             "coordinator_runtime: pi-cli | codex-cli | claude-cli",
             "dispatch_runtime: herdr",
             "~/.config/delivery-pipeline/model-roles.json",
@@ -156,10 +159,39 @@ def check_core_contract() -> None:
             "pi → `herdr-pi-pane`",
             "codex → `herdr-codex-pane`",
             "claude → `herdr-claude-pane`",
+            "默认复用 coordinator 当前所在的 Herdr Workspace",
+            "只有用户显式要求新 Workspace",
+            "HERDR_WORKSPACE_ID",
+            "herdr pane current --current",
             "workspace 解析是 maximal safe batch 的唯一串行前置",
             "整批成功/失败项都完成 startup readback",
         ),
     )
+    require(
+        CORE / "references" / "pane-lifecycle-rules.md",
+        (
+            "每条新 lane 默认在目标 Workspace 新建 tab",
+            "coordinator pane 不作为 worker pane",
+            "--cwd <Execution Worktree>",
+        ),
+    )
+    require(
+        CORE / "references" / "integration-worktree-management.md",
+        (
+            "Map Integration Worktree/branch 不存在时创建独立 worktree 与 branch",
+            "不在 coordinator pane 的 cwd 切换 branch",
+        ),
+    )
+    legacy_workspace_rules = {
+        CORE / "SKILL.md": ("Herdr Workspace 只在首次 lane 前懒创建",),
+        CORE / "references" / "dispatch-runtime-routing.md": ("每个 map 一个 Herdr Workspace",),
+        CORE / "references" / "integration-worktree-management.md": ("Herdr Workspace 到第一条 configured lane 才懒创建",),
+    }
+    for path, phrases in legacy_workspace_rules.items():
+        text = path.read_text()
+        for phrase in phrases:
+            if phrase in text:
+                record(f"legacy per-map workspace rule restored: {path.relative_to(ROOT)}: {phrase}")
     require(
         CORE / "references" / "frontier-lanes.md",
         (
@@ -465,6 +497,9 @@ def check_context_and_docs() -> None:
             "Worker Role Configuration",
             "exactly six worker roles",
             "current calling session is the coordinator",
+            "Coordinator Pane",
+            "new workspace requires explicit user request",
+            "map isolation belongs to Map Integration Worktrees and Execution Worktrees",
             "skills/delivery-pipeline-codex-app",
             "There are no built-in agent/model/effort defaults",
             "repository file overlap is an Integration risk",
@@ -495,6 +530,22 @@ def check_context_and_docs() -> None:
             ),
         )
     require(
+        ROOT / "README.md",
+        (
+            "coordinator's current workspace by default",
+            "new workspace is created only when the user explicitly requests one",
+            "coordinator pane remains a control plane",
+        ),
+    )
+    require(
+        ROOT / "README.zh-CN.md",
+        (
+            "coordinator 当前 Workspace",
+            "只有用户显式要求时才创建新 Workspace",
+            "Coordinator Pane 只承担调度",
+        ),
+    )
+    require(
         ROOT / "docs" / "adr" / "0004-config-driven-runtime-routing.md",
         (
             "Status:** Accepted",
@@ -502,6 +553,16 @@ def check_context_and_docs() -> None:
             "exactly six worker roles",
             "skills/delivery-pipeline-codex-app",
             "supersedes ADR-0003",
+        ),
+    )
+    require(
+        ROOT / "docs" / "adr" / "0005-current-workspace-first-herdr-dispatch.md",
+        (
+            "Status:** Accepted",
+            "Coordinator Pane 当前所在的 Herdr Session 与 Workspace",
+            "只有用户显式要求时才创建新 Workspace",
+            "Coordinator Pane 只承担调度",
+            "取代 ADR-0001",
         ),
     )
 

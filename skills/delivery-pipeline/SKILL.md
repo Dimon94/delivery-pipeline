@@ -27,9 +27,11 @@ idea/map -> discovery -> spec -> implementation tickets
    `scripts/model_config.py validate <config>`，再验证实时 model evidence；缺失、非法或不完整时，
    在当前会话完整读取 `../delivery-pipeline-setup/SKILL.md` 并执行初始化；配置 readback 通过前不进入下一步。
    skill 内没有默认 agent/model/effort，也不静默回落。
-2. **识别输入、worktree 与 Coordinator Runtime。** 当前调用会话就是 coordinator；按宿主记录
-   `coordinator_runtime: pi-cli | codex-cli | claude-cli`，统一记录
-   `dispatch_runtime: herdr`。读取 repo instructions、tracker operations 和输入 artifact，
+2. **识别输入、worktree 与 Coordinator Runtime。** 当前调用会话就是 coordinator，所在 pane 是
+   Coordinator Pane；按宿主记录 `coordinator_runtime: pi-cli | codex-cli | claude-cli`，统一记录
+   `dispatch_runtime: herdr`。从 Herdr caller context 读回当前 session/workspace/tab/pane；默认把当前
+   Herdr Workspace 固定为新 lane 的 dispatch target，只有用户显式要求新 Workspace 才创建。
+   读取 repo instructions、tracker operations 和输入 artifact，
    按当前 gate 渐进加载 references：fresh coordinator 才加载
    `references/gate-state-machine.md`、`references/fresh-session-boundaries.md` 与
    `references/lane-registry.md`；worktree create/recovery 才加载
@@ -40,11 +42,13 @@ idea/map -> discovery -> spec -> implementation tickets
    未变化的合同。
 3. **重建链路。** 接受松散想法、Wayfinder map issue、已批准 spec issue 或已发布
    implementation tickets。裸 issue 编号必须能从当前 repo tracker 唯一解析；沿持久
-   relationships 从最早未完成的 gate 继续。输入是 map 且在 Source Worktree 时，创建或恢复
-   Map Integration Worktree；Herdr Workspace 只在首次 lane 前懒创建。
+   relationships 从最早未完成的 gate 继续。创建前先恢复该 map 已登记的 Map Integration Worktree/
+   branch；不存在时创建独立 worktree 与 branch。所有 Git 操作显式指向隔离 worktree，不切换
+   Coordinator Pane 当前目录的 branch。
 
-启动完成标准：配置 version 2 完整、当前会话已确认为 coordinator、输入/gate/worktree 已识别、
-`dispatch_runtime: herdr` 已持久化、active writers 已 readback。
+启动完成标准：配置 version 2 完整、当前会话已确认为 coordinator、当前 Herdr session/workspace/
+tab/pane 已读回、输入/gate/worktree 已识别、`dispatch_runtime: herdr` 已持久化、active writers 已
+readback。
 
 ## Gate 链
 
@@ -67,8 +71,10 @@ idea/map -> discovery -> spec -> implementation tickets
    coordinator 不亲自实现。
    完成标准：本批每条 lane 已持久化 role、agent、model、effort、runtime、pane、worktree、
    branch 与 base commit。
-5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 创建 pane、
-   验证落点、启动配置指定的 CLI、投递 packet、聚合确认 `working`。kind 与 runtime 必须匹配：
+5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 在 dispatch
+   target Workspace 为每条 lane 新建 tab/pane，并将 cwd 绑定到对应 Execution Worktree；Coordinator
+   Pane 只调度，不作为 worker pane。验证落点、启动配置指定的 CLI、投递 packet、聚合确认
+   `working`。kind 与 runtime 必须匹配：
    pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
    错误落点、owner 未读、model/effort 不可用时沿同一配置重建一次；第二次失败记
    `setup_blocked`。整批 startup readback 后统一 Dispatch Handoff 并结束本轮。
@@ -93,6 +99,8 @@ idea/map -> discovery -> spec -> implementation tickets
 - ready ticket = open、未被 claim、全部 blockers completed。dependency 相连的 tickets 按 graph
   顺序；普通 repo 文件路径重叠留给 Integration，不产生隐式 dependency。
 - 每张 ticket 一个 lane、一个 owner、一个 Execution Worktree/branch；worker 不领取 sibling。
+- 新 lane 默认留在 Coordinator Pane 当前 Herdr Workspace；新 Workspace 是显式用户选择，不承担
+  Git 隔离。
 - registry 先于 worker；一个 active writer；Execution Worktree 从当前 Integration HEAD 创建。
 - owner 通过 name、绝对 SKILL.md path、runtime-specific invocation label 三字段解析；绝对路径是
   执行真相源，label 只用于说明。

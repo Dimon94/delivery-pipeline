@@ -32,10 +32,13 @@ Multiple Wayfinder maps running simultaneously, each with its own integration wo
 Creation → work → integration/merge → deletion. Execution worktrees: created at dispatch, deleted after cherry-pick. Integration worktrees: created at map start, deleted after push to main. Empty setup-failed worktrees are deleted after the bounded retry; active, awaiting-human, or recoverable blocked lanes retain their worktrees.
 
 **Herdr Session Target**
-The running, user-visible Herdr session selected by the Codex App Herdr Bridge. The bridge targets it explicitly with `herdr --session <name>` and stores `herdr_session_name`; `default` wins when it is running. Map isolation belongs to Herdr Workspace, so HITL dispatch does not create a second hidden session.
+The running Herdr session containing the Coordinator Pane. New lanes remain in this session; an explicit request for a new workspace still creates it inside this session.
 
 **Herdr Workspace**
-A Herdr terminal multiplexer workspace corresponding to one map when Herdr Dispatch is selected. Label matches `map-<issue-number>`. Created lazily inside the selected Herdr session before the first Herdr lane. HITL panes (grilling, prototype) and execution panes land in this workspace. Preserved (not deleted) after map completes, for history access. Codex App native Dispatch does not create a Herdr Workspace.
+The terminal workspace containing the Coordinator Pane is the default target for new Herdr lanes. Multiple maps may share it; a new workspace requires explicit user request, while map isolation belongs to Map Integration Worktrees and Execution Worktrees.
+
+**Coordinator Pane**
+The current Herdr pane where `delivery-pipeline` was invoked. It remains the control plane: worker agents run in separate panes rooted at isolated worktrees, so dispatch does not switch the Coordinator Pane's cwd or checked-out branch.
 
 **Trusted Execution Bootstrap**
 A narrow authority granted with the user's Herdr/Claude transport approval. It lets the coordinator confirm Claude workspace trust for the exact verified Execution Worktree and allow imports whose realpaths are mechanically bounded to the resolved worker skill, its direct references, or applicable ancestor repo instructions. The worker reads those bodies; the coordinator does not preload them. This authority does not grant unrelated prompts or final publication.
@@ -80,9 +83,10 @@ The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-c
 
 ## Relationships
 
-- One running Herdr session → many map workspaces
-- One map → one integration worktree → zero or one Herdr workspace
-- One map → many implementation tickets → many execution worktrees → many runtime-owned lanes
+- One running Herdr session → many Herdr workspaces
+- One Herdr workspace → many coordinator and worker panes across maps
+- One Coordinator Pane → one current Herdr workspace → new lanes default to sibling tabs in that workspace
+- One map → one integration worktree → many execution worktrees and runtime-owned lanes
 - One map → many discovery tickets → configured planning/design lanes → many Herdr panes
 - One execution worktree → one Codex App task or one Herdr-hosted Codex CLI/Claude Code/pi pane
 - Execution worktrees branch from integration worktree, not from main

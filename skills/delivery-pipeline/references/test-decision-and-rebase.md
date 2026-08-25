@@ -39,8 +39,9 @@ PR/MR，等待 CI/CD 与 provider-native review verdict。
 
 ## Cleanup
 
-远程成功后关闭全部 map panes，删除 clean Execution Worktrees/branches与 Map Integration
-Worktree/branch；保留 Herdr Workspace history。任何 dirty/Unknown坐标 fail closed并报告。
+远程成功后按 lane registry关闭全部 map tabs/panes，删除 clean Execution Worktrees/branches与
+Map Integration Worktree/branch；保留 Coordinator Pane及所有承载 Workspace。任何 dirty/Unknown
+坐标 fail closed并报告。
 
 完成标准：测试、review、rebase、remote readback与 tracker close一致；或在无 remote authority 时
 给出唯一可恢复本地坐标。

@@ -76,7 +76,8 @@ Use delivery-pipeline-setup to initialize or reconfigure worker routing.
 
 Then invoke the canonical `delivery-pipeline` with any map/spec/ticket issue. It reconstructs the
 chain from tracker relationships and dispatches planning/design/frontend/backend/testing/review
-lanes according to version 2 configuration.
+lanes according to version 2 configuration. New Herdr lanes stay in the coordinator's current
+workspace by default; a new workspace is created only when the user explicitly requests one.
 
 ### Codex App
 
@@ -90,6 +91,7 @@ role configuration. To use Herdr from a Codex App session, exit the App shell an
 
 ## Invariants
 
+- The coordinator pane remains a control plane; isolated worktrees carry branch and file changes.
 - One Execution Worktree, lane, and active writer per work item.
 - Ordinary repository path overlap is an Integration risk, not an implicit dispatch dependency.
 - Same-batch startup readback completes before Dispatch Handoff; long workers do not occupy coordinator time.

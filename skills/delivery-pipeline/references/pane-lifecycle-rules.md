@@ -5,8 +5,10 @@ Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 
 ## 批级并发序列
 
-1. **批级前置（唯一串行段）**：解析并 readback Herdr session/workspace。
-2. **并发段 A**：同批 pane create/split（`--cwd <Execution Worktree>`）+ 落点验证。
+1. **批级前置（唯一串行段）**：从 Coordinator Pane caller context 解析并 readback Herdr
+   session/workspace/tab/pane；只有用户显式要求时才把新 Workspace 作为目标。
+2. **并发段 A**：每条新 lane 默认在目标 Workspace 新建 tab，使用
+   `--cwd <Execution Worktree>` 并保持 `--no-focus`，随后验证返回的 root pane 落点。
 3. **并发段 B**：按配置并发 agent start + packet 投递；投递不阻塞。
 4. **记账段**：rename pane + sync tab label，与 agent 冷启动重叠。
 5. **聚合 Working 确认**：并行等待各 agent working；单项失败独立隔离。
@@ -48,8 +50,17 @@ herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
 
 ## 落点验证
 
-创建后立即 `herdr pane get "$pane_id"`，断言 workspace_id、tab_id 与目标一致。落点错误时关闭
-pane并用显式 workspace/tab 重试一次；第二次失败写 `setup_blocked`，继续 siblings。
+默认拓扑是一 lane一 tab：
+
+```bash
+herdr tab create --workspace "$workspace_id" --cwd "$execution_worktree" \
+  --label "$lane_label" --no-focus
+```
+
+从返回值读取真实 tab/pane ID，再执行 `herdr pane get "$pane_id"`；断言 workspace_id、tab_id 与
+目标一致，且 coordinator pane 不作为 worker pane。用户显式要求新 Workspace 时，创建响应的
+root pane可承载首条 lane，其余 lane仍新建 tab。落点错误时关闭本 lane tab/pane并用显式
+workspace/tab重试一次；第二次失败写 `setup_blocked`，继续 siblings。
 
 ## Working 确认
 
@@ -78,6 +89,6 @@ WAKE 只负责唤醒；Git、tracker、artifact 与 registry 承载完成证据�
 
 ## Lifecycle 配对
 
-派发：create → placement verify → start → non-blocking prompt → rename/label → aggregate working
-→ listener。收尾：pane close → tab label 剔除；最后 pane 关闭时 tab 自动消失，保留 map workspace。
+派发：tab/pane create → placement verify → start → non-blocking prompt → rename/label → aggregate
+working → listener。收尾：关闭本 lane pane/tab；保留 Coordinator Pane与承载 Workspace。
 startup/fan-in/watchdog 只做一次 bounded pane 对账。

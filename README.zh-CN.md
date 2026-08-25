@@ -72,7 +72,7 @@ triage labels 与 domain docs；这与 worker model routing 的 `delivery-pipeli
 
 随后在任一 CLI 中用 canonical `delivery-pipeline` 继续 map/spec/ticket。Skill 会沿 tracker
 relationships 从最早未完成 gate 恢复，并按配置派发 planning/design/frontend/backend/testing/review
-lanes。
+lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户显式要求时才创建新 Workspace。
 
 ### Codex App
 
@@ -85,6 +85,7 @@ Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipel
 
 ## 不变量
 
+- Coordinator Pane 只承担调度；branch 与文件修改都发生在隔离 worktree。
 - 每个 work item 一个 Execution Worktree、一个 lane、一个 active writer。
 - ready frontier 的普通 repo 路径重叠留给 Integration，不隐式串行。
 - 同批 startup readback 后统一 Dispatch Handoff；长任务不持续占用 coordinator。

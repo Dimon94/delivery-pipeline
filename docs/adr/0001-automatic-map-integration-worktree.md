@@ -4,8 +4,8 @@
 **Date:** 2026-08-01  
 **Deciders:** User (Dimon), Kiro
 
-> ADR-0002 supersedes the fixed Herdr workspace/pane and fixed Execution Worktree path clauses.
-> The two-tier worktree isolation and Integration decisions remain accepted.
+> ADR-0002 supersedes the fixed pane/runtime clauses; ADR-0005 supersedes the one-map-one-Herdr-
+> Workspace clause. The two-tier worktree isolation and Integration decisions remain accepted.
 
 ## Context
 
