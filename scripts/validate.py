@@ -187,6 +187,55 @@ def check_owner_dispatch_contract() -> None:
         )
 
 
+def check_pane_lifecycle_single_source() -> None:
+    """Each tree defines pane lifecycle rules in exactly one reference.
+
+    投递机制、落点验证、lifecycle 配对和 listener 挂载前提只能在
+    pane-lifecycle-rules.md 中出现完整命令块；其他文件以指针引用，
+    不再内联。防止 6857f83 式的双端人工对齐漂移。
+    """
+    # Command blocks that define the pane lifecycle.  If any file other than
+    # the reference contains one of these as an executable command, it's a
+    # duplicated inline block.  We match the command prefix followed by
+    # whitespace/newline to avoid matching prose mentions in backticks.
+    lifecycle_commands = (
+        'herdr agent prompt "$agent_name" "完整读取',
+        "--wait --until working --timeout 15000",
+    )
+
+    for tree_name, tree_root, reference_path in (
+        (
+            "Claude",
+            PANE_DISPATCH_CLAUDE,
+            PANE_DISPATCH_CLAUDE / "references" / "pane-lifecycle-rules.md",
+        ),
+        (
+            "Codex",
+            CODEX_ROOT,
+            CODEX_ROOT / "references" / "pane-lifecycle-rules.md",
+        ),
+    ):
+        if not reference_path.exists():
+            record(
+                f"missing pane lifecycle reference in {tree_name} tree: "
+                f"{reference_path.relative_to(ROOT)}"
+            )
+            continue
+
+        for path in sorted(tree_root.rglob("*.md")):
+            if path == reference_path:
+                continue
+            content = " ".join(path.read_text().split())
+            for cmd in lifecycle_commands:
+                if cmd in content:
+                    record(
+                        f"{tree_name} tree: {path.relative_to(ROOT)} contains "
+                        f"inline lifecycle command '{cmd}' (should only be in "
+                        f"pane-lifecycle-rules.md)"
+                    )
+                    break
+
+
 def check_dispatch_runtime_routing() -> None:
     """Use Codex App threads when present and Herdr for CLI panes.
 
@@ -663,6 +712,7 @@ def main() -> None:
     check_runtime_boundaries()
     check_owner_dispatch_contract()
     check_dispatch_runtime_routing()
+    check_pane_lifecycle_single_source()
 
     metadata = CODEX_ROOT / "agents" / "openai.yaml"
     require(

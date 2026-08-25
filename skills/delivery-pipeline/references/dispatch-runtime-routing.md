@@ -112,12 +112,7 @@ Execution Worktree 和 registry 互相一致，packet 带 resolved owner/work it
    `herdr --session "$herdr_session_name" <group> ...`，每次从 JSON 读回真实 ID。
 2. workspace label 使用 map 标题，HITL tab 使用 `G-#<ticket>`，pane label 使用 ticket title；创建后
    readback 三层坐标，确保 lane 直接出现在用户的 Herdr UI。
-3. Claude pane 以完全授权模式启动：
-
-   ```bash
-   herdr --session "$herdr_session_name" agent start "$agent_name" \
-     --kind claude --pane "$pane_id" -- --dangerously-skip-permissions
-   ```
+3. Claude pane 按 `pane-lifecycle-rules.md` 的启动命令以完全授权模式启动。
 
 4. `bootstrap_authority: trusted_execution_bootstrap` 只自动处理两个已知 UI：
    - **workspace trust**：UI 路径必须完全等于 registry 的 Execution Worktree，且 Git common dir、
@@ -129,7 +124,7 @@ Execution Worktree 和 registry 互相一致，packet 带 resolved owner/work it
    每次匹配后调用 `herdr --session "$herdr_session_name" agent send-keys "$agent_name" enter`，再读
    `agent get` / `agent read`。授权状态按 `blocked -> idle -> working` 推进；其他 question/approval UI
    保留为 `blocked` 并交给用户。
-5. Claude 到达 `idle` 后，通过 `agent prompt` 投递 packet 的单行绝对路径引用。命令返回
+5. Claude 到达 `idle` 后，按 `pane-lifecycle-rules.md` 的投递机制投递 packet 的单行绝对路径引用。命令返回
    `agent prompt` accepted，且观察到 `idle -> working` 即 startup terminal；packet 与 registry 已
    持久化 owner、ticket 和坐标。HITL lane 跳过 `running` checkpoint，直接执行
    `created -> awaiting_human` 并写 `state: awaiting_human` 后精确 readback；非 HITL lane 写

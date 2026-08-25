@@ -71,7 +71,7 @@ map 对应的 space。用户随时在切换视图，裸命令等于把 worker �
 
 tab label 必须永远只反映**存活中**的 issue/lane。与 create+prompt 原子对同级强制：
 
-- **派发**：创建 pane → `agent prompt` 投递 → 按 design/execute 格式 rename →
+- **派发**：创建 pane → `agent prompt` 投递（机制见 pane-lifecycle-rules.md"投递机制"）→ 按 design/execute 格式 rename →
   `herdr tab rename` 同步存活 issue/lane IDs。
 - **收尾**：terminal fan-in 完成后 `pane close` → `tab rename`（剔除该 ID）→ 最后一个 pane 关闭时
   tab 会自动消失，**不需要**手动 `herdr tab close <tab_id>`。
@@ -92,12 +92,11 @@ import json,sys; panes=json.load(sys.stdin)['result']['panes']
 print(panes[-1]['pane_id'])
 ")
 
-# 2. 把默认 pane 变成第一个 worker
+# 2. 把默认 pane 变成第一个 worker（agent start 与投递命令见 pane-lifecycle-rules.md）
 herdr pane rename "$default_pane" '<design #编号 | execution #编号> <极短摘要>'
-herdr agent start '<agent-name>' --kind <kind> --pane "$default_pane" --cwd <path> --no-focus -- <args>
-herdr agent prompt '<agent-name>' '<packet-reference-command>' --wait --until working --timeout 15000
+# 启动 agent 并投递 packet（见 pane-lifecycle-rules.md）
 
-# 3. tab rename + 验证落点（见下节）
+# 3. tab rename + 验证落点（见 pane-lifecycle-rules.md"落点验证"）
 ```
 
 ## 标准创建命令（原子对：创建 + 投递 + 改名）
@@ -108,13 +107,12 @@ herdr agent prompt '<agent-name>' '<packet-reference-command>' --wait --until wo
 # 1. 在目标 space + tab 创建 pane 并启动 worker agent
 # (如果是新 workspace/tab，复用默认 pane；如果是既有 tab，split 既有 pane)
 
-# 2. 投递 dispatch packet（写文件 + 单行引用 + working 确认；机制见 pane-dispatch SKILL.md"投递机制"）
-herdr agent prompt <agent-name> "完整读取 <packet-file-path> 并严格按其中全部指令执行。" --wait --until working --timeout 15000
+# 2. 投递 dispatch packet（见 pane-lifecycle-rules.md"投递机制"）
 
 # 3. 同步 tab label（追加编号）
 herdr tab rename <tab_id> '<字母>-<存活 issue 或 lane ID 列表>'
 
-# 4. 验证落点（见下节）
+# 4. 验证落点（见 pane-lifecycle-rules.md"落点验证"）
 ```
 
 ## 回信地址与 WAKE 信号
@@ -138,8 +136,7 @@ WAKE 只是唤醒信号；lead 只认 pane 内的 final report 和真相源，�
 
 ## 创建后验证（每个 pane 必做）
 
-1. `herdr pane get <pane_id>`，确认 `workspace_id` 和 `tab_id` 都等于目标。
-2. 落点不符时 `herdr pane close <pane_id>`，重新解析目标后用显式参数重建；
-   连续两次落点错误则停下问用户。
+1. 按 pane-lifecycle-rules.md"落点验证"核对 `workspace_id` 和 `tab_id`。
+2. 落点不符时按该节流程 close、重试；连续两次落点错误则停下问用户。
 3. 把 space label、`workspace_id`、tab label、`tab_id`、pane label、`pane_id` 写进
    worker 坐标记录，并要求 worker readback 原样回报。
