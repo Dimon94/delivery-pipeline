@@ -103,6 +103,3 @@ Git worktrees fundamentally require branches. "No branches" is impossible — th
 
 **Not merge-based**
 Uses rebase to main, not merge commits. Keeps linear history per map.
-
-**Pane Dispatch Compatibility Helper**
-The Claude-only `pane-dispatch` skill retained for compatibility. It is not the canonical dispatch owner: `delivery-pipeline` now owns runtime-neutral Herdr lifecycle and configured pi/Codex/Claude worker startup. The helper may materialize a caller-supplied packet, but it does not own role configuration, maximal safe batch, worktrees, Integration, or fan-in.

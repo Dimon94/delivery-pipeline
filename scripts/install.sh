@@ -16,7 +16,7 @@ Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 Default target: codex
 
 Installs one canonical delivery-pipeline and delivery-pipeline-setup into each selected CLI home.
-Codex also receives delivery-pipeline-codex-app; Claude keeps pane-dispatch compatibility support.
+Codex also receives delivery-pipeline-codex-app; Codex and Claude receive ticket-sizing.
 All skills symlink to this checkout. The pre-commit validator is installed unless --no-hooks is used.
 EOF
 }
@@ -66,9 +66,9 @@ install_claude() {
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline" "Claude canonical delivery-pipeline"
   link_skill "$ROOT/skills/delivery-pipeline-setup" \
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-setup" "Claude delivery-pipeline-setup"
-  link_skill "$ROOT/claude/skills/pane-dispatch" \
-    "$CLAUDE_HOME_DIR/skills/pane-dispatch" "Claude pane-dispatch compatibility"
-  link_skill "$ROOT/claude/skills/ticket-sizing" \
+  # The retired pane-dispatch compatibility helper is superseded by the canonical core.
+  rm -rf "$CLAUDE_HOME_DIR/skills/pane-dispatch"
+  link_skill "$ROOT/skills/ticket-sizing" \
     "$CLAUDE_HOME_DIR/skills/ticket-sizing" "Claude ticket-sizing"
 }
 

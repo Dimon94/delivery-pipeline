@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "skills" / "delivery-pipeline"
 APP = ROOT / "skills" / "delivery-pipeline-codex-app"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
-PANE_DISPATCH = ROOT / "claude" / "skills" / "pane-dispatch"
+TICKET_SIZING = ROOT / "skills" / "ticket-sizing"
 
 DEPENDENCIES = [
     "wayfinder",
@@ -446,7 +446,7 @@ def check_app_shell() -> None:
 def check_tree_ownership() -> None:
     retired = (
         ROOT / "skills" / "delivery-pipeline-pi",
-        ROOT / "claude" / "skills" / "delivery-pipeline",
+        ROOT / "claude" / "skills",
     )
     for path in retired:
         if path.exists():
@@ -568,7 +568,7 @@ def check_context_and_docs() -> None:
 
 
 def check_pruned_policy() -> None:
-    roots = (CORE, APP, SETUP, ROOT / "claude" / "skills" / "pane-dispatch")
+    roots = (CORE, APP, SETUP, TICKET_SIZING)
     forbidden = (
         re.compile(r"估时"),
         re.compile(r"估档"),
@@ -603,9 +603,6 @@ def check_metadata_and_helpers() -> None:
             "allow_implicit_invocation: false",
         ),
     )
-    pane_fm = frontmatter(PANE_DISPATCH / "SKILL.md")
-    if pane_fm.get("name") != "pane-dispatch":
-        record("pane-dispatch compatibility helper name mismatch")
     if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):
         record("validator must remain executable")
 

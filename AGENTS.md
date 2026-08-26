@@ -5,7 +5,7 @@
 
 <project>
 定位:delivery-pipeline 多 runtime skill bundle —— 一条可恢复的交付链(idea/map → discovery → spec → tickets → 配置驱动的 CLI/worktree 分派 → integration → testing/review → 汇总 PR/MR)。
-Canonical CLI/Herdr 主干是 repo://skills/delivery-pipeline/,由 pi、Codex CLI、Claude CLI 共用;Codex App 特殊 transport 只在 repo://skills/delivery-pipeline-codex-app/;首次配置在 repo://skills/delivery-pipeline-setup/。repo://claude/skills/ 只保留 Claude-specific helper,不得复制主干。软链安装即生效;安装与用法见 repo://README.md 和 repo://README.zh-CN.md。
+Canonical CLI/Herdr 主干是 repo://skills/delivery-pipeline/,由 pi、Codex CLI、Claude CLI 共用;Codex App 特殊 transport 只在 repo://skills/delivery-pipeline-codex-app/;首次配置在 repo://skills/delivery-pipeline-setup/。ticket-sizing 粒度判据在 repo://skills/ticket-sizing/,主干树外不再有 runtime 副本。软链安装即生效;安装与用法见 repo://README.md 和 repo://README.zh-CN.md。
 事实优先级:运行证据 > 代码与 scripts/validate.py > repo://CONTEXT.md 与 accepted ADR > 推理。
 </project>
 

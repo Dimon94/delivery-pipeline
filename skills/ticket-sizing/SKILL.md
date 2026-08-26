@@ -17,4 +17,4 @@ description: Size implementation tickets by token budget — estimate the work's
 
 完成标准：票数不少于下限，且每张票的估算工作量都装进一个 smart zone。
 
-本 skill 只提供粒度判据；拆票流程的 owner 是 `$to-tickets`。
+本 skill 只提供粒度判据；拆票流程的 owner 是 `to-tickets`。
