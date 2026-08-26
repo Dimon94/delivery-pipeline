@@ -44,7 +44,8 @@ worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`�
 
 ## Terminal Fan-in
 
-- normal path 只消费 completed/blocked terminal event；HITL 由用户完成信号唤醒。
+- normal path 只消费 completed/blocked terminal event（由 `pane-lifecycle-rules.md` 的
+  LANE_DONE watcher 合同产生）；HITL 由用户完成信号唤醒。
 - final report 是 transport cache；Git、tracker 与 artifact 是持久证据。
 - 用户返回后对 pane 做一次 bounded read；final marker 缺字段记 Unknown，不要求 worker 重显。
 - coordinator 用 registry、worktree base/head/diff/dirty state、tracker 与 artifacts 验证，按 dependency

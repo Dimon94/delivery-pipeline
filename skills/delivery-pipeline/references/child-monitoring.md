@@ -8,7 +8,7 @@ monitor 请求才进入本文件。
 - 从 registry 恢复 session/workspace/tab/pane、role、output_mode、agent/model/effort 与 worktree。
 - 显式 monitor 时对目标 lane 做一次 bounded get/read；routine progress不触发 fan-in。
 - final marker 缺字段记 Unknown；Git、tracker、artifact与 registry 是持久证据，不要求重显。
-- HITL `awaiting_human` 只由用户返回触发；恢复不挂新 listener、不定时 wait。
+- HITL `awaiting_human` 只由用户返回触发；恢复不挂新 watcher、不定时 wait。
 
 ## Role-aware Terminal Outcomes
 

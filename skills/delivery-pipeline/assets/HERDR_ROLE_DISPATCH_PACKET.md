@@ -5,6 +5,7 @@ effort并在启动前写入 registry；worker 不自行切换 agent/model/effort
 
 ```text
 Coordinator task：
+Lane ID：<lane_id>
 Herdr session/workspace/tab/pane：
 Role：<planning | design | frontend | backend | testing | review>
 Output mode：<commit | artifact | checks | verdict>
@@ -45,6 +46,9 @@ Base commit：<integration-branch-HEAD-at-creation>
 完成标准：
 - Work item acceptance 已满足，或已有精确 blocker。
 - final report 包含 role、output mode、agent/model/effort、对应 evidence、dirty state 与 touched files。
+- 到达终态（completed 或 blocked）后在 final report 之外，额外在终端输出单独一行
+  `LANE_DONE <lane_id>`，该行不得包含其他内容。这是 coordinator watcher 的唯一完成信号；
+  遗漏会导致 lane 完成后无法自动唤醒 fan-in。
 
 FINAL_REPORT_BEGIN
 Work item：

@@ -385,6 +385,46 @@ def check_packets() -> None:
     )
 
 
+def check_lane_wakeup() -> None:
+    packet = CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
+    require(
+        packet,
+        (
+            "Lane ID：",
+            "LANE_DONE <lane_id>",
+        ),
+    )
+    lifecycle = CORE / "references" / "pane-lifecycle-rules.md"
+    require(
+        lifecycle,
+        (
+            "scripts/lane-watch.sh",
+            "LANE_DONE <lane_id>",
+            "`done` 事件",
+        ),
+    )
+    code_blocks = re.findall(r"```(?:bash|sh|text)?\n(.*?)\n```", lifecycle.read_text(), re.DOTALL)
+    if any("--until done" in block for block in code_blocks):
+        record("pane-lifecycle-rules.md still relies on the unreliable `herdr agent wait --until done` listener")
+    watcher = CORE / "scripts" / "lane-watch.sh"
+    if not watcher.exists():
+        record("missing lane watcher: skills/delivery-pipeline/scripts/lane-watch.sh")
+        return
+    watcher_text = watcher.read_text()
+    require(
+        watcher,
+        (
+            "LANE_DONE",
+            "herdr pane read",
+            "herdr agent prompt",
+        ),
+    )
+    for banned in ("w26:p1", "xcodebuild", "feature/map-", "pagugu"):
+        if banned in watcher_text:
+            record(f"lane-watch.sh carries session-specific hardcode: {banned}")
+    subprocess.run(["bash", "-n", str(watcher)], check=True)
+
+
 def check_app_shell() -> None:
     require(
         APP / "SKILL.md",
@@ -614,6 +654,7 @@ def main() -> None:
     check_runtime_neutrality()
     check_model_contract()
     check_packets()
+    check_lane_wakeup()
     check_app_shell()
     check_tree_ownership()
     check_installer()

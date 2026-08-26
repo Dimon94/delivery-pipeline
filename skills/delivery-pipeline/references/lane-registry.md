@@ -76,6 +76,6 @@ Worktree/branch、Map Run Authority与 test strategy。Herdr session/workspace/t
    existing lane不应用新 config也不迁移 Workspace，新 lane重新解析 Coordinator Pane当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。
-4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 listener、不定时 wait。
+4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
 5. `integrated` / `consumed` / `close_pending` 按 cleanup contract readback或重试。
 6. registry 与现实不一致时写 `stale`并保留证据，不覆盖可能存在的 writer。

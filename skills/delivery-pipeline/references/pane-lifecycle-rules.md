@@ -1,6 +1,6 @@
 # Pane 生命周期规则
 
-投递机制、落点验证、Working 确认、lifecycle 配对与 listener 前提的唯一定义点。
+投递机制、落点验证、Working 确认、lifecycle 配对与 watcher 前提的唯一定义点。
 Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 
 ## 批级并发序列
@@ -12,7 +12,7 @@ Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 3. **并发段 B**：按配置并发 agent start + packet 投递；投递不阻塞。
 4. **记账段**：rename pane + sync tab label，与 agent 冷启动重叠。
 5. **聚合 Working 确认**：并行等待各 agent working；单项失败独立隔离。
-6. **Listener + 聚合 readback**：确认 working 后挂 listener，聚合 registry readback，到达
+6. **Watcher + 聚合 readback**：确认 working 后挂 lane watcher，聚合 registry readback，到达
    Dispatch Handoff。
 
 ## 投递
@@ -71,24 +71,30 @@ herdr agent wait "$agent_name" --until working --timeout 15000
 ```
 
 失败时 get/read 一次、重投 packet 一次、再确认一次；仍失败执行 close + label 对账并写
-`setup_blocked`。确认前不挂 listener。
+`setup_blocked`。确认前不挂 watcher。
 
-## Listener
+## Terminal Signal 与 Watcher
+
+Terminal signal 的唯一 canonical 合同：worker 按 packet 要求在终态输出单行
+`LANE_DONE <lane_id>` 标记，coordinator 侧 watcher 探测该标记后唤醒 Coordinator Pane。
+不用 `herdr agent wait --until done`：CLI agent 完成回合回到 idle 不会触发 `done` 事件，
+listener 会永久阻塞（pi lane 实测复现）。
+
+聚合 working 确认后，为每条 lane 挂 watcher：
 
 ```bash
-(
-  herdr agent wait "$pane_id" --until done --timeout 7200000
-  if [ -n "$lead_pane_id" ]; then
-    herdr agent prompt "$lead_pane_id" "WAKE: $pane_label done"
-  fi
-) &
+nohup "$SKILL_ROOT/scripts/lane-watch.sh" \
+  "$pane_id" "$coordinator_pane_id" "$lane_id" "$lane_label" \
+  >/tmp/lane-watch-"$lane_id".log 2>&1 &
 ```
 
-WAKE 只负责唤醒；Git、tracker、artifact 与 registry 承载完成证据。默认 timeout 两小时；
-不建立固定轮询。
+watcher 每 20s 轮询 worker pane 输出，见到 `LANE_DONE <lane_id>` 立即 prompt Coordinator
+Pane；pane 异常消失或两小时超时也会唤醒 coordinator 处理。HITL lane 的唤醒仍以用户完成
+信号为准，watcher 只作 terminal 补充。WAKE 只负责唤醒；Git、tracker、artifact 与 registry
+承载完成证据。
 
 ## Lifecycle 配对
 
 派发：tab/pane create → placement verify → start → non-blocking prompt → rename/label → aggregate
-working → listener。收尾：关闭本 lane pane/tab；保留 Coordinator Pane与承载 Workspace。
+working → watcher。收尾：关闭本 lane pane/tab；保留 Coordinator Pane与承载 Workspace。
 startup/fan-in/watchdog 只做一次 bounded pane 对账。

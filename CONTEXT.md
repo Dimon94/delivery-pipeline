@@ -52,6 +52,9 @@ One bounded tracker snapshot, the minimum dependency-ordered write layers, and o
 **Dispatch Handoff**
 Dispatch Handoff is batch-scoped. It is the control-plane terminal after every item in the selected maximal safe batch is accounted for: each successful user-visible lane has verified coordinates and isolation, accepted its packet, entered `working`, and persisted the runtime state; each failed setup is durably isolated as `setup_blocked`. The coordinator reports the batch coordinates and ends its turn only after the whole batch, then resumes on a user completion signal, a real terminal event, or an explicit monitor request; repository file overlap is an Integration risk handled by isolated Execution Worktrees and serial fan-in, not a dispatch blocker.
 
+**Lane Terminal Signal**
+The worker-emitted single-line `LANE_DONE <lane_id>` marker required by the dispatch packet at both completed and blocked terminal states. The coordinator-side lane watcher (`scripts/lane-watch.sh`) polls the worker pane output for the marker and prompts the Coordinator Pane; pane-vanished and two-hour timeout also wake the coordinator. `herdr agent wait --until done` is not a valid terminal signal: CLI agents settle back to idle without emitting a `done` event, so a `done` listener blocks forever. HITL lanes still wake on the user completion signal; the watcher is only a terminal backstop.
+
 **HITL Handoff**
 The Herdr specialization of Dispatch Handoff. A configured pi, Codex CLI, or Claude CLI pane has accepted its packet and entered `working`; its lane persists `awaiting_human`. The user completes the live discussion in Herdr, then returns to the current coordinator session to trigger terminal fan-in from durable evidence.
 
@@ -76,7 +79,7 @@ The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-c
 - pi starts with `--approve --model <model> --thinking <effort>`; Codex CLI with `--model <model>` plus `model_reasoning_effort`; Claude CLI with `--model <model> --effort <effort>`. Kind-specific permissions belong to Trusted Execution Bootstrap.
 - `skills/delivery-pipeline-codex-app` is the only transport shell. It skips Worker Role Configuration and maps all six delegated roles to Codex App tasks + App-managed Execution Worktrees (`codex-thread`); its packet, registry overlay, role-aware fan-in, and task references are co-located inside that shell.
 - `delivery-pipeline-setup` probes pi (`pi --list-models`), Codex (`codex debug models`), and Claude `settings.json.env`, then requires explicit choices for all six roles. There are no built-in agent/model/effort defaults.
-- Same-batch lanes complete startup readback before Dispatch Handoff; long tasks wake the current coordinator only on user completion, real terminal event, or explicit monitor request.
+- Same-batch lanes complete startup readback before Dispatch Handoff; long tasks wake the current coordinator only on user completion, Lane Terminal Signal, or explicit monitor request.
 - Each lane persists role, output mode (`commit | artifact | checks | verdict`), agent, model, effort, evidence, runtime, permissions, worktree, and transport coordinates. Only commit mode cherry-picks; artifact/checks/verdict modes verify durable evidence then become `consumed`. Existing lanes recover by registry rather than new configuration.
 - Map Run Authority covers named-map canonical tracker transitions and next ready frontier; final publication remains an independent gate.
 - Ready frontier, one writer, Execution Worktree isolation, Integration, and terminal fan-in do not change with agent kind.
