@@ -48,6 +48,9 @@ herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
 `agent start` 不支持 `--cwd`；cwd 在 pane split/create 时绑定。shell 未就绪时先等待
 `agent_status` 非 unknown。Agent name 使用 lowercase alphanumeric + hyphens。
 
+Model/effort 只在该启动命令中绑定一次。之后不做 pane model 对账：运行中或 fan-in 发现 pane
+实际 model 与 registry 不符（通常是用户改的），不构成 setup 失败，不重建 lane，不阻塞交付。
+
 ## 落点验证
 
 默认拓扑是一 lane一 tab：

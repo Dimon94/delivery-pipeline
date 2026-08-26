@@ -41,6 +41,11 @@ skill 与 reference 不提供默认 agent/model/effort。有效配置必须同�
 
 当前 coordinator 会话不属于任何 worker 角色；它使用启动时已经选择的 agent/model。
 
+配置只绑定 lane 启动参数（见下文 Dispatch 验证）。Lane 启动后用户在 worker pane 中改
+model/effort 属正常操作：coordinator 不做运行中或 fan-in 的 pane model 对账，不把 pane 实际
+model 与 registry 不符当作 setup 失败，不因此重建 lane、回写配置或拒收交付；fan-in 只验收持久
+交付证据。
+
 ## Agent Adapter
 
 ### pi

@@ -1,7 +1,8 @@
 # Herdr Configured Role Dispatch Packet
 
 所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 2 配置解析 role、agent、model、
-effort并在启动前写入 registry；worker 不自行切换 agent/model/effort。
+effort并在启动前写入 registry；worker 不自行切换 agent/model/effort，但用户可在 pane 中改
+模型，worker 照常交付。
 
 ```text
 Coordinator task：
@@ -41,7 +42,8 @@ Base commit：<integration-branch-HEAD-at-creation>
   - `checks`：运行 whole-change checks并报告命令/结果，保持 clean；
   - `verdict`：执行 review owner并报告 verdict/findings，保持 clean。
 - 保留 tracker fan-in、cherry-pick、Integration 和 remote actions 给 coordinator。
-- 当前 Agent/Model/Effort/Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
+- 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。Agent/Model/Effort 与
+  packet 不符（通常是用户在本 pane 改了模型）不停止：照常交付，并在 final report 记录实际值。
 
 完成标准：
 - Work item acceptance 已满足，或已有精确 blocker。

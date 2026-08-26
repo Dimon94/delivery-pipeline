@@ -96,6 +96,9 @@ readback。
 
 - 配置文件是 worker agent/model/effort 的唯一真相源；临时改变通过重新运行
   `delivery-pipeline-setup` 持久化，不做只存在于对话里的覆盖。
+- Model/effort 只在 lane 启动时绑定；派发后用户在 worker pane 中改模型属正常操作，运行中与
+  fan-in 不做 pane model 对账，交付只按持久证据验收，不因 model 与 registry 不符而阻塞或重建
+  lane。
 - ready ticket = open、未被 claim、全部 blockers completed。dependency 相连的 tickets 按 graph
   顺序；普通 repo 文件路径重叠留给 Integration，不产生隐式 dependency。
 - 每张 ticket 一个 lane、一个 owner、一个 Execution Worktree/branch；worker 不领取 sibling。
