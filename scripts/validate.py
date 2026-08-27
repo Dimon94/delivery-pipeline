@@ -170,7 +170,9 @@ def check_core_contract() -> None:
     require(
         CORE / "references" / "pane-lifecycle-rules.md",
         (
-            "每条新 lane 默认在目标 Workspace 新建 tab",
+            "每个 worker tab 最多 4 pane",
+            "溢出依次 `X-2`、`X-3`",
+            "`G-#<ticket>`",
             "coordinator pane 不作为 worker pane",
             "--cwd <Execution Worktree>",
         ),
@@ -192,6 +194,15 @@ def check_core_contract() -> None:
         for phrase in phrases:
             if phrase in text:
                 record(f"legacy per-map workspace rule restored: {path.relative_to(ROOT)}: {phrase}")
+    legacy_topology_rules = {
+        CORE / "references" / "pane-lifecycle-rules.md": ("每条新 lane 默认在目标 Workspace 新建 tab", "一 lane一 tab"),
+        CORE / "SKILL.md": ("为每条 lane 新建 tab/pane",),
+    }
+    for path, phrases in legacy_topology_rules.items():
+        text = path.read_text()
+        for phrase in phrases:
+            if phrase in text:
+                record(f"legacy one-lane-per-tab rule restored: {path.relative_to(ROOT)}: {phrase}")
     require(
         CORE / "references" / "frontier-lanes.md",
         (
@@ -603,6 +614,17 @@ def check_context_and_docs() -> None:
             "只有用户显式要求时才创建新 Workspace",
             "Coordinator Pane 只承担调度",
             "取代 ADR-0001",
+        ),
+    )
+    require(
+        ROOT / "docs" / "adr" / "0006-worker-tab-capacity-and-naming.md",
+        (
+            "Status:** Accepted",
+            "每个 worker tab 最多 4 pane",
+            "X-#391·#392",
+            "G-#<ticket>",
+            "取代 ADR-0005",
+            "current-workspace-first 前提",
         ),
     )
 

@@ -61,7 +61,8 @@ git -C "$INTEGRATION_ROOT" worktree add -b "$EXECUTION_BRANCH" "$EXECUTION_PATH"
    无法证明则记 `path_conflict` / Unknown。
 3. 创建后验证 path、branch、HEAD、common dir、clean state。
 4. registry 写 role、agent、model、effort、runtime、worktree、branch、base commit，readback 后才在
-   dispatch target Workspace创建 lane tab/pane；不改变 Coordinator Pane cwd/branch。
+   dispatch target Workspace按 `pane-lifecycle-rules.md` 容量管理规则放置 lane pane;不改变
+   Coordinator Pane cwd/branch。
 
 ## Recovery
 

@@ -7,10 +7,11 @@ Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 
 1. **批级前置（唯一串行段）**：从 Coordinator Pane caller context 解析并 readback Herdr
    session/workspace/tab/pane；只有用户显式要求时才把新 Workspace 作为目标。
-2. **并发段 A**：每条新 lane 默认在目标 Workspace 新建 tab，使用
-   `--cwd <Execution Worktree>` 并保持 `--no-focus`，随后验证返回的 root pane 落点。
+2. **并发段 A**:按下方“拓扑与命名”的容量管理规则放置 lane pane:worker tab 内用
+   `pane split`(`--cwd <Execution Worktree>`、`--no-focus`)落到未占用角落;新 worker tab
+   用 `tab create` 并由 root pane 承载首条 lane;随后验证落点。
 3. **并发段 B**：按配置并发 agent start + packet 投递；投递不阻塞。
-4. **记账段**：rename pane + sync tab label，与 agent 冷启动重叠。
+4. **记账段**:rename pane 为 work item 标题 + 把编号并入 tab label,与 agent 冷启动重叠。
 5. **聚合 Working 确认**：并行等待各 agent working；单项失败独立隔离。
 6. **Watcher + 聚合 readback**：确认 working 后挂 lane watcher，聚合 registry readback，到达
    Dispatch Handoff。
@@ -51,19 +52,42 @@ herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
 Model/effort 只在该启动命令中绑定一次。之后不做 pane model 对账：运行中或 fan-in 发现 pane
 实际 model 与 registry 不符（通常是用户改的），不构成 setup 失败，不重建 lane，不阻塞交付。
 
+## 拓扑与命名
+
+默认拓扑是容量管理的 worker tab,不是一 lane 一 tab(本规则取代 ADR-0005 的“每条 lane
+独立 tab/pane”条款;current-workspace-first 前提不变):
+
+- Coordinator Pane 所在 tab 不放 worker lane,它只承担调度。
+- Worker tab 命名为 `X`,溢出依次 `X-2`、`X-3`;每个 worker tab 最多 4 pane。tab label
+  跟踪活跃 work item 编号:`X-#391·#392`。
+- HITL lane(grilling/prototype 等需要用户对话的 lane)用独立 tab `G-#<ticket>`,不占
+  X tab 容量。
+- pane label 使用 work item 标题;agent name 仍为 lowercase alphanumeric + hyphens。
+- tab 内落点按 herdr 几何规则分布四角:先读 `herdr pane layout --pane "$anchor_pane_id"`,
+  宽 pane 向右 split、窄或高 pane 向下 split,依次占满未占用角落;同 tab 第 5 条 lane 不再
+  split,改开下一个 worker tab。
+
 ## 落点验证
 
-默认拓扑是一 lane一 tab：
+tab 内新增 pane:
+
+```bash
+herdr pane split --pane "$anchor_pane_id" --direction "$direction" \
+  --cwd "$execution_worktree" --no-focus
+```
+
+新 worker tab 的首条 lane:
 
 ```bash
 herdr tab create --workspace "$workspace_id" --cwd "$execution_worktree" \
-  --label "$lane_label" --no-focus
+  --label "$tab_label" --no-focus
 ```
 
-从返回值读取真实 tab/pane ID，再执行 `herdr pane get "$pane_id"`；断言 workspace_id、tab_id 与
-目标一致，且 coordinator pane 不作为 worker pane。用户显式要求新 Workspace 时，创建响应的
-root pane可承载首条 lane，其余 lane仍新建 tab。落点错误时关闭本 lane tab/pane并用显式
-workspace/tab重试一次；第二次失败写 `setup_blocked`，继续 siblings。
+从返回值读取真实 tab/pane ID,再执行 `herdr pane get "$pane_id"`;断言 workspace_id、tab_id 与
+目标一致,且 coordinator pane 不作为 worker pane。用户显式要求新 Workspace 时,创建响应的
+root pane可承载首条 lane,其余 lane仍按容量规则放入 worker tab。落点错误时关闭本 lane
+pane(新空 tab 一并关闭)并用显式 workspace/tab重试一次;第二次失败写 `setup_blocked`,
+继续 siblings。
 
 ## Working 确认
 
@@ -98,6 +122,8 @@ Pane；pane 异常消失或两小时超时也会唤醒 coordinator 处理。HITL
 
 ## Lifecycle 配对
 
-派发：tab/pane create → placement verify → start → non-blocking prompt → rename/label → aggregate
-working → watcher。收尾：关闭本 lane pane/tab；保留 Coordinator Pane与承载 Workspace。
+派发:tab create/pane split → placement verify → start → non-blocking prompt → rename/label
+→ aggregate working → watcher。收尾:关闭本 lane pane,从 X tab label 移除其编号;X tab 空后
+label 还原为 `X`/`X-2` 并保留 tab 供后续 lane 复用,`G-#` tab 随本 lane pane 一并关闭;保留
+Coordinator Pane与承载 Workspace。
 startup/fan-in/watchdog 只做一次 bounded pane 对账。

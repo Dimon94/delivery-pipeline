@@ -71,9 +71,10 @@ readback。
    coordinator 不亲自实现。
    完成标准：本批每条 lane 已持久化 role、agent、model、effort、runtime、pane、worktree、
    branch 与 base commit。
-5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 在 dispatch
-   target Workspace 为每条 lane 新建 tab/pane，并将 cwd 绑定到对应 Execution Worktree；Coordinator
-   Pane 只调度，不作为 worker pane。验证落点、启动配置指定的 CLI、投递 packet、聚合确认
+5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 的容量管理规则
+   在 dispatch target Workspace 放置 lane pane(worker tab 最多 4 pane、四角分布、溢出开新
+   tab),并将 cwd 绑定到对应 Execution Worktree;Coordinator Pane 只调度,不作为 worker
+   pane。验证落点、启动配置指定的 CLI、投递 packet、聚合确认
    `working`。kind 与 runtime 必须匹配：
    pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
    错误落点、owner 未读、model/effort 不可用时沿同一配置重建一次；第二次失败记

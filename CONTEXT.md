@@ -89,7 +89,7 @@ The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-c
 
 - One running Herdr session → many Herdr workspaces
 - One Herdr workspace → many coordinator and worker panes across maps
-- One Coordinator Pane → one current Herdr workspace → new lanes default to sibling tabs in that workspace
+- One Coordinator Pane → one current Herdr workspace → new lanes default to capacity-managed worker tabs in that workspace (max 4 panes per tab, four-corner splits, overflow tabs `X-2`/`X-3`; HITL lanes get a `G-#<ticket>` tab)
 - One map → one integration worktree → many execution worktrees and runtime-owned lanes
 - One map → many discovery tickets → configured planning/design lanes → many Herdr panes
 - One execution worktree → one Codex App task or one Herdr-hosted Codex CLI/Claude Code/pi pane
