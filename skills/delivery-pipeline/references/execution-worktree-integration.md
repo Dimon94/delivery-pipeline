@@ -14,7 +14,9 @@ checks与 verdict 是执行真相源。
 
 适用于 design/frontend/backend implementation。
 
-1. 要求 terminal commit包含 base commit，且只承载 packet work item；无 commit或 dirty未说明时阻塞。
+1. 要求 terminal commit包含 base commit，且只承载 packet work item；验证内嵌 code-review 的
+   Review fixed point 等于 lane base commit、bundle 七文件 readback存在；无 commit、review evidence
+   或 dirty未说明时阻塞。
 2. 在 Map Integration Worktree按 dependency order执行 `git cherry-pick "$TERMINAL_COMMIT"`。
 3. 冲突时 `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
    `resolving-merge-conflicts` owner。
@@ -25,7 +27,8 @@ checks与 verdict 是执行真相源。
 
 - `artifact`：验证 tracker/artifact URL/ID/body与 expected work item一致。
 - `checks`：验证完整命令、结果与失败细节；失败写 `blocked`并阻止 review。
-- `verdict`：验证 verdict/findings；blocking finding写 `blocked`并阻止 closeout。
+- `verdict`：验证 Review fixed point 等于 map registry base commit、bundle 七文件在 fan-in 时可读、
+  verdict/findings完整；blocking finding写 `blocked`并阻止 closeout。
 
 三类都不要求 commit、不 cherry-pick。worktree必须 clean；若 owner确实需要 repo 变更，packet应改成
 `commit` mode并重派，不能把 dirty state当 artifact。成功写 `consumed`。

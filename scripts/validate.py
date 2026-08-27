@@ -148,6 +148,9 @@ def check_core_contract() -> None:
             "output_mode: commit",
             "output_mode: checks",
             "output_mode: verdict",
+            "references/code-review-evidence-preflight.md",
+            "Review fixed point: <Execution Base commit>",
+            "Review Evidence Bundle",
             "写 `consumed`",
             "不静默回落",
         ),
@@ -182,6 +185,8 @@ def check_core_contract() -> None:
         (
             "Map Integration Worktree/branch 不存在时创建独立 worktree 与 branch",
             "不在 coordinator pane 的 cwd 切换 branch",
+            "base_commit: <SOURCE_HEAD>",
+            "whole-change Review fixed point",
         ),
     )
     legacy_workspace_rules = {
@@ -231,6 +236,8 @@ def check_core_contract() -> None:
             "test_strategy:",
             "agent_permission_mode: approve | danger-full-access | dangerously-skip-permissions | none",
             "model_evidence:",
+            "作为 whole-change Review fixed point",
+            "后续 Integration 不改写",
         ),
     )
     registry_text = registry.read_text()
@@ -245,9 +252,11 @@ def check_core_contract() -> None:
         (
             "Role-aware Terminal Outcomes",
             "`commit`",
+            "code-review Review Evidence Bundle readback",
             "`artifact`",
             "`checks`",
             "`verdict`",
+            "Review Evidence Bundle readback",
             "只有 `commit` mode 进入 cherry-pick",
         ),
     )
@@ -256,7 +265,11 @@ def check_core_contract() -> None:
         (
             "Commit Mode",
             "Artifact / Checks / Verdict Modes",
+            "内嵌 code-review 的",
+            "Review fixed point 等于 lane base commit",
             "不要求 commit、不 cherry-pick",
+            "Review fixed point 等于 map registry base commit",
+            "bundle 七文件在 fan-in 时可读",
             "成功写 `consumed`",
             "integrated` 或 `consumed",
         ),
@@ -389,9 +402,33 @@ def check_packets() -> None:
             "Owner skill name",
             "Owner skill SKILL.md：<absolute resolved path>",
             "Owner skill invocation label",
+            "Review fixed point：<execution-base-commit | map-registry-base-commit | none>",
+            "Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>",
             "先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path",
+            "preflight bundle 完成前不派生 Standards/Spec 子审查",
+            "Review evidence：<fixed-point/head/bundle-readback | none>",
             "FINAL_REPORT_BEGIN",
             "FINAL_REPORT_END",
+        ),
+    )
+    require(
+        CORE / "references" / "code-review-evidence-preflight.md",
+        (
+            "`implement` owner",
+            "`commit` lane",
+            "`verdict` lane",
+            "Map Integration Worktree",
+            "Review Evidence Bundle",
+            "diff.patch",
+            "commits.txt",
+            "changed-paths.txt",
+            "fixed-point-added-paths.txt",
+            "worktree-state.txt",
+            "untracked additions",
+            "NO_STAGED_FILES=true|false",
+            "commands.txt",
+            "review-only/no-acceptance",
+            "正常路径不产生索取 Git/path 输出的 supervisor 往返",
         ),
     )
 
@@ -453,6 +490,8 @@ def check_app_shell() -> None:
             "App-managed Execution Worktree",
             "references/codex-app-dispatch.md",
             "assets/APP_ROLE_DISPATCH_PACKET.md",
+            "../delivery-pipeline/references/code-review-evidence-preflight.md",
+            "Review Evidence Bundle",
         ),
     )
     require(
@@ -474,6 +513,8 @@ def check_app_shell() -> None:
             "thread_id:",
             "thread_archived:",
             "Role-aware Fan-in",
+            "Review Evidence Bundle readback",
+            "Review fixed point 等于 lane base commit",
             "非 commit lane 不要求 commit",
             "task-coordinate-title.md",
         ),
@@ -486,6 +527,10 @@ def check_app_shell() -> None:
             "Output mode：<commit | artifact | checks | verdict>",
             "Owner skill name",
             "Owner skill SKILL.md：<absolute resolved path>",
+            "Review fixed point：<execution-base-commit | map-registry-base-commit | none>",
+            "Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>",
+            "preflight bundle 完成前不派生 Standards/Spec 子审查",
+            "Review evidence：<fixed-point/head/bundle-readback | none>",
             "FINAL_REPORT_BEGIN",
             "FINAL_REPORT_END",
         ),
@@ -545,6 +590,8 @@ def check_context_and_docs() -> None:
         ROOT / "CONTEXT.md",
         (
             "Configured Planning Lane",
+            "Review Evidence Bundle",
+            "Reviewers consume the same bundle with read/search access",
             "Worker Role Configuration",
             "exactly six worker roles",
             "current calling session is the coordinator",

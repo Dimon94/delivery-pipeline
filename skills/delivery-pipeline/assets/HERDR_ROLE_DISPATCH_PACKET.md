@@ -27,6 +27,8 @@ Integration branch：feature/map-<map-issue>
 Execution worktree：<execution-worktree-path>
 Execution branch：<pi|codex|claude>/issue-<ticket-number-or-coordinate>
 Base commit：<integration-branch-HEAD-at-creation>
+Review fixed point：<execution-base-commit | map-registry-base-commit | none>
+Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>
 允许编辑：
 -
 禁止范围：
@@ -36,12 +38,17 @@ Base commit：<integration-branch-HEAD-at-creation>
 - 确认 cwd 位于 Execution Worktree（not Integration Worktree，not Source Worktree）。
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再按其 contract
   处理本 Work item。invocation label 只用于说明，不依赖 pane catalog。
+- 当前 owner 直接或嵌套调用 `code-review` 时，完整读取 Review evidence preflight；`commit` mode
+  的 Review fixed point 等于本 Execution Worktree 的 Base commit，`verdict` mode 等于 map registry
+  base commit。preflight bundle 完成前不派生 Standards/Spec 子审查。
 - 只处理本 Work item，不领取 sibling/dependent item，也不进入下一 gate。
 - 按 Output mode 交付：
-  - `commit`：实现变更并创建一个仅含本 Work item 的 local commit；
+  - `commit`：实现变更；owner 调用 `code-review` 时先按 Review evidence preflight 物化当前
+    dirty worktree 证据，再创建一个仅含本 Work item 的 local commit；
   - `artifact`：产出 tracker/artifact坐标，无必要 repo 变更时保持 clean；
   - `checks`：运行 whole-change checks并报告命令/结果，保持 clean；
-  - `verdict`：执行 review owner并报告 verdict/findings，保持 clean。
+  - `verdict`：按 Review evidence preflight 一次物化 Git/path/staged 证据，再执行 review owner；
+    所有只读子 reviewer 共用 bundle并报告 verdict/findings，保持 clean。
 - 保留 tracker fan-in、cherry-pick、Integration 和 remote actions 给 coordinator。
 - 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
 - 当前 Agent/Model/Effort 与 packet 不符（通常是用户在本 pane 改了模型）时不阻塞，继续执行，
@@ -49,7 +56,8 @@ Base commit：<integration-branch-HEAD-at-creation>
 
 完成标准：
 - Work item acceptance 已满足，或已有精确 blocker。
-- final report 包含 role、output mode、agent/model/effort、对应 evidence、dirty state 与 touched files。
+- final report 包含 role、output mode、agent/model/effort、对应 evidence、dirty state 与 touched files；
+  `commit` 与 `verdict` 还包含 review branch、Review fixed point、HEAD 与 bundle readback。
 - 到达终态（completed 或 blocked）后在 final report 之外，额外在终端输出单独一行
   `LANE_DONE <lane_id>`，该行不得包含其他内容。这是 coordinator watcher 的唯一完成信号；
   遗漏会导致 lane 完成后无法自动唤醒 fan-in。
@@ -63,6 +71,7 @@ Agent/model/effort：
 Pane/worktree/branch：
 Commit：<hash subject | none>
 Artifacts/checks/verdict：
+Review evidence：<fixed-point/head/bundle-readback | none>
 Dirty state：
 Touched files：
 Blocker：

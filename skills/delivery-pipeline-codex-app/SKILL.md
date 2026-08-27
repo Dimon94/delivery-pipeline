@@ -25,7 +25,10 @@ disable-model-invocation: true
    - review → `output_mode: verdict`
    map creation与用户 gate 判断仍留在当前 App coordinator。
 4. 所有 delegated roles 使用本壳 `assets/APP_ROLE_DISPATCH_PACKET.md`；创建、恢复、startup
-   readback、role-aware fan-in、archive 与 cleanup 加载 `references/codex-app-dispatch.md`。
+   readback、role-aware fan-in、archive 与 cleanup 加载 `references/codex-app-dispatch.md`。commit 与
+   review roles 还传递 canonical `../delivery-pipeline/references/code-review-evidence-preflight.md` 的
+   绝对路径：commit 使用 Execution Base commit，verdict 使用 map registry base commit，沿同一
+   Review Evidence Bundle 合同运行只读子审查。
 5. 当前 App 明确选择 Herdr 时退出本壳，改用 canonical `delivery-pipeline`；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 

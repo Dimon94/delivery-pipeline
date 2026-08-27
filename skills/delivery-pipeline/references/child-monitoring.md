@@ -14,10 +14,10 @@ monitor 请求才进入本文件。
 
 | Output mode | Required terminal evidence | Fan-in state |
 |---|---|---|
-| `commit` | terminal commit + clean/declared dirty state + touched files | cherry-pick → `integrated` |
+| `commit` | terminal commit + code-review Review Evidence Bundle readback + clean/declared dirty state + touched files | cherry-pick → `integrated` |
 | `artifact` | tracker/artifact坐标 + clean worktree | `consumed` |
 | `checks` | commands/results + clean worktree | `consumed`，失败阻塞 review |
-| `verdict` | verdict/findings + clean worktree | `consumed`，blocking finding阻塞 closeout |
+| `verdict` | map-base fixed point + Review Evidence Bundle readback + verdict/findings + clean worktree | `consumed`，blocking finding阻塞 closeout |
 
 只有 `commit` mode 进入 cherry-pick。其他 mode 不要求 commit；出现未说明文件变更时 fail closed。
 

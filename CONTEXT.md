@@ -67,6 +67,9 @@ The post-Integration transport state of a `codex-thread` lane owned by the Codex
 **Configured Planning Lane**
 A Herdr worker handling one AFK discovery/research item or one spec/tickets gate. Its agent, model, and effort come from the `planning` role in the version 2 worker configuration; it uses the same registry, packet, Dispatch Handoff, and fan-in contract as other configured lanes.
 
+**Review Evidence Bundle**
+A repo-external, single-snapshot evidence set produced by the parent worker before `code-review` fans out to read-only Standards/Spec reviewers. It contains the resolved fixed point and HEAD, exact patch, commits, complete changed-path inventory, fixed-point additions, worktree/staged state, and producing commands. An implementation lane uses its Execution Worktree base commit as fixed point; the whole-change review lane uses the Map Integration Worktree creation base persisted in the map registry. Reviewers consume the same bundle with read/search access instead of requesting Git authority from the supervisor.
+
 **Worker Role Configuration**
 The user-level file `~/.config/delivery-pipeline/model-roles.json`. Version 2 defines exactly six worker roles—`planning`, `design`, `frontend`, `backend`, `testing`, `review`—and requires a non-empty `agent`, `model`, and `effort` for each. It contains no coordinator entry: the current calling session is the coordinator. Skills contain no default model routing; missing or invalid configuration blocks dispatch and runs `delivery-pipeline-setup`.
 

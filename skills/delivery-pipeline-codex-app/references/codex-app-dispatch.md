@@ -55,11 +55,13 @@ thread_archived: true | false | unknown
 
 terminal 后 `read_thread` 一次并验证 output mode：
 
-- `commit`：要求 terminal commit、clean/declared dirty state，按 dependency order cherry-pick；
+- `commit`：要求 terminal commit、内嵌 code-review 的 Review fixed point 等于 lane base commit、
+  Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
   focused checks通过后写 integrated。
 - `artifact`：验证 tracker/artifact坐标；无必要 repo 变更时 worktree必须 clean，写 consumed。
 - `checks`：验证测试命令/结果且 worktree clean，写 consumed；失败阻塞 review。
-- `verdict`：验证 review verdict/findings且 worktree clean，写 consumed；blocking finding阻塞 closeout。
+- `verdict`：验证 Review fixed point 等于 map registry base commit、Review Evidence Bundle readback、
+  review verdict/findings且 worktree clean，写 consumed；blocking finding阻塞 closeout。
 
 非 commit lane 不要求 commit，也不 cherry-pick；unexpected file changes fail closed。
 

@@ -68,7 +68,9 @@ readback。
    mutable-resource 冲突的 maximal safe batch；无前序依赖的 ready tickets 同批并发派发。
    每张 ticket 先分类为 `design`、`frontend` 或 `backend`，设置 `output_mode: commit`，再从配置
    取得 agent/model/effort，解析 `implement` owner并创建唯一 Herdr lane + Execution Worktree。
-   coordinator 不亲自实现。
+   commit lane 的 dispatch packet 同时写 `Review fixed point: <Execution Base commit>` 与
+   `references/code-review-evidence-preflight.md` 的绝对路径；`implement` owner 在本 lane 内调用
+   `code-review` 时先执行该 preflight。coordinator 不亲自实现。
    完成标准：本批每条 lane 已持久化 role、agent、model、effort、runtime、pane、worktree、
    branch 与 base commit。
 5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 的容量管理规则
@@ -88,7 +90,11 @@ readback。
    whole-change checks lane。配置决定 agent/model/effort；测试证据 readback后写 `consumed`，
    不要求 commit。通过才进入 review；失败时保留现场并报告精确失败。
 8. **Review 与远程收尾。** 按 `review` 角色 + `output_mode: verdict` 解析并派发
-   `code-review` owner；verdict/findings readback后写 `consumed`，不要求 commit。通过后加载
+   `code-review` owner。进入本 gate 时加载 `references/code-review-evidence-preflight.md`，从 map
+   registry 的 `role: map` 行读取 Map Integration Worktree 创建时的 `base_commit` 作为唯一
+   Review fixed point，并把该 fixed point 与 preflight reference 的绝对路径写入 dispatch packet；
+   review worker 在 owner 派生 Standards/Spec 子审查前完成 Review Evidence Bundle。verdict/findings
+   readback后写 `consumed`，不要求 commit。通过后加载
    `references/test-decision-and-rebase.md`，暂停在 test decision point；用户选择后 rebase 到
    最新 main，冲突时解析 `resolving-merge-conflicts` owner。remote publication authority 覆盖
    push、PR/MR、merge 与最终 closeout；没有 authority 时停在本地 Integration。

@@ -38,8 +38,9 @@ git -C "$SOURCE_ROOT" worktree add -b "$INTEGRATION_BRANCH" "$INTEGRATION_PATH" 
 
 创建前记录 Coordinator Pane 的 repo root/branch/HEAD，验证 Source repo/branch/HEAD/clean state
 与 map registry；路径/branch已存在时 bounded recover，不覆盖。创建后验证 registration、common
-dir、branch、HEAD与 clean state，写入 registry并 readback，再断言 Coordinator Pane 的 repo
-root/branch/HEAD未因创建而改变。Herdr Workspace选择与 Git worktree层级相互独立。
+dir、branch、HEAD与 clean state，在 map registry 的 `role: map` 行写
+`base_commit: <SOURCE_HEAD>` 并 readback；该值是 whole-change Review fixed point。随后断言
+Coordinator Pane 的 repo root/branch/HEAD未因创建而改变。Herdr Workspace选择与 Git worktree层级相互独立。
 
 恢复时以 registry + `git worktree list --porcelain` + common dir + branch + base commit 交叉验证；
 dirty、detached 或多匹配时保留现场并停止自动写入。

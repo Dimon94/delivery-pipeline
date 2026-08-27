@@ -66,7 +66,9 @@ created -> running -> test_decision_paused -> rebase_in_progress -> cleanup_in_p
 ```
 
 map row使用 `role: map`、`output_mode: none`、`runtime: orchestrator`，并持久化 Integration
-Worktree/branch、Map Run Authority与 test strategy。Herdr session/workspace/tab/pane是 lane坐标；
+Worktree/branch、Map Run Authority与 test strategy；`base_commit` 固定为创建 Map Integration Worktree
+时的 Source HEAD，作为 whole-change Review fixed point，后续 Integration 不改写。Herdr
+session/workspace/tab/pane是 lane坐标；
 同一 map后续新 lane可随 Coordinator Pane 的 current-workspace 默认落到另一 Workspace。
 
 ## Recovery
