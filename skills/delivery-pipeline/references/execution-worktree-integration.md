@@ -38,7 +38,7 @@ checks与 verdict 是执行真相源。
 `integrated` 或 `consumed` 后统一：
 
 1. 关闭本 lane pane并同步 tab label:从 X tab label 移除该 work item 编号;X tab 空后 label
-   还原并保留 tab,`G-#` tab 随 pane 一并关闭。
+   还原并保留 tab。
 2. 删除 clean Execution Worktree。
 3. 删除对应 agent-prefixed branch。
 4. readback pane/worktree registration/branch均不存在。

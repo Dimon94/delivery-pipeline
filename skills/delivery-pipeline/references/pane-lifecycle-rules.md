@@ -60,8 +60,7 @@ Model/effort 只在该启动命令中绑定一次。之后不做 pane model 对�
 - Coordinator Pane 所在 tab 不放 worker lane,它只承担调度。
 - Worker tab 命名为 `X`,溢出依次 `X-2`、`X-3`;每个 worker tab 最多 4 pane。tab label
   跟踪活跃 work item 编号:`X-#391·#392`。
-- HITL lane(grilling/prototype 等需要用户对话的 lane)用独立 tab `G-#<ticket>`,不占
-  X tab 容量。
+- HITL lane 与其他 lane 共用 X tab 容量；交互属性只决定 handoff state,不改变落点拓扑。
 - pane label 使用 work item 标题;agent name 仍为 lowercase alphanumeric + hyphens。
 - tab 内落点按 herdr 几何规则分布四角:先读 `herdr pane layout --pane "$anchor_pane_id"`,
   宽 pane 向右 split、窄或高 pane 向下 split,依次占满未占用角落;同 tab 第 5 条 lane 不再
@@ -124,6 +123,5 @@ Pane；pane 异常消失或两小时超时也会唤醒 coordinator 处理。HITL
 
 派发:tab create/pane split → placement verify → start → non-blocking prompt → rename/label
 → aggregate working → watcher。收尾:关闭本 lane pane,从 X tab label 移除其编号;X tab 空后
-label 还原为 `X`/`X-2` 并保留 tab 供后续 lane 复用,`G-#` tab 随本 lane pane 一并关闭;保留
-Coordinator Pane与承载 Workspace。
+label 还原为 `X`/`X-2` 并保留 tab 供后续 lane 复用;保留 Coordinator Pane与承载 Workspace。
 startup/fan-in/watchdog 只做一次 bounded pane 对账。

@@ -175,7 +175,7 @@ def check_core_contract() -> None:
         (
             "每个 worker tab 最多 4 pane",
             "溢出依次 `X-2`、`X-3`",
-            "`G-#<ticket>`",
+            "HITL lane 与其他 lane 共用 X tab 容量",
             "coordinator pane 不作为 worker pane",
             "--cwd <Execution Worktree>",
         ),
@@ -200,7 +200,15 @@ def check_core_contract() -> None:
             if phrase in text:
                 record(f"legacy per-map workspace rule restored: {path.relative_to(ROOT)}: {phrase}")
     legacy_topology_rules = {
-        CORE / "references" / "pane-lifecycle-rules.md": ("每条新 lane 默认在目标 Workspace 新建 tab", "一 lane一 tab"),
+        ROOT / "CONTEXT.md": ("HITL lanes get a `G-#<ticket>` tab",),
+        CORE / "references" / "pane-lifecycle-rules.md": (
+            "每条新 lane 默认在目标 Workspace 新建 tab",
+            "一 lane一 tab",
+            "`G-#<ticket>`",
+            "HITL lane用独立 tab",
+            "HITL lane 用独立 tab",
+        ),
+        CORE / "references" / "execution-worktree-integration.md": ("`G-#` tab",),
         CORE / "SKILL.md": ("为每条 lane 新建 tab/pane",),
     }
     for path, phrases in legacy_topology_rules.items():
@@ -601,6 +609,7 @@ def check_context_and_docs() -> None:
             "skills/delivery-pipeline-codex-app",
             "There are no built-in agent/model/effort defaults",
             "repository file overlap is an Integration risk",
+            "all lane types share the same worker-tab capacity pool",
         ),
     )
     require(
@@ -669,7 +678,7 @@ def check_context_and_docs() -> None:
             "Status:** Accepted",
             "每个 worker tab 最多 4 pane",
             "X-#391·#392",
-            "G-#<ticket>",
+            "HITL lane 与其他 lane 共用同一容量池",
             "取代 ADR-0005",
             "current-workspace-first 前提",
         ),
