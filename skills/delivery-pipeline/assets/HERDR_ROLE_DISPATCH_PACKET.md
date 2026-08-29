@@ -1,9 +1,9 @@
 # Herdr Configured Role Dispatch Packet
 
-所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 2 配置解析 role、agent、model、
-effort并在启动前写入 registry。配置的 model/effort 只是派发时的初始化值：用户可在 lane 运行中手动切换，
-worker 被动接受，照常交付并在 final report 如实记录 runtime 实际值与 evidence；worker 不自行切换
-agent/model/effort。
+所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 3 配置解析 role、agent、ordinary route、
+可选 bootstrap 与 Gearshift Policy，并在启动前写入 registry。普通 lane 不自行切换 agent/model/effort；
+enabled pi implementation lane 只允许已配置的 Pi Gearshift 按 Bootstrap Checkpoint 执行 Source→Target
+Shift。用户仍可在 pane 手动切换，worker 照常交付并在 final report 如实记录实际模型历史与 evidence。
 
 ```text
 Coordinator task：
@@ -12,9 +12,17 @@ Herdr session/workspace/tab/pane：
 Role：<planning | design | frontend | backend | testing | review>
 Output mode：<commit | artifact | checks | verdict>
 Agent：<pi | codex | claude>
-Model：<configured native model id>
-Effort：<configured native effort>
+Model：<ordinary Target Model id>
+Effort：<ordinary Target effort>
 Model evidence：<pi-list-models | codex-catalog | claude-env>
+Gearshift mode：<off | opt_in | all_eligible>
+Gearshift enabled：<true | false>
+Gearshift eligibility：<off | ticket-label:label | all-eligible | ineligible>
+Gearshift profile：<delivery-bootstrap | none>
+Bootstrap Source：<model + effort | none>
+Ordinary Target：<model + effort>
+Gearshift Adapter：<absolute bootstrap-trigger.ts + delivery-pipeline/bootstrap-slice | none>
+Gearshift Shift ID：<full id from GEARSHIFT_ARMED json | none>
 Owner skill name：<owner frontmatter name>
 Owner skill SKILL.md：<absolute resolved path>
 Owner skill invocation label：<runtime-specific label; metadata only>
@@ -42,6 +50,11 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   的 Review fixed point 等于本 Execution Worktree 的 Base commit，`verdict` mode 等于 map registry
   base commit。preflight bundle 完成前不派生 Standards/Spec 子审查。
 - 只处理本 Work item，不领取 sibling/dependent item，也不进入下一 gate。
+- Gearshift enabled 时按顺序调用 `bootstrap_check`：同一 focused command 先 red；red 后修改至少一个
+  声明的 canonical-owner path；同一 command green并提供 owner paths、remaining work 与 evidence refs。
+  Adapter 在 green 退出 0 后再次核对 owner digest；green command 撤销或覆盖该 mutation 不发 Ready。
+  工具发出 Ready 后由 Gearshift Core 切到 Ordinary Target。不得用第一次 edit、手动 `/model` 或文字
+  声称替代 Shift Record；disabled lane 不调用 `bootstrap_check`。
 - 按 Output mode 交付：
   - `commit`：实现变更；owner 调用 `code-review` 时先按 Review evidence preflight 物化当前
     dirty worktree 证据，再创建一个仅含本 Work item 的 local commit；
@@ -52,12 +65,13 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - 保留 tracker fan-in、cherry-pick、Integration 和 remote actions 给 coordinator。
 - 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
 - 当前 Agent/Model/Effort 与 packet 不符（通常是用户在本 pane 改了模型）时不阻塞，继续执行，
-  照常交付并在 final report 记录 runtime 实际值与 evidence。
+  照常交付并在 final report 记录 runtime 实际值与 evidence；但不得把手动变化冒充 Bootstrap Handoff。
 
 完成标准：
 - Work item acceptance 已满足，或已有精确 blocker。
-- final report 包含 role、output mode、agent/model/effort、对应 evidence、dirty state 与 touched files；
-  `commit` 与 `verdict` 还包含 review branch、Review fixed point、HEAD 与 bundle readback。
+- final report 包含 role、output mode、agent/model/effort、实际模型历史、对应 evidence、dirty state 与
+  touched files；Gearshift enabled 时还包含 Shift ID、Source/Target、Adapter、Shift state 与 Shift Record
+  readback；`commit` 与 `verdict` 还包含 review branch、Review fixed point、HEAD 与 bundle readback。
 - 到达终态（completed 或 blocked）后在 final report 之外，额外在终端输出单独一行
   `LANE_DONE <lane_id>`，该行不得包含其他内容。这是 coordinator watcher 的唯一完成信号；
   遗漏会导致 lane 完成后无法自动唤醒 fan-in。
@@ -67,6 +81,8 @@ Work item：
 Role：
 Output mode：
 Agent/model/effort：
+模型历史：
+Gearshift Projection：<mode/enabled/eligibility/shift-id/source/target/adapter/state/evidence-ref | none>
 状态：completed | blocked
 Pane/worktree/branch：
 Commit：<hash subject | none>

@@ -15,9 +15,21 @@ lane_id: <stable-id>
 runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator
 state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed
 agent: pi | codex | claude | none
-model: <configured-model-or-none>
-effort: <configured-effort-or-none>
+model: <ordinary-role-model-or-none>
+effort: <ordinary-role-effort-or-none>
+bootstrap_model: <configured-bootstrap-model-or-none>
+bootstrap_effort: <configured-bootstrap-effort-or-none>
 model_evidence: pi-list-models | codex-catalog | claude-env | none
+gearshift_mode: off | opt_in | all_eligible | none
+gearshift_enabled: true | false | none
+gearshift_eligibility: off | ticket-label:<label> | all-eligible | ineligible | none
+gearshift_profile: delivery-bootstrap | none
+gearshift_shift_id: <id-or-none>
+gearshift_source_model: <model-or-none>
+gearshift_target_model: <model-or-none>
+gearshift_adapter: delivery-pipeline/bootstrap-slice | none
+gearshift_state: requested | armed | ready | shifting | shifted | blocked | cancelled | none
+gearshift_evidence_ref: <session-record-reference-or-none>
 workspace_id: <id-or-none>
 tab_id: <id-or-none>
 pane_id: <id-or-none>
@@ -74,8 +86,9 @@ session/workspace/tab/pane是 lane坐标；
 ## Recovery
 
 1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry。
-2. Herdr runtime验证 session/workspace/tab/pane、kind、role/output_mode、agent/model/effort与 worktree；
-   existing lane不应用新 config也不迁移 Workspace，新 lane重新解析 Coordinator Pane当前坐标。
+2. Herdr runtime验证 session/workspace/tab/pane、kind、role/output_mode、agent、ordinary/bootstrap route、
+   Gearshift Projection 与 worktree；existing lane不应用新 config也不迁移 Workspace，新 lane重新解析
+   Coordinator Pane当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。

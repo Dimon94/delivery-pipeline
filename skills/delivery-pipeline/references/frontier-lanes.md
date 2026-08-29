@@ -24,8 +24,8 @@ Dispatch blocker。
 | whole-change tests | `testing` | `checks` |
 | code review | `review` | `verdict` |
 
-role 只选择 config entry，不暗含 agent。agent/model/effort 只从
-`model-role-routing.md` 的 version 2 配置读取。
+role 只选择 config entry，不暗含 agent。agent、ordinary model/effort、可选 bootstrap 与 Gearshift
+Policy 只从 `model-role-routing.md` 的 version 3 配置读取；ticket label 只参与 opt-in eligibility。
 
 ## Execution Lanes
 

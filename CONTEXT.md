@@ -65,26 +65,38 @@ A stable, human-facing Codex App task title that identifies the owning map, lane
 The post-Integration transport state of a `codex-thread` lane owned by the Codex App shell. Archive readback closes the lane; `close_pending` retains recoverable coordinates without blocking ready tickets, while unsuccessful Integration keeps the task visible.
 
 **Configured Planning Lane**
-A Herdr worker handling one AFK discovery/research item or one spec/tickets gate. Its agent, model, and effort come from the `planning` role in the version 2 worker configuration; it uses the same registry, packet, Dispatch Handoff, and fan-in contract as other configured lanes.
+A Herdr worker handling one AFK discovery/research item or one spec/tickets gate. Its agent, model, and effort come from the `planning` role in the version 3 worker configuration; it uses the same registry, packet, Dispatch Handoff, and fan-in contract as other configured lanes.
 
 **Review Evidence Bundle**
 A repo-external, single-snapshot evidence set produced by the parent worker before `code-review` fans out to read-only Standards/Spec reviewers. It contains the resolved fixed point and HEAD, exact patch, commits, complete changed-path inventory, fixed-point additions, worktree/staged state, and producing commands. An implementation lane uses its Execution Worktree base commit as fixed point; the whole-change review lane uses the Map Integration Worktree creation base persisted in the map registry. Reviewers consume the same bundle with read/search access instead of requesting Git authority from the supervisor.
 
 **Worker Role Configuration**
-The user-level file `~/.config/delivery-pipeline/model-roles.json`. Version 2 defines exactly six worker roles—`planning`, `design`, `frontend`, `backend`, `testing`, `review`—and requires a non-empty `agent`, `model`, and `effort` for each. It contains no coordinator entry: the current calling session is the coordinator. Skills contain no default model routing; missing or invalid configuration blocks dispatch and runs `delivery-pipeline-setup`.
+The user-level file `~/.config/delivery-pipeline/model-roles.json`. Version 3 defines exactly six worker roles—`planning`, `design`, `frontend`, `backend`, `testing`, `review`—and requires a non-empty `agent`, `model`, and `effort` for each. Pi frontend/backend roles may additionally declare one bootstrap model/effort; the ordinary role model remains their Target Model. It contains no coordinator entry: the current calling session is the coordinator. Skills contain no default model routing; missing or invalid configuration blocks dispatch and runs `delivery-pipeline-setup`.
+
+**Bootstrap Handoff**
+An optional model Shift inside one eligible pi frontend/backend Implementation Lane. The lane starts on its configured bootstrap model and continues on its ordinary role model after the Bootstrap Checkpoint passes; it does not replace fresh Review.
+
+**Bootstrap Checkpoint**
+The Delivery Pipeline Trigger satisfied when one focused command has been observed failing, a declared canonical-owner path has changed after that failure and still has the verified edit/write digest after the exact command passes, and the Source Model attests meaningful remaining work. Red/green exits and owner mutation are adapter-verified; remaining work is agent-attested.
+
+**Bootstrap Gearshift Policy**
+The version 3 configuration decision `off | opt_in | all_eligible`. Opt-in requires the configured ticket label; all-eligible applies mechanically to pi frontend/backend roles with a bootstrap entry and does not ask an LLM to classify risk.
+
+**Gearshift Projection**
+The bounded lane-registry and final-report view of one Pi Gearshift Shift Record: policy, deterministic eligibility evidence, profile, Shift ID, Source/Target Model, Adapter, state, and evidence reference. Pi session entries remain the running Shift state owner.
 
 **Coordinator Runtime**
 The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-cli` for canonical CLI/Herdr orchestration; `codex-app` only when the `delivery-pipeline-codex-app` shell is invoked. Coordinator model is chosen before skill invocation and is not part of Worker Role Configuration.
 
 **Dispatch Model**
 - `skills/delivery-pipeline` is the single canonical CLI/Herdr core installed unchanged for pi, Codex CLI, and Claude CLI; current host never rewrites configured worker routing.
-- Canonical CLI Dispatch resolves work item → one of six roles → configured agent/model/effort. Agent selects lane runtime: pi → `herdr-pi-pane`, codex → `herdr-codex-pane`, claude → `herdr-claude-pane`.
-- pi starts with `--approve --model <model> --thinking <effort>`; Codex CLI with `--model <model>` plus `model_reasoning_effort`; Claude CLI with `--model <model> --effort <effort>`. Kind-specific permissions belong to Trusted Execution Bootstrap.
-- Model/effort bind only at lane launch; after dispatch, the user may change the model in the worker pane and the lane's delivery stands. The coordinator performs no mid-run or fan-in pane-model reconciliation: model drift from the registry never rebuilds a lane, rewrites the config, or blocks delivery.
+- Canonical CLI Dispatch resolves work item → one of six roles → configured agent/ordinary model/effort plus optional Bootstrap Gearshift Policy. Agent selects lane runtime: pi → `herdr-pi-pane`, codex → `herdr-codex-pane`, claude → `herdr-claude-pane`.
+- Ordinary pi lanes start with `--approve --model <model> --thinking <effort>`. Eligible pi frontend/backend lanes instead start on their configured bootstrap Source Model, load the Delivery Pipeline Adapter, and arm Pi Gearshift toward the ordinary Target Model. Codex CLI uses `--model <model>` plus `model_reasoning_effort`; Claude CLI uses `--model <model> --effort <effort>`. Kind-specific permissions belong to Trusted Execution Bootstrap.
+- Routes bind only at lane launch; after dispatch, the user may change the model in the worker pane and the lane's delivery stands. The coordinator performs no pane-model reconciliation and model drift never rebuilds a lane, but final evidence records actual model history and only a matching Shift Record proves Bootstrap Handoff.
 - `skills/delivery-pipeline-codex-app` is the only transport shell. It skips Worker Role Configuration and maps all six delegated roles to Codex App tasks + App-managed Execution Worktrees (`codex-thread`); its packet, registry overlay, role-aware fan-in, and task references are co-located inside that shell.
-- `delivery-pipeline-setup` probes pi (`pi --list-models`), Codex (`codex debug models`), and Claude `settings.json.env`, then requires explicit choices for all six roles. There are no built-in agent/model/effort defaults.
+- `delivery-pipeline-setup` probes pi (`pi --list-models`), Codex (`codex debug models`), Claude `settings.json.env`, and Pi Gearshift Core flags, then requires explicit ordinary routes, optional eligible bootstrap routes, and one Gearshift policy. There are no built-in agent/model/effort defaults.
 - Same-batch lanes complete startup readback before Dispatch Handoff; long tasks wake the current coordinator only on user completion, Lane Terminal Signal, or explicit monitor request.
-- Each lane persists role, output mode (`commit | artifact | checks | verdict`), agent, model, effort, evidence, runtime, permissions, worktree, and transport coordinates. Only commit mode cherry-picks; artifact/checks/verdict modes verify durable evidence then become `consumed`. Existing lanes recover by registry rather than new configuration.
+- Each lane persists role, output mode (`commit | artifact | checks | verdict`), agent, ordinary/bootstrap route, Gearshift Projection, evidence, runtime, permissions, worktree, and transport coordinates. Only commit mode cherry-picks; artifact/checks/verdict modes verify durable evidence then become `consumed`. Existing lanes recover by registry rather than new configuration.
 - Map Run Authority covers named-map canonical tracker transitions and next ready frontier; final publication remains an independent gate.
 - Ready frontier, one writer, Execution Worktree isolation, Integration, and terminal fan-in do not change with agent kind.
 

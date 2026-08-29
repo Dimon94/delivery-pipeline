@@ -14,7 +14,7 @@ monitor 请求才进入本文件。
 
 | Output mode | Required terminal evidence | Fan-in state |
 |---|---|---|
-| `commit` | terminal commit + code-review Review Evidence Bundle readback + clean/declared dirty state + touched files | cherry-pick → `integrated` |
+| `commit` | terminal commit + code-review Review Evidence Bundle readback + configured Gearshift Projection readback（enabled 时）+ actual model history + clean/declared dirty state + touched files | cherry-pick → `integrated` |
 | `artifact` | tracker/artifact坐标 + clean worktree | `consumed` |
 | `checks` | commands/results + clean worktree | `consumed`，失败阻塞 review |
 | `verdict` | map-base fixed point + Review Evidence Bundle readback + verdict/findings + clean worktree | `consumed`，blocking finding阻塞 closeout |

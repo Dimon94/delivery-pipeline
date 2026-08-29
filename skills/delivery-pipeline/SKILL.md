@@ -21,12 +21,12 @@ idea/map -> discovery -> spec -> implementation tickets
 ## 启动与配置 Gate
 
 1. **读取配置。** 首先加载 `references/model-role-routing.md`。检查
-   `~/.config/delivery-pipeline/model-roles.json`：必须是 version 2，且 `planning`、
-   `design`、`frontend`、`backend`、`testing`、`review` 六个角色都具有非空的
-   `agent`、`model`、`effort`。先从 setup skill realpath 运行其
-   `scripts/model_config.py validate <config>`，再验证实时 model evidence；缺失、非法或不完整时，
-   在当前会话完整读取 `../delivery-pipeline-setup/SKILL.md` 并执行初始化；配置 readback 通过前不进入下一步。
-   skill 内没有默认 agent/model/effort，也不静默回落。
+   `~/.config/delivery-pipeline/model-roles.json`：必须是 version 3，具有严格 `gearshift` policy，且
+   `planning`、`design`、`frontend`、`backend`、`testing`、`review` 六个角色都具有非空的
+   `agent`、`model`、`effort`；只有 pi frontend/backend 可以额外声明 bootstrap model/effort。
+   先从 setup skill realpath 运行其 `scripts/model_config.py validate <config>`，再验证普通与 bootstrap
+   model evidence；缺失、非法或不完整时，在当前会话完整读取
+   `../delivery-pipeline-setup/SKILL.md` 并执行初始化。配置 readback 通过前不进入下一步；skill 内没有默认 route，也不静默回落。
 2. **识别输入、worktree 与 Coordinator Runtime。** 当前调用会话就是 coordinator，所在 pane 是
    Coordinator Pane；按宿主记录 `coordinator_runtime: pi-cli | codex-cli | claude-cli`，统一记录
    `dispatch_runtime: herdr`。从 Herdr caller context 读回当前 session/workspace/tab/pane；默认把当前
@@ -46,9 +46,9 @@ idea/map -> discovery -> spec -> implementation tickets
    branch；不存在时创建独立 worktree 与 branch。所有 Git 操作显式指向隔离 worktree，不切换
    Coordinator Pane 当前目录的 branch。
 
-启动完成标准：配置 version 2 完整、当前会话已确认为 coordinator、当前 Herdr session/workspace/
-tab/pane 已读回、输入/gate/worktree 已识别、`dispatch_runtime: herdr` 已持久化、active writers 已
-readback。
+启动完成标准：配置 version 3 与 Bootstrap Gearshift Policy 完整、当前会话已确认为 coordinator、
+当前 Herdr session/workspace/tab/pane 已读回、输入/gate/worktree 已识别、`dispatch_runtime: herdr`
+已持久化、active writers 已 readback。
 
 ## Gate 链
 
@@ -67,20 +67,24 @@ readback。
 4. **Implementation Dispatch。** 从 dependency graph 重算 ready frontier，选择无 external
    mutable-resource 冲突的 maximal safe batch；无前序依赖的 ready tickets 同批并发派发。
    每张 ticket 先分类为 `design`、`frontend` 或 `backend`，设置 `output_mode: commit`，再从配置
-   取得 agent/model/effort，解析 `implement` owner并创建唯一 Herdr lane + Execution Worktree。
-   commit lane 的 dispatch packet 同时写 `Review fixed point: <Execution Base commit>` 与
-   `references/code-review-evidence-preflight.md` 的绝对路径；`implement` owner 在本 lane 内调用
-   `code-review` 时先执行该 preflight。coordinator 不亲自实现。
-   完成标准：本批每条 lane 已持久化 role、agent、model、effort、runtime、pane、worktree、
-   branch 与 base commit。
+   取得 ordinary route。对 frontend/backend 机械计算 Gearshift eligibility：mode=`off` 时禁用；
+   `opt_in` 要求 ticket 带配置 label；`all_eligible` 要求 pi role 有 bootstrap。enabled lane 使用
+   bootstrap model 启动、ordinary model 作为 Target，并从 canonical skill realpath 用 `-e` 加载
+   `adapters/bootstrap-trigger.ts`；其他 lane 不加载。解析 `implement` owner并创建唯一 Herdr lane +
+   Execution Worktree。commit packet 同时写 `Review fixed point: <Execution Base commit>`、Review
+   preflight 与 Gearshift Projection；`implement` owner 在本 lane 内调用 `code-review` 时先执行
+   preflight。coordinator 不亲自实现。
+   完成标准：本批每条 lane 已持久化 role、agent、ordinary model/effort、bootstrap route 或 none、
+   Gearshift policy/projection、runtime、pane、worktree、branch 与 base commit。
 5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 的容量管理规则
    在 dispatch target Workspace 放置 lane pane(worker tab 最多 4 pane、四角分布、溢出开新
    tab),并将 cwd 绑定到对应 Execution Worktree;Coordinator Pane 只调度,不作为 worker
    pane。验证落点、启动配置指定的 CLI、投递 packet、聚合确认
    `working`。kind 与 runtime 必须匹配：
    pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
-   错误落点、owner 未读、model/effort 不可用时沿同一配置重建一次；第二次失败记
-   `setup_blocked`。整批 startup readback 后统一 Dispatch Handoff 并结束本轮。
+   错误落点、owner 未读、ordinary/bootstrap model 不可用、Gearshift Core flags 或 Adapter realpath
+   缺失时沿同一配置重建一次；第二次失败记 `setup_blocked`。enabled lane 必须 readback Source/Target、
+   Adapter 与 Armed Shift 坐标；整批 startup readback 后统一 Dispatch Handoff 并结束本轮。
 6. **Role-aware Fan-in / Integration。** 用户完成信号或 terminal event 只负责唤醒；按
    `output_mode` 验证持久证据：`commit` lane 才要求 commit并按 dependency order cherry-pick 到
    Map Integration Worktree，focused checks通过后写 `integrated`；`artifact` lane验证 tracker/
@@ -101,11 +105,11 @@ readback。
 
 ## 分配与权限不变量
 
-- 配置文件是 worker agent/model/effort 的唯一真相源；临时改变通过重新运行
-  `delivery-pipeline-setup` 持久化，不做只存在于对话里的覆盖。
-- Model/effort 只在 lane 启动时绑定；派发后用户在 worker pane 中改模型属正常操作，运行中与
-  fan-in 不做 pane model 对账，交付只按持久证据验收，不因 model 与 registry 不符而阻塞或重建
-  lane。
+- 配置文件是新 worker lane 启动 route 与 Gearshift policy 的唯一真相源；临时路由改变通过重新运行
+  `delivery-pipeline-setup` 持久化，不做只存在于 coordinator 对话里的覆盖。
+- Ordinary/bootstrap model 与 Gearshift route 只在 lane 启动时绑定；派发后用户在 worker pane 中
+  手动改模型仍属正常操作，运行中与 fan-in 不做 pane model 对账，不因此重建 lane。Worker final
+  report 必须记录实际模型历史；只有匹配 registry 的 Shift Record 才能声称 Bootstrap Handoff 完成。
 - ready ticket = open、未被 claim、全部 blockers completed。dependency 相连的 tickets 按 graph
   顺序；普通 repo 文件路径重叠留给 Integration，不产生隐式 dependency。
 - 每张 ticket 一个 lane、一个 owner、一个 Execution Worktree/branch；worker 不领取 sibling。

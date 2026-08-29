@@ -23,16 +23,17 @@ Before the first CLI dispatch, run `delivery-pipeline-setup`. It probes:
 - Codex CLI: `codex debug models`
 - Claude CLI: model mappings and effort from `~/.claude/settings.json` `env`
 
-The user explicitly chooses `agent + model + effort` for six roles:
+The user explicitly chooses `agent + ordinary model + effort` for six roles:
 
 ```text
 planning  design  frontend  backend  testing  review
 ```
 
-The version 2 configuration is stored at `~/.config/delivery-pipeline/model-roles.json`. Skills
-contain no default models. Missing, old, incomplete, or invalid configuration blocks dispatch and
-re-enters setup. The coordinator is not configured: whichever agent/model invoked the skill remains
-coordinator.
+The version 3 configuration is stored at `~/.config/delivery-pipeline/model-roles.json`. Pi
+frontend/backend roles may additionally declare a bootstrap model/effort and one deterministic
+Gearshift mode: `off`, per-ticket `opt_in`, or `all_eligible`. Skills contain no default models.
+Missing, old, incomplete, or invalid configuration blocks dispatch and re-enters setup. The
+coordinator is not configured: whichever agent/model invoked the skill remains coordinator.
 
 Agent selects lane kind:
 
@@ -44,6 +45,8 @@ Agent selects lane kind:
 
 - At least one of pi, Codex CLI, or Claude CLI as coordinator; every worker CLI named in config must exist.
 - Herdr CLI as the canonical core's terminal multiplexer.
+- Pi Gearshift installed globally from a reviewed local or pinned package source when Gearshift mode is active;
+  Delivery Pipeline loads only its own Bootstrap Trigger Adapter into eligible lanes.
 - Owner skills: `wayfinder`, `grilling`, `domain-modeling`, `prototype`, `research`, `to-spec`,
   `to-tickets`, `implement`, `code-review`, and `resolving-merge-conflicts`.
 
@@ -76,7 +79,7 @@ Use delivery-pipeline-setup to initialize or reconfigure worker routing.
 
 Then invoke the canonical `delivery-pipeline` with any map/spec/ticket issue. It reconstructs the
 chain from tracker relationships and dispatches planning/design/frontend/backend/testing/review
-lanes according to version 2 configuration. New Herdr lanes stay in the coordinator's current
+lanes according to version 3 configuration. New Herdr lanes stay in the coordinator's current
 workspace by default; a new workspace is created only when the user explicitly requests one.
 
 ### Codex App

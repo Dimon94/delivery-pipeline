@@ -130,8 +130,9 @@ def check_core_contract() -> None:
             "dispatch_runtime: herdr",
             "~/.config/delivery-pipeline/model-roles.json",
             "scripts/model_config.py validate <config>",
-            "version 2",
-            "agent`、`model`、`effort",
+            "version 3",
+            "gearshift",
+            "bootstrap model/effort",
             "planning",
             "design",
             "frontend",
@@ -158,7 +159,8 @@ def check_core_contract() -> None:
     require(
         CORE / "references" / "dispatch-runtime-routing.md",
         (
-            "worker kind 完全由 version 2 role config",
+            "worker kind 完全由 version 3 role config",
+            "Bootstrap Gearshift Policy",
             "pi → `herdr-pi-pane`",
             "codex → `herdr-codex-pane`",
             "claude → `herdr-claude-pane`",
@@ -232,6 +234,11 @@ def check_core_contract() -> None:
             "<!-- wayfinder-lane-registry:v2 -->",
             "role: planning | design | frontend | backend | testing | review | map",
             "output_mode: commit | artifact | checks | verdict | none",
+            "bootstrap_model:",
+            "gearshift_mode: off | opt_in | all_eligible | none",
+            "gearshift_eligibility: off | ticket-label:<label> | all-eligible | ineligible | none",
+            "gearshift_shift_id:",
+            "gearshift_evidence_ref:",
             "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator",
             "integration_conflict",
             "integration_checks_failed",
@@ -325,63 +332,66 @@ def check_model_contract() -> None:
     require(
         routing,
         (
-            "schema version 2",
+            "version 3",
             "六个角色全部必填",
-            "agent`、`model`、`effort",
-            "skill 与 reference 不提供默认 agent/model/effort",
+            "Bootstrap Gearshift Policy",
+            "off | opt_in | all_eligible",
+            "bootstrap.model/effort",
             "pi --list-models",
             "codex debug models",
-            "ANTHROPIC_DEFAULT_FABLE_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_{FABLE,HAIKU,OPUS,SONNET}_MODEL",
             "ANTHROPIC_MODEL",
             "CLAUDE_CODE_SUBAGENT_MODEL",
             "CLAUDE_CODE_EFFORT_LEVEL",
             "--approve --model \"$model\" --thinking \"$effort\"",
+            "--gearshift-profile delivery-bootstrap",
+            "--gearshift-target \"$model\"",
+            "delivery-pipeline/bootstrap-slice",
+            "GEARSHIFT_ARMED <json>",
+            "GEARSHIFT_STATUS <json>",
+            "GEARSHIFT_RESUMED <json>",
             "model_reasoning_effort",
             "--model \"$model\" --effort \"$effort\"",
         ),
     )
     schema = extract_schema_example(routing)
-    if schema.get("version") != 2:
-        record("model-role schema version must be 2")
+    if schema.get("version") != 3:
+        record("model-role schema version must be 3")
+    gearshift = schema.get("gearshift") or {}
+    if set(gearshift) != {"mode", "optInLabel"}:
+        record("model-role schema gearshift keys must be mode/optInLabel")
     roles = schema.get("roles") or {}
     if set(roles) != ROLES:
         record(f"model-role schema must define exactly {sorted(ROLES)}, got {sorted(roles)}")
+    base_fields = {"agent", "model", "effort"}
     for role, value in roles.items():
-        if set(value) != {"agent", "model", "effort"}:
-            record(f"role {role} must define exactly agent/model/effort")
+        allowed = base_fields | ({"bootstrap"} if role in {"frontend", "backend"} else set())
+        if not base_fields.issubset(value) or set(value) - allowed:
+            record(f"role {role} has invalid version 3 fields")
+        if "bootstrap" in value and set(value["bootstrap"]) != {"model", "effort"}:
+            record(f"role {role} bootstrap must define model/effort")
     if "orchestration" in routing.read_text() or "orchestration" in (SETUP / "SKILL.md").read_text():
         record("coordinator/orchestration must not appear as a configured worker role")
-    if "user-confirmed" in routing.read_text() or "user-confirmed" in (SETUP / "SKILL.md").read_text():
-        record("Claude setup must select from settings.json env candidates; user-confirmed side channel is undefined")
 
     require(
         SETUP / "SKILL.md",
         (
-            "version 2",
+            "version 3",
             "不派发 lane",
             "pi --list-models",
             "codex debug models",
             "~/.claude/settings.json",
-            "ANTHROPIC_DEFAULT_FABLE_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            "ANTHROPIC_MODEL",
-            "CLAUDE_CODE_SUBAGENT_MODEL",
-            "CLAUDE_CODE_EFFORT_LEVEL",
+            "Gearshift Core",
+            "--gearshift-profile",
+            "--gearshift-target",
+            "off",
+            "opt_in",
+            "all_eligible",
+            "bootstrap model/effort",
             "scripts/model_config.py validate",
-            "顶层 key 精确为 `version` + `roles`",
-            "role key 精确",
-            "每个 role object 的 key 精确",
-            "agent 属于 `pi|codex|claude`",
-            "不把非法既有 v2 文件当作完成",
-            "Claude model只从 settings.json env候选选择",
-            "不提供内置默认",
-            "用户必须明确选择全部六角色",
-            "写入并 readback",
+            "不把 version 2 或非法 version 3 当作完成",
+            "Skill 不提供默认",
+            "原子写目标 config",
         ),
     )
     config_validator = SETUP / "scripts" / "model_config.py"
@@ -397,6 +407,40 @@ def check_model_contract() -> None:
             record(f"model config fixture self-test failed: {result.stdout}{result.stderr}")
 
 
+def check_bootstrap_adapter() -> None:
+    adapter = CORE / "adapters" / "bootstrap-trigger.ts"
+    verifier = ROOT / "scripts" / "verify-bootstrap-adapter.mjs"
+    if not adapter.exists():
+        record("missing Delivery Pipeline Bootstrap Trigger Adapter")
+        return
+    require(
+        adapter,
+        (
+            'const ADAPTER_ID = "delivery-pipeline/bootstrap-slice"',
+            'pi.registerTool({',
+            'name: TOOL_NAME',
+            'pi.events.on(GEARSHIFT.discover',
+            'pi.events.on(GEARSHIFT.armed',
+            'pi.events.emit(GEARSHIFT.ready',
+            'verifiedEvidence:',
+            'pi.appendEntry(ENTRY_TYPE',
+            'No declared canonical-owner path retains a verified edit/write mutation after the red check',
+            'remainingWork',
+        ),
+    )
+    if not verifier.exists():
+        record("missing bootstrap adapter verifier")
+        return
+    result = subprocess.run(
+        ["node", str(verifier)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        record(f"bootstrap adapter verifier failed: {result.stdout}{result.stderr}")
+
+
 def check_packets() -> None:
     packet = CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
     require(
@@ -405,8 +449,15 @@ def check_packets() -> None:
             "Role：<planning | design | frontend | backend | testing | review>",
             "Output mode：<commit | artifact | checks | verdict>",
             "Agent：<pi | codex | claude>",
-            "Model：<configured native model id>",
-            "Effort：<configured native effort>",
+            "Model：<ordinary Target Model id>",
+            "Effort：<ordinary Target effort>",
+            "Gearshift mode：<off | opt_in | all_eligible>",
+            "Gearshift enabled：<true | false>",
+            "Gearshift eligibility：<off | ticket-label:label | all-eligible | ineligible>",
+            "Gearshift profile：<delivery-bootstrap | none>",
+            "Bootstrap Source：<model + effort | none>",
+            "Gearshift Shift ID：<full id from GEARSHIFT_ARMED json | none>",
+            "Gearshift Projection：<mode/enabled/eligibility/shift-id/source/target/adapter/state/evidence-ref | none>",
             "Owner skill name",
             "Owner skill SKILL.md：<absolute resolved path>",
             "Owner skill invocation label",
@@ -602,6 +653,10 @@ def check_context_and_docs() -> None:
             "Reviewers consume the same bundle with read/search access",
             "Worker Role Configuration",
             "exactly six worker roles",
+            "Bootstrap Handoff",
+            "Bootstrap Checkpoint",
+            "Bootstrap Gearshift Policy",
+            "Gearshift Projection",
             "current calling session is the coordinator",
             "Coordinator Pane",
             "new workspace requires explicit user request",
@@ -683,6 +738,17 @@ def check_context_and_docs() -> None:
             "current-workspace-first 前提",
         ),
     )
+    require(
+        ROOT / "docs" / "adr" / "0007-optional-pi-gearshift-bootstrap.md",
+        (
+            "Pi Gearshift optional and Adapter-owned",
+            "Status:** Accepted",
+            "version 3",
+            "frontend/backend",
+            "Bootstrap Checkpoint",
+            "generic Gearshift package never owns tracker",
+        ),
+    )
 
 
 def check_pruned_policy() -> None:
@@ -731,6 +797,7 @@ def main() -> None:
     check_core_contract()
     check_runtime_neutrality()
     check_model_contract()
+    check_bootstrap_adapter()
     check_packets()
     check_lane_wakeup()
     check_app_shell()

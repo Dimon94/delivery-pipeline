@@ -5,8 +5,11 @@ checks与 verdict 是执行真相源。
 
 ## Common Preflight
 
-1. 从 registry读取 role、output_mode、agent/model/effort、runtime、pane、worktree、branch、base commit。
-2. 验证 pane kind/runtime、worktree common dir、branch、HEAD、dirty state与 final evidence。
+1. 从 registry读取 role、output_mode、agent、ordinary/bootstrap route、Gearshift Projection、runtime、pane、
+   worktree、branch、base commit。
+2. 验证 pane kind/runtime、worktree common dir、branch、HEAD、dirty state与 final evidence。Gearshift enabled
+   时额外验证 final report 的 Shift ID、Source/Target、Adapter、`shifted` state 与 session record reference
+   精确匹配 registry；缺失、blocked 或手动模型变化冒充 Shift 时阻塞。
 3. final marker 缺字段记 Unknown；不要求 worker 重显。
 4. output_mode 与 role/gate packet 不一致时阻塞；unknown active writer时不 cleanup。
 
@@ -15,8 +18,8 @@ checks与 verdict 是执行真相源。
 适用于 design/frontend/backend implementation。
 
 1. 要求 terminal commit包含 base commit，且只承载 packet work item；验证内嵌 code-review 的
-   Review fixed point 等于 lane base commit、bundle 七文件 readback存在；无 commit、review evidence
-   或 dirty未说明时阻塞。
+   Review fixed point 等于 lane base commit、bundle 七文件 readback存在；Gearshift enabled 时 Bootstrap
+   Checkpoint 与 Shift Record readback存在。无 commit、review/Gearshift evidence 或 dirty未说明时阻塞。
 2. 在 Map Integration Worktree按 dependency order执行 `git cherry-pick "$TERMINAL_COMMIT"`。
 3. 冲突时 `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
    `resolving-merge-conflicts` owner。

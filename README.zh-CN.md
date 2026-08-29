@@ -22,13 +22,14 @@ Codex App native task/worktree 是唯一特殊 transport，入口为 `delivery-p
 - Codex CLI：`codex debug models`
 - Claude CLI：`~/.claude/settings.json` 的 `env` 模型映射与 effort
 
-然后要求用户为六个角色明确选择 `agent + model + effort`：
+然后要求用户为六个角色明确选择 `agent + ordinary model + effort`：
 
 ```text
 planning  design  frontend  backend  testing  review
 ```
 
-配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 2）。Skill 不包含默认模型；
+配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 3）。Pi frontend/backend 可以额外
+配置 bootstrap model/effort，并选择 `off | opt_in | all_eligible` Gearshift mode。Skill 不包含默认模型；
 配置缺失、旧 version、缺角色或字段非法都会阻塞派发并重新进入 setup。Coordinator 不在配置中，
 当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
 
@@ -42,6 +43,7 @@ agent 决定 lane kind：
 
 - pi、Codex CLI、Claude CLI 中至少安装一个作为 coordinator；配置引用的 worker CLI 必须存在。
 - Herdr CLI：canonical CLI 主干的 terminal multiplexer。
+- active Gearshift mode 需要全局安装经审查的 Pi Gearshift；Delivery Pipeline 只向 eligible lane 定向加载自己的 Bootstrap Adapter。
 - Owner skills：`wayfinder`、`grilling`、`domain-modeling`、`prototype`、`research`、`to-spec`、
   `to-tickets`、`implement`、`code-review`、`resolving-merge-conflicts`。
 
