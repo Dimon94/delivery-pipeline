@@ -10,13 +10,12 @@ disable-model-invocation: true
 
 ## 流程
 
-1. **探测并严格验证现状。** 从本 SKILL.md realpath 解析并运行 `scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json`，同时执行第 2 步 evidence probe。只有以下条件全部满足才报告当前表并结束：
-   - 顶层 key 精确为 `version + gearshift + roles`，version = 3；
-   - 六角色完整；base role fields 为 `agent/model/effort`；
-   - 只有 pi frontend/backend 可有精确 `bootstrap.model/effort`；
-   - Gearshift mode、label、eligible bootstrap 和实时 model evidence 全部有效。
-
-   任何失败都进入初始化，不把 version 2 或非法 version 3 当作完成。只有用户明确要求重配时才覆盖已严格验证的配置。
+1. **探测并严格验证现状。** 从本 SKILL.md realpath 解析并运行
+   `scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json`，同时执行第 2 步 evidence
+   probe。结构与 policy 的唯一规范来自 `../delivery-pipeline/references/model-role-routing.md` 和该
+   executable validator；本流程不复制 schema。任一验证失败都进入初始化，不把 version 2 或非法
+   version 3 当作完成。只有用户明确要求重配时才覆盖已严格验证的配置。existing lane recovery 不属于
+   Setup，caller 必须先沿 registry 恢复，不能用本流程迁移运行中的 lane。
 
 2. **探测本机 evidence。** 并行运行：
    - pi：`pi --list-models`，记录 provider/model 与 thinking 支持；

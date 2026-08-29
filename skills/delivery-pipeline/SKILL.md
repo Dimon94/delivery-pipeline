@@ -20,35 +20,34 @@ idea/map -> discovery -> spec -> implementation tickets
 
 ## 启动与配置 Gate
 
-1. **读取配置。** 首先加载 `references/model-role-routing.md`。检查
-   `~/.config/delivery-pipeline/model-roles.json`：必须是 version 3，具有严格 `gearshift` policy，且
-   `planning`、`design`、`frontend`、`backend`、`testing`、`review` 六个角色都具有非空的
-   `agent`、`model`、`effort`；只有 pi frontend/backend 可以额外声明 bootstrap model/effort。
-   先从 setup skill realpath 运行其 `scripts/model_config.py validate <config>`，再验证普通与 bootstrap
-   model evidence；缺失、非法或不完整时，在当前会话完整读取
-   `../delivery-pipeline-setup/SKILL.md` 并执行初始化。配置 readback 通过前不进入下一步；skill 内没有默认 route，也不静默回落。
-2. **识别输入、worktree 与 Coordinator Runtime。** 当前调用会话就是 coordinator，所在 pane 是
+1. **先识别输入与持久状态。** 接受松散想法、Wayfinder map issue、已批准 spec issue 或已发布
+   implementation tickets。裸 issue 编号必须能从当前 repo tracker 唯一解析。读取 repo instructions、
+   tracker operations 与输入 artifact，加载 `references/lane-registry.md`，并从 relationships、registry
+   与 Git worktree 识别当前 gate、Map Integration Worktree 和 active writers。所有 Git mutation 显式
+   指向隔离 worktree，不切换 Coordinator Pane 当前目录的 branch。existing lane recovery 先于新 lane
+   配置 Gate；不得先用当前用户配置改写、补全或阻塞已登记 lane。
+2. **恢复既有 lane。** 按 registry marker 及 `references/lane-registry.md` 的兼容合同恢复 active、terminal
+   与 cleanup 状态。既有 lane 和 replacement 继续沿 registry route；legacy v2 缺失的 Bootstrap/Gearshift
+   字段按 disabled/none 解释。恢复、fan-in 或 cleanup 不运行 setup，也不要求当前配置升级。
+3. **只为首次创建新 work-item lane 读取配置。** 先加载
+   `references/model-role-routing.md`；它是 Worker Role Configuration 与 Bootstrap Gearshift Policy 的
+   canonical owner。从 setup skill realpath 运行 `scripts/model_config.py validate <config>` 并按该 reference
+   验证实时 model evidence。缺失、非法或不完整时，完整读取
+   `../delivery-pipeline-setup/SKILL.md` 并执行初始化；readback 前不创建 lane，不提供默认 route，也不静默回落。
+4. **确认 Coordinator Runtime 与 transport。** 当前调用会话就是 coordinator，所在 pane 是
    Coordinator Pane；按宿主记录 `coordinator_runtime: pi-cli | codex-cli | claude-cli`，统一记录
    `dispatch_runtime: herdr`。从 Herdr caller context 读回当前 session/workspace/tab/pane；默认把当前
    Herdr Workspace 固定为新 lane 的 dispatch target，只有用户显式要求新 Workspace 才创建。
-   读取 repo instructions、tracker operations 和输入 artifact，
    按当前 gate 渐进加载 references：fresh coordinator 才加载
-   `references/gate-state-machine.md`、`references/fresh-session-boundaries.md` 与
-   `references/lane-registry.md`；worktree create/recovery 才加载
-   `references/integration-worktree-management.md`；lane dispatch 才加载
+   `references/gate-state-machine.md` 与 `references/fresh-session-boundaries.md`；worktree create/recovery
+   才加载 `references/integration-worktree-management.md`；lane dispatch 才加载
    `references/owner-skill-resolution.md`、`references/dispatch-runtime-routing.md`、
    `references/frontier-lanes.md` 与 `references/pane-lifecycle-rules.md`；fan-in 才加载
-   `references/execution-worktree-integration.md`。同一 coordinator task 不因下一 lane 重读
-   未变化的合同。
-3. **重建链路。** 接受松散想法、Wayfinder map issue、已批准 spec issue 或已发布
-   implementation tickets。裸 issue 编号必须能从当前 repo tracker 唯一解析；沿持久
-   relationships 从最早未完成的 gate 继续。创建前先恢复该 map 已登记的 Map Integration Worktree/
-   branch；不存在时创建独立 worktree 与 branch。所有 Git 操作显式指向隔离 worktree，不切换
-   Coordinator Pane 当前目录的 branch。
+   `references/execution-worktree-integration.md`。同一 coordinator task 不因下一 lane 重读未变化合同。
 
-启动完成标准：配置 version 3 与 Bootstrap Gearshift Policy 完整、当前会话已确认为 coordinator、
-当前 Herdr session/workspace/tab/pane 已读回、输入/gate/worktree 已识别、`dispatch_runtime: herdr`
-已持久化、active writers 已 readback。
+启动完成标准：输入、gate、worktree、registry marker、active writers 与 Coordinator Runtime 已 readback；
+恢复路径已按 registry 执行。只有本轮首次创建新 work-item lane 时，额外要求 canonical version 3 配置、
+Bootstrap Gearshift Policy、model evidence 与 dispatch target 完整。
 
 ## Gate 链
 

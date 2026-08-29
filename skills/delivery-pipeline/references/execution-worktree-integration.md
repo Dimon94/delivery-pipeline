@@ -5,11 +5,12 @@ checks与 verdict 是执行真相源。
 
 ## Common Preflight
 
-1. 从 registry读取 role、output_mode、agent、ordinary/bootstrap route、Gearshift Projection、runtime、pane、
-   worktree、branch、base commit。
-2. 验证 pane kind/runtime、worktree common dir、branch、HEAD、dirty state与 final evidence。Gearshift enabled
-   时额外验证 final report 的 Shift ID、Source/Target、Adapter、`shifted` state 与 session record reference
-   精确匹配 registry；缺失、blocked 或手动模型变化冒充 Shift 时阻塞。
+1. 从 registry marker 选择 `lane-registry.md` 的 v3 Base Schema 或 Legacy v2 Recovery，再读取 role、
+   output_mode、agent、registry-owned route、runtime、pane、worktree、branch 与 base commit。v3 row 才读取
+   Bootstrap/Gearshift Projection；v2 缺失字段保持 disabled/none。
+2. 验证 pane kind/runtime、worktree common dir、branch、HEAD、dirty state 与 final evidence。v3 Gearshift
+   enabled 时额外验证 final report 的 Shift ID、Source/Target、Adapter、`shifted` state 与 session record
+   reference 精确匹配 registry；缺失、blocked 或手动模型变化冒充 Shift 时阻塞。
 3. final marker 缺字段记 Unknown；不要求 worker 重显。
 4. output_mode 与 role/gate packet 不一致时阻塞；unknown active writer时不 cleanup。
 

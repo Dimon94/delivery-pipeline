@@ -52,7 +52,7 @@ skill 与 reference 不提供默认 agent/model/effort/bootstrap。任一条件�
 | `opt_in` | 只有带 `optInLabel` 的 eligible ticket 使用 Bootstrap Handoff。 |
 | `all_eligible` | 所有 agent=pi 且具有 bootstrap 的 frontend/backend ticket 使用。 |
 
-Policy 是确定性配置，不调用 LLM 判断风险。`opt_in` 的 ticket label 必须从 tracker 持久状态读回并以 `ticket-label:<label>` 投影到 registry；对话中的口头意图不算。既有 lane 始终按 registry 恢复，不因 mode 或配置变化迁移。
+Policy 是确定性配置，不调用 LLM 判断风险。`opt_in` 的 ticket label 必须从 tracker 持久状态读回并以 `ticket-label:<label>` 投影到 registry；对话中的口头意图不算。配置只绑定首次创建的新 work-item lane。既有 lane 与 replacement 始终按 `lane-registry.md` 恢复，不因 mode、schema 或配置变化迁移；legacy v2 row 的 Gearshift 保持 disabled/none。
 
 Eligible lane 启动时：
 

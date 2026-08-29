@@ -128,11 +128,8 @@ def check_core_contract() -> None:
             "不切换 Coordinator Pane 当前目录的 branch",
             "coordinator_runtime: pi-cli | codex-cli | claude-cli",
             "dispatch_runtime: herdr",
-            "~/.config/delivery-pipeline/model-roles.json",
+            "references/model-role-routing.md",
             "scripts/model_config.py validate <config>",
-            "version 3",
-            "gearshift",
-            "bootstrap model/effort",
             "planning",
             "design",
             "frontend",
@@ -231,7 +228,10 @@ def check_core_contract() -> None:
     require(
         registry,
         (
-            "<!-- wayfinder-lane-registry:v2 -->",
+            "<!-- wayfinder-lane-registry:v3 -->",
+            "Legacy v2 Recovery",
+            "缺失的 Bootstrap/Gearshift 字段解释为 disabled/none",
+            "不读取当前 Worker Role Configuration",
             "role: planning | design | frontend | backend | testing | review | map",
             "output_mode: commit | artifact | checks | verdict | none",
             "bootstrap_model:",
@@ -253,6 +253,15 @@ def check_core_contract() -> None:
             "model_evidence:",
             "作为 whole-change Review fixed point",
             "后续 Integration 不改写",
+        ),
+    )
+    require(
+        CORE / "SKILL.md",
+        (
+            "existing lane recovery",
+            "先于新 lane 配置 Gate",
+            "replacement 继续沿 registry route",
+            "只有本轮首次创建新 work-item lane",
         ),
     )
     registry_text = registry.read_text()
@@ -376,7 +385,8 @@ def check_model_contract() -> None:
     require(
         SETUP / "SKILL.md",
         (
-            "version 3",
+            "../delivery-pipeline/references/model-role-routing.md",
+            "executable validator",
             "不派发 lane",
             "pi --list-models",
             "codex debug models",
@@ -384,12 +394,9 @@ def check_model_contract() -> None:
             "Gearshift Core",
             "--gearshift-profile",
             "--gearshift-target",
-            "off",
-            "opt_in",
-            "all_eligible",
-            "bootstrap model/effort",
             "scripts/model_config.py validate",
             "不把 version 2 或非法 version 3 当作完成",
+            "existing lane recovery 不属于",
             "Skill 不提供默认",
             "原子写目标 config",
         ),

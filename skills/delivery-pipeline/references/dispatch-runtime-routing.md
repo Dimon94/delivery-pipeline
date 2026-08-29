@@ -60,7 +60,8 @@ readback 后同批 tab/pane creation、placement验证、agent start 与 packet 
 
 - `herdr-pi-pane`、`herdr-codex-pane`、`herdr-claude-pane` 均按自己的 registry kind、ordinary/bootstrap
   route 与 Gearshift Projection 恢复；配置变化不迁移 running lane。
-- replacement 沿原 lane runtime/model/effort，除非用户先更新配置且确认原 active writer 不存在。
+- replacement 沿原 lane registry 的 runtime/model/effort；不应用当前配置。legacy v2 row 按
+  `lane-registry.md` 解释缺失字段并保持 Gearshift disabled/none。
 - cleanup 只关闭本 lane pane并按 `pane-lifecycle-rules.md` 同步 tab label,以及本 lane
   Execution Worktree/branch;保留 Coordinator Pane及承载它的 user-visible session/workspace。
 - Herdr unavailable 时输出完整 durable packet并报告 `dispatch unavailable`，不假装已经派发。

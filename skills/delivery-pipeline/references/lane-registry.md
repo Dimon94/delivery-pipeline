@@ -5,7 +5,7 @@ Canonical 本文件只定义 Herdr/base schema；特殊 transport overlay 与其
 
 ## Base Schema
 
-以 `<!-- wayfinder-lane-registry:v2 -->` 开头：
+新写入的 row 以 `<!-- wayfinder-lane-registry:v3 -->` 开头：
 
 ```yaml
 work_item: <url-or-gate-coordinate>
@@ -54,6 +54,21 @@ updated_at: <ISO-8601>
 
 不写 secrets。更新后精确 readback；失败时不声称 lane可恢复。特殊 transport 字段不进入本 schema。
 
+## Legacy v2 Recovery
+
+`<!-- wayfinder-lane-registry:v2 -->` 是已发布的既有 lane 格式，必须继续可恢复；不把旧 row 原地迁移成
+v3，也不因用户配置已升级或仍为 version 2 而阻塞。读取 v2 row 时：
+
+- `agent`、`model`、`effort`、runtime、pane、worktree、branch 与 commit 坐标保持原义；
+- 缺失的 Bootstrap/Gearshift 字段解释为 disabled/none；不得从当前配置补入 Source、Target、policy 或 Shift ID；
+- 恢复、fan-in、cleanup 和 replacement 不读取当前 Worker Role Configuration，而是继续沿 v2 row 的
+  ordinary route；replacement 仍禁用 Gearshift；
+- v2 row 的 output mode、state 与 fixed-point 语义保持不变；只有 v2 当时不存在的字段使用上述缺省；
+- 更新既有 v2 lane 时保留 v2 marker 与字段集合；新 work item 才写 v3 row。
+
+因此 existing lane recovery 先于任何新 lane 配置 Gate。无法由 v2 坐标唯一证明的状态仍按 `stale`
+fail closed，而不是通过 schema migration 猜测。
+
 ## Worker State Machine
 
 ```text
@@ -86,9 +101,9 @@ session/workspace/tab/pane是 lane坐标；
 ## Recovery
 
 1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry。
-2. Herdr runtime验证 session/workspace/tab/pane、kind、role/output_mode、agent、ordinary/bootstrap route、
-   Gearshift Projection 与 worktree；existing lane不应用新 config也不迁移 Workspace，新 lane重新解析
-   Coordinator Pane当前坐标。
+2. 按 marker 选择 Base Schema 或 Legacy v2 Recovery，再验证 Herdr session/workspace/tab/pane、kind、
+   role/output_mode、agent、registry-owned route 与 worktree；v3 Gearshift-enabled lane 才验证 Gearshift
+   Projection。existing lane 不应用新 config、不迁移 Workspace；新 lane 重新解析 Coordinator Pane 当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
