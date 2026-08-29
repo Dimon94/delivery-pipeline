@@ -156,7 +156,7 @@ def check_core_contract() -> None:
     require(
         CORE / "references" / "dispatch-runtime-routing.md",
         (
-            "worker kind 完全由 version 3 role config",
+            "worker kind 完全由 registry 或 canonical config 的 `agent`",
             "Bootstrap Gearshift Policy",
             "pi → `herdr-pi-pane`",
             "codex → `herdr-codex-pane`",
@@ -167,8 +167,14 @@ def check_core_contract() -> None:
             "herdr pane current --current",
             "workspace 解析是 maximal safe batch 的唯一串行前置",
             "整批成功/失败项都完成 startup readback",
+            "先按 registry 判断 existing/replacement",
+            "禁止运行 setup",
+            "仅首次创建新 work-item lane",
         ),
     )
+    runtime_routing_text = (CORE / "references" / "dispatch-runtime-routing.md").read_text()
+    if "创建、恢复或替换任何 worker lane 前读取" in runtime_routing_text:
+        record("runtime routing must not apply the new-lane config Gate to recovery/replacement")
     require(
         CORE / "references" / "pane-lifecycle-rules.md",
         (

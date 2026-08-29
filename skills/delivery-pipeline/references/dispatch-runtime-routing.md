@@ -1,20 +1,24 @@
 # CLI/Herdr 调度运行时路由
 
-创建、恢复或替换任何 worker lane 前读取。本文件是 canonical CLI 主干的 transport adapter；
-Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通过 Herdr，worker kind
-完全由 version 3 role config 的 `agent` 决定；Bootstrap Gearshift Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，不改变 runtime kind。
+首次创建新 work-item lane，或对 existing/replacement lane 执行 transport recovery 前读取。本文件是
+canonical CLI 主干的 transport adapter；Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有 worker
+都通过 Herdr。worker kind 完全由 registry 或 canonical config 的 `agent` 决定；Bootstrap Gearshift
+Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，不改变 runtime kind。
 
 ## 选择顺序
 
 1. 记录当前宿主 `coordinator_runtime: pi-cli | codex-cli | claude-cli`；无法唯一识别时报告
-   Unknown并让用户确认。当前宿主不改写 worker 配置。
-2. 固定 `dispatch_runtime: herdr`。验证 `command -v herdr`、visible Herdr session 与
-   `herdr agent start --help` 支持 `pi`、`codex`、`claude` kind。
-3. 加载 `model-role-routing.md`，从 role entry 读取 agent/ordinary model/effort、可选 bootstrap 与
-   Gearshift Policy；字段不完整、Source/Target evidence 或 Gearshift Core flags 验证失败时阻塞并运行
-   setup，不替换成 coordinator 自身 agent。
-4. agent 映射 runtime：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude →
-   `herdr-claude-pane`。同一 role 可由用户重跑 setup 后改变，existing lane 仍按 registry 恢复。
+   Unknown并让用户确认。固定 `dispatch_runtime: herdr`，验证 Herdr binary、visible session 与 agent kind。
+2. **先按 registry 判断 existing/replacement。** 命中 registry row 时按 `lane-registry.md` 的 marker
+   分支恢复；existing active lane 直接使用持久 pane/worktree/route，replacement 继续使用持久
+   agent/model/effort。v3 Gearshift-enabled replacement 使用持久 Gearshift Projection，legacy v2 缺失字段
+   保持 disabled/none。这条路径不读取当前 Worker Role Configuration，禁止运行 setup；registry route
+   或所需 runtime/model 不可用时记 `setup_blocked` 并保留现场，不改用 coordinator route。
+3. **仅首次创建新 work-item lane** 才加载 `model-role-routing.md`，从 canonical config 读取 route 与
+   Gearshift Policy，并验证 model evidence、Gearshift flags 和 setup readback；失败时运行 setup，不替换成
+   coordinator 自身 agent。
+4. 将 route-owned agent 映射为 runtime：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude →
+   `herdr-claude-pane`。新 lane 的 route 可由用户重跑 setup 后改变；existing/replacement 不迁移。
 5. `bootstrap_authority: trusted_execution_bootstrap` 覆盖已配置 worker 在精确 Execution
    Worktree 内的 kind-specific startup permission；不覆盖 remote publication。
 
@@ -41,7 +45,9 @@ readback 后同批 tab/pane creation、placement验证、agent start 与 packet 
 已有 active lane始终按 registry 中原 session/workspace恢复；后续新 lane按本次 Coordinator Pane
 的 current-workspace 默认重新解析。
 
-## Dispatch Critical Path
+## 首次创建新 lane 的 Dispatch Critical Path
+
+existing/replacement 走上述 registry recovery 分支，不进入本节的 config preflight 或 setup。
 
 1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
    path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
