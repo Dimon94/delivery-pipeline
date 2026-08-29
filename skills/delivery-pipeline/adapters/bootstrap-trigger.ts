@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const ADAPTER_ID = "delivery-pipeline/bootstrap-slice";
 const EVIDENCE_VERSION = "1";
@@ -59,6 +59,28 @@ function repoPath(cwd, value) {
   return local.replaceAll("\\", "/");
 }
 
+async function nearestExistingAncestor(value) {
+  let candidate = value;
+  while (true) {
+    try {
+      return await realpath(candidate);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      candidate = parent;
+    }
+  }
+}
+
+function assertResolvedInside(root, actual, local) {
+  if (actual === root) return;
+  const actualLocal = relative(root, actual);
+  if (!actualLocal || actualLocal === "." || escapesRoot(actualLocal) || resolve(root, actualLocal) !== actual) {
+    throw new Error(`Bootstrap owner path resolves outside the Execution Worktree: ${local}`);
+  }
+}
+
 async function fileDigest(cwd, local) {
   const root = await realpath(cwd);
   const absolute = resolve(cwd, local);
@@ -67,12 +89,11 @@ async function fileDigest(cwd, local) {
     actual = await realpath(absolute);
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
-    actual = resolve(await realpath(dirname(absolute)), basename(absolute));
+    const ancestor = await nearestExistingAncestor(dirname(absolute));
+    assertResolvedInside(root, ancestor, local);
+    return "absent";
   }
-  const actualLocal = relative(root, actual);
-  if (!actualLocal || actualLocal === "." || escapesRoot(actualLocal) || resolve(root, actualLocal) !== actual) {
-    throw new Error(`Bootstrap owner path resolves outside the Execution Worktree: ${local}`);
-  }
+  assertResolvedInside(root, actual, local);
   try {
     return sha256(await readFile(absolute));
   } catch (error) {

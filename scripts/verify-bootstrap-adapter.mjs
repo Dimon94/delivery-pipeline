@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const adapterPath = fileURLToPath(new URL("../skills/delivery-pipeline/adapters/bootstrap-trigger.ts", import.meta.url));
 const source = await readFile(adapterPath, "utf8");
@@ -124,6 +124,7 @@ function makeHarness({ initialEntries = [], execResults = [], initialOwner = INI
       const toolCallId = `mutation-${appended.length}-${content.length}`;
       const event = { toolCallId, toolName: "edit", isError: false, input: { path } };
       await events.get("tool_call")(event, ctx);
+      mkdirSync(dirname(resolve(cwd, path)), { recursive: true });
       await writeFile(resolve(cwd, path), content);
       await events.get("tool_result")(event, ctx);
     },
@@ -311,6 +312,30 @@ await check("same-Shift Armed replay requires restored=true and immutable route"
     /immutable route/,
   );
   assert.equal(h.appended.length, appendedBefore);
+});
+
+await check("write can create a canonical-owner file under a new parent directory", async () => {
+  const h = makeHarness({ execResults: [{ code: 1 }, { code: 0 }] });
+  await h.start();
+  h.arm();
+  await h.tool({ phase: "red", command: "npm test" });
+  await h.mutation("src/new-area/owner.ts", "export const owner = 'after';\n");
+  await h.tool({
+    phase: "green",
+    command: "npm test",
+    ownerPaths: ["src/new-area/owner.ts"],
+    remainingWork: "continue after nested owner creation",
+  });
+  assert.ok(h.emitted.some((event) => event.name === EVENTS.ready));
+
+  const outside = mkdtempSync(join(tmpdir(), "delivery-bootstrap-outside-"));
+  tempRoots.push(outside);
+  const escape = makeHarness({ execResults: [{ code: 1 }] });
+  await escape.start();
+  escape.arm();
+  await escape.tool({ phase: "red", command: "npm test" });
+  symlinkSync(outside, resolve(escape.ctx.cwd, "src/external"));
+  await assert.rejects(() => escape.mutation("src/external/new-owner.ts"), /resolves outside the Execution Worktree/);
 });
 
 await check("owner path boundary accepts dot-dot-prefixed filenames and rejects parent traversal", async () => {
