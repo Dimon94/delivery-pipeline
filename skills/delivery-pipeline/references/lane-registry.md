@@ -108,6 +108,7 @@ created -> running | awaiting_human
 running/awaiting_human -> terminal | blocked
 created -> setup_blocked
 created(requested replacement) -> blocked
+created(armed-without-packet replacement) -> running | blocked
 terminal(commit) -> integrated | integration_conflict | integration_checks_failed | blocked
 terminal(artifact/checks/verdict) -> consumed | blocked
 integrated/consumed -> cleanup_in_progress -> closed
@@ -117,6 +118,8 @@ any active state -> path_conflict | stale
 
 `created(requested replacement) -> blocked` 仅用于 pane 消失且已排除 active writer、Requested Projection
 尚无最终 packet时，重开同一 Worker session并读回 Core crash-window blocked status；不允许 prompt。
+`created(armed-without-packet replacement) -> running | blocked` 只覆盖 Armed Projection 已 readback 但 packet
+checkpoint 未完成的窗口；验证同一 Shift 后重新生成 packet，成功 Working 才进入 running。
 
 `awaiting_human` 表示 packet accepted且 agent working，用户正在 Herdr参与。整批 user-visible lanes
 完成 registry readback即 Dispatch Handoff，不持续 monitoring。

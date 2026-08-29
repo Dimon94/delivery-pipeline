@@ -15,12 +15,14 @@ Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，�
      坐标或持久证据不一致时写 `stale` 并保留潜在 writer，不进入 startup；
    - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement。所有状态都要求 registry 的
      agent name、agent/model/effort 与原 Worker session；无法证明同一 session 时写 `blocked`，不创建替代
-     session。packet proof 按状态分支：requested 时 packet path/hash 必须为 none；`armed/ready/shifting/shifted`
-     才要求既有 packet path/hash 精确匹配。legacy v2 缺失新坐标时保持 none，不猜测；
+     session。packet proof 按状态分支：requested 时 packet path/hash 必须为 none；`armed` 允许处在 packet
+     checkpoint 前；`ready/shifting/shifted` 才要求既有 packet path/hash 精确匹配。legacy v2 缺失新坐标时
+     保持 none，不猜测；
    - replacement Gearshift state 按持久 Projection 分支：`requested` 不要求 packet，只重开原 session、接受
-     Core 的 crash-window blocked status且绝不 prompt；`armed/ready/shifting` 用 `GEARSHIFT_STATUS <json>`
-     + 原 Shift Record 验证
-     同一 Shift；`shifted` 只接受 `GEARSHIFT_RESUMED <json>`，或 branch model intent + status + 原 Shift
+     Core 的 crash-window blocked status且绝不 prompt；`armed + packet none` 时先用
+     `GEARSHIFT_STATUS <json>` + 原 Shift Record 验证同一 Shift，再重新生成最终 packet，写入 path/hash 并
+     readback 后 prompt；`armed + packet present`、`ready/shifting` 验证同一 Shift 与既有 packet；`shifted`
+     只接受 `GEARSHIFT_RESUMED <json>`，或 branch model intent + status + 原 Shift
      Record；`blocked/cancelled` 保持 lane blocked，不自动重启。所有分支不得创建第二个 Shift，不接受新
      Shift ID，不重新执行 first-time Armed Gate；
    - replacement 启动前验证 registry-owned runtime/model；不可用、状态验证失败或启动失败写 `blocked`

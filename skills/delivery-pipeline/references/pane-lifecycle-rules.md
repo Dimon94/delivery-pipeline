@@ -65,8 +65,10 @@ first-time Armed Gate。packet path/hash 仅在 Armed 后状态必需：
 
 - `requested`：断言 packet path/hash 为 none，重开原 session，读取 crash-window terminal status；Core
   应将未完成 requested Shift fail closed。更新 blocked Projection 后停止，不投递 packet；
-- `armed | ready | shifting`：读取 `GEARSHIFT_STATUS <json>` 与原 Shift Record，Shift ID/route 完全匹配后
-  才可用原 packet 继续；
+- `armed + packet none`：这是 Armed Projection 与 packet checkpoint 之间的合法 crash window；读取
+  `GEARSHIFT_STATUS <json>` 与原 Shift Record，Shift ID/route 完全匹配后重新生成最终 packet，写入
+  path/hash 并 exact readback，再 prompt；
+- `armed + packet present | ready | shifting`：验证同一 Shift 和原 packet path/hash 后继续；
 - `shifted`：只接受 `GEARSHIFT_RESUMED <json>`，或已持久 branch model intent + `GEARSHIFT_STATUS <json>`
   + 原 Shift Record；有效模型按 Core 恢复合同确定，再用原 packet 继续；
 - `blocked | cancelled`：保持 lane blocked，不自动 start。
