@@ -10,10 +10,15 @@ Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，�
 1. 记录当前宿主 `coordinator_runtime: pi-cli | codex-cli | claude-cli`；无法唯一识别时报告
    Unknown并让用户确认。固定 `dispatch_runtime: herdr`，验证 Herdr binary、visible session 与 agent kind。
 2. **先按 registry 判断 existing/replacement。** 命中 registry row 时按 `lane-registry.md` 的 marker
-   分支恢复；existing active lane 直接使用持久 pane/worktree/route，replacement 继续使用持久
-   agent/model/effort。v3 Gearshift-enabled replacement 使用持久 Gearshift Projection，legacy v2 缺失字段
-   保持 disabled/none。这条路径不读取当前 Worker Role Configuration，禁止运行 setup；registry route
-   或所需 runtime/model 不可用时记 `setup_blocked` 并保留现场，不改用 coordinator route。
+   分支，且两条路径都不读取当前 Worker Role Configuration、禁止运行 setup：
+   - existing active recovery 只验证持久 session/pane/worktree/route 坐标；active recovery 不重验 model catalog。
+     坐标或持久证据不一致时写 `stale` 并保留潜在 writer，不进入 startup；
+   - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement。它继续使用持久
+     agent/model/effort；v3 Gearshift-enabled row 使用持久 Projection，legacy v2 缺失字段保持
+     disabled/none。replacement 启动前验证 registry-owned runtime/model；不可用或启动失败写 `blocked`
+     并保留现场，因此 replacement 启动失败写 `blocked`，不写仅属于 first-time created lane 的
+     `setup_blocked`，也不改用 coordinator route。
+   证据不一致时写 `stale`；可证明但无法按原 route 重启时写 `blocked`。
 3. **仅首次创建新 work-item lane** 才加载 `model-role-routing.md`，从 canonical config 读取 route 与
    Gearshift Policy，并验证 model evidence、Gearshift flags 和 setup readback；失败时运行 setup，不替换成
    coordinator 自身 agent。
