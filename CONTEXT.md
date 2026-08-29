@@ -83,7 +83,7 @@ The Delivery Pipeline Trigger satisfied when one focused command has been observ
 The version 3 configuration decision `off | opt_in | all_eligible`. Opt-in requires the configured ticket label; all-eligible applies mechanically to pi frontend/backend roles with a bootstrap entry and does not ask an LLM to classify risk.
 
 **Gearshift Projection**
-The bounded lane-registry and final-report view of one Pi Gearshift Shift Record: policy, deterministic eligibility evidence, profile, Shift ID, Source/Target Model, Adapter, state, and evidence reference. Pi session entries remain the running Shift state owner.
+The bounded, coordinator-owned lane-registry projection of one Pi Gearshift Shift Record: policy, deterministic eligibility evidence, JSON-quoted opt-in label, profile, Shift ID, Source/Target Model, Adapter, state, and evidence reference. Pi session entries remain the running Shift state owner. Coordinator independently validates the machine-readable Shift Record before updating the Projection; the worker final report is only a later cross-check and never owns Projection state.
 
 **Coordinator Runtime**
 The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-cli` for canonical CLI/Herdr orchestration; `codex-app` only when the `delivery-pipeline-codex-app` shell is invoked. Coordinator model is chosen before skill invocation and is not part of Worker Role Configuration.

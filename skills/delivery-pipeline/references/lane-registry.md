@@ -22,7 +22,8 @@ bootstrap_effort: <configured-bootstrap-effort-or-none>
 model_evidence: pi-list-models | codex-catalog | claude-env | none
 gearshift_mode: off | opt_in | all_eligible | none
 gearshift_enabled: true | false | none
-gearshift_eligibility: off | ticket-label:<label> | all-eligible | ineligible | none
+gearshift_eligibility: off | ticket-label | all-eligible | ineligible | none
+gearshift_opt_in_label: <JSON-string-or-none>
 gearshift_profile: delivery-bootstrap | none
 gearshift_shift_id: <id-or-none>
 gearshift_source_model: <model-or-none>
@@ -68,6 +69,31 @@ v3，也不因用户配置已升级或仍为 version 2 而阻塞。读取 v2 row
 
 因此 existing lane recovery 先于任何新 lane 配置 Gate。无法由 v2 坐标唯一证明的状态仍按 `stale`
 fail closed，而不是通过 schema migration 猜测。
+
+## Gearshift Projection Checkpoints
+
+Pi session branch 的 Shift Record 是独立真相源；registry 只是 coordinator-owned Projection，worker final
+report 不拥有它。所有更新使用一个 bounded tracker transaction 并 exact readback：
+
+1. **Requested。** 首次创建 eligible lane 时，先写 policy、eligibility、JSON-quoted opt-in label、profile、
+   planned Source/Target、Adapter、`gearshift_state: requested`，Shift ID/evidence ref 为 none；然后创建 pane。
+2. **Armed。** 只启动 Pi agent，不投递工作 packet。Coordinator 读取同一 session 输出的
+   `GEARSHIFT_ARMED <json>`，验证 profile、完整 Shift ID、Source/Target、Adapter 与
+   `gearshift-shift:<shiftId>` reference。成功后把这些字段和 `gearshift_state: armed` 写入 registry 并
+   readback；Armed Projection readback 后才生成最终 packet。失败按 startup failure state 处理，worker
+   不接收 work item。
+3. **Monitor/Recovery。** 仅在显式 monitor、terminal wake 或 recovery 时读取同一 session 的
+   `GEARSHIFT_STATUS <json>` 与对应 Shift Record。先用 registry Armed Projection 验证 Shift ID 和不可变
+   route 字段，再投影 `ready | shifting | shifted | blocked | cancelled`；缺失、冲突或损坏写 `stale`，不猜测。
+4. **Terminal。** Coordinator 独立读取并验证 Shift Record 后，把 terminal state 与 evidence ref 作为一个
+   tracker transaction 写入并 readback；随后才与 worker final report 交叉验证。final report 不作为
+   Projection 更新依据，也不能单独证明 Shift。`shifted` 要求 Target model change 可读回；
+   `blocked/cancelled` 保留 Source 和 blocker。事务失败保留旧 Projection 并阻止 fan-in。
+5. **Disabled/legacy。** disabled v3 row 全部 Gearshift 字段为 none/false；legacy v2 按上一节解释，
+   不创建 Projection 事务。
+
+`gearshift_opt_in_label` 保存配置 label 的 JSON string 表示；`gearshift_eligibility: ticket-label` 只表示
+命中类型，不拼接自由文本。这样冒号、空格或 `#` 不改变 registry 结构。
 
 ## Worker State Machine
 

@@ -18,6 +18,10 @@ def _non_empty(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _valid_label(value: object) -> bool:
+    return _non_empty(value) and len(value) <= 50 and all(ord(char) >= 32 and ord(char) != 127 for char in value)
+
+
 def validate_document(document: object) -> list[str]:
     errors: list[str] = []
     if not isinstance(document, dict):
@@ -37,8 +41,8 @@ def validate_document(document: object) -> list[str]:
         mode = gearshift.get("mode")
         if mode not in GEARSHIFT_MODES:
             errors.append(f"gearshift.mode must be one of {sorted(GEARSHIFT_MODES)}")
-        if not _non_empty(gearshift.get("optInLabel")):
-            errors.append("gearshift.optInLabel must be a non-empty string")
+        if not _valid_label(gearshift.get("optInLabel")):
+            errors.append("gearshift.optInLabel must be a 1-50 character string without control characters")
 
     roles = document.get("roles")
     if not isinstance(roles, dict):
@@ -121,6 +125,10 @@ def self_test() -> list[str]:
     del off["roles"]["backend"]["bootstrap"]
     if validate_document(off):
         failures.append("valid Gearshift-off fixture was rejected")
+    punctuation_label = valid_fixture()
+    punctuation_label["gearshift"]["optInLabel"] = "type: bootstrap #1"
+    if validate_document(punctuation_label):
+        failures.append("valid punctuation label fixture was rejected")
 
     cases: dict[str, dict] = {}
     case = valid_fixture(); case["version"] = 2; cases["old-version"] = case
@@ -133,6 +141,8 @@ def self_test() -> list[str]:
     case = valid_fixture(); case["gearshift"]["mode"] = "automatic"; cases["bad-mode"] = case
     case = valid_fixture(); case["gearshift"]["extra"] = True; cases["extra-gearshift-field"] = case
     case = valid_fixture(); case["gearshift"]["optInLabel"] = ""; cases["blank-opt-in-label"] = case
+    case = valid_fixture(); case["gearshift"]["optInLabel"] = "bad\nlabel"; cases["control-character-label"] = case
+    case = valid_fixture(); case["gearshift"]["optInLabel"] = "x" * 51; cases["overlong-label"] = case
     case = valid_fixture(); case["roles"]["backend"]["agent"] = "codex"; cases["bootstrap-non-pi"] = case
     case = valid_fixture(); case["roles"]["design"]["bootstrap"] = {"model": "x", "effort": "high"}; cases["bootstrap-design"] = case
     case = valid_fixture(); del case["roles"]["backend"]["bootstrap"]; cases["active-without-bootstrap"] = case

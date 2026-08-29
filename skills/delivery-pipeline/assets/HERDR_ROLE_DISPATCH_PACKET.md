@@ -1,9 +1,11 @@
 # Herdr Configured Role Dispatch Packet
 
 所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 3 配置解析 role、agent、ordinary route、
-可选 bootstrap 与 Gearshift Policy，并在启动前写入 registry。普通 lane 不自行切换 agent/model/effort；
-enabled pi implementation lane 只允许已配置的 Pi Gearshift 按 Bootstrap Checkpoint 执行 Source→Target
-Shift。用户仍可在 pane 手动切换，worker 照常交付并在 final report 如实记录实际模型历史与 evidence。
+可选 bootstrap 与 Gearshift Policy。普通 lane 在 startup registry readback 后生成 packet；enabled Pi lane
+先只启动 agent，验证 `GEARSHIFT_ARMED <json>` 并持久化 Armed Projection，最终 packet 仅在 Armed
+Projection readback 后生成和投递。worker 不自行切换 agent/model/effort；enabled lane 只允许已配置的
+Pi Gearshift 按 Bootstrap Checkpoint 执行 Source→Target Shift。用户仍可在 pane 手动切换，worker照常
+交付并在 final report 如实记录实际模型历史与 evidence。
 
 ```text
 Coordinator task：
@@ -17,7 +19,8 @@ Effort：<ordinary Target effort>
 Model evidence：<pi-list-models | codex-catalog | claude-env>
 Gearshift mode：<off | opt_in | all_eligible>
 Gearshift enabled：<true | false>
-Gearshift eligibility：<off | ticket-label:label | all-eligible | ineligible>
+Gearshift eligibility：<off | ticket-label | all-eligible | ineligible>
+Gearshift opt-in label JSON：<quoted-label | none>
 Gearshift profile：<delivery-bootstrap | none>
 Bootstrap Source：<model + effort | none>
 Ordinary Target：<model + effort>
@@ -82,7 +85,7 @@ Role：
 Output mode：
 Agent/model/effort：
 模型历史：
-Gearshift Projection：<mode/enabled/eligibility/shift-id/source/target/adapter/state/evidence-ref | none>
+Gearshift Projection：<mode/enabled/eligibility/opt-in-label-json/shift-id/source/target/adapter/state/evidence-ref | none>
 状态：completed | blocked
 Pane/worktree/branch：
 Commit：<hash subject | none>

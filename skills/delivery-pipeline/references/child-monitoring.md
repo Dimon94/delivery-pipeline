@@ -12,6 +12,9 @@ monitor 请求才进入本文件。
 
 ## Role-aware Terminal Outcomes
 
+Gearshift-enabled lane terminal 时，先按 `lane-registry.md` 从同一 Pi session 独立读取并验证 Shift Record，
+完成 terminal Projection transaction；final report 只在 Projection readback 后交叉验证。
+
 | Output mode | Required terminal evidence | Fan-in state |
 |---|---|---|
 | `commit` | terminal commit + code-review Review Evidence Bundle readback + configured Gearshift Projection readback（enabled 时）+ actual model history + clean/declared dirty state + touched files | cherry-pick → `integrated` |

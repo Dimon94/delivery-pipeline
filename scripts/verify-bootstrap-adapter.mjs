@@ -281,6 +281,27 @@ await check("restored Armed event preserves prior red/mutation evidence", async 
   assert.ok(restored.emitted.some((event) => event.name === EVENTS.ready));
 });
 
+await check("owner path boundary accepts dot-dot-prefixed filenames and rejects parent traversal", async () => {
+  const h = makeHarness({ execResults: [{ code: 1 }, { code: 0 }] });
+  await h.start();
+  h.arm();
+  await h.tool({ phase: "red", command: "npm test" });
+  await h.mutation("..owner.ts", "export const owner = 'after';\n");
+  await h.tool({
+    phase: "green",
+    command: "npm test",
+    ownerPaths: ["..owner.ts"],
+    remainingWork: "continue after boundary proof",
+  });
+  assert.ok(h.emitted.some((event) => event.name === EVENTS.ready));
+
+  const escape = makeHarness({ execResults: [{ code: 1 }] });
+  await escape.start();
+  escape.arm();
+  await escape.tool({ phase: "red", command: "npm test" });
+  await assert.rejects(() => escape.mutation("../escape-owner.ts"), /outside the Execution Worktree/);
+});
+
 await check("terminal Gearshift event disables Bootstrap tool", async () => {
   const h = makeHarness();
   await h.start();

@@ -46,8 +46,9 @@ readback 的 workspace/tab/pane 必须与环境坐标一致。当前 CLI socket�
 默认复用 coordinator 当前所在的 Herdr Workspace，并把 `HERDR_WORKSPACE_ID` 记为本次新 lane 的
 `workspace_id`。只有用户显式要求新 Workspace 才执行 `herdr workspace create` 并使用返回的真实
 ID；不重命名当前 Workspace为 map label。workspace 解析是 maximal safe batch 的唯一串行前置，
-readback 后同批 tab/pane creation、placement验证、agent start 与 packet delivery并发发出。
-已有 active lane始终按 registry 中原 session/workspace恢复；后续新 lane按本次 Coordinator Pane
+readback 后同批 tab/pane creation 与 placement 验证可并发；ordinary lane 随后 start/prompt，Gearshift-enabled
+lane 执行下方 two-phase gate，packet delivery 不与其 agent start 并发。已有 active lane 始终按 registry
+中原 session/workspace恢复；后续新 lane按本次 Coordinator Pane
 的 current-workspace 默认重新解析。
 
 ## 首次创建新 lane 的 Dispatch Critical Path
@@ -57,15 +58,22 @@ existing/replacement 走上述 registry recovery 分支，不进入本节的 con
 1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
    path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
    agent model evidence。
-2. registry 先写 role、agent、ordinary model/effort、bootstrap route 或 none、Gearshift Projection、
-   model evidence、runtime、permission mode、pane/worktree 计划坐标与 base commit，再精确 readback。
-3. 从同一 Integration HEAD 创建各 lane Execution Worktree，branch prefix 与 agent kind 一致。
-4. 填写 `assets/HERDR_ROLE_DISPATCH_PACKET.md`；按 `model-role-routing.md` 启动 kind-matched CLI。
-   Eligible pi lane 从 canonical skill realpath 定向加载 Bootstrap Adapter 并传 Gearshift per-run route；
-   disabled lane 不加载、不传相关 flags。
-5. 按 `pane-lifecycle-rules.md` 完成落点验证、投递、记账和聚合 Working 确认；单条失败隔离为
+2. registry 先写 role、agent、ordinary model/effort、bootstrap route 或 none、model evidence、runtime、
+   permission mode、计划 worktree/pane 与 base commit。Gearshift-enabled lane 同时写 Requested Projection：
+   policy/eligibility/JSON label/planned route/Adapter/state=requested，Shift ID 与 evidence ref 为 none。
+3. 从同一 Integration HEAD 创建 Execution Worktree 与 pane，验证 placement，把真实 worktree/session/
+   workspace/tab/pane 坐标写入 registry 并 exact readback；worker 尚未收到 work item。
+4. ordinary lane 生成最终 packet，按 `model-role-routing.md` 启动对应 agent，再 prompt packet；不得加载
+   Bootstrap Adapter 或传 Gearshift flags。
+5. **Two-phase Bootstrap Startup。** Eligible Pi lane 从 canonical skill realpath 定向加载 Adapter：
+   - phase A：按 Bootstrap Source start agent，但不 prompt work packet；
+   - phase B：读取并验证 `GEARSHIFT_ARMED <json>`，按 `lane-registry.md` 写完整 Shift ID、Source/Target、
+     Adapter、state=armed 与 evidence ref；Armed Projection readback 后才生成最终 packet；
+   - phase C：投递该 packet，再等待 Working。Armed 缺失、冲突或 registry readback 失败时按 first-time
+     startup failure 处理，关闭新 pane，worker 不接收 ticket。
+6. 按 `pane-lifecycle-rules.md` 完成分支对应的投递、记账和 Working 确认；first-time failure 写
    `setup_blocked`，不影响 siblings。
-6. 整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff；单 lane working 不提前 yield。
+7. 整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff；单 lane working 不提前 yield。
 
 ## 恢复与切换
 

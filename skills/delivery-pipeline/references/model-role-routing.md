@@ -35,7 +35,7 @@
 
 - 顶层 key 精确为 `version`、`gearshift`、`roles`；version = 3。
 - `gearshift` key 精确为 `mode`、`optInLabel`。
-- `mode` 只允许 `off | opt_in | all_eligible`；label 非空。
+- `mode` 只允许 `off | opt_in | all_eligible`；label 为 1–50 字符且不含控制字符。
 - role key 与六角色精确相等。
 - 每个 role 有且只有 `agent/model/effort`；只有 frontend/backend 可额外有 `bootstrap`。
 - `bootstrap` 有且只有非空 `model/effort`，要求 role agent = pi，且 Source Model 不等于普通 Target Model。
@@ -52,7 +52,7 @@ skill 与 reference 不提供默认 agent/model/effort/bootstrap。任一条件�
 | `opt_in` | 只有带 `optInLabel` 的 eligible ticket 使用 Bootstrap Handoff。 |
 | `all_eligible` | 所有 agent=pi 且具有 bootstrap 的 frontend/backend ticket 使用。 |
 
-Policy 是确定性配置，不调用 LLM 判断风险。`opt_in` 的 ticket label 必须从 tracker 持久状态读回并以 `ticket-label:<label>` 投影到 registry；对话中的口头意图不算。配置只绑定首次创建的新 work-item lane。既有 lane 与 replacement 始终按 `lane-registry.md` 恢复，不因 mode、schema 或配置变化迁移；legacy v2 row 的 Gearshift 保持 disabled/none。
+Policy 是确定性配置，不调用 LLM 判断风险。`opt_in` 的 ticket label 必须从 tracker 持久状态读回；registry 写 `gearshift_eligibility: ticket-label`，并把原 label 作为独立的 JSON-quoted `gearshift_opt_in_label` 保存，不拼进 YAML scalar。对话中的口头意图不算。配置只绑定首次创建的新 work-item lane。既有 lane 与 replacement 始终按 `lane-registry.md` 恢复，不因 mode、schema 或配置变化迁移；legacy v2 row 的 Gearshift 保持 disabled/none。
 
 Eligible lane 启动时：
 

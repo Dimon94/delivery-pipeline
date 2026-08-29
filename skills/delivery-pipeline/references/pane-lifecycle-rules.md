@@ -10,10 +10,13 @@ Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 2. **并发段 A**:按下方“拓扑与命名”的容量管理规则放置 lane pane:worker tab 内用
    `pane split`(`--cwd <Execution Worktree>`、`--no-focus`)落到未占用角落;新 worker tab
    用 `tab create` 并由 root pane 承载首条 lane;随后验证落点。
-3. **并发段 B**：按配置并发 agent start + packet 投递；投递不阻塞。
-4. **记账段**:rename pane 为 work item 标题 + 把编号并入 tab label,与 agent 冷启动重叠。
-5. **聚合 Working 确认**：并行等待各 agent working；单项失败独立隔离。
-6. **Watcher + 聚合 readback**：确认 working 后挂 lane watcher，聚合 registry readback，到达
+3. **并发段 B**：ordinary lane 生成最终 packet 后 start/prompt；Gearshift-enabled Pi lane 只 start，
+   不投递 packet。
+4. **Armed Gate**：enabled lane 读取 `GEARSHIFT_ARMED <json>`，验证并 exact readback Armed Projection，
+   再生成和投递最终 packet；不同 lane 的 Armed Gate 可并发。
+5. **记账段**：rename pane 为 work item 标题并把编号并入 tab label，与 agent 冷启动重叠。
+6. **聚合 Working 确认**：所有 packet 投递后并行等待各 agent working；单项失败独立隔离。
+7. **Watcher + 聚合 readback**：确认 working 后挂 lane watcher，聚合 registry readback，到达
    Dispatch Handoff。
 
 ## Startup Failure State
@@ -50,8 +53,10 @@ herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中�
 | codex | `model-role-routing.md` 的“Codex CLI” | runtime、model、effort 与 registry 一致 |
 | claude | `model-role-routing.md` 的“Claude CLI” | runtime、model、effort 与 registry 一致 |
 
-Gearshift-enabled Pi lane 在 start 后必须 readback `GEARSHIFT_ARMED <json>`；缺少完整 Shift ID、
-Source/Target、Adapter 或 evidence reference 时写 startup failure state，不能当 ordinary Pi lane 继续。
+Gearshift-enabled Pi lane 必须先 start、不 prompt；随后 readback `GEARSHIFT_ARMED <json>`，验证完整
+Shift ID、Source/Target、Adapter 和 evidence reference，并按 `lane-registry.md` 持久化 Armed Projection。
+Armed Projection exact readback 后才生成最终 packet 并 prompt；失败写 startup failure state，不能当
+ordinary Pi lane 继续。
 
 `agent start` 不支持 `--cwd`；cwd 在 pane split/create 时绑定。shell 未就绪时先等待
 `agent_status` 非 unknown。Agent name 使用 lowercase alphanumeric + hyphens。

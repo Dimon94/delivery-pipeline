@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const ADAPTER_ID = "delivery-pipeline/bootstrap-slice";
 const EVIDENCE_VERSION = "1";
@@ -46,10 +46,14 @@ function outputTail(result) {
   return text.length <= 8000 ? text : `[output truncated]\n${text.slice(-8000)}`;
 }
 
+function escapesRoot(local) {
+  return local === ".." || local.startsWith(`..${sep}`) || isAbsolute(local);
+}
+
 function repoPath(cwd, value) {
   const absolute = resolve(cwd, value);
   const local = relative(cwd, absolute);
-  if (!local || local === "." || local.startsWith("..") || resolve(cwd, local) !== absolute) {
+  if (!local || local === "." || escapesRoot(local) || resolve(cwd, local) !== absolute) {
     throw new Error(`Bootstrap owner path is outside the Execution Worktree: ${value}`);
   }
   return local.replaceAll("\\", "/");
@@ -66,7 +70,7 @@ async function fileDigest(cwd, local) {
     actual = resolve(await realpath(dirname(absolute)), basename(absolute));
   }
   const actualLocal = relative(root, actual);
-  if (!actualLocal || actualLocal === "." || actualLocal.startsWith("..") || resolve(root, actualLocal) !== actual) {
+  if (!actualLocal || actualLocal === "." || escapesRoot(actualLocal) || resolve(root, actualLocal) !== actual) {
     throw new Error(`Bootstrap owner path resolves outside the Execution Worktree: ${local}`);
   }
   try {

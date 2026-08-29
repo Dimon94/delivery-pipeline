@@ -8,11 +8,15 @@ checks与 verdict 是执行真相源。
 1. 从 registry marker 选择 `lane-registry.md` 的 v3 Base Schema 或 Legacy v2 Recovery，再读取 role、
    output_mode、agent、registry-owned route、runtime、pane、worktree、branch 与 base commit。v3 row 才读取
    Bootstrap/Gearshift Projection；v2 缺失字段保持 disabled/none。
-2. 验证 pane kind/runtime、worktree common dir、branch、HEAD、dirty state 与 final evidence。v3 Gearshift
-   enabled 时额外验证 final report 的 Shift ID、Source/Target、Adapter、`shifted` state 与 session record
-   reference 精确匹配 registry；缺失、blocked 或手动模型变化冒充 Shift 时阻塞。
-3. final marker 缺字段记 Unknown；不要求 worker 重显。
-4. output_mode 与 role/gate packet 不一致时阻塞；unknown active writer时不 cleanup。
+2. 验证 pane kind/runtime、worktree common dir、branch、HEAD 与 dirty state。v3 Gearshift enabled 时，
+   Coordinator 先从同一 Pi session 读取 `GEARSHIFT_STATUS <json>` 与 Shift Record；用 Armed Projection
+   验证完整 Shift ID、Source/Target、Adapter 和 evidence ref，再按 `lane-registry.md` 的 terminal tracker
+   transaction 投影 `shifted | blocked | cancelled` 并 exact readback。不得先相信 final report 更新 registry。
+3. Projection readback 后才与 final report 交叉验证。`shifted` 必须有 Target model change 与 Bootstrap
+   Checkpoint evidence；`blocked/cancelled` 写 lane blocked 并保留现场；仍为 armed/ready/shifting、记录缺失
+   或 immutable route 冲突时写 `stale` 并阻止 fan-in。手动模型变化不得冒充 Shift。
+4. final marker 缺字段记 Unknown；不要求 worker 重显。
+5. output_mode 与 role/gate packet 不一致时阻塞；unknown active writer时不 cleanup。
 
 ## Commit Mode
 

@@ -70,20 +70,22 @@ Bootstrap Gearshift Policy、model evidence 与 dispatch target 完整。
    `opt_in` 要求 ticket 带配置 label；`all_eligible` 要求 pi role 有 bootstrap。enabled lane 使用
    bootstrap model 启动、ordinary model 作为 Target，并从 canonical skill realpath 用 `-e` 加载
    `adapters/bootstrap-trigger.ts`；其他 lane 不加载。解析 `implement` owner并创建唯一 Herdr lane +
-   Execution Worktree。commit packet 同时写 `Review fixed point: <Execution Base commit>`、Review
-   preflight 与 Gearshift Projection；`implement` owner 在本 lane 内调用 `code-review` 时先执行
+   Execution Worktree。packet draft 先写 `Review fixed point: <Execution Base commit>`、Review
+   preflight 与 planned Gearshift Projection；enabled lane 的最终 packet 等 Armed Projection readback 后才生成。
+   `implement` owner 在本 lane 内调用 `code-review` 时先执行
    preflight。coordinator 不亲自实现。
    完成标准：本批每条 lane 已持久化 role、agent、ordinary model/effort、bootstrap route 或 none、
    Gearshift policy/projection、runtime、pane、worktree、branch 与 base commit。
 5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 的容量管理规则
    在 dispatch target Workspace 放置 lane pane(worker tab 最多 4 pane、四角分布、溢出开新
    tab),并将 cwd 绑定到对应 Execution Worktree;Coordinator Pane 只调度,不作为 worker
-   pane。验证落点、启动配置指定的 CLI、投递 packet、聚合确认
-   `working`。kind 与 runtime 必须匹配：
-   pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
-   错误落点、owner 未读、ordinary/bootstrap model 不可用、Gearshift Core flags 或 Adapter realpath
-   缺失时沿同一配置重建一次；第二次失败记 `setup_blocked`。enabled lane 必须 readback Source/Target、
-   Adapter 与 Armed Shift 坐标；整批 startup readback 后统一 Dispatch Handoff 并结束本轮。
+   pane。验证落点并启动配置指定的 CLI；ordinary lane 随后投递 packet。enabled lane 执行 two-phase
+   startup：只启动 Bootstrap Source，不投递 ticket；从 `GEARSHIFT_ARMED <json>` 验证 Source/Target、
+   Adapter、完整 Shift ID 与 evidence ref，写入并 readback Armed Projection 后才生成和投递最终 packet。
+   最后聚合确认 `working`。kind 与 runtime 必须匹配：pi → `herdr-pi-pane`，codex →
+   `herdr-codex-pane`，claude → `herdr-claude-pane`。错误落点、owner 未读、route/flags/Adapter 或 Armed
+   readback 缺失时沿同一路径重建一次；first-time created lane 第二次失败记 `setup_blocked`。整批
+   startup readback 后统一 Dispatch Handoff 并结束本轮。
 6. **Role-aware Fan-in / Integration。** 用户完成信号或 terminal event 只负责唤醒；按
    `output_mode` 验证持久证据：`commit` lane 才要求 commit并按 dependency order cherry-pick 到
    Map Integration Worktree，focused checks通过后写 `integrated`；`artifact` lane验证 tracker/
