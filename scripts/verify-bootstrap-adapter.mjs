@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -336,6 +336,19 @@ await check("write can create a canonical-owner file under a new parent director
   await escape.tool({ phase: "red", command: "npm test" });
   symlinkSync(outside, resolve(escape.ctx.cwd, "src/external"));
   await assert.rejects(() => escape.mutation("src/external/new-owner.ts"), /resolves outside the Execution Worktree/);
+});
+
+await check("dangling leaf symlink is rejected before write escapes the worktree", async () => {
+  const outside = mkdtempSync(join(tmpdir(), "delivery-bootstrap-dangling-"));
+  tempRoots.push(outside);
+  const outsideTarget = resolve(outside, "missing-owner.ts");
+  const h = makeHarness({ execResults: [{ code: 1 }] });
+  await h.start();
+  h.arm();
+  await h.tool({ phase: "red", command: "npm test" });
+  symlinkSync(outsideTarget, resolve(h.ctx.cwd, "src/dangling-owner.ts"));
+  await assert.rejects(() => h.mutation("src/dangling-owner.ts"), /dangling symlink/);
+  assert.equal(existsSync(outsideTarget), false, "tool_call must reject before Pi write creates the external target");
 });
 
 await check("owner path boundary accepts dot-dot-prefixed filenames and rejects parent traversal", async () => {

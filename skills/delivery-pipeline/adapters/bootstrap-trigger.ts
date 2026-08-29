@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const ADAPTER_ID = "delivery-pipeline/bootstrap-slice";
@@ -59,17 +59,30 @@ function repoPath(cwd, value) {
   return local.replaceAll("\\", "/");
 }
 
-async function nearestExistingAncestor(value) {
+async function nodeExists(value) {
+  try {
+    await lstat(value);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function nearestExistingNode(value, local) {
   let candidate = value;
-  while (true) {
-    try {
-      return await realpath(candidate);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-      const parent = dirname(candidate);
-      if (parent === candidate) throw error;
-      candidate = parent;
+  while (!(await nodeExists(candidate))) {
+    const parent = dirname(candidate);
+    if (parent === candidate) throw new Error(`Bootstrap owner path has no existing ancestor: ${local}`);
+    candidate = parent;
+  }
+  try {
+    return { actual: await realpath(candidate), targetExists: candidate === value };
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`Bootstrap owner path contains a dangling symlink: ${local}`);
     }
+    throw error;
   }
 }
 
@@ -84,16 +97,9 @@ function assertResolvedInside(root, actual, local) {
 async function fileDigest(cwd, local) {
   const root = await realpath(cwd);
   const absolute = resolve(cwd, local);
-  let actual;
-  try {
-    actual = await realpath(absolute);
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    const ancestor = await nearestExistingAncestor(dirname(absolute));
-    assertResolvedInside(root, ancestor, local);
-    return "absent";
-  }
-  assertResolvedInside(root, actual, local);
+  const boundary = await nearestExistingNode(absolute, local);
+  assertResolvedInside(root, boundary.actual, local);
+  if (!boundary.targetExists) return "absent";
   try {
     return sha256(await readFile(absolute));
   } catch (error) {
