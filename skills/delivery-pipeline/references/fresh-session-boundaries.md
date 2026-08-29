@@ -22,5 +22,6 @@ coordinator 对话，也不领取 sibling。
 ## Recovery
 
 新会话先从 registry 枚举所有 active writer；Herdr lane 按 stored runtime/model/effort 恢复，不应用
-新 config。路径、pane或 Git 证据不唯一时记 Unknown并停止 replacement。只有事实变化或
-coordinator session 改变时重读对应边界。
+新 config。路径、pane 或 Git 证据不唯一时写 `stale`，保留全部证据与潜在 writer 并停止 replacement。
+Unknown 只描述未知字段，不作为 lane state，也不能绕过 `lane-registry.md` 的 stale transition。只有事实
+变化或 coordinator session 改变时重读对应边界。

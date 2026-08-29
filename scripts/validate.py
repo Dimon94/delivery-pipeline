@@ -186,6 +186,12 @@ def check_core_contract() -> None:
             "HITL lane 与其他 lane 共用 X tab 容量",
             "coordinator pane 不作为 worker pane",
             "--cwd <Execution Worktree>",
+            "gearshift_enabled: false",
+            "gearshift_enabled: true",
+            "-e \"$bootstrap_adapter\"",
+            "--gearshift-profile delivery-bootstrap",
+            "first-time created lane 写 `setup_blocked`",
+            "replacement 写 `blocked`",
         ),
     )
     require(
@@ -225,12 +231,22 @@ def check_core_contract() -> None:
             if phrase in text:
                 record(f"legacy one-lane-per-tab rule restored: {path.relative_to(ROOT)}: {phrase}")
     require(
+        CORE / "references" / "fresh-session-boundaries.md",
+        (
+            "写 `stale`",
+            "Unknown 只描述未知字段",
+            "停止 replacement",
+        ),
+    )
+    require(
         CORE / "references" / "frontier-lanes.md",
         (
             "普通 repo 文件路径重叠只进入 Integration 冲突检测",
             "Role Binding",
             "HERDR_ROLE_DISPATCH_PACKET.md",
             "整批成功 lanes 完成 startup",
+            "first-time created lane 写 `setup_blocked`",
+            "replacement 写 `blocked`",
         ),
     )
     registry = CORE / "references" / "lane-registry.md"

@@ -16,6 +16,17 @@ Agent/Model/Effort 启动参数由 `model-role-routing.md` 的 adapter 提供。
 6. **Watcher + 聚合 readback**：确认 working 后挂 lane watcher，聚合 registry readback，到达
    Dispatch Handoff。
 
+## Startup Failure State
+
+本文件只处理 first-time created lane 与已由 recovery 合同批准的 replacement；active recovery 不进入
+placement/start/prompt。任一 placement、start、packet 或 Working failure 都按 lane origin 记录：
+
+- first-time created lane 写 `setup_blocked`，关闭本次新 pane，并按需清理空 tab；
+- replacement 写 `blocked`，保留原 registry、Execution Worktree 与持久证据，只关闭本次失败创建的 pane；
+- 无法证明 lane origin 或 active writer 已排除时写 `stale`，不创建或关闭 pane。
+
+后文的“写 startup failure state”均指此分支，不允许无条件写 `setup_blocked`。
+
 ## 投递
 
 Packet 已写入文件，只投递单行绝对路径引用：
@@ -24,33 +35,31 @@ Packet 已写入文件，只投递单行绝对路径引用：
 herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。"
 ```
 
-不带 `--wait`。失败时 get/read 一次、重试一次；仍失败写 `setup_blocked`。不用裸
+不带 `--wait`。失败时 get/read 一次、重试一次；仍失败写 startup failure state。不用裸
 `pane send-text` + Enter 投递多行文本。
 
 ## Agent 启动
 
-从 registry readback 的 agent/model/effort 构造命令；不得用 skill 内默认值：
+启动命令只从 registry readback 构造；具体 agent adapter 命令的 canonical owner 是
+`model-role-routing.md`，本文件不维护第二份完整命令。按 registry 分支：
 
-```bash
-# pi
-herdr agent start "$agent_name" --kind pi --pane "$pane_id" -- \
-  --approve --model "$model" --thinking "$effort"
+| registry route | canonical adapter | 本地断言 |
+|---|---|---|
+| pi + `gearshift_enabled: false` | `model-role-routing.md` 的“pi（普通 lane）” | CLI model/effort 等于 ordinary route；不得出现 Gearshift flags |
+| pi + `gearshift_enabled: true` | `model-role-routing.md` 的“pi（Bootstrap Handoff lane）” | CLI model/effort 等于 Bootstrap Source；命令包含 `-e "$bootstrap_adapter"`、`--gearshift-profile delivery-bootstrap`、Target/thinking/Adapter/Authority flags |
+| codex | `model-role-routing.md` 的“Codex CLI” | runtime、model、effort 与 registry 一致 |
+| claude | `model-role-routing.md` 的“Claude CLI” | runtime、model、effort 与 registry 一致 |
 
-# Codex CLI
-herdr agent start "$agent_name" --kind codex --pane "$pane_id" -- \
-  --model "$model" -c "model_reasoning_effort=\"$effort\"" \
-  -s danger-full-access -a never
-
-# Claude CLI
-herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
-  --model "$model" --effort "$effort" --dangerously-skip-permissions
-```
+Gearshift-enabled Pi lane 在 start 后必须 readback `GEARSHIFT_ARMED <json>`；缺少完整 Shift ID、
+Source/Target、Adapter 或 evidence reference 时写 startup failure state，不能当 ordinary Pi lane 继续。
 
 `agent start` 不支持 `--cwd`；cwd 在 pane split/create 时绑定。shell 未就绪时先等待
 `agent_status` 非 unknown。Agent name 使用 lowercase alphanumeric + hyphens。
 
-Model/effort 只在该启动命令中绑定一次。之后不做 pane model 对账：运行中或 fan-in 发现 pane
-实际 model 与 registry 不符（通常是用户改的），不构成 setup 失败，不重建 lane，不阻塞交付。
+启动参数只绑定一次：ordinary lane 绑定 ordinary route；Gearshift-enabled lane 绑定 Bootstrap Source，
+后续 Target 迁移由 Gearshift Core 完成。之后不做 pane model 对账：运行中或 fan-in 发现实际 model 与
+registry 不符（通常是用户改的），不构成 setup 失败，不重建 lane，不阻塞交付；只有匹配 registry 的
+Shift Record 才能声称 Bootstrap Handoff 完成。
 
 ## 拓扑与命名
 
@@ -85,7 +94,7 @@ herdr tab create --workspace "$workspace_id" --cwd "$execution_worktree" \
 从返回值读取真实 tab/pane ID,再执行 `herdr pane get "$pane_id"`;断言 workspace_id、tab_id 与
 目标一致,且 coordinator pane 不作为 worker pane。用户显式要求新 Workspace 时,创建响应的
 root pane可承载首条 lane,其余 lane仍按容量规则放入 worker tab。落点错误时关闭本 lane
-pane(新空 tab 一并关闭)并用显式 workspace/tab重试一次;第二次失败写 `setup_blocked`,
+pane（新空 tab 一并关闭）并用显式 workspace/tab 重试一次；第二次失败写 startup failure state，
 继续 siblings。
 
 ## Working 确认
@@ -96,8 +105,8 @@ pane(新空 tab 一并关闭)并用显式 workspace/tab重试一次;第二次失
 herdr agent wait "$agent_name" --until working --timeout 15000
 ```
 
-失败时 get/read 一次、重投 packet 一次、再确认一次；仍失败执行 close + label 对账并写
-`setup_blocked`。确认前不挂 watcher。
+失败时 get/read 一次、重投 packet 一次、再确认一次；仍失败执行本次 pane 的 close + label 对账并写
+startup failure state。确认前不挂 watcher。
 
 ## Terminal Signal 与 Watcher
 

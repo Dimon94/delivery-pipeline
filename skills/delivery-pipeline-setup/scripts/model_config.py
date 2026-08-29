@@ -62,9 +62,9 @@ def validate_document(document: object) -> list[str]:
             if not _non_empty(value.get(field)):
                 errors.append(f"roles.{role}.{field} must be a non-empty string")
 
-        bootstrap = value.get("bootstrap")
-        if bootstrap is None:
+        if "bootstrap" not in value:
             continue
+        bootstrap = value["bootstrap"]
         if role not in IMPLEMENTATION_ROLES:
             errors.append(f"roles.{role}.bootstrap is not allowed")
             continue
@@ -137,6 +137,7 @@ def self_test() -> list[str]:
     case = valid_fixture(); case["roles"]["design"]["bootstrap"] = {"model": "x", "effort": "high"}; cases["bootstrap-design"] = case
     case = valid_fixture(); del case["roles"]["backend"]["bootstrap"]; cases["active-without-bootstrap"] = case
     case = valid_fixture(); case["roles"]["backend"]["bootstrap"] = {"model": "x"}; cases["incomplete-bootstrap"] = case
+    case = valid_fixture(); case["gearshift"]["mode"] = "off"; case["roles"]["backend"]["bootstrap"] = None; cases["null-bootstrap"] = case
     case = valid_fixture(); case["roles"]["backend"]["bootstrap"]["model"] = "provider/fast"; cases["same-source-target"] = case
 
     for name, document in cases.items():

@@ -39,8 +39,9 @@ Policy 只从 `model-role-routing.md` 的 version 3 配置读取；ticket label 
 
 每条 lane 的 pane、Execution Worktree、packet、owner/work item、role config 与 registry 已互相验证，
 worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`，即完成该 lane startup。
-整批成功 lanes 完成 startup、失败项隔离为 `setup_blocked` 后，统一报告全部坐标并立即 yield；
-不等待 routine progress、首个问题或最终结果。
+整批成功 lanes 完成 startup 后统一报告全部坐标并立即 yield；失败项按 lane origin 隔离：
+first-time created lane 写 `setup_blocked`，replacement 写 `blocked` 并保留原 registry/worktree，无法证明
+active writer 已排除时写 `stale`。不等待 routine progress、首个问题或最终结果。
 
 ## Terminal Fan-in
 
