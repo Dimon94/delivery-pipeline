@@ -298,6 +298,8 @@ def check_core_contract() -> None:
             "parent_lane_id:",
             "attempt_id:",
             "replacement placement transaction",
+            "placement 后生成最终 packet",
+            "坐标与 packet path/hash 同一 transaction",
             "实际 session/workspace/tab/pane",
             "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator",
             "integration_conflict",

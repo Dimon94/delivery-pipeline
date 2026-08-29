@@ -85,8 +85,8 @@ parent_lane_id: <v2-lane-id>
 attempt_id: <stable-unique-id>
 state: planned | running | blocked | closed
 agent_name: <allocated-herdr-agent-name>
-packet_path: <absolute-path>
-packet_sha256: <hash>
+packet_path: <absolute-path-or-none>
+packet_sha256: <hash-or-none>
 agent: pi | codex | claude
 model: <copied-v2-model>
 effort: <copied-v2-effort>
@@ -102,14 +102,17 @@ updated_at: <ISO-8601>
 创建规则：
 
 1. route、runtime、worktree 必须逐字段等于 parent v2 row；不读取当前 config，也不加入 Gearshift 字段。
-2. 从持久 work item、owner path、base commit 与 v2 route 生成 packet；写完计算 SHA-256。
-3. 先把 agent name、packet path/hash 和 `planned` state 作为一次 tracker transaction 写入并 exact readback。
-   pane placement 验证后执行 replacement placement transaction，把实际 session/workspace/tab/pane 一次写入
-   并 readback；agent start 前必须同时具备两次 checkpoint。pane lifecycle 只消费 v2 base + 此 overlay。
-4. 同一 parent 只允许一个非 terminal attempt；恢复时复用它，冲突写 `stale`，不分配第二 agent。
-5. 每次 start/prompt 前重新读取 packet 并验证 SHA-256；成功 Working 后 attempt 写 `running`；startup
-   failure 写 `blocked`；fan-in/cleanup 后写 `closed`。原 v2
-   row 保持 v2 marker/字段集合，其 lane state 仍是 work-item 真相源。
+2. 首个 transaction 只写 agent name、copied route、`planned` state；packet 与 placement 字段为 none，并
+   exact readback。
+3. 创建并验证 pane 后，使用实际 Herdr 坐标和持久 work item/owner/base/route 在 placement 后生成最终
+   packet，写完计算 SHA-256。随后执行 replacement placement transaction，把实际
+   session/workspace/tab/pane 坐标与 packet path/hash 同一 transaction 写入并 exact readback；只有该
+   finalization readback 后才允许 agent start/prompt。packet 中的 Herdr 坐标必须与 transaction 完全一致。
+4. 同一 parent 只允许一个非 terminal attempt；恢复 planned attempt 时按 agent name bounded 查找 pane：
+   零匹配可重做 placement，唯一匹配可完成 finalization，多匹配写 `stale`。任何路径都不分配第二 agent。
+5. 每次 start/prompt 前重新读取 packet 并验证 path/坐标/SHA-256；成功 Working 后 attempt 写 `running`；
+   startup failure 写 `blocked`；fan-in/cleanup 后写 `closed`。原 v2 row 保持 v2 marker/字段集合，其 lane
+   state 仍是 work-item 真相源。
 
 该 checkpoint 是 legacy replacement 的兼容 overlay，不是 config/schema migration，也不是跨 lane ledger。
 
