@@ -302,7 +302,7 @@ await check("owner path boundary accepts dot-dot-prefixed filenames and rejects 
   await assert.rejects(() => escape.mutation("../escape-owner.ts"), /outside the Execution Worktree/);
 });
 
-await check("terminal Gearshift event disables Bootstrap tool", async () => {
+await check("terminal Gearshift event disables Bootstrap tool and rejects a second Shift ID", async () => {
   const h = makeHarness();
   await h.start();
   h.arm();
@@ -312,6 +312,21 @@ await check("terminal Gearshift event disables Bootstrap tool", async () => {
   });
   assert.ok(!h.activeTools.includes("bootstrap_check"));
   assert.ok(h.appended.some((entry) => entry.customType === ENTRY_TYPE && entry.data.kind === "terminal"));
+  const appendedBefore = h.appended.length;
+  assert.throws(
+    () =>
+      h.pi.events.emit(EVENTS.armed, {
+        shiftId: "shift-2",
+        profile: "bootstrap",
+        adapterId: "delivery-pipeline/bootstrap-slice",
+        sourceModel: "test/high",
+        targetModel: "test/fast",
+        restored: false,
+      }),
+    /Cannot replace Bootstrap Shift/,
+  );
+  assert.equal(h.appended.length, appendedBefore);
+  assert.ok(!h.activeTools.includes("bootstrap_check"));
 });
 
 for (const root of tempRoots) rmSync(root, { recursive: true, force: true });

@@ -107,12 +107,16 @@ report 不拥有它。所有更新使用一个 bounded tracker transaction 并 e
 created -> running | awaiting_human
 running/awaiting_human -> terminal | blocked
 created -> setup_blocked
+created(requested replacement) -> blocked
 terminal(commit) -> integrated | integration_conflict | integration_checks_failed | blocked
 terminal(artifact/checks/verdict) -> consumed | blocked
 integrated/consumed -> cleanup_in_progress -> closed
 cleanup_in_progress -> close_pending -> closed
 any active state -> path_conflict | stale
 ```
+
+`created(requested replacement) -> blocked` 仅用于 pane 消失且已排除 active writer、Requested Projection
+尚无最终 packet时，重开同一 Worker session并读回 Core crash-window blocked status；不允许 prompt。
 
 `awaiting_human` 表示 packet accepted且 agent working，用户正在 Herdr参与。整批 user-visible lanes
 完成 registry readback即 Dispatch Handoff，不持续 monitoring。

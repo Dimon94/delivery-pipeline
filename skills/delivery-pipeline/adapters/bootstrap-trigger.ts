@@ -90,8 +90,8 @@ function applyEvent(state, event) {
     throw new Error("Invalid Bootstrap Adapter state entry");
   }
   if (event.kind === "armed") {
-    if (state && state.phase !== "terminal" && state.shiftId !== event.shiftId) {
-      throw new Error(`Cannot replace active Bootstrap Shift ${state.shiftId} with ${event.shiftId}`);
+    if (state && state.shiftId !== event.shiftId) {
+      throw new Error(`Cannot replace Bootstrap Shift ${state.shiftId} with ${event.shiftId}`);
     }
     if (typeof event.sourceModel !== "string" || typeof event.targetModel !== "string") {
       throw new Error("Bootstrap armed entry requires Source and Target Models");

@@ -60,19 +60,20 @@ packet path/hash 并 prompt；失败写 startup failure state，不能当 ordina
 
 ### Replacement Gearshift Resume
 
-replacement 必须用 registry 的同一 agent name、Worker session、route 与 packet path/hash；按持久 state
-分支，不执行 first-time Armed Gate：
+replacement 必须用 registry 的同一 agent name、Worker session 与 route；按持久 state 分支，不执行
+first-time Armed Gate。packet path/hash 仅在 Armed 后状态必需：
 
-- `requested`：重开原 session，读取 crash-window terminal status；Core 应将未完成 requested Shift
-  fail closed。更新 blocked Projection 后停止，不投递 packet；
+- `requested`：断言 packet path/hash 为 none，重开原 session，读取 crash-window terminal status；Core
+  应将未完成 requested Shift fail closed。更新 blocked Projection 后停止，不投递 packet；
 - `armed | ready | shifting`：读取 `GEARSHIFT_STATUS <json>` 与原 Shift Record，Shift ID/route 完全匹配后
   才可用原 packet 继续；
 - `shifted`：只接受 `GEARSHIFT_RESUMED <json>`，或已持久 branch model intent + `GEARSHIFT_STATUS <json>`
   + 原 Shift Record；有效模型按 Core 恢复合同确定，再用原 packet 继续；
 - `blocked | cancelled`：保持 lane blocked，不自动 start。
 
-所有分支禁止新 Shift ID、禁止新 Armed event，且禁止新建 Worker session；缺少原 session/packet、
-出现新 Shift ID 或状态冲突时写 `blocked` 或 `stale` 并保留现场。
+所有分支禁止新 Shift ID、不同 ID 的 Armed event或 first-time re-arm，且禁止新建 Worker session；允许
+同一 Shift ID 且 `restored=true` 的恢复 signal，并按 Adapter replay 合同验证。Armed 后状态缺少原
+session/packet、出现新 Shift ID 或状态冲突时写 `blocked` 或 `stale` 并保留现场。
 
 `agent start` 不支持 `--cwd`；cwd 在 pane split/create 时绑定。shell 未就绪时先等待
 `agent_status` 非 unknown。Agent name 使用 lowercase alphanumeric + hyphens。
