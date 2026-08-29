@@ -180,8 +180,14 @@ export default function bootstrapTriggerAdapter(pi) {
       return;
     }
     if (state?.shiftId === event.shiftId) {
+      if (event.restored !== true) {
+        throw new Error(`Bootstrap Armed replay for ${event.shiftId} requires restored=true`);
+      }
+      if (event.sourceModel !== state.sourceModel || event.targetModel !== state.targetModel) {
+        throw new Error(`Bootstrap Armed replay for ${event.shiftId} changed the immutable route`);
+      }
       updateTool();
-      if (event.restored === true && state.phase === "green") emitReady();
+      if (state.phase === "green") emitReady();
       return;
     }
     append({

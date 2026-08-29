@@ -83,9 +83,10 @@ Bootstrap Gearshift Policy、model evidence 与 dispatch target 完整。
    startup：只启动 Bootstrap Source，不投递 ticket；从 `GEARSHIFT_ARMED <json>` 验证 Source/Target、
    Adapter、完整 Shift ID 与 evidence ref，写入并 readback Armed Projection 后才生成和投递最终 packet。
    最后聚合确认 `working`。kind 与 runtime 必须匹配：pi → `herdr-pi-pane`，codex →
-   `herdr-codex-pane`，claude → `herdr-claude-pane`。错误落点、owner 未读、route/flags/Adapter 或 Armed
-   readback 缺失时沿同一路径重建一次；first-time created lane 第二次失败记 `setup_blocked`。整批
-   startup readback 后统一 Dispatch Handoff 并结束本轮。
+   `herdr-codex-pane`，claude → `herdr-claude-pane`。Agent start 前的 pane placement 错误可清理后 bounded
+   重试一次；Agent start 之后禁止 first-time 重建。owner/route/flags/Adapter/Armed/Projection/packet
+   readback 任一失败都按 registry state 进入 state-aware recovery 或 startup failure，不创建第二个 Shift/
+   Worker session。整批 startup readback 后统一 Dispatch Handoff 并结束本轮。
 6. **Role-aware Fan-in / Integration。** 用户完成信号或 terminal event 只负责唤醒；按
    `output_mode` 验证持久证据：`commit` lane 才要求 commit并按 dependency order cherry-pick 到
    Map Integration Worktree，focused checks通过后写 `integrated`；`artifact` lane验证 tracker/

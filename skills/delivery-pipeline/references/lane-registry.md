@@ -67,7 +67,8 @@ v3，也不因用户配置已升级或仍为 version 2 而阻塞。读取 v2 row
   agent name 或 packet 坐标时保持 none，不猜测；
 - 缺失的 Bootstrap/Gearshift 字段解释为 disabled/none；不得从当前配置补入 Source、Target、policy 或 Shift ID；
 - 恢复、fan-in、cleanup 和 replacement 不读取当前 Worker Role Configuration，而是继续沿 v2 row 的
-  ordinary route；replacement 仍禁用 Gearshift；
+  ordinary route；replacement 在排除 active writer 后可创建替代 agent并重新生成 packet，不要求旧 row
+  不存在的 agent/session/packet 坐标，且始终禁用 Gearshift；
 - v2 row 的 output mode、state 与 fixed-point 语义保持不变；只有 v2 当时不存在的字段使用上述缺省；
 - 更新既有 v2 lane 时保留 v2 marker 与字段集合；新 work item 才写 v3 row。
 

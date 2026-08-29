@@ -13,11 +13,14 @@ Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，�
    分支，且两条路径都不读取当前 Worker Role Configuration、禁止运行 setup：
    - existing active recovery 只验证持久 session/pane/worktree/route 坐标；active recovery 不重验 model catalog。
      坐标或持久证据不一致时写 `stale` 并保留潜在 writer，不进入 startup；
-   - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement。所有状态都要求 registry 的
-     agent name、agent/model/effort 与原 Worker session；无法证明同一 session 时写 `blocked`，不创建替代
-     session。packet proof 按状态分支：requested 时 packet path/hash 必须为 none；`armed` 允许处在 packet
-     checkpoint 前；`ready/shifting/shifted` 才要求既有 packet path/hash 精确匹配。legacy v2 缺失新坐标时
-     保持 none，不猜测；
+   - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement；
+   - legacy/ordinary replacement 沿 registry 的 agent/model/effort 创建替代 agent，重新从持久 work item、
+     owner、base commit 与 route 生成 packet；不要求同一 Worker session，也不读取当前 config。legacy v2
+     保留 v2 marker/字段集合，缺失 agent/packet 坐标保持 none；两类都不加载 Adapter 或 Gearshift flags；
+   - v3 Gearshift-enabled replacement 才硬性要求 registry agent name、原 Worker session 与持久
+     Projection；无法证明同一 session 时写 `blocked`，不创建替代 session。packet proof 按状态分支：
+     requested 时 packet path/hash 必须为 none；`armed` 允许处在 packet checkpoint 前；
+     `ready/shifting/shifted` 才要求既有 packet path/hash 精确匹配；
    - replacement Gearshift state 按持久 Projection 分支：`requested` 不要求 packet，只重开原 session、接受
      Core 的 crash-window blocked status且绝不 prompt；`armed + packet none` 时先用
      `GEARSHIFT_STATUS <json>` + 原 Shift Record 验证同一 Shift，再重新生成最终 packet，写入 path/hash 并

@@ -171,6 +171,8 @@ def check_core_contract() -> None:
             "active recovery 不重验 model catalog",
             "证据不一致时写 `stale`",
             "replacement 启动失败写 `blocked`",
+            "legacy/ordinary replacement",
+            "不要求同一 Worker session",
             "replacement Gearshift state",
             "requested 时 packet path/hash 必须为 none",
             "armed + packet none",
@@ -313,6 +315,7 @@ def check_core_contract() -> None:
             "先于新 lane 配置 Gate",
             "replacement 继续沿 registry route",
             "只有本轮首次创建新 work-item lane",
+            "Agent start 之后禁止 first-time 重建",
         ),
     )
     registry_text = registry.read_text()
@@ -484,6 +487,8 @@ def check_bootstrap_adapter() -> None:
             'verifiedEvidence:',
             'pi.appendEntry(ENTRY_TYPE',
             'No declared canonical-owner path retains a verified edit/write mutation after the red check',
+            'event.restored !== true',
+            'changed the immutable route',
             'remainingWork',
         ),
     )

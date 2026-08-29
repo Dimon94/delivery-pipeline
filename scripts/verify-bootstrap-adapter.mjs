@@ -281,6 +281,38 @@ await check("restored Armed event preserves prior red/mutation evidence", async 
   assert.ok(restored.emitted.some((event) => event.name === EVENTS.ready));
 });
 
+await check("same-Shift Armed replay requires restored=true and immutable route", async () => {
+  const h = makeHarness();
+  await h.start();
+  h.arm();
+  const appendedBefore = h.appended.length;
+  assert.throws(
+    () =>
+      h.pi.events.emit(EVENTS.armed, {
+        shiftId: "shift-1",
+        profile: "bootstrap",
+        adapterId: "delivery-pipeline/bootstrap-slice",
+        sourceModel: "test/high",
+        targetModel: "test/fast",
+        restored: false,
+      }),
+    /restored=true/,
+  );
+  assert.throws(
+    () =>
+      h.pi.events.emit(EVENTS.armed, {
+        shiftId: "shift-1",
+        profile: "bootstrap",
+        adapterId: "delivery-pipeline/bootstrap-slice",
+        sourceModel: "test/high",
+        targetModel: "test/other",
+        restored: true,
+      }),
+    /immutable route/,
+  );
+  assert.equal(h.appended.length, appendedBefore);
+});
+
 await check("owner path boundary accepts dot-dot-prefixed filenames and rejects parent traversal", async () => {
   const h = makeHarness({ execResults: [{ code: 1 }, { code: 0 }] });
   await h.start();
