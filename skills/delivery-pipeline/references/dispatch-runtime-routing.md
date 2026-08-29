@@ -15,8 +15,9 @@ Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，�
      坐标或持久证据不一致时写 `stale` 并保留潜在 writer，不进入 startup；
    - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement；
    - legacy/ordinary replacement 沿 registry 的 agent/model/effort 创建替代 agent，重新从持久 work item、
-     owner、base commit 与 route 生成 packet；不要求同一 Worker session，也不读取当前 config。legacy v2
-     保留 v2 marker/字段集合，缺失 agent/packet 坐标保持 none；两类都不加载 Adapter 或 Gearshift flags；
+     owner、base commit 与 route 生成 packet；不要求同一 Worker session，也不读取当前 config。v3 ordinary
+     写回本 row 的 agent/packet checkpoint；legacy v2 先按 `lane-registry.md` 创建并 readback 独立的
+     Legacy v2 Replacement Checkpoint，原 v2 row 不扩展。两类都不加载 Adapter 或 Gearshift flags；
    - v3 Gearshift-enabled replacement 才硬性要求 registry agent name、原 Worker session 与持久
      Projection；无法证明同一 session 时写 `blocked`，不创建替代 session。packet proof 按状态分支：
      requested 时 packet path/hash 必须为 none；`armed` 允许处在 packet checkpoint 前；

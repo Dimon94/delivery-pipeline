@@ -67,13 +67,46 @@ v3，也不因用户配置已升级或仍为 version 2 而阻塞。读取 v2 row
   agent name 或 packet 坐标时保持 none，不猜测；
 - 缺失的 Bootstrap/Gearshift 字段解释为 disabled/none；不得从当前配置补入 Source、Target、policy 或 Shift ID；
 - 恢复、fan-in、cleanup 和 replacement 不读取当前 Worker Role Configuration，而是继续沿 v2 row 的
-  ordinary route；replacement 在排除 active writer 后可创建替代 agent并重新生成 packet，不要求旧 row
-  不存在的 agent/session/packet 坐标，且始终禁用 Gearshift；
+  ordinary route；replacement 在排除 active writer 后按下节创建独立兼容 checkpoint，且始终禁用 Gearshift；
 - v2 row 的 output mode、state 与 fixed-point 语义保持不变；只有 v2 当时不存在的字段使用上述缺省；
 - 更新既有 v2 lane 时保留 v2 marker 与字段集合；新 work item 才写 v3 row。
 
 因此 existing lane recovery 先于任何新 lane 配置 Gate。无法由 v2 坐标唯一证明的状态仍按 `stale`
 fail closed，而不是通过 schema migration 猜测。
+
+## Legacy v2 Replacement Checkpoint
+
+v2 base row 缺少现代 startup 坐标。确认 pane/transport 不存在且排除 active writer 后，Coordinator 追加一个
+独立 checkpoint，而不修改或扩展原 v2 row：
+
+```yaml
+<!-- wayfinder-lane-replacement:v1 -->
+parent_lane_id: <v2-lane-id>
+attempt_id: <stable-unique-id>
+state: planned | running | blocked | closed
+agent_name: <allocated-herdr-agent-name>
+packet_path: <absolute-path>
+packet_sha256: <hash>
+agent: pi | codex | claude
+model: <copied-v2-model>
+effort: <copied-v2-effort>
+runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane
+worktree: <copied-absolute-path>
+pane_id: <id-or-none>
+updated_at: <ISO-8601>
+```
+
+创建规则：
+
+1. route、runtime、worktree 必须逐字段等于 parent v2 row；不读取当前 config，也不加入 Gearshift 字段。
+2. 从持久 work item、owner path、base commit 与 v2 route 生成 packet；写完计算 SHA-256。
+3. 在启动前把 agent name、packet path/hash 和 attempt state 作为一次 tracker transaction 写入并 exact
+   readback；pane lifecycle 只消费 v2 base + 此 checkpoint 的组合 readback。
+4. 同一 parent 只允许一个非 terminal attempt；恢复时复用它，冲突写 `stale`，不分配第二 agent。
+5. 成功 Working 后 attempt 写 `running`；startup failure 写 `blocked`；fan-in/cleanup 后写 `closed`。原 v2
+   row 保持 v2 marker/字段集合，其 lane state 仍是 work-item 真相源。
+
+该 checkpoint 是 legacy replacement 的兼容 overlay，不是 config/schema migration，也不是跨 lane ledger。
 
 ## Gearshift Projection Checkpoints
 

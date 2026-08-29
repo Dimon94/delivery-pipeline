@@ -43,8 +43,9 @@ herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中�
 
 ## Agent 启动
 
-启动命令只从 registry readback 构造；具体 agent adapter 命令的 canonical owner 是
-`model-role-routing.md`，本文件不维护第二份完整命令。按 registry 分支：
+启动命令只从 registry readback 构造；legacy replacement 使用 v2 base row + 已 exact readback 的
+Legacy v2 Replacement Checkpoint，其他 lane 使用自身 v3 row。具体 agent adapter 命令的 canonical owner
+是 `model-role-routing.md`，本文件不维护第二份完整命令。按 registry 分支：
 
 | registry route | canonical adapter | 本地断言 |
 |---|---|---|
