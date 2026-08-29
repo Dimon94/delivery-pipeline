@@ -17,10 +17,11 @@ Agent：<pi | codex | claude>
 Model：<ordinary Target Model id>
 Effort：<ordinary Target effort>
 Model evidence：<pi-list-models | codex-catalog | claude-env>
-Gearshift mode：<off | opt_in | all_eligible>
+Gearshift mode：<off | opt_in | all_eligible | none>
 Gearshift enabled：<true | false>
-Gearshift eligibility：<off | ticket-label | all-eligible | ineligible>
+Gearshift eligibility：<off | ticket-label | all-eligible | ineligible | none>
 Gearshift opt-in label JSON：<quoted-label | none>
+Legacy packet rule：legacy v2 replacement 固定写 mode=none、enabled=false、eligibility=none，其他 Gearshift 字段为 none；不得从当前配置补值。
 Gearshift profile：<delivery-bootstrap | none>
 Bootstrap Source：<model + effort | none>
 Ordinary Target：<model + effort>

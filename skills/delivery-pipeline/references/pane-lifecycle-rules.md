@@ -32,9 +32,10 @@ placement/start/prompt。任一 placement、start、packet 或 Working failure �
 
 ## 投递
 
-Packet 已写入文件。每次 start/prompt 前先断言 path 为 registry/overlay 中的绝对路径且文件可读，重新计算
-packet SHA-256 并与 `packet_sha256` 精确相等；文件缺失、realpath/path 或 hash 不一致时写 `stale`，停止
-启动并保留现场。验证通过后只投递单行绝对路径引用：
+Packet 已写入文件后，每次 prompt 前、以及已有 packet checkpoint 的 replacement start 前，先断言 path
+为 registry/overlay 中的绝对路径且文件可读，重新计算 packet SHA-256 并与 `packet_sha256` 精确相等；
+文件缺失、realpath/path 或 hash 不一致时写 `stale`，停止启动并保留现场。首次 requested/phase-A start
+不要求 packet，也绝不 prompt。验证通过后只投递单行绝对路径引用：
 
 ```bash
 herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中全部指令执行。"
