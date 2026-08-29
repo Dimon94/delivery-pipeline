@@ -92,7 +92,10 @@ model: <copied-v2-model>
 effort: <copied-v2-effort>
 runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane
 worktree: <copied-absolute-path>
-pane_id: <id-or-none>
+herdr_session_name: <actual-session-name-or-none>
+workspace_id: <actual-workspace-id-or-none>
+tab_id: <actual-tab-id-or-none>
+pane_id: <actual-pane-id-or-none>
 updated_at: <ISO-8601>
 ```
 
@@ -100,10 +103,12 @@ updated_at: <ISO-8601>
 
 1. route、runtime、worktree 必须逐字段等于 parent v2 row；不读取当前 config，也不加入 Gearshift 字段。
 2. 从持久 work item、owner path、base commit 与 v2 route 生成 packet；写完计算 SHA-256。
-3. 在启动前把 agent name、packet path/hash 和 attempt state 作为一次 tracker transaction 写入并 exact
-   readback；pane lifecycle 只消费 v2 base + 此 checkpoint 的组合 readback。
+3. 先把 agent name、packet path/hash 和 `planned` state 作为一次 tracker transaction 写入并 exact readback。
+   pane placement 验证后执行 replacement placement transaction，把实际 session/workspace/tab/pane 一次写入
+   并 readback；agent start 前必须同时具备两次 checkpoint。pane lifecycle 只消费 v2 base + 此 overlay。
 4. 同一 parent 只允许一个非 terminal attempt；恢复时复用它，冲突写 `stale`，不分配第二 agent。
-5. 成功 Working 后 attempt 写 `running`；startup failure 写 `blocked`；fan-in/cleanup 后写 `closed`。原 v2
+5. 每次 start/prompt 前重新读取 packet 并验证 SHA-256；成功 Working 后 attempt 写 `running`；startup
+   failure 写 `blocked`；fan-in/cleanup 后写 `closed`。原 v2
    row 保持 v2 marker/字段集合，其 lane state 仍是 work-item 真相源。
 
 该 checkpoint 是 legacy replacement 的兼容 overlay，不是 config/schema migration，也不是跨 lane ledger。
