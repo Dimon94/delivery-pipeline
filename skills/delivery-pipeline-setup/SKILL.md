@@ -34,8 +34,9 @@ disable-model-invocation: true
    - `opt_in`
    - `all_eligible`
 
-   `opt_in`/`all_eligible` 要求至少一个 bootstrap 且 Gearshift flags 已验证。`opt_in` label 默认建议
-   `bootstrap-handoff`，但仍要求用户确认；长度为 1–50 字符且不含控制字符。mode 只改变新 lane；
+   `opt_in`/`all_eligible` 要求至少一个 bootstrap 且 Gearshift flags 已验证。所有 mode 都确认并持久化 optInLabel；
+   默认只建议 `bootstrap-handoff`，仍要求用户确认，长度为 1–50 字符且不含 Unicode `Cc`
+   控制字符。off/all_eligible 下 label dormant 但保留，以满足同一 strict schema；mode 只改变新 lane，
    不迁移 existing lane。
 
 6. **验证选择。** 每个普通和 bootstrap model/effort 命中对应实时 catalog；bootstrap 只属于 pi frontend/backend；Source/Target 不相同；active mode 的 Gearshift Core flags 完整。失败只重问对应选择，不静默回落。

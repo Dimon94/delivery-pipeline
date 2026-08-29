@@ -74,8 +74,8 @@ Bootstrap Gearshift Policy、model evidence 与 dispatch target 完整。
    preflight 与 planned Gearshift Projection；enabled lane 的最终 packet 等 Armed Projection readback 后才生成。
    `implement` owner 在本 lane 内调用 `code-review` 时先执行
    preflight。coordinator 不亲自实现。
-   完成标准：本批每条 lane 已持久化 role、agent、ordinary model/effort、bootstrap route 或 none、
-   Gearshift policy/projection、runtime、pane、worktree、branch 与 base commit。
+   完成标准：本批每条 lane 已持久化 role、agent name、agent、ordinary model/effort、bootstrap route 或
+   none、Gearshift policy/projection、runtime、pane、worktree、branch、base commit 与最终 packet path/hash。
 5. **Startup Probe 与 Dispatch Handoff。** 按 `references/pane-lifecycle-rules.md` 的容量管理规则
    在 dispatch target Workspace 放置 lane pane(worker tab 最多 4 pane、四角分布、溢出开新
    tab),并将 cwd 绑定到对应 Execution Worktree;Coordinator Pane 只调度,不作为 worker

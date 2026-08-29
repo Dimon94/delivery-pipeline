@@ -12,6 +12,9 @@ work_item: <url-or-gate-coordinate>
 role: planning | design | frontend | backend | testing | review | map
 output_mode: commit | artifact | checks | verdict | none
 lane_id: <stable-id>
+agent_name: <stable-herdr-agent-name-or-none>
+packet_path: <absolute-path-or-none>
+packet_sha256: <hash-or-none>
 runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator
 state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed
 agent: pi | codex | claude | none
@@ -60,7 +63,8 @@ updated_at: <ISO-8601>
 `<!-- wayfinder-lane-registry:v2 -->` 是已发布的既有 lane 格式，必须继续可恢复；不把旧 row 原地迁移成
 v3，也不因用户配置已升级或仍为 version 2 而阻塞。读取 v2 row 时：
 
-- `agent`、`model`、`effort`、runtime、pane、worktree、branch 与 commit 坐标保持原义；
+- `agent`、`model`、`effort`、runtime、pane、worktree、branch 与 commit 坐标保持原义；v2 缺失
+  agent name 或 packet 坐标时保持 none，不猜测；
 - 缺失的 Bootstrap/Gearshift 字段解释为 disabled/none；不得从当前配置补入 Source、Target、policy 或 Shift ID；
 - 恢复、fan-in、cleanup 和 replacement 不读取当前 Worker Role Configuration，而是继续沿 v2 row 的
   ordinary route；replacement 仍禁用 Gearshift；
@@ -80,8 +84,8 @@ report 不拥有它。所有更新使用一个 bounded tracker transaction 并 e
 2. **Armed。** 只启动 Pi agent，不投递工作 packet。Coordinator 读取同一 session 输出的
    `GEARSHIFT_ARMED <json>`，验证 profile、完整 Shift ID、Source/Target、Adapter 与
    `gearshift-shift:<shiftId>` reference。成功后把这些字段和 `gearshift_state: armed` 写入 registry 并
-   readback；Armed Projection readback 后才生成最终 packet。失败按 startup failure state 处理，worker
-   不接收 work item。
+   readback；Armed Projection readback 后才生成最终 packet。将 packet absolute path 与 SHA-256 写入
+   registry 并 exact readback 后才 prompt。失败按 startup failure state 处理，worker 不接收 work item。
 3. **Monitor/Recovery。** 仅在显式 monitor、terminal wake 或 recovery 时读取同一 session 的
    `GEARSHIFT_STATUS <json>` 与对应 Shift Record。先用 registry Armed Projection 验证 Shift ID 和不可变
    route 字段，再投影 `ready | shifting | shifted | blocked | cancelled`；缺失、冲突或损坏写 `stale`，不猜测。
@@ -89,8 +93,10 @@ report 不拥有它。所有更新使用一个 bounded tracker transaction 并 e
    tracker transaction 写入并 readback；随后才与 worker final report 交叉验证。final report 不作为
    Projection 更新依据，也不能单独证明 Shift。`shifted` 要求 Target model change 可读回；
    `blocked/cancelled` 保留 Source 和 blocker。事务失败保留旧 Projection 并阻止 fan-in。
-5. **Disabled/legacy。** disabled v3 row 全部 Gearshift 字段为 none/false；legacy v2 按上一节解释，
-   不创建 Projection 事务。
+5. **Disabled v3。** disabled v3 row 保留实际 mode、deterministic eligibility 与 JSON-quoted label，并写
+   `gearshift_enabled: false`；只把 profile、Shift ID、Source/Target、Adapter、state、evidence ref 等运行态
+   字段写 none。这样 off、opt-in 未命中与 role ineligible 可区分并可和 packet 对账。
+6. **Legacy v2。** legacy row 才把缺失 Gearshift 字段解释为 disabled/none，不创建 Projection 事务。
 
 `gearshift_opt_in_label` 保存配置 label 的 JSON string 表示；`gearshift_eligibility: ticket-label` 只表示
 命中类型，不拼接自由文本。这样冒号、空格或 `#` 不改变 registry 结构。

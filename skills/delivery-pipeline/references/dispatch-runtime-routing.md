@@ -13,9 +13,15 @@ Policy 只改变 eligible pi implementation lane 的启动模型与 Adapter，�
    分支，且两条路径都不读取当前 Worker Role Configuration、禁止运行 setup：
    - existing active recovery 只验证持久 session/pane/worktree/route 坐标；active recovery 不重验 model catalog。
      坐标或持久证据不一致时写 `stale` 并保留潜在 writer，不进入 startup；
-   - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement。它继续使用持久
-     agent/model/effort；v3 Gearshift-enabled row 使用持久 Projection，legacy v2 缺失字段保持
-     disabled/none。replacement 启动前验证 registry-owned runtime/model；不可用或启动失败写 `blocked`
+   - 只有 pane/transport 不存在且已排除 active writer 后才启动 replacement。它继续使用 registry 的
+     agent name、agent/model/effort、packet path/hash 与原 Worker session；无法证明同一 session 或 packet
+     时写 `blocked`，不创建替代 session。legacy v2 缺失新坐标时保持 none，不猜测；
+   - replacement Gearshift state 按持久 Projection 分支：`requested` 只重开原 session并接受 Core 的
+     crash-window blocked status；`armed/ready/shifting` 用 `GEARSHIFT_STATUS <json>` + 原 Shift Record 验证
+     同一 Shift；`shifted` 只接受 `GEARSHIFT_RESUMED <json>`，或 branch model intent + status + 原 Shift
+     Record；`blocked/cancelled` 保持 lane blocked，不自动重启。所有分支不得创建第二个 Shift，不接受新
+     Shift ID，不重新执行 first-time Armed Gate；
+   - replacement 启动前验证 registry-owned runtime/model；不可用、状态验证失败或启动失败写 `blocked`
      并保留现场，因此 replacement 启动失败写 `blocked`，不写仅属于 first-time created lane 的
      `setup_blocked`，也不改用 coordinator route。
    证据不一致时写 `stale`；可证明但无法按原 route 重启时写 `blocked`。
@@ -58,18 +64,19 @@ existing/replacement 走上述 registry recovery 分支，不进入本节的 con
 1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
    path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
    agent model evidence。
-2. registry 先写 role、agent、ordinary model/effort、bootstrap route 或 none、model evidence、runtime、
+2. registry 先写 role、agent name、ordinary model/effort、bootstrap route 或 none、model evidence、runtime、
    permission mode、计划 worktree/pane 与 base commit。Gearshift-enabled lane 同时写 Requested Projection：
    policy/eligibility/JSON label/planned route/Adapter/state=requested，Shift ID 与 evidence ref 为 none。
 3. 从同一 Integration HEAD 创建 Execution Worktree 与 pane，验证 placement，把真实 worktree/session/
    workspace/tab/pane 坐标写入 registry 并 exact readback；worker 尚未收到 work item。
-4. ordinary lane 生成最终 packet，按 `model-role-routing.md` 启动对应 agent，再 prompt packet；不得加载
-   Bootstrap Adapter 或传 Gearshift flags。
+4. ordinary lane 生成最终 packet，把 absolute path 与 SHA-256 写入 registry 并 readback；随后按
+   `model-role-routing.md` 启动对应 agent，再 prompt packet。不得加载 Bootstrap Adapter 或传 Gearshift flags。
 5. **Two-phase Bootstrap Startup。** Eligible Pi lane 从 canonical skill realpath 定向加载 Adapter：
    - phase A：按 Bootstrap Source start agent，但不 prompt work packet；
    - phase B：读取并验证 `GEARSHIFT_ARMED <json>`，按 `lane-registry.md` 写完整 Shift ID、Source/Target、
      Adapter、state=armed 与 evidence ref；Armed Projection readback 后才生成最终 packet；
-   - phase C：投递该 packet，再等待 Working。Armed 缺失、冲突或 registry readback 失败时按 first-time
+   - phase C：将 packet path/hash 写入 registry 并 readback，投递该 packet，再等待 Working。Armed 缺失、
+     冲突或 registry/packet readback 失败时按 first-time
      startup failure 处理，关闭新 pane，worker 不接收 ticket。
 6. 按 `pane-lifecycle-rules.md` 完成分支对应的投递、记账和 Working 确认；first-time failure 写
    `setup_blocked`，不影响 siblings。

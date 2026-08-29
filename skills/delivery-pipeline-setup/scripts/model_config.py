@@ -3,6 +3,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from unicodedata import category
 
 ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}
 IMPLEMENTATION_ROLES = {"frontend", "backend"}
@@ -19,7 +20,7 @@ def _non_empty(value: object) -> bool:
 
 
 def _valid_label(value: object) -> bool:
-    return _non_empty(value) and len(value) <= 50 and all(ord(char) >= 32 and ord(char) != 127 for char in value)
+    return _non_empty(value) and len(value) <= 50 and all(category(char) != "Cc" for char in value)
 
 
 def validate_document(document: object) -> list[str]:
@@ -125,6 +126,10 @@ def self_test() -> list[str]:
     del off["roles"]["backend"]["bootstrap"]
     if validate_document(off):
         failures.append("valid Gearshift-off fixture was rejected")
+    all_eligible = valid_fixture()
+    all_eligible["gearshift"]["mode"] = "all_eligible"
+    if validate_document(all_eligible):
+        failures.append("valid all-eligible fixture was rejected")
     punctuation_label = valid_fixture()
     punctuation_label["gearshift"]["optInLabel"] = "type: bootstrap #1"
     if validate_document(punctuation_label):
@@ -142,6 +147,7 @@ def self_test() -> list[str]:
     case = valid_fixture(); case["gearshift"]["extra"] = True; cases["extra-gearshift-field"] = case
     case = valid_fixture(); case["gearshift"]["optInLabel"] = ""; cases["blank-opt-in-label"] = case
     case = valid_fixture(); case["gearshift"]["optInLabel"] = "bad\nlabel"; cases["control-character-label"] = case
+    case = valid_fixture(); case["gearshift"]["optInLabel"] = "bad\u0085label"; cases["unicode-control-character-label"] = case
     case = valid_fixture(); case["gearshift"]["optInLabel"] = "x" * 51; cases["overlong-label"] = case
     case = valid_fixture(); case["roles"]["backend"]["agent"] = "codex"; cases["bootstrap-non-pi"] = case
     case = valid_fixture(); case["roles"]["design"]["bootstrap"] = {"model": "x", "effort": "high"}; cases["bootstrap-design"] = case
