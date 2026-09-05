@@ -11,7 +11,8 @@ export HERDR_ENV=1
 DEADLINE=$(( $(date +%s) + 7200 ))
 
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-  OUT=$(herdr pane read "$PANE" 2>/dev/null || true)
+  # --source visible 只取当前屏幕，避免匹配到已滚动走的历史回显（packet 指令文本本身含 LANE_DONE 字样，曾致两次误报）
+  OUT=$(herdr pane read "$PANE" --source visible 2>/dev/null || true)
   if printf '%s' "$OUT" | grep -qF "LANE_DONE $LANE_ID"; then
     herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出出现 LANE_DONE $LANE_ID 标记)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane(每条新 lane 复用 scripts/lane-watch.sh 挂 watcher)。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
     exit 0
