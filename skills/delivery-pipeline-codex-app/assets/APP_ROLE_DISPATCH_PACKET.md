@@ -5,6 +5,8 @@ role 与 output mode 仍由 canonical gate contract 决定。
 
 ```text
 Coordinator task：
+Coordinator host：<coordinator hostId>
+Terminal 回传合同：<absolute delivery-pipeline-codex-app/references/codex-app-dispatch.md，读取 Terminal 回传节>
 Role：<planning | design | frontend | backend | testing | review>
 Output mode：<commit | artifact | checks | verdict>
 Agent/model/effort：codex-app / app-owned / app-owned
@@ -43,6 +45,8 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - `verdict`：按 Review evidence preflight 一次物化 Git/path/staged 证据，再运行 review owner；
   所有只读子 reviewer 共用 bundle并报告 verdict/findings；保持 clean。
 - 保留 tracker fan-in、cherry-pick、Integration 与 remote actions 给 coordinator。
+- completed 与 blocked 都在最终回复前执行 Terminal 回传合同，将下面的完整报告发送给
+  Coordinator task；工具成功后才声明 FINAL_REPORT 已回传，失败则报告回传受阻与恢复坐标。
 
 FINAL_REPORT_BEGIN
 Work item：

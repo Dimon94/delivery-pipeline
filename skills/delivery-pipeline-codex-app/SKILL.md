@@ -25,7 +25,8 @@ disable-model-invocation: true
    - review → `output_mode: verdict`
    map creation与用户 gate 判断仍留在当前 App coordinator。
 4. 所有 delegated roles 使用本壳 `assets/APP_ROLE_DISPATCH_PACKET.md`；创建、恢复、startup
-   readback、role-aware fan-in、archive 与 cleanup 加载 `references/codex-app-dispatch.md`。commit 与
+   readback、terminal 回传、role-aware fan-in、archive 与 cleanup 必读
+   `references/codex-app-dispatch.md`；worker 最终回复前按 packet 的回传合同通知 coordinator。commit 与
    review roles 还传递 canonical `../delivery-pipeline/references/code-review-evidence-preflight.md` 的
    绝对路径：commit 使用 Execution Base commit，verdict 使用 map registry base commit，沿同一
    Review Evidence Bundle 合同运行只读子审查。
