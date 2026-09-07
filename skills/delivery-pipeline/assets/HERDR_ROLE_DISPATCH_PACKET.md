@@ -73,6 +73,11 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   之前不得继续。active、Unknown、身份不匹配、ignored 路径、工具拒绝、关键设计 Unknown、过期或不完整
   checkpoint 均 fail-closed；helper
   只返回 `wait`/`blocked`/`ready-for-coordinator`，不发送接续请求。
+- `WORKER_STOPPED` 通过后，coordinator 只能使用 canonical `scripts/continuation.py` 复用既有 lane
+  registry：先持久化并 readback 唯一 intent，再持久化 `dispatching` request marker 与一次性
+  `send-authorized` lease，最后发送 runtime-neutral request。请求、tool acceptance、
+  新轮和实际 model/effort 分开留证；send Unknown、旧 coordinator 活性不明、session 不可恢复、用户
+  改码/手动换模、模型拒绝、重入或重复 terminal/fan-in 均保留现场、去重或 fail-closed，不得新建 writer。
 - 直接检查可复跑为 `python3 skills/delivery-pipeline/scripts/checkpoint.py snapshot <Execution Worktree>`、
   `validate <checkpoint> --worktree <Execution Worktree>` 与 `signal <checkpoint> <signal-line>
   <runtime-observation-json>`；这些命令只读或写 checkpoint，不写 registry。

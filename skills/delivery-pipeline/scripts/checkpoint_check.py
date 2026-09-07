@@ -139,6 +139,14 @@ def check() -> None:
         checkpoint_path = directory / "registry" / "checkpoint.json"
         checkpoint_path.parent.mkdir()
         document = document_for(snapshot, checkpoint_path)
+        intent = CHECKPOINT.build_continuation_intent(document)
+        assert intent == CHECKPOINT.build_continuation_intent(document)
+        changed_target = with_update(document, phase_plan={
+            **document["phase_plan"],
+            "execution": {"model": "other-model", "effort": "max"},
+        })
+        assert (CHECKPOINT.build_continuation_intent(changed_target)[CHECKPOINT.INTENT_FINGERPRINT_FIELD]
+                != intent[CHECKPOINT.INTENT_FINGERPRINT_FIELD])
         CHECKPOINT.write_checkpoint(checkpoint_path, document, worktree=root)
         assert checkpoint_path.read_bytes() == CHECKPOINT.canonical_bytes(document)
         assert CHECKPOINT.read_checkpoint(checkpoint_path, worktree=root,

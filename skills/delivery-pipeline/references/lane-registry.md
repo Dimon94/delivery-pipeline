@@ -30,6 +30,7 @@ execution_phase: starting | switching | executing | direct | none
 checkpoint: <repo-external absolute path-or-none>
 checkpoint_version: <supported version-or-none>
 checkpoint_sha256: <whole-checkpoint sha256-or-none>
+continuation: <single persisted continuation overlay-or-none>
 workspace_id: <id-or-none>
 tab_id: <id-or-none>
 pane_id: <id-or-none>
@@ -121,3 +122,28 @@ snapshot 改变均不得登记成功引用。
 coordinator thread/host 身份全部匹配，且已停止、单写者明确为 false 的 `WORKER_STOPPED` 才能返回
 `ready-for-coordinator`。active 返回等待，活动状态或身份 Unknown、关键设计 Unknown、ignored 路径、
 工具拒绝或实际模型/effort Unknown 均保留现场；该入口不发送接续、不触发 Terminal fan-in。
+
+## Continuation Overlay
+
+接续复用同一 lane registry，不创建第二份 registry、receipt 或 journal。`continuation.py` 只返回
+overlay 和 runtime-neutral request；coordinator 必须先把一个 `continuation` overlay 写入既有 registry
+并 readback，再向原 session 发送。overlay 的 `intent` 由 lane、原 session、source phase、checkpoint
+SHA-256 和 target request 唯一确定；`state` 依次记录 `prepared`、`dispatching`、`send-authorized`、`sent`、`send-unknown`、`accepted`、
+`started`、`executing` 或 `blocked`。
+
+`dispatching` 只能在带当前 `request_id`、`after_marker: true`、`settled: true`、非空来源/时间的发送后
+readback 且明确 `not_seen` 时返回可发送请求；旧 stopped 观测、在途调用或缺少 readback 只能回读，不能重发。
+
+`request`、`tool_acceptance`、`new_turn`、`actual_model` 是四个独立字段；发送结果 Unknown 只允许
+回读原 session，不允许增加请求数。`new_turn` 必须绑定本次 `request_id`、原 session 和新的
+`turn_id`；只有原 session 的 `new_turn.started: true` 才能把 `execution_phase` 写为 `executing`。
+`actual_model` 必须绑定该 `turn_id` 并带非空 `readback_at`；实际 model/effort Unknown 或 mismatch 不通过换模验收，
+但后续同一 turn 的漂移只更新验收证据，不自动阻断已有交付 fan-in。用户手动
+目标保留在 intent，`configuration_unchanged: true`，不回写 Worker Role Configuration。重复 terminal
+和 fan-in 以稳定 ID 幂等消费，冲突或无法消歧时保持现场并 fail-closed。适用 gate 必须同时绑定
+当前 `checkpoint_sha256`、`work_item` 和非空 `source`；旧版本批准不能替代当前用户确认。
+未改动目标可沿既有分派授权以 `authorization: inherited-dispatch` 接续；用户改码或手动换模必须带新的
+`approved: true` 覆盖，不回写全局配置。
+`terminal.outcome: blocked` 可以在新轮前记录受阻终态但不得 fan-in；`completed` 必须绑定当前原
+session、接续 request 和新轮 `turn_id`，并与 lane 的 `output_mode` 一致，`commit` 只可 `integrated`，
+`artifact/checks/verdict` 只可 `consumed`。

@@ -921,7 +921,9 @@ def check_metadata_and_helpers() -> None:
 def check_checkpoint_contract() -> None:
     helper = CORE / "scripts" / "checkpoint.py"
     probe = CORE / "scripts" / "checkpoint_check.py"
-    for path in (helper, probe):
+    continuation = CORE / "scripts" / "continuation.py"
+    continuation_probe = CORE / "scripts" / "continuation_check.py"
+    for path in (helper, probe, continuation, continuation_probe):
         if not path.exists():
             record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
     if helper.exists():
@@ -935,6 +937,12 @@ def check_checkpoint_contract() -> None:
                                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         if result.returncode != 0:
             record(f"checkpoint isolation check failed: {result.stdout}{result.stderr}")
+    if continuation_probe.exists():
+        result = subprocess.run([sys.executable, str(continuation_probe)],
+                                text=True, capture_output=True,
+                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        if result.returncode != 0:
+            record(f"continuation isolation check failed: {result.stdout}{result.stderr}")
     require(
         CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
         (
@@ -961,6 +969,36 @@ def check_checkpoint_contract() -> None:
             "WORKER_STOPPED",
             "不新增业务 gate",
             "不提前接续或 fan-in",
+        ),
+    )
+    require(
+        CORE / "scripts" / "continuation.py",
+        (
+            "prepare_continuation",
+            "ready_to_send",
+            "record_event",
+            "record_terminal",
+            "record_fan_in",
+            "persist-before-send",
+            "dispatching",
+            "send-authorized",
+            "send-unknown",
+        ),
+    )
+    require(
+        CORE / "references" / "lane-registry.md",
+        (
+            "continuation: <single persisted continuation overlay-or-none>",
+            "`request`、`tool_acceptance`、`new_turn`、`actual_model`",
+            "configuration_unchanged: true",
+            "当前 `checkpoint_sha256`、`work_item` 和非空 `source`",
+            "terminal.outcome: blocked",
+            "`commit` 只可 `integrated`",
+            "`turn_id`",
+            "`readback_at`",
+            "`after_marker: true`",
+            "`settled: true`",
+            "authorization: inherited-dispatch",
         ),
     )
 

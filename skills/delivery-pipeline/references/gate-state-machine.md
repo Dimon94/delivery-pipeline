@@ -136,3 +136,6 @@ implementation 的 `starting` / `switching` / `executing` 是 lane 内阶段，�
 terminal outcome 或用户 gate。只有原 runtime 的 `WORKER_STOPPED`、明确无 active writer 且 checkpoint
 仍与 Git snapshot 一致，才返回可供 coordinator 判断的停止状态；active、Unknown、关键设计 Unknown
 或过期现场均保留并 fail-closed，不提前接续或 fan-in。
+WORKER_STOPPED 通过后仍须按 `continuation.py` 固定顺序恢复：registry → 原 session/旧 writer →
+Git/checkpoint → 用户覆盖 → applicable gate（绑定当前 checkpoint 版本）→ persist/readback → send。接续请求、工具接受、新轮、
+实际 model/effort 和 terminal/fan-in 各自留证；Unknown、冲突或重入不增加请求，也不提前推进业务 gate。

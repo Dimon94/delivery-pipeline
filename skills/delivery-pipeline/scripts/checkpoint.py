@@ -17,6 +17,7 @@ from typing import Any
 
 CHECKPOINT_VERSION = 1
 FINGERPRINT_FIELD = "checkpoint_sha256"
+INTENT_FINGERPRINT_FIELD = "continuation_sha256"
 COMPONENT_FIELDS = ("content", "mode", "staged", "snapshot")
 SIGNALS = {"PREWALK_READY", "WORKER_STOPPED"}
 UNKNOWN = "Unknown"
@@ -72,6 +73,30 @@ def checkpoint_sha256(document: dict[str, Any]) -> str:
     unsigned = {key: value for key, value in document.items()
                 if key != FINGERPRINT_FIELD}
     return _sha256(unsigned)
+
+
+def build_continuation_intent(document: dict[str, Any], *, target_request: dict[str, str] | None = None) -> dict[str, Any]:
+    """用既有 checkpoint 身份生成唯一且可重算的接续意图。"""
+    validate_checkpoint(document)
+    if document["development_mode"] != "staged" or document["phase"] != "starting":
+        raise CheckpointError("只有 staged starting checkpoint 可以生成接续意图")
+    target = target_request if target_request is not None else document["phase_plan"]["execution"]
+    if not isinstance(target, dict) or set(target) != {"model", "effort"}:
+        raise CheckpointError("接续目标请求必须明确 model/effort")
+    if (not isinstance(target["model"], str) or not target["model"].strip()
+            or not isinstance(target["effort"], str) or not target["effort"].strip()
+            or _is_unknown(target["model"]) or _is_unknown(target["effort"])):
+        raise CheckpointError("接续目标请求不能是空值或 Unknown")
+    intent = {
+        "lane_id": document["lane_id"],
+        "session_id": document["session_id"],
+        "source_phase": document["phase"],
+        "checkpoint_sha256": document[FINGERPRINT_FIELD],
+        "target_phase": "execution",
+        "target_request": dict(target),
+    }
+    intent[INTENT_FINGERPRINT_FIELD] = _sha256(intent)
+    return intent
 
 
 def _run_git(root: Path, *args: str, check: bool = True) -> bytes:
