@@ -18,6 +18,10 @@ def call(command, data, success=True):
 
 
 def check():
+    sizing = call("subagent", {"work": "ticket-sizing", "active_count": 0, "source": "live list", "read_only": False})
+    assert sizing["request"] == {"model": "gpt-5.6-sol", "reasoning_effort": "high", "fork_turns": "none"}
+    assert sizing["read_only"] is True
+    assert call("subagent", {"work": "ticket-sizing", "active_count": 3, "source": "live list", "read_only": False})["action"] == "wait"
     support = call("subagent", {"work": "assistance", "active_count": 0, "source": "live list", "read_only": True})
     assert support["request"] == {"model": "gpt-5.6-luna", "reasoning_effort": "high", "fork_turns": "none"}
     assert support["read_only"] is True
@@ -28,7 +32,42 @@ def check():
     assert call("subagent", {"work": "review", "active_count": 0, "source": "live list", "read_only": True})["action"] == "invoke-owner"
     call("subagent", {"work": "assistance", "active_count": -1, "source": "live list", "read_only": True}, False)
     call("subagent", {"work": "assistance", "active_count": 0, "source": "", "read_only": True}, False)
-    base = {"role": "backend", "output_mode": "commit"}
+    # #638/#642：原型的实施建议没有 Spec/拆票证据，不能创建实施 lane。
+    for mode in ("astra-luna", "astra-sol", "sol-direct"):
+        call("resolve", {"role": "frontend", "output_mode": "commit", "ticket_mode": mode}, False)
+    gate = {"work_item": "ticket-643", "map": "map-638", "gate_evidence": {
+        "readback": "fixture tracker snapshot 2026-09-07", "discovery": "decision resolution and user confirmation",
+        "spec": {"url": "spec-650", "source_map": "map-638", "body": "spec body",
+                 "owner_run": "to-spec artifact", "confirmation": "user confirmed testing seams"},
+        "ticket": {"url": "ticket-643", "parent": "spec-650", "body": "ticket body",
+                   "owner_run": "to-tickets artifact", "sizing": "ticket-sizing per-ticket assessment artifact", "confirmation": "user approved breakdown", "dependencies": []}}}
+    base = {"role": "backend", "output_mode": "commit", **gate}
+    core_helper = HELPER.resolve().parents[2] / "delivery-pipeline/scripts/implementation_gate.py"
+    for payload, expected in ((gate, 0), ({"work_item": "ticket-643"}, 1)):
+        result = subprocess.run([sys.executable, str(core_helper)], input=json.dumps(payload),
+                                text=True, capture_output=True)
+        assert result.returncode == expected, result.stderr or result.stdout
+    for stage in ("spec", "ticket"):
+        for field in ("url", "body", "owner_run", "confirmation"):
+            bad = copy.deepcopy(base)
+            bad["gate_evidence"][stage][field] = "Unknown"
+            call("resolve", bad, False)
+    for stage, field, value in (("ticket", "parent", "map-638"), ("ticket", "url", "other-ticket"),
+                                ("ticket", "dependencies", None), ("spec", "source_map", "other-map")):
+        bad = copy.deepcopy(base)
+        bad["gate_evidence"][stage][field] = value
+        call("resolve", bad, False)
+    for field in ("readback", "discovery"):
+        bad = copy.deepcopy(base)
+        del bad["gate_evidence"][field]
+        call("resolve", bad, False)
+    standalone = copy.deepcopy(base)
+    del standalone["map"]
+    assert call("resolve", standalone)["action"] == "create"
+    assert call("resolve", {"existing_lane": {"model": "old"}})["action"] == "recover"
+    missing_sizing = copy.deepcopy(base)
+    del missing_sizing["gate_evidence"]["ticket"]["sizing"]
+    call("resolve", missing_sizing, False)
     default = call("resolve", base)
     assert default["overlay"]["development_mode"] == "astra-luna"
     assert default["request"] == {"model": "gpt-6-astra", "thinking": "low"}
@@ -55,7 +94,7 @@ def check():
         checkpoint.update(base_commit=lane["base_commit"], first_edit=["worker.py"], snapshot=snap, todo=["finish"], checks=["start passed"], evidence=["spec"], decision="minimal")
         path = Path(folder) / "checkpoint.json"
         path.write_text(json.dumps(checkpoint))
-        data = {"lane": lane, "checkpoint": checkpoint, "checkpoint_path": str(path),
+        data = {**gate, "lane": lane, "checkpoint": checkpoint, "checkpoint_path": str(path),
                 "observation": {"thread_id": "same-task", "host_id": "local", "status": "idle", "source": "probe"}}
         bad = copy.deepcopy(data)
         del bad["checkpoint"]["first_edit"]
@@ -67,6 +106,9 @@ def check():
             path.write_text(json.dumps(bad["checkpoint"]))
             call("prepare", bad, False)
         path.write_text(json.dumps(checkpoint))
+        missing_gate = copy.deepcopy(data)
+        del missing_gate["gate_evidence"]
+        call("prepare", missing_gate, False)
         prepared = call("prepare", data)
         assert prepared["action"] == "persist-before-send"
         assert prepared["request"]["threadId"] == "same-task"
@@ -93,7 +135,7 @@ def check():
         git("reset")
         (root / "extra.txt").write_text("untracked")
         assert "检查点已过期" in call("prepare", data, False)
-    print("prewalk dispatch: pass (modes, recovery, same-task, stopped, stale, duplicate, Unknown)")
+    print("prewalk dispatch: pass (spec/tickets gate, modes, recovery, same-task, stopped, stale, duplicate, Unknown)")
 
 
 if __name__ == "__main__":

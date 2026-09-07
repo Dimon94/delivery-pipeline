@@ -6,6 +6,14 @@ description: 拆分 implementation tickets 或审查现有拆票粒度时使用�
 # Ticket Sizing
 
 按独立验收与依赖边界确定粒度。本 skill 只提供粒度判据；拆票流程的 owner 是 `to-tickets`。
+delivery-pipeline 的 to-tickets 阶段必须执行本 skill，并保留逐票判定产物供 tickets gate 回读；
+既有票复用仍须有这份证据，不另设 coordinator 粒度复审。
+
+## 委派评估
+
+`to-tickets` owner 可将逐票评估委派给只读子代理，传入本 skill 绝对路径、Spec、候选票与依赖、
+相关代码证据；子代理返回每票保留/拆分/合并建议、理由与 Unknown。owner 核验并保存产物，
+仍由 owner 向用户展示拆分、取得批准并发布。评估必做，委派可选；模型与并发按宿主合同核验。
 
 ## 判据
 

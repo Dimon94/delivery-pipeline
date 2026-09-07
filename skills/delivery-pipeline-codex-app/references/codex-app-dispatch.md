@@ -54,7 +54,8 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 
 ## 创建
 
-1. implementation 新 lane 先按开发模式合同调用 `scripts/prewalk.py resolve`，把模式与
+1. implementation 新 lane 先回读 canonical gate-state-machine 的实施前置证据，再按开发模式合同
+   调用 `scripts/prewalk.py resolve`；非零退出不得创建任务，把通过后的模式与
    当前阶段请求写入 packet/overlay；recover 只恢复、不新建。解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
    packet 填入真实 coordinator 坐标、repo 外 lane registry 绝对路径与本文件绝对路径作为 Terminal 回传合同；新建与接管 packet
    都保留该入口。完成回传属于本 lane 的调度授权。
@@ -108,7 +109,7 @@ blocked 进入受阻分支，其余 ready lanes 继续推进；回传不扩大 t
 
 terminal 后 `read_thread` 一次并验证 output mode：
 
-- `commit`：要求 terminal commit、内嵌 code-review 的 Review fixed point 等于 lane base commit、
+- `commit`：先回读 canonical gate-state-machine 的实施前置证据，缺失则保留现场并阻塞 Integration；要求 terminal commit、内嵌 code-review 的 Review fixed point 等于 lane base commit、
   Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
   focused checks通过后写 integrated。
 - `artifact`：验证 tracker/artifact坐标；无必要 repo 变更时 worktree必须 clean，写 consumed。

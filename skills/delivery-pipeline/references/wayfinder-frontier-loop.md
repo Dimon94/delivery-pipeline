@@ -16,6 +16,9 @@ Discovery gate 使用同一 role-configured lane contract，不再绕过配置�
 5. 每个 dependency layer 的独立 writes 并行，一次聚合 readback；随后自动重算并派发下一 ready
    frontier，不等待用户回复“继续”。
 
+原型受阻或提出实施建议时，先执行 `gate-state-machine.md` 的实施前置检查与 discovery 回流；
+下一 frontier 仍受当前 gate 限制。discovery 收口后交给 to-spec，再由 to-tickets 完成获批拆票。
+
 Coordinator 拥有 frontier、tracker transaction、fan-in 与下一 gate；worker 只拥有 packet 指定的
 work item，不进入 to-spec、to-tickets 或 implement gate。
 

@@ -4,7 +4,8 @@
 
 ## Ready Frontier
 
-`ready frontier` 是当前真相源中所有 open、未被 dependency 阻塞且未被 claim 的 work items。
+先按 `gate-state-machine.md` 的实施前置检查限定当前 gate 的候选集合。
+`ready frontier` 是该集合中所有 open、未被 dependency 阻塞且未被 claim 的 work items。
 每次派发和 terminal event 都从 tracker/Git 重算；ready 计算只使用 tracker state、dependencies 与 claim。
 
 按 tracker priority、dependency order、issue ID 选 maximal safe batch。无前序依赖的 ready items

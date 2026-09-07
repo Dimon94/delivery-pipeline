@@ -13,6 +13,7 @@ checks与 verdict 是执行真相源。
 ## Commit Mode
 
 适用于 design/frontend/backend implementation。
+先按 `gate-state-machine.md` 回读实施前置证据；越过 gate 的旧 lane 保留现场并阻塞 Integration。
 
 1. 要求 terminal commit包含 base commit，且只承载 packet work item；验证内嵌 code-review 的
    Review fixed point 等于 lane base commit、bundle 七文件 readback存在；无 commit、review evidence

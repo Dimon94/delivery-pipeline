@@ -4,11 +4,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import runpy
 import stat
 import subprocess
 import sys
 
 MODES = {"astra-luna": "gpt-5.6-luna", "astra-sol": "gpt-5.6-sol", "sol-direct": "gpt-5.6-sol"}
+check_implementation = runpy.run_path(str(Path(__file__).resolve().parents[2] /
+    "delivery-pipeline/scripts/implementation_gate.py"))["check"]
 
 
 def git(root, *args):
@@ -51,6 +54,7 @@ def resolve(data):
         return {"action": "recover", "overlay": lane, "request": None}
     if data.get("output_mode") != "commit" or data.get("role") not in ("design", "frontend", "backend"):
         return {"action": "not-applicable", "request": None}
+    check_implementation(data)
     mode, source = "astra-luna", "default"
     for key in ("ticket_mode", "map_mode"):
         if data.get(key) is not None:
@@ -89,6 +93,7 @@ def prepare(data):
                 "target": {"threadId": lane["thread_id"], "hostId": lane["host_id"]}}
     if observation.get("status") != "idle":
         raise ValueError("缺失起步轮停止的宿主证据")
+    check_implementation(data)
     path = Path(data["checkpoint_path"])
     if not path.is_absolute() or not path.is_file() or json.loads(path.read_text()) != checkpoint:
         raise ValueError("检查点持久 readback 不匹配")
@@ -125,7 +130,7 @@ def prepare(data):
 def subagent(data):
     """父会话先读宿主活跃列表；这个入口不创建或锁定子代理。"""
     work, count = data["work"], data["active_count"]
-    if work not in ("assistance", "second-opinion", "review"):
+    if work not in ("assistance", "second-opinion", "review", "ticket-sizing"):
         raise ValueError("非法内部工作类型")
     if type(count) is not int or count < 0 or not data.get("source") or type(data.get("read_only")) is not bool:
         raise ValueError("缺少有效的宿主并发/父权限观测")
@@ -137,6 +142,8 @@ def subagent(data):
     if work == "review":
         return {**result, "action": "invoke-owner"}
     model, effort = ("gpt-5.6-luna", "high") if work == "assistance" else ("gpt-6-astra", "low")
+    if work == "ticket-sizing":
+        model, effort = "gpt-5.6-sol", "high"
     return {**result, "action": "spawn", "request": {
         "model": model, "reasoning_effort": effort, "fork_turns": "none"}}
 

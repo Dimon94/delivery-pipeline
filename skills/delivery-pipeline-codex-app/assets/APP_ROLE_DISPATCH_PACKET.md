@@ -25,6 +25,8 @@ Owner skill SKILL.md：<absolute resolved path>
 Owner skill invocation label：<runtime-specific label; metadata only>
 Work item：<id/title/url | gate coordinate>
 Parent spec：<id/url | none>
+实施前置合同：<absolute canonical gate-state-machine.md>
+实施前置证据：<absolute repo-external gate evidence JSON path | none for non-commit>
 Wayfinder map：<id/url | none>
 Repo：
 Integration worktree：<integration-worktree-path | none for initial map creation>
@@ -40,6 +42,7 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 -
 
 执行：
+- `commit` 写入前读取实施前置合同与证据，核对本票的 to-spec、to-tickets、ticket-sizing 产物和用户确认；缺失则 blocked 回传。
 - 你是当前 task/worktree 的实现或验收 worker；Coordinator task 是回传目标，不是你的身份。
   直接执行本票，不承担 coordinator 的任务监控。
 - 先读取开发模式合同：完成“每次调用的执行核验”。内部辅助、second opinion 和

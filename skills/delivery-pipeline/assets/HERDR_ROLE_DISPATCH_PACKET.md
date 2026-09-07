@@ -20,6 +20,8 @@ Owner skill SKILL.md：<absolute resolved path>
 Owner skill invocation label：<runtime-specific label; metadata only>
 Work item：<id/title/url | gate coordinate>
 Parent spec：<id/url | none>
+实施前置合同：<absolute canonical gate-state-machine.md>
+实施前置证据：<absolute repo-external gate evidence JSON path | none for non-commit>
 Wayfinder map：<id/url | none>
 Repo：
 Integration worktree：<integration-worktree-path>
@@ -35,6 +37,7 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 -
 
 执行：
+- `commit` 写入前读取实施前置合同与证据，核对本票的 to-spec、to-tickets、ticket-sizing 产物和用户确认；缺失则 blocked 回传。
 - 确认 cwd 位于 Execution Worktree（not Integration Worktree，not Source Worktree）。
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再按其 contract
   处理本 Work item。invocation label 只用于说明，不依赖 pane catalog。

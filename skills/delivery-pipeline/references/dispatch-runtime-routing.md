@@ -44,6 +44,9 @@ readback 后同批 tab/pane creation、placement验证、agent start 与 packet 
 
 ## Dispatch Critical Path
 
+implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前置检查运行
+`scripts/implementation_gate.py`；通过后才进入以下配置、worktree 与启动步骤。
+
 1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
    path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
    agent model evidence。
