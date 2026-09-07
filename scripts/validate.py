@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "skills" / "delivery-pipeline"
@@ -28,10 +29,24 @@ DEPENDENCIES = [
 ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}
 OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "none"}
 STATES = {
-    "created", "running", "awaiting_human", "terminal", "consumed", "integrated",
-    "blocked", "setup_blocked", "integration_conflict", "integration_checks_failed",
-    "path_conflict", "stale", "close_pending", "test_decision_paused",
-    "rebase_in_progress", "push_failed", "cleanup_in_progress", "closed",
+    "created",
+    "running",
+    "awaiting_human",
+    "terminal",
+    "consumed",
+    "integrated",
+    "blocked",
+    "setup_blocked",
+    "integration_conflict",
+    "integration_checks_failed",
+    "path_conflict",
+    "stale",
+    "close_pending",
+    "test_decision_paused",
+    "rebase_in_progress",
+    "push_failed",
+    "cleanup_in_progress",
+    "closed",
 }
 ERRORS: list[str] = []
 
@@ -40,7 +55,7 @@ def record(message: str) -> None:
     ERRORS.append(message)
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     print(message, file=sys.stderr)
     raise SystemExit(1)
 
@@ -79,6 +94,7 @@ def check_skill_links(path: Path) -> None:
 
 
 def check_manifest() -> None:
+    # pi-lens-ignore: unchecked-throwing-call-python
     manifest = json.loads((ROOT / "skill-bundle.json").read_text())
     if manifest.get("format") != "multi-runtime-skill-bundle/v2":
         record("bundle format must be multi-runtime-skill-bundle/v2")
@@ -132,26 +148,13 @@ def check_core_contract() -> None:
             "scripts/model_config.py validate <config>",
             "version 2",
             "agent`、`model`、`effort",
-            "planning",
-            "design",
-            "frontend",
-            "backend",
-            "testing",
-            "review",
-            "maximal safe batch",
             "Dispatch Handoff",
             "Execution Worktree",
             "Integration",
             "assets/HERDR_ROLE_DISPATCH_PACKET.md",
-            "Role-aware Fan-in / Integration",
-            "output_mode: artifact",
-            "output_mode: commit",
-            "output_mode: checks",
-            "output_mode: verdict",
             "references/code-review-evidence-preflight.md",
             "Review fixed point: <Execution Base commit>",
             "Review Evidence Bundle",
-            "写 `consumed`",
             "不静默回落",
         ),
     )
@@ -191,14 +194,20 @@ def check_core_contract() -> None:
     )
     legacy_workspace_rules = {
         CORE / "SKILL.md": ("Herdr Workspace 只在首次 lane 前懒创建",),
-        CORE / "references" / "dispatch-runtime-routing.md": ("每个 map 一个 Herdr Workspace",),
-        CORE / "references" / "integration-worktree-management.md": ("Herdr Workspace 到第一条 configured lane 才懒创建",),
+        CORE / "references" / "dispatch-runtime-routing.md": (
+            "每个 map 一个 Herdr Workspace",
+        ),
+        CORE / "references" / "integration-worktree-management.md": (
+            "Herdr Workspace 到第一条 configured lane 才懒创建",
+        ),
     }
     for path, phrases in legacy_workspace_rules.items():
         text = path.read_text()
         for phrase in phrases:
             if phrase in text:
-                record(f"legacy per-map workspace rule restored: {path.relative_to(ROOT)}: {phrase}")
+                record(
+                    f"legacy per-map workspace rule restored: {path.relative_to(ROOT)}: {phrase}"
+                )
     legacy_topology_rules = {
         ROOT / "CONTEXT.md": ("HITL lanes get a `G-#<ticket>` tab",),
         CORE / "references" / "pane-lifecycle-rules.md": (
@@ -215,12 +224,22 @@ def check_core_contract() -> None:
         text = path.read_text()
         for phrase in phrases:
             if phrase in text:
-                record(f"legacy one-lane-per-tab rule restored: {path.relative_to(ROOT)}: {phrase}")
+                record(
+                    f"legacy one-lane-per-tab rule restored: {path.relative_to(ROOT)}: {phrase}"
+                )
     require(
         CORE / "references" / "frontier-lanes.md",
         (
             "普通 repo 文件路径重叠只进入 Integration 冲突检测",
+            "maximal safe batch",
             "Role Binding",
+            "| AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |",
+            "| grilling/prototype HITL | `design` | `artifact` |",
+            "| design implementation | `design` | `commit` |",
+            "| frontend implementation | `frontend` | `commit` |",
+            "| backend/other implementation | `backend` | `commit` |",
+            "| whole-change tests | `testing` | `checks` |",
+            "| code review | `review` | `verdict` |",
             "HERDR_ROLE_DISPATCH_PACKET.md",
             "整批成功 lanes 完成 startup",
         ),
@@ -251,9 +270,15 @@ def check_core_contract() -> None:
     registry_text = registry.read_text()
     state_match = re.search(r"^state: (.+)$", registry_text, re.MULTILINE)
     mode_match = re.search(r"^output_mode: (.+)$", registry_text, re.MULTILINE)
-    if not state_match or {part.strip() for part in state_match.group(1).split("|")} != STATES:
+    if (
+        not state_match
+        or {part.strip() for part in state_match.group(1).split("|")} != STATES
+    ):
         record("lane-registry state enum is not closed over every documented state")
-    if not mode_match or {part.strip() for part in mode_match.group(1).split("|")} != OUTPUT_MODES:
+    if (
+        not mode_match
+        or {part.strip() for part in mode_match.group(1).split("|")} != OUTPUT_MODES
+    ):
         record("lane-registry output_mode enum mismatch")
     require(
         CORE / "references" / "child-monitoring.md",
@@ -284,6 +309,67 @@ def check_core_contract() -> None:
     )
 
 
+def check_prompt_branches() -> None:
+    # 提示合同静态回归；不冒充真实 runtime 执行验收。
+    require(
+        CORE / "SKILL.md",
+        (
+            "恢复既有 lane 不依赖当前 worker 配置",
+            "新建 lane 前",
+            "references/gate-state-machine.md",
+        ),
+    )
+    require(
+        CORE / "references" / "dispatch-runtime-routing.md",
+        (
+            "恢复既有 lane 直接进入“恢复与切换”",
+            "replacement 验证 stored agent/model/effort 的实时可用性",
+        ),
+    )
+    gates = CORE / "references" / "gate-state-machine.md"
+    require(gates, ("Role-aware Fan-in / Integration", "写 `consumed`"))
+    gate_names = re.findall(r"^\| `([^`]+)` \|", gates.read_text(), re.MULTILINE)
+    if gate_names != [
+        "discovery",
+        "spec",
+        "tickets",
+        "dispatch",
+        "execute",
+        "collect",
+        "integrate",
+        "testing",
+        "review",
+        "test-decision",
+        "rebase",
+        "remote-review",
+    ]:
+        record(
+            "gate table must include testing/review/test-decision/rebase in delivery order"
+        )
+    require(
+        CORE / "references" / "test-decision-and-rebase.md",
+        (
+            "先读 map registry 的 `test_strategy`",
+            "范围与风险未变化时复用",
+            "未知是否仍适用",
+            "测试选择不授予 remote publication authority",
+        ),
+    )
+    require(
+        TICKET_SIZING / "SKILL.md",
+        (
+            "独立验收",
+            "Execution Worktree",
+            "合并",
+            "累计消耗不等于同时占用的上下文",
+            "拆票流程的 owner 是 `to-tickets`",
+        ),
+    )
+    for path in (TICKET_SIZING / "SKILL.md", TICKET_SIZING / "agents" / "openai.yaml"):
+        if re.search(r"150k|1\.5|smart zone", path.read_text(), re.IGNORECASE):
+            record(f"uncalibrated fixed sizing policy: {path.relative_to(ROOT)}")
+
+
 def check_runtime_neutrality() -> None:
     app_only = re.compile(
         r"codex-thread|create_thread|list_threads|read_thread|wait_threads|"
@@ -303,11 +389,17 @@ def check_runtime_neutrality() -> None:
         for path in sorted(root.rglob("*.md")):
             for lineno, line in enumerate(path.read_text().splitlines(), 1):
                 if root == CORE and app_only.search(line):
-                    record(f"App transport leaked into canonical core: {path.relative_to(ROOT)}:{lineno}")
+                    record(
+                        f"App transport leaked into canonical core: {path.relative_to(ROOT)}:{lineno}"
+                    )
                 if owner_sigil.search(line) or claude_locator.search(line):
-                    record(f"runtime-specific owner locator in neutral skill: {path.relative_to(ROOT)}:{lineno}")
+                    record(
+                        f"runtime-specific owner locator in neutral skill: {path.relative_to(ROOT)}:{lineno}"
+                    )
                 if hardcoded_model.search(line):
-                    record(f"hard-coded model default in skill/config contract: {path.relative_to(ROOT)}:{lineno}")
+                    record(
+                        f"hard-coded model default in skill/config contract: {path.relative_to(ROOT)}:{lineno}"
+                    )
 
 
 def extract_schema_example(path: Path) -> dict:
@@ -329,6 +421,13 @@ def check_model_contract() -> None:
             "六个角色全部必填",
             "agent`、`model`、`effort",
             "skill 与 reference 不提供默认 agent/model/effort",
+            "顶层只有 `version` 与 `roles`",
+            "roles key 与六角色精确相等",
+            "每个 role object 只有 `agent`、`model`、`effort`",
+            "agent 属于 `pi|codex|claude`",
+            "Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择",
+            "settings.json env 候选与 CLI effort 枚举",
+            "frontier-lanes.md",
             "pi --list-models",
             "codex debug models",
             "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -338,9 +437,9 @@ def check_model_contract() -> None:
             "ANTHROPIC_MODEL",
             "CLAUDE_CODE_SUBAGENT_MODEL",
             "CLAUDE_CODE_EFFORT_LEVEL",
-            "--approve --model \"$model\" --thinking \"$effort\"",
+            '--approve --model "$model" --thinking "$effort"',
             "model_reasoning_effort",
-            "--model \"$model\" --effort \"$effort\"",
+            '--model "$model" --effort "$effort"',
         ),
     )
     schema = extract_schema_example(routing)
@@ -348,43 +447,42 @@ def check_model_contract() -> None:
         record("model-role schema version must be 2")
     roles = schema.get("roles") or {}
     if set(roles) != ROLES:
-        record(f"model-role schema must define exactly {sorted(ROLES)}, got {sorted(roles)}")
+        record(
+            f"model-role schema must define exactly {sorted(ROLES)}, got {sorted(roles)}"
+        )
     for role, value in roles.items():
         if set(value) != {"agent", "model", "effort"}:
             record(f"role {role} must define exactly agent/model/effort")
-    if "orchestration" in routing.read_text() or "orchestration" in (SETUP / "SKILL.md").read_text():
+    if (
+        "orchestration" in routing.read_text()
+        or "orchestration" in (SETUP / "SKILL.md").read_text()
+    ):
         record("coordinator/orchestration must not appear as a configured worker role")
-    if "user-confirmed" in routing.read_text() or "user-confirmed" in (SETUP / "SKILL.md").read_text():
-        record("Claude setup must select from settings.json env candidates; user-confirmed side channel is undefined")
+    if (
+        "user-confirmed" in routing.read_text()
+        or "user-confirmed" in (SETUP / "SKILL.md").read_text()
+    ):
+        record(
+            "Claude setup must select from settings.json env candidates; user-confirmed side channel is undefined"
+        )
 
     require(
         SETUP / "SKILL.md",
         (
             "version 2",
             "不派发 lane",
-            "pi --list-models",
-            "codex debug models",
-            "~/.claude/settings.json",
-            "ANTHROPIC_DEFAULT_FABLE_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            "ANTHROPIC_MODEL",
-            "CLAUDE_CODE_SUBAGENT_MODEL",
-            "CLAUDE_CODE_EFFORT_LEVEL",
+            "../delivery-pipeline/references/model-role-routing.md",
             "scripts/model_config.py validate",
-            "顶层 key 精确为 `version` + `roles`",
-            "role key 精确",
-            "每个 role object 的 key 精确",
-            "agent 属于 `pi|codex|claude`",
-            "不把非法既有 v2 文件当作完成",
-            "Claude model只从 settings.json env候选选择",
+            "配置结构与实时 evidence 都通过",
+            "非法配置进入初始化",
+            "合法配置仅在用户明确要求重配时覆盖",
             "不提供内置默认",
-            "用户必须明确选择全部六角色",
+            "用户明确选择全部六角色",
             "写入并 readback",
         ),
     )
     config_validator = SETUP / "scripts" / "model_config.py"
+    # pi-lens-ignore: unchecked-throwing-call-python
     if not config_validator.exists() or not os.access(config_validator, os.X_OK):
         record("model_config.py must exist and remain executable")
     else:
@@ -394,7 +492,9 @@ def check_model_contract() -> None:
             capture_output=True,
         )
         if result.returncode != 0:
-            record(f"model config fixture self-test failed: {result.stdout}{result.stderr}")
+            record(
+                f"model config fixture self-test failed: {result.stdout}{result.stderr}"
+            )
 
 
 def check_packets() -> None:
@@ -459,9 +559,13 @@ def check_lane_wakeup() -> None:
             "`done` 事件",
         ),
     )
-    code_blocks = re.findall(r"```(?:bash|sh|text)?\n(.*?)\n```", lifecycle.read_text(), re.DOTALL)
+    code_blocks = re.findall(
+        r"```(?:bash|sh|text)?\n(.*?)\n```", lifecycle.read_text(), re.DOTALL
+    )
     if any("--until done" in block for block in code_blocks):
-        record("pane-lifecycle-rules.md still relies on the unreliable `herdr agent wait --until done` listener")
+        record(
+            "pane-lifecycle-rules.md still relies on the unreliable `herdr agent wait --until done` listener"
+        )
     watcher = CORE / "scripts" / "lane-watch.sh"
     if not watcher.exists():
         record("missing lane watcher: skills/delivery-pipeline/scripts/lane-watch.sh")
@@ -482,6 +586,45 @@ def check_lane_wakeup() -> None:
 
 
 def check_app_shell() -> None:
+    if not os.access(APP / "scripts" / "prewalk.py", os.X_OK):
+        record("App prewalk helper must be executable")
+    subprocess.run([sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True)
+    require(APP / "SKILL.md", ("每次调用的执行核验", "subagent 入口"))
+    require(APP / "references" / "development-mode.md", (
+        "scripts/prewalk.py subagent", "active_count", "invoke-owner",
+        "宿主更低上限仍优先", "不改其他 repo 或全局配置",
+    ))
+    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
+        "执行 helper：", "absolute resolved", "每次调用的执行核验",
+    ))
+    # App 请求值与运行证据分离；这只是提示合同检查。
+    require(APP / "references" / "development-mode.md", (
+        "gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna",
+        "second opinion", "reasoning_effort", "thinking",
+        "default_subagent_reasoning_effort", "用户确认", "只读",
+    ))
+    # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
+    require(APP / "references" / "development-mode.md", (
+        "`astra-luna`（默认）", "`astra-sol`", "`sol-direct`",
+        "PREWALK_READY", "send_message_to_thread", "phase: switching",
+        "不能盲目重发", "尚未做端到端验证",
+    ))
+    require(APP / "references" / "codex-app-dispatch.md", (
+        "development_mode:", "mode_source:", "execution_phase:", "checkpoint:",
+        "## Prewalk 中间回传", "不进入 Terminal fan-in",
+    ))
+    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
+        "Development mode：", "Mode source：", "Execution phase：", "Checkpoint：", "Lane registry：",
+        "PREWALK_READY 后停止",
+    ))
+    require(APP / "SKILL.md", ("references/development-mode.md",))
+    require(APP / "references" / "codex-app-dispatch.md", (
+        "requested_model:", "requested_effort:", "model: Unknown",
+        "effort: Unknown", "model_evidence: Unknown", "旧 lane",
+    ))
+    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
+        "开发模式合同：", "Requested model：", "Requested effort：",
+    ))
     require(
         APP / "SKILL.md",
         (
@@ -531,6 +674,9 @@ def check_app_shell() -> None:
             "Review Evidence Bundle readback",
             "Review fixed point 等于 lane base commit",
             "非 commit lane 不要求 commit",
+            "completed` 是 FINAL_REPORT outcome，不是 registry state",
+            "同一次 fan-in",
+            "关闭 tracker 或派发下一 ready lane 前",
             "task-coordinate-title.md",
         ),
     )
@@ -551,6 +697,7 @@ def check_app_shell() -> None:
             "Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>",
             "preflight bundle 完成前不派生 Standards/Spec 子审查",
             "Review evidence：<fixed-point/head/bundle-readback | none>",
+            "报告 outcome，不是 registry state",
             "FINAL_REPORT_BEGIN",
             "FINAL_REPORT_END",
         ),
@@ -574,7 +721,9 @@ def check_tree_ownership() -> None:
         APP / "assets" / "ISSUE_IMPLEMENT_DISPATCH_PACKET.md",
     ):
         if path.exists():
-            record(f"App-owned file leaked into canonical core: {path.relative_to(ROOT)}")
+            record(
+                f"App-owned file leaked into canonical core: {path.relative_to(ROOT)}"
+            )
 
 
 def check_installer() -> None:
@@ -597,7 +746,9 @@ def check_installer() -> None:
         ),
     )
     if text.count('link_skill "$ROOT/skills/delivery-pipeline"') != 3:
-        record("canonical core must be installed from one source into exactly three CLI homes")
+        record(
+            "canonical core must be installed from one source into exactly three CLI homes"
+        )
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-setup"') != 3:
         record("setup skill must be installed into exactly three CLI homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-codex-app"') != 1:
@@ -713,7 +864,9 @@ def check_pruned_policy() -> None:
         for path in root.rglob("*.md"):
             for lineno, line in enumerate(path.read_text().splitlines(), 1):
                 if any(pattern.search(line) for pattern in forbidden):
-                    record(f"pruned policy restored: {path.relative_to(ROOT)}:{lineno}:{line}")
+                    record(
+                        f"pruned policy restored: {path.relative_to(ROOT)}:{lineno}:{line}"
+                    )
 
 
 def check_metadata_and_helpers() -> None:
@@ -733,6 +886,7 @@ def check_metadata_and_helpers() -> None:
             "allow_implicit_invocation: false",
         ),
     )
+    # pi-lens-ignore: unchecked-throwing-call-python
     if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):
         record("validator must remain executable")
 
@@ -741,6 +895,7 @@ def main() -> None:
     check_manifest()
     check_frontmatter()
     check_core_contract()
+    check_prompt_branches()
     check_runtime_neutrality()
     check_model_contract()
     check_packets()
@@ -753,7 +908,10 @@ def main() -> None:
     check_metadata_and_helpers()
 
     if ERRORS:
-        fail(f"{len(ERRORS)} violation(s):\n" + "\n".join(f"  - {item}" for item in ERRORS))
+        fail(
+            f"{len(ERRORS)} violation(s):\n"
+            + "\n".join(f"  - {item}" for item in ERRORS)
+        )
     print("bundle: pass")
 
 

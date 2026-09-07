@@ -1,6 +1,6 @@
 # 模型角色路由
 
-本文件是 CLI/Herdr 主干的配置 schema、六角色定义、agent adapter 与验证规则的唯一定义点。
+本文件是 CLI/Herdr 主干的配置 schema、agent adapter 与验证规则的唯一文档定义点。
 worker 调度只读本配置；Coordinator 是当前调用会话，不在配置中。
 
 ## 配置
@@ -30,14 +30,7 @@ skill 与 reference 不提供默认 agent/model/effort。有效配置必须同�
 
 ## 角色映射
 
-| 角色 | 管辖工作 |
-|---|---|
-| `planning` | AFK discovery、research、to-spec、to-tickets 等 gate worker |
-| `design` | design implementation、grilling、prototype 等 HITL lane |
-| `frontend` | frontend implementation |
-| `backend` | backend 与无法归入 design/frontend 的 implementation |
-| `testing` | execution graph 清空后的 whole-change checks / test lane |
-| `review` | testing 通过后的 code-review lane |
+选择或配置 role 时读取 `frontier-lanes.md` 的 Role Binding 表；该表统一定义工作、role 与 output mode。
 
 当前 coordinator 会话不属于任何 worker 角色；它使用启动时已经选择的 agent/model。
 
@@ -51,7 +44,7 @@ model 与 registry 不符当作 setup 失败，不因此重建 lane、回写配�
 ### pi
 
 - runtime：`herdr-pi-pane`
-- model evidence：`pi --list-models`
+- model evidence：`pi --list-models`，记录 provider/model 与 thinking 支持；缺失 binary 或候选记 Unknown。
 - 启动参数：
 
 ```bash
@@ -82,7 +75,7 @@ herdr agent start "$agent_name" --kind codex --pane "$pane_id" -- \
   - 候选值：`ANTHROPIC_DEFAULT_FABLE_MODEL`、`ANTHROPIC_DEFAULT_HAIKU_MODEL`、
     `ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL`、
     `ANTHROPIC_MODEL`、`CLAUDE_CODE_SUBAGENT_MODEL`
-  - 显示名：对应的 `ANTHROPIC_DEFAULT_*_MODEL_NAME`
+  - 显示名：对应的 `*_MODEL_NAME`
   - effort：`CLAUDE_CODE_EFFORT_LEVEL`
 - 启动参数：
 
@@ -93,6 +86,9 @@ herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
 
 Claude env 候选是本机可配置选项的证据。Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` /
 `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择；字段不存在时不能把该 Claude model 分配给 role。
+
+配置仅作为新 lane 的前置 gate；既有 lane 的恢复与 replacement 使用
+`dispatch-runtime-routing.md` 的“恢复与切换”。
 
 ## Dispatch 验证
 

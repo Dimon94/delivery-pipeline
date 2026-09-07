@@ -77,3 +77,6 @@ Touched files：
 Blocker：
 FINAL_REPORT_END
 ```
+
+`状态` 是报告 outcome，不是 registry state。coordinator 核验 `completed` 后按
+`terminal → integrated/consumed → closed|close_pending` 推进，禁止持久化 `state: completed`。

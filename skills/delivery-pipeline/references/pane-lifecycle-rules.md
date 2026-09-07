@@ -29,28 +29,14 @@ herdr agent prompt "$agent_name" "完整读取 $packet_file 并严格按其中�
 
 ## Agent 启动
 
-从 registry readback 的 agent/model/effort 构造命令；不得用 skill 内默认值：
-
-```bash
-# pi
-herdr agent start "$agent_name" --kind pi --pane "$pane_id" -- \
-  --approve --model "$model" --thinking "$effort"
-
-# Codex CLI
-herdr agent start "$agent_name" --kind codex --pane "$pane_id" -- \
-  --model "$model" -c "model_reasoning_effort=\"$effort\"" \
-  -s danger-full-access -a never
-
-# Claude CLI
-herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
-  --model "$model" --effort "$effort" --dangerously-skip-permissions
-```
+从 registry readback 的 agent/model/effort 选择 `model-role-routing.md` 的 Agent Adapter
+启动命令与 permission mode；该文件同时拥有启动绑定与用户运行中改模型的验收边界。
 
 `agent start` 不支持 `--cwd`；cwd 在 pane split/create 时绑定。shell 未就绪时先等待
 `agent_status` 非 unknown。Agent name 使用 lowercase alphanumeric + hyphens。
 
-Model/effort 只在该启动命令中绑定一次。之后不做 pane model 对账：运行中或 fan-in 发现 pane
-实际 model 与 registry 不符（通常是用户改的），不构成 setup 失败，不重建 lane，不阻塞交付。
+Startup probe 确认 owner 未读或配置的 model/effort 启动不可用时，沿同一配置重建一次；
+第二次失败写 `setup_blocked` 并隔离本 lane。该重试只适用于 startup，不用于运行中用户改模型。
 
 ## 拓扑与命名
 

@@ -11,13 +11,19 @@ Execution graph 清空、configured testing/review lanes完成后读取。
 
 ## Test Decision Point
 
-暂停并让用户选择：
+先读 map registry 的 `test_strategy`。已有用户明确选择且范围与风险未变化时复用；
+选择缺失、范围变化、出现新风险或未知是否仍适用时，才写 `test_decision_paused` 并让用户选择：
 
 1. 在 Integration Worktree 进行额外手动测试；
 2. 先 rebase 到最新 main，再测试；
 3. 跳过额外手动测试并进入获授权的 remote closeout。
 
-选择持久化到 map registry。Configured testing lane的证据不因用户跳过额外手动测试而省略。
+选择持久化到 map registry，同时在 tracker checkpoint 记录对应范围与已知风险，供恢复时核对。
+旧记录不足以判断适用性时补问，不猜测。测试选择不授予 remote publication authority。
+Configured testing lane 的证据不因用户跳过额外手动测试而省略。
+
+`test_in_integration` 在 rebase 前完成额外手测；`rebase_then_test` 在 rebase 后完成；
+`skip_extra_test` 仅省略额外手测。所选手测没有通过证据时保留 gate 并请求用户验收。
 
 ## Rebase
 

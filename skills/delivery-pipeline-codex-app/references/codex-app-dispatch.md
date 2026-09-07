@@ -100,6 +100,10 @@ worker 最终回复：此时直接核验消息中的报告与 Git/artifact 持�
 integrated/consumed/closed 状态去重，避免重复 cherry-pick；close_pending 仅恢复 cleanup。
 blocked 进入受阻分支，其余 ready lanes 继续推进；回传不扩大 tracker 或远程发布权限。
 
+报告中的 `completed` 是 FINAL_REPORT outcome，不是 registry state，禁止写入 `state: completed`。
+核验成功后先写 `terminal`，再按 output mode 写 `integrated` 或 `consumed`；报告为 `blocked` 才写
+`blocked`。这样所有成功 lane 都进入下面同一次 fan-in 的 archive，不会绕过状态机。
+
 ## Role-aware Fan-in
 
 terminal 后 `read_thread` 一次并验证 output mode：
@@ -122,8 +126,11 @@ terminal 后 `read_thread` 一次并验证 output mode：
 - 旧 running lane 缺回传合同或 coordinator 已更换时，先更新 overlay，再向原 task 发送新的
   coordinator 坐标与 Terminal 回传合同入口；完成补发后才交接，沿用原 worker 与 worktree。
 - active lane 用 project_id/host_id/thread_id恢复；task 消失但持久 evidence存在时沿 evidence fan-in。
-- integrated/consumed 后调用 `set_thread_archived({threadId, hostId, archived: true})`，再用
-  `list_archived_threads` readback。成功写 closed；archive失败写 close_pending并保留坐标。
+- integrated/consumed 不是 Codex task 的停靠状态：在同一次 fan-in 内立即调用
+  `set_thread_archived({threadId, hostId, archived: true})`，再用 `list_archived_threads` readback。
+  成功写 closed；archive失败写 close_pending并保留坐标。关闭 tracker 或派发下一 ready lane 前，
+  必须已完成该 archive readback，或已持久化 close_pending 与失败证据；不得静默留下已验收的
+  live task。
 - commit lane focused checks失败时 task保持未归档；artifact/checks/verdict lane证据失败同样保留 task。
 
 完成标准：六角色都有 task transport、output-mode fan-in与 archive路径；App overlay、task、

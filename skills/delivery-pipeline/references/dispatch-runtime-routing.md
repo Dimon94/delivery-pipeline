@@ -4,7 +4,9 @@
 Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通过 Herdr，worker kind
 完全由 version 2 role config 的 `agent` 决定。
 
-## 选择顺序
+恢复既有 lane 直接进入“恢复与切换”，不运行新 lane 的配置 gate。
+
+## 新 lane 选择顺序
 
 1. 记录当前宿主 `coordinator_runtime: pi-cli | codex-cli | claude-cli`；无法唯一识别时报告
    Unknown并让用户确认。当前宿主不改写 worker 配置。
@@ -57,7 +59,10 @@ readback 后同批 tab/pane creation、placement验证、agent start 与 packet 
 
 - `herdr-pi-pane`、`herdr-codex-pane`、`herdr-claude-pane` 均按自己的 registry kind、model、effort
   恢复；配置变化不迁移 running lane。
-- replacement 沿原 lane runtime/model/effort，除非用户先更新配置且确认原 active writer 不存在。
+- replacement 先按 `lane-registry.md` 排除 active writer，再沿原 lane runtime/model/effort。
+  replacement 验证 stored agent/model/effort 的实时可用性（使用 `model-role-routing.md` 的 evidence），
+  不要求当前配置一致；失败时保留 `setup_blocked`，不静默回落。用户明确选择改配时才经 setup
+  验证新配置并更新 registry。
 - cleanup 只关闭本 lane pane并按 `pane-lifecycle-rules.md` 同步 tab label,以及本 lane
   Execution Worktree/branch;保留 Coordinator Pane及承载它的 user-visible session/workspace。
 - Herdr unavailable 时输出完整 durable packet并报告 `dispatch unavailable`，不假装已经派发。

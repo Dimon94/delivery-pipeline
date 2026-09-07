@@ -61,12 +61,15 @@ any active state -> path_conflict | stale
 ## Map State Machine
 
 ```text
-created -> running -> test_decision_paused -> rebase_in_progress -> cleanup_in_progress -> closed
-                                           \-> push_failed -> rebase_in_progress | closed
+created -> running -> rebase_in_progress -> cleanup_in_progress -> closed
+running -> test_decision_paused -> rebase_in_progress
+rebase_in_progress -> push_failed -> rebase_in_progress | closed
 ```
 
 map row使用 `role: map`、`output_mode: none`、`runtime: orchestrator`，并持久化 Integration
-Worktree/branch、Map Run Authority与 test strategy；`base_commit` 固定为创建 Map Integration Worktree
+Worktree/branch、Map Run Authority与 test strategy；测试选择是否仍适用及额外测试证据按
+`test-decision-and-rebase.md` 核对，只有需要询问时进入 `test_decision_paused`。
+`base_commit` 固定为创建 Map Integration Worktree
 时的 Source HEAD，作为 whole-change Review fixed point，后续 Integration 不改写。Herdr
 session/workspace/tab/pane是 lane坐标；
 同一 map后续新 lane可随 Coordinator Pane 的 current-workspace 默认落到另一 Workspace。
@@ -74,8 +77,9 @@ session/workspace/tab/pane是 lane坐标；
 ## Recovery
 
 1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry。
-2. Herdr runtime验证 session/workspace/tab/pane、kind、role/output_mode、agent/model/effort与 worktree；
-   existing lane不应用新 config也不迁移 Workspace，新 lane重新解析 Coordinator Pane当前坐标。
+2. Herdr runtime 验证 session/workspace/tab/pane、kind、role/output_mode 与 worktree；
+   agent/model/effort 是 stored 启动坐标，不与 pane 的运行中模型对账。existing lane 不应用新 config
+   也不迁移 Workspace，新 lane 重新解析 Coordinator Pane 当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
