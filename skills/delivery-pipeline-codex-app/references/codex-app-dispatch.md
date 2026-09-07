@@ -19,7 +19,8 @@ overlay 与六角色 fan-in；canonical CLI/Herdr 主干不读取它。
 | review | `verdict` | verdict/findings readback → consumed |
 
 所有 delegated roles 使用 `../assets/APP_ROLE_DISPATCH_PACKET.md`；没有 role 可以回落到不存在的
-CLI config。Map creation与用户 gate判断留在当前 App coordinator。
+CLI config。模型选择与首次建图入口读取 `development-mode.md`；用户 gate 判断由 coordinator
+核验确认与持久产物。
 
 ## App Registry Overlay
 
@@ -28,9 +29,15 @@ App lane 在 canonical role/state字段之外增加：
 ```yaml
 runtime: codex-thread
 agent: codex-app
-model: app-owned
-effort: app-owned
-model_evidence: app-owned
+development_mode: <astra-luna | astra-sol | sol-direct | none>
+mode_source: <ticket | map | default | existing lane>
+execution_phase: <starting | switching | executing | none>
+checkpoint: <absolute artifact path | none>
+requested_model: <development-mode current phase selection>
+requested_effort: <development-mode work selection>
+model: Unknown
+effort: Unknown
+model_evidence: Unknown
 agent_permission_mode: app-owned
 project_id: <Source-owner-projectId>
 host_id: <host-id>
@@ -41,21 +48,41 @@ coordinator_host_id: <coordinator-host-id>
 ```
 
 这些字段只定义在本 App reference，不进入 canonical Herdr registry schema。
+requested 字段保存当前阶段请求，切换前的请求及证据保存在 checkpoint；model/effort 保存宿主实际 readback，model_evidence 保存来源与时间。
+工具接受请求不代表已验证模型；缺 readback 保持 Unknown。旧 lane 的 app-owned 值保留为
+历史记录，不反推 requested 值、不静默换模型或 transport；继续按 registry 和产物恢复。
 
 ## 创建
 
-1. 解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
-   packet 填入真实 coordinator 坐标与本文件绝对路径作为 Terminal 回传合同；新建与接管 packet
+1. implementation 新 lane 先按开发模式合同调用 `scripts/prewalk.py resolve`，把模式与
+   当前阶段请求写入 packet/overlay；recover 只恢复、不新建。解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
+   packet 填入真实 coordinator 坐标、repo 外 lane registry 绝对路径与本文件绝对路径作为 Terminal 回传合同；新建与接管 packet
    都保留该入口。完成回传属于本 lane 的调度授权。
 2. 按 `task-coordinate-title.md` 生成 role-aware title；同批 lanes 并行调用 `create_thread`，显式
-   设置 title、project 与 Integration branch `startingState`。App 拥有 Execution Worktree。
+   设置 title、project、Integration branch `startingState` 及 requested_model → `model`、
+   requested_effort → `thinking`。先确认用户已明确要求新任务；仅维护 skill 不满足该条件。
+   首次无 map 的临时 base 按开发模式合同处理。App 拥有 Execution Worktree。
 3. 只返回 `clientThreadId` 时用 `list_threads` 按 title/project/lane 找 ready task；不能把
    clientThreadId 当 threadId。
 4. 聚合 readback：task 属于 owner project、worktree common dir属于 Source repo、base commit
-   等于 dispatch 时 Integration HEAD、cwd 不在 Source/Integration Worktree。
+   等于 dispatch 时 Integration HEAD、cwd 不在 Source/Integration Worktree。首次建图则核对
+   临时 registry 的 Source base，map/Integration 为 none；仅消费 artifact，后续沿正式 Integration。
+   模型请求被拒绝时写 setup_blocked 并保留错误；不静默换模型。模型 readback 按开发模式合同
+   独立记录，Unknown 不冒充请求已落实。
 5. 写 base registry + App overlay并精确 readback；task 已接受 packet后写 running/awaiting_human。
 6. 整批 startup 完成后用 `wait_threads`（`timeoutMs: 0`，targets 带 threadId/hostId）读一次快照，
    保存返回 cursor；已终态的 lane 立即 fan-in，其余在确认 packet 包含回传合同后 Dispatch Handoff。
+
+## Prewalk 中间回传
+
+收到 `PREWALK_READY` 时按 `development-mode.md` 的机械核验入口运行 prepare，先持久化
+返回 overlay，再按 Prewalk 接续步骤向原 task
+发送下一轮。通知可能早于起步轮停止：prepare 返回 wait-for-stop 时，对返回 target 调用
+wait_threads（每次最多 60000 ms，沿用 cursor），读到停止后重新读取现场并 prepare。
+超时且仍 active 时继续有界等待并按需报告进度；不把正常结束时序误判成 blocked 或直接
+结束协调轮，避免起步结束后再无通知可唤醒。活动状态 Unknown 时保留现场并报告，不能
+启动接续。只有 persist-before-send 才能写 switching 并发送；不进入 Terminal fan-in、archive 或 cherry-pick。恢复 starting/switching lane
+先读原 task 与 checkpoint；原轮未停止或发送结果未知时不启动第二个执行者。
 
 ## Terminal 回传
 

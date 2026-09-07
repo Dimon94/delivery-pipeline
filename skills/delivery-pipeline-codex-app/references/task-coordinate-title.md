@@ -5,7 +5,8 @@
 
 ## 生成坐标
 
-1. 解析 owning map 的 tracker key，保留 `#<number>` 形态。
+1. 解析 owning map 的 tracker key，保留 `#<number>` 形态。首次建图尚无 tracker key 时，
+   使用已登记的唯一 gate coordinate 作 map-key 与 work-item-key；map 发布后按 registry 修正标题。
 2. 按 lane 职责选择 role：
 
    | Role | 职责 |
