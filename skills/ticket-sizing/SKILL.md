@@ -1,20 +1,23 @@
 ---
 name: ticket-sizing
-description: Size implementation tickets by token budget — estimate the work's total tokens, divide by the smart zone (~150k tokens), and cut at least that many tickets. Use when deciding how many tickets to split work into, or evaluating whether existing tickets are too coarse.
+description: 拆分 implementation tickets 或审查现有拆票粒度时使用。
 ---
 
 # Ticket Sizing
 
-拆票粒度由 token 预算决定：每张 ticket 的全部工作（读码、改动、测试、迭代）必须装进一个 smart zone。
+按独立验收与依赖边界确定粒度。本 skill 只提供粒度判据；拆票流程的 owner 是 `to-tickets`。
 
-**Smart zone：** SOTA agent 保持清晰推理的上下文区间，约 150k tokens。单票超出它，执行中途推理质量劣化。
+## 判据
 
-## 步骤
+每张 ticket 应有一个可检查的交付目标，能在单个 Execution Worktree 内实现、验证与交回；
+所需前置产物明确为 dependency，不把跨票协同留成隐含条件。普通文件路径重叠本身不是拆票理由。
 
-1. **估总量。** 想清楚任务规模，估算完成它一共要花多少 token。估高不估低：估高只是多拆几票，估低会让单票超出 smart zone。涉及后端的部分按常规估算的 1.5 倍计——后端改动牵出多层集成（接口、数据、依赖）与边界处理，隐藏复杂度高于同体量前端工作，实际消耗容易超预期。
-2. **算下限。** 总 token ÷ 150k，向上取整，得到票数下限。
-3. **对照现有拆分。** 已经拆得更细就维持细票；有票超出一个 smart zone 就继续拆细，直到每张票都装得下。
+- **拆分：** 包含可独立验收的多个目标，或读取、实现和验证所需的同时在场上下文无法可靠承载时，
+  沿交付物或依赖边界拆分，保留明确的验收与集成顺序。
+- **合并：** 相邻细票没有独立验收价值、反复加载同一上下文且能在同一 Execution Worktree
+  验证时合并；保留真实 dependency，已派发或被 claim 的票不由本 skill 自动重写。
+- **Token 证据：** 有当前模型与相近任务的实际运行记录时，用作辅助校准；没有时记 Unknown。
+  累计消耗不等于同时占用的上下文，不据此直接计算票数或套用统一前后端系数。
 
-完成标准：票数不少于下限，且每张票的估算工作量都装进一个 smart zone。
-
-本 skill 只提供粒度判据；拆票流程的 owner 是 `to-tickets`。
+完成标准：每张票均有独立验收目标、显式前置依赖与单个 Execution Worktree 的交付边界；
+无法满足的票明确标出待拆分、合并或补充证据的原因，交由 `to-tickets` owner 处理。
