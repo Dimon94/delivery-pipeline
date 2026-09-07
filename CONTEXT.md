@@ -18,12 +18,9 @@ The process of collecting completed execution worktree commits into the map inte
 The final step where a map integration worktree's branch is rebased onto main and pushed. Only happens after all tickets complete, whole-change checks pass, and user confirms test strategy.
 
 **Test Decision Point**
-The moment when orchestrator pauses after integration completes and asks user to choose:
-1. Test in integration worktree first
-2. Rebase to main then test there
-3. Skip manual test, push immediately
-
-Only main-branch tests block other developers; integration worktree tests are isolated.
+完成 whole-change testing/review 后确认用户额外测试策略的 gate。已有仍适用的明确选择可复用；
+缺失、范围或风险变化、适用性 Unknown 时才暂停询问。策略与证据要求见
+`skills/delivery-pipeline/references/test-decision-and-rebase.md`；测试选择不等于远程发布授权。
 
 **Concurrent Maps**
 Multiple Wayfinder maps running simultaneously, each with its own integration worktree and execution worktrees. Each orchestrator session owns one map and ignores others. No global resource coordination — each map independently creates worktrees and panes.
@@ -71,17 +68,18 @@ A Herdr worker handling one AFK discovery/research item or one spec/tickets gate
 A repo-external, single-snapshot evidence set produced by the parent worker before `code-review` fans out to read-only Standards/Spec reviewers. It contains the resolved fixed point and HEAD, exact patch, commits, complete changed-path inventory, fixed-point additions, worktree/staged state, and producing commands. An implementation lane uses its Execution Worktree base commit as fixed point; the whole-change review lane uses the Map Integration Worktree creation base persisted in the map registry. Reviewers consume the same bundle with read/search access instead of requesting Git authority from the supervisor.
 
 **Worker Role Configuration**
-The user-level file `~/.config/delivery-pipeline/model-roles.json`. Version 2 defines exactly six worker roles—`planning`, `design`, `frontend`, `backend`, `testing`, `review`—and requires a non-empty `agent`, `model`, and `effort` for each. It contains no coordinator entry: the current calling session is the coordinator. Skills contain no default model routing; missing or invalid configuration blocks dispatch and runs `delivery-pipeline-setup`.
+The user-level file `~/.config/delivery-pipeline/model-roles.json`. Version 2 defines exactly six worker roles—`planning`, `design`, `frontend`, `backend`, `testing`, `review`—and requires a non-empty `agent`, `model`, and `effort` for each. It contains no coordinator entry: the current calling session is the coordinator. Canonical CLI skills contain no default model routing. 配置缺失或非法阻塞新 lane 并进入 `delivery-pipeline-setup`；既有 lane 的恢复与验收按 registry，不以当前配置为前提。
 
 **Coordinator Runtime**
 The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-cli` for canonical CLI/Herdr orchestration; `codex-app` only when the `delivery-pipeline-codex-app` shell is invoked. Coordinator model is chosen before skill invocation and is not part of Worker Role Configuration.
 
 **Dispatch Model**
+
 - `skills/delivery-pipeline` is the single canonical CLI/Herdr core installed unchanged for pi, Codex CLI, and Claude CLI; current host never rewrites configured worker routing.
 - Canonical CLI Dispatch resolves work item → one of six roles → configured agent/model/effort. Agent selects lane runtime: pi → `herdr-pi-pane`, codex → `herdr-codex-pane`, claude → `herdr-claude-pane`.
 - pi starts with `--approve --model <model> --thinking <effort>`; Codex CLI with `--model <model>` plus `model_reasoning_effort`; Claude CLI with `--model <model> --effort <effort>`. Kind-specific permissions belong to Trusted Execution Bootstrap.
 - Model/effort bind only at lane launch; after dispatch, the user may change the model in the worker pane and the lane's delivery stands. The coordinator performs no mid-run or fan-in pane-model reconciliation: model drift from the registry never rebuilds a lane, rewrites the config, or blocks delivery.
-- `skills/delivery-pipeline-codex-app` is the only transport shell. It skips Worker Role Configuration and maps all six delegated roles to Codex App tasks + App-managed Execution Worktrees (`codex-thread`); its packet, registry overlay, role-aware fan-in, and task references are co-located inside that shell.
+- `skills/delivery-pipeline-codex-app` is the only transport shell. It skips Worker Role Configuration and maps all six delegated roles to Codex App tasks + App-managed Execution Worktrees (`codex-thread`); its packet, registry overlay, role-aware fan-in, and task references are co-located inside that shell. App work-specific model requests, direct planning conversations and internal assistance are owned by `skills/delivery-pipeline-codex-app/references/development-mode.md`; App execution readback remains separate from requests.
 - `delivery-pipeline-setup` probes pi (`pi --list-models`), Codex (`codex debug models`), and Claude `settings.json.env`, then requires explicit choices for all six roles. There are no built-in agent/model/effort defaults.
 - Same-batch lanes complete startup readback before Dispatch Handoff; long tasks wake the current coordinator only on user completion, Lane Terminal Signal, or explicit monitor request.
 - Each lane persists role, output mode (`commit | artifact | checks | verdict`), agent, model, effort, evidence, runtime, permissions, worktree, and transport coordinates. Only commit mode cherry-picks; artifact/checks/verdict modes verify durable evidence then become `consumed`. Existing lanes recover by registry rather than new configuration.

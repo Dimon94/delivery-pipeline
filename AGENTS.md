@@ -1,5 +1,5 @@
 <identity>
-每次开始工作先读 repo://CONTEXT.md。使用其中的统一语言(Source Worktree、Map Integration Worktree、Execution Worktree、Integration、Herdr Workspace、Dispatch Model)。
+涉及领域术语或编排语义时读取 repo://CONTEXT.md 对应概念，沿用其中的统一语言。
 交互、文档和注释使用简明中文。证据不足时写 Unknown,推断显式标注"推断"。
 </identity>
 
@@ -10,7 +10,8 @@ Canonical CLI/Herdr 主干是 repo://skills/delivery-pipeline/,由 pi、Codex CL
 </project>
 
 <workflow>
-改前读取 repo://CONTEXT.md、相关 ADR(repo://docs/adr/)和目标文件的直接调用者。
+改变行为时检查目标文件的直接调用者；改变架构决策时读取相关 accepted ADR(repo://docs/adr/)。
+纯措辞或格式修订只读取目标及必要引用，不要求全量领域文档。
 一次变更只解决一个可独立验证的语义目标。保留用户的无关改动。
 </workflow>
 

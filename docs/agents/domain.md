@@ -2,13 +2,10 @@
 
 本文件说明开发任务如何使用领域文档。本仓为单上下文布局。
 
-## 开始工作
+## 按任务读取
 
-先读:
-
-- repo://CONTEXT.md(bundle 领域模型:三级 worktree、Herdr workspace、Dispatch Model)。
-- 涉及当前区域的 accepted ADR(repo://docs/adr/)。
-- 目标文件最近的 AGENTS.md。
+遵守目标文件适用的 AGENTS.md；领域文档的加载条件以 repo://AGENTS.md 的 identity/workflow
+为准。本文件补充术语维护与 ADR 冲突处理，不增加每次修改前的全量阅读要求。
 
 文件缺失时按 Unknown 处理并继续,不凭空补齐;词表与 ADR 由 /domain-modeling 在概念真正落定后懒创建。
 

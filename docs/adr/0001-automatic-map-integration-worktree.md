@@ -6,6 +6,10 @@
 
 > ADR-0002 supersedes the fixed pane/runtime clauses; ADR-0005 supersedes the one-map-one-Herdr-
 > Workspace clause. The two-tier worktree isolation and Integration decisions remain accepted.
+>
+> 2026-09-05 用户授权审计修订：Test Decision 保留用户策略 gate，已有仍适用的选择在恢复时复用，
+> 不无条件重复询问。具体分支以 `../../skills/delivery-pipeline/references/test-decision-and-rebase.md`
+> 为准；不扩大远程发布授权。
 
 ## Context
 
@@ -35,6 +39,7 @@ Orchestrator will **automatically manage a two-tier worktree hierarchy** for eac
 ### Tier 1: Map Integration Worktree
 
 When user launches a map from source worktree (main):
+
 1. Auto-detect if integration worktree already exists (recovery scenario)
 2. If not, create: `<source-parent>/worktrees/<repo-name>-map-<issue-number>/`
 3. Create branch `feature/map-<issue-number>` based on current main HEAD
@@ -44,6 +49,7 @@ When user launches a map from source worktree (main):
 ### Tier 2: Execution Worktrees
 
 For each ready implementation ticket:
+
 1. Create: `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/`
 2. Create branch `codex/issue-<ticket-number>` based on integration worktree's branch
 3. Launch Codex pane via `/herdr` in map's workspace
@@ -53,6 +59,7 @@ For each ready implementation ticket:
 ### Merge to Main Flow
 
 After all tickets integrated and whole-change checks pass:
+
 1. **Pause at test decision point**, offer user three options:
    - Test in integration worktree (stays isolated)
    - Rebase to main first, then test there (blocks others)
@@ -68,6 +75,7 @@ After all tickets integrated and whole-change checks pass:
 ### Concurrent Maps Isolation
 
 Each orchestrator session manages only its own map:
+
 - No global resource coordination
 - No cross-map scheduling
 - Each map independently creates worktrees
@@ -78,22 +86,26 @@ Each orchestrator session manages only its own map:
 ### Positive
 
 **User experience**
+
 - Zero manual Git commands required
 - Can run 5+ maps concurrently without conflicts
 - Source worktree stays clean on main
 - Automatic cleanup prevents worktree/branch pollution
 
 **Isolation**
+
 - Each map has dedicated workspace
 - Execution worktrees prevent ticket interference
 - Testing can happen in isolation before affecting main
 
 **Recovery**
+
 - Auto-detect existing worktrees on session restart
 - Restore running execution worktrees from registry
 - Idempotent operations (safe to re-run)
 
 **Automation**
+
 - Automatic rebase with conflict detection
 - Automatic cleanup on success
 - Automatic workspace management via `/herdr`
@@ -101,21 +113,25 @@ Each orchestrator session manages only its own map:
 ### Negative
 
 **Disk space**
+
 - 5 concurrent maps × 3-5 tickets each = 15-25 worktrees
 - Each worktree is a full checkout (~repo size)
 - Mitigated by: immediate cleanup after integration, sparse checkouts if needed
 
 **Complexity**
+
 - Two-tier worktree hierarchy adds orchestrator logic
 - Rebase conflicts require `/mattpocock-skills:resolving-merge-conflicts` delegation
 - Failed worktree cleanup must be robust
 
 **Git expertise required (for orchestrator)**
+
 - Must handle: worktree creation, branch management, cherry-pick, rebase, conflict detection
 - Must verify: worktree paths, branch validity, clean state
 - Must clean up: on success, on failure, on user abort
 
 **No PR/MR by default**
+
 - Bypasses GitHub/GitLab review process
 - CI/CD runs after push, not before (unless checks run in integration worktree)
 - Acceptable tradeoff for user's automation goal
@@ -141,11 +157,13 @@ Long-running maps may diverge significantly from main.
 ## Implementation Notes
 
 Must delegate to `/herdr` skill for:
+
 - Workspace creation/renaming
 - Pane placement and lifecycle
 - All Herdr CLI operations
 
 Must handle Git operations directly:
+
 - `git worktree add -b <branch> <path> <base>`
 - `git cherry-pick <commit>`
 - `git rebase <branch>`
@@ -153,12 +171,14 @@ Must handle Git operations directly:
 - `git branch -D <branch>`
 
 Must verify before operations:
+
 - Path doesn't exist or is valid worktree
 - Branch doesn't exist or is safe to reuse
 - Working tree is clean before deletion
 - Common dir matches source repo
 
 Must update `lane-registry.md` schema to include:
+
 - `integration_worktree_path`
 - `integration_branch`
 - `execution_worktree_path` (per ticket)
