@@ -41,11 +41,16 @@ Gate 顺序、owner 与通过证据统一在 `references/gate-state-machine.md`�
 
 ## 新建 lane 的配置与 Packet
 
-按 `references/model-role-routing.md` 验证 version 2 配置
+按 `references/model-role-routing.md` 验证 version 2 配置或显式 version 3 执行计划
 `~/.config/delivery-pipeline/model-roles.json`：从 setup skill realpath 运行
 `scripts/model_config.py validate <config>`，再验证本机实时 evidence。缺失或非法时完整读取
 `../delivery-pipeline-setup/SKILL.md` 并在当前会话执行初始化；通过后才创建新 lane，不静默回落。
 已有 lane 的恢复按 registry；replacement 的条件与验证见 dispatch runtime 合同。
+
+新 implementation lane 按本票 → map → 用户配置解析 execution mode 与阶段参数，并将 mode、source、
+starting/execution/direct model 与 effort 冻结到 packet 和 lane registry。version 2 继续既有 direct
+启动行为；只有 `output_mode: commit` 的 implementation lane 消费 staged/direct 计划，其他 output
+mode 沿原 role 行为。staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
 
 从 role 配置解析 `agent`、`model`、`effort`，使用 `assets/HERDR_ROLE_DISPATCH_PACKET.md`。
 commit/review lane 创建 packet 时加载 `references/code-review-evidence-preflight.md`：

@@ -29,10 +29,13 @@ The user explicitly chooses `agent + model + effort` for six roles:
 planning  design  frontend  backend  testing  review
 ```
 
-The version 2 configuration is stored at `~/.config/delivery-pipeline/model-roles.json`. Skills
-contain no default models. Missing, old, incomplete, or invalid configuration blocks dispatch and
-re-enters setup. The coordinator is not configured: whichever agent/model invoked the skill remains
-coordinator.
+The version 2-compatible configuration is stored at `~/.config/delivery-pipeline/model-roles.json`;
+users explicitly select version 3 when implementation lanes need staged execution. Skills contain no
+default models. Missing, unknown, incomplete, or invalid configuration blocks dispatch and re-enters
+setup. Version 3 stores starting, execution, and direct model/effort pairs for pi, Codex CLI, and
+Claude CLI. New implementation lanes freeze ticket → map → user-config selection; existing version 2
+lanes keep their old startup behavior and are not migrated. The coordinator is not configured:
+whichever agent/model invoked the skill remains coordinator.
 
 Agent selects lane kind:
 

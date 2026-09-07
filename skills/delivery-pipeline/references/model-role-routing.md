@@ -7,7 +7,9 @@ worker 调度只读本配置；Coordinator 是当前调用会话，不在配置�
 
 路径：`~/.config/delivery-pipeline/model-roles.json`。
 
-schema version 2；六个角色全部必填，每个角色都必须具有非空 `agent`、`model`、`effort`：
+schema version 2 仍然受支持；六个角色全部必填，每个角色都必须具有非空 `agent`、`model`、`effort`。
+version 3 是显式执行计划扩展：它保留相同六角色和三字段，并新增 `execution`。旧 version 2
+配置只沿原有一次启动行为运行，不隐式开启分阶段，也不迁移已有 lane。
 
 ```json
 {
@@ -23,8 +25,54 @@ schema version 2；六个角色全部必填，每个角色都必须具有非空 
 }
 ```
 
-skill 与 reference 不提供默认 agent/model/effort。有效配置必须同时满足：顶层只有 `version` 与
-`roles`；roles key 与六角色精确相等；每个 role object 只有 `agent`、`model`、`effort`；agent 属于
+version 3 只为 implementation role（`design`、`frontend`、`backend`）提供分阶段选择；`planning`、
+`testing`、`review` 继续使用 role triple。`execution` 的 key 必须精确为三个 worker agent，且每个
+agent 都必须显式填写 `default_mode`（`staged` 或 `direct`）以及 `starting`、`execution`、
+`direct` 三组 `model` + `effort`：
+
+```json
+{
+  "version": 3,
+  "roles": { "...": "沿用 version 2 的六角色对象" },
+  "execution": {
+    "pi": {
+      "default_mode": "staged",
+      "starting": { "model": "<native-model-id>", "effort": "<native-effort>" },
+      "execution": { "model": "<native-model-id>", "effort": "<native-effort>" },
+      "direct": { "model": "<native-model-id>", "effort": "<native-effort>" }
+    },
+    "codex": {
+      "default_mode": "direct",
+      "starting": { "model": "<native-model-id>", "effort": "<native-effort>" },
+      "execution": { "model": "<native-model-id>", "effort": "<native-effort>" },
+      "direct": { "model": "<native-model-id>", "effort": "<native-effort>" }
+    },
+    "claude": {
+      "default_mode": "direct",
+      "starting": { "model": "<native-model-id>", "effort": "<native-effort>" },
+      "execution": { "model": "<native-model-id>", "effort": "<native-effort>" },
+      "direct": { "model": "<native-model-id>", "effort": "<native-effort>" }
+    }
+  }
+}
+```
+
+示例中的空对象只表示省略重复字段；实际配置不能省略 `model` 或 `effort`，也不能写
+`Unknown`。setup 只有在每个模型、effort 命中本机 evidence 且对应 binary 存在时才写入并 readback。
+分阶段 adapter 尚未提供时，`staged` 计划只能被冻结并报告阻塞；启动入口必须拒绝静默改成
+`direct`。`direct` 计划仍进入既有 Dispatch Model。
+
+setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude": { "binary": true,
+"models": { "<model>": ["<supported-effort>"] } } }`，交给
+`model_config.py resolve ... --output-mode commit --evidence`。
+缺 evidence、binary、model 或所选 model 不支持该 effort 时返回阻塞；没有 evidence 的 version 3 计划只能作为
+`unverified` 解析结果，不能生成启动请求。version 2 的 `legacy-config` 仍沿既有已验证配置启动。
+`model_config.py freeze ...` 输出同一冻结 overlay，coordinator 将其写入既有 packet 与 lane registry 后
+必须 readback 校验；它不是第二套配置或 registry truth。
+
+skill 与 reference 不提供默认 agent/model/effort。有效 version 2 配置顶层只有 `version` 与 `roles`；
+有效 version 3 配置再增加 `execution`；两者的 roles key 与六角色精确相等；每个 role object 只有
+`agent`、`model`、`effort`；agent 属于
 `pi|codex|claude`；三字段非空且命中本机 evidence。任一条件失败都阻塞 dispatch并在当前会话运行
 `delivery-pipeline-setup`；不静默回落。
 
@@ -34,7 +82,14 @@ skill 与 reference 不提供默认 agent/model/effort。有效配置必须同�
 
 当前 coordinator 会话不属于任何 worker 角色；它使用启动时已经选择的 agent/model。
 
-配置只绑定 lane 启动参数（见下文 Dispatch 验证）。Lane 启动后用户在 worker pane 中改
+配置只绑定 lane 启动参数（见下文 Dispatch 验证）。解析入口必须明确传 `output_mode: commit` 才能
+消费 implementation 阶段计划；缺失或其他 output mode 保留 role 的旧行为。新 implementation lane 的执行计划选择顺序为
+本票 → map → 用户配置（分别读取本票明确选择、map 已持久化选择、version 3 用户配置）；解析出的 mode、source、agent、
+starting/execution/direct model 与 effort 必须冻结到 packet 和既有 lane registry，再启动 worker。
+ticket/map 缺项时继续按下一层选择；非法 mode、缺失计划或能力 evidence 不匹配直接阻塞。
+已有 lane 只按 registry 恢复，不重新解析新配置。
+
+配置只绑定 lane 启动参数。Lane 启动后用户在 worker pane 中改
 model/effort 属正常操作：coordinator 不做运行中或 fan-in 的 pane model 对账，不把 pane 实际
 model 与 registry 不符当作 setup 失败，不因此重建 lane、回写配置或拒收交付；fan-in 只验收持久
 交付证据。
@@ -98,3 +153,9 @@ Claude env 候选是本机可配置选项的证据。Setup 只允许从这些 `*
    Claude 必须匹配 settings.json env 候选与 CLI effort 枚举。
 4. registry 在启动前写 role、output_mode、agent、model、effort、model_evidence、runtime 与 permission mode；
    精确 readback 后才能启动 worker。
+
+直接启动参数按 agent 映射：pi 使用 `--approve --model <model> --thinking <effort>`，Codex 使用
+`--model <model> -c model_reasoning_effort="<effort>" -s danger-full-access -a never`，Claude
+使用 `--model <model> --effort <effort> --dangerously-skip-permissions`。这些参数由冻结的
+`direct` 计划（或 version 2 legacy role triple）提供，不从 coordinator 模型推断。分阶段计划
+在 adapter 具备前没有启动请求；不得把起步模型的请求回显当成执行模型已运行。

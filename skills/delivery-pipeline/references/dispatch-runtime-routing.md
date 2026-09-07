@@ -12,8 +12,9 @@ Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通�
    Unknown并让用户确认。当前宿主不改写 worker 配置。
 2. 固定 `dispatch_runtime: herdr`。验证 `command -v herdr`、visible Herdr session 与
    `herdr agent start --help` 支持 `pi`、`codex`、`claude` kind。
-3. 加载 `model-role-routing.md`，从 role entry 读取 agent/model/effort；三字段不完整或证据
-   验证失败时阻塞并运行 setup，不替换成 coordinator 自身 agent。
+3. 加载 `model-role-routing.md`，从 role entry 读取 agent/model/effort；implementation lane 还要
+   按本票 → map → 用户配置冻结执行 mode 与阶段参数。三字段、计划或 evidence 验证失败时阻塞并
+   运行 setup，不替换成 coordinator 自身 agent。
 4. agent 映射 runtime：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude →
    `herdr-claude-pane`。同一 role 可由用户重跑 setup 后改变，existing lane 仍按 registry 恢复。
 5. `bootstrap_authority: trusted_execution_bootstrap` 覆盖已配置 worker 在精确 Execution
@@ -50,8 +51,8 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
 1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
    path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
    agent model evidence。
-2. registry 先写 role、agent、model、effort、model_evidence、runtime、permission mode、pane/worktree
-   计划坐标与 base commit，再精确 readback。
+2. registry 先写 role、agent、model、effort、model_evidence、execution mode/source、阶段 model/effort、
+   runtime、permission mode、pane/worktree 计划坐标与 base commit，再精确 readback。
 3. 从同一 Integration HEAD 创建各 lane Execution Worktree，branch prefix 与 agent kind 一致。
 4. 填写 `assets/HERDR_ROLE_DISPATCH_PACKET.md`；按 `model-role-routing.md` 启动 kind-matched CLI。
 5. 按 `pane-lifecycle-rules.md` 完成落点验证、投递、记账和聚合 Working 确认；单条失败隔离为
@@ -66,6 +67,8 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
   replacement 验证 stored agent/model/effort 的实时可用性（使用 `model-role-routing.md` 的 evidence），
   不要求当前配置一致；失败时保留 `setup_blocked`，不静默回落。用户明确选择改配时才经 setup
   验证新配置并更新 registry。
+- version 2 role triple 与 `direct` 计划都沿既有一次启动流程；`staged` 计划在对应阶段 adapter
+ 具备前只保存冻结结果并保持 blocked，不能退回 direct。
 - cleanup 只关闭本 lane pane并按 `pane-lifecycle-rules.md` 同步 tab label,以及本 lane
   Execution Worktree/branch;保留 Coordinator Pane及承载它的 user-visible session/workspace。
 - Herdr unavailable 时输出完整 durable packet并报告 `dispatch unavailable`，不假装已经派发。

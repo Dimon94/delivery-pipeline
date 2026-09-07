@@ -26,7 +26,8 @@ Dispatch blocker。
 | code review | `review` | `verdict` |
 
 role 只选择 config entry，不暗含 agent。agent/model/effort 只从
-`model-role-routing.md` 的 version 2 配置读取。
+`model-role-routing.md` 的 version 2 兼容配置或 version 3 冻结计划读取；implementation lane 的
+mode/source 也必须随 packet 和 registry 保存。
 
 ## Execution Lanes
 

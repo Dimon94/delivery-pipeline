@@ -28,8 +28,10 @@ Codex App native task/worktree 是唯一特殊 transport，入口为 `delivery-p
 planning  design  frontend  backend  testing  review
 ```
 
-配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 2）。Skill 不包含默认模型；
-配置缺失、旧 version、缺角色或字段非法都会阻塞派发并重新进入 setup。Coordinator 不在配置中，
+配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 2 兼容层；需要阶段计划时显式升级到 version 3）。
+Skill 不包含默认模型；配置缺失、未知 version、缺角色或字段非法都会阻塞派发并重新进入 setup。
+version 3 为三个 CLI agent 显式保存 staged/direct 的 starting、execution、direct model/effort；
+新 implementation lane 按本票 → map → 用户配置冻结选择，旧 v2 与已有 lane 不自动迁移。Coordinator 不在配置中，
 当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
 
 agent 决定 lane kind：

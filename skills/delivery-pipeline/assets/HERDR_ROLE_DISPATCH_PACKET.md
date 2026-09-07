@@ -1,7 +1,7 @@
 # Herdr Configured Role Dispatch Packet
 
-所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 2 配置解析 role、agent、model、
-effort并在启动前写入 registry。配置的 model/effort 只是派发时的初始化值：用户可在 lane 运行中手动切换，
+所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 2 兼容配置或 version 3 执行计划解析 role、agent、model、
+effort并在启动前写入 registry。implementation lane 还要冻结 mode 与 source。配置的 model/effort 只是派发时的初始化值：用户可在 lane 运行中手动切换，
 worker 被动接受，照常交付并在 final report 如实记录 runtime 实际值与 evidence；worker 不自行切换
 agent/model/effort。
 
@@ -15,6 +15,11 @@ Agent：<pi | codex | claude>
 Model：<configured native model id>
 Effort：<configured native effort>
 Model evidence：<pi-list-models | codex-catalog | claude-env>
+Execution mode：<legacy | staged | direct>
+Execution source：<role-config | ticket | map | user-config>
+Starting model/effort：<frozen pair | none>
+Execution model/effort：<frozen pair | none>
+Direct model/effort：<frozen pair | role triple>
 Owner skill name：<owner frontmatter name>
 Owner skill SKILL.md：<absolute resolved path>
 Owner skill invocation label：<runtime-specific label; metadata only>
@@ -56,6 +61,8 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
 - 当前 Agent/Model/Effort 与 packet 不符（通常是用户在本 pane 改了模型）时不阻塞，继续执行，
   照常交付并在 final report 记录 runtime 实际值与 evidence。
+- `staged` 计划在阶段 adapter 未具备时必须保持 blocked；不得把它静默改成 `direct`。`direct` 与
+  `legacy` 才能生成既有三 CLI 启动请求。
 
 完成标准：
 - Work item acceptance 已满足，或已有精确 blocker。

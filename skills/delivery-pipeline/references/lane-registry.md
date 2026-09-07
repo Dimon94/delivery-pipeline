@@ -18,6 +18,15 @@ agent: pi | codex | claude | none
 model: <configured-model-or-none>
 effort: <configured-effort-or-none>
 model_evidence: pi-list-models | codex-catalog | claude-env | none
+execution_mode: legacy | staged | direct | none
+execution_source: role-config | ticket | map | user-config | none
+starting_model: <frozen-model-or-none>
+starting_effort: <frozen-effort-or-none>
+execution_model: <frozen-model-or-none>
+execution_effort: <frozen-effort-or-none>
+direct_model: <frozen-model-or-none>
+direct_effort: <frozen-effort-or-none>
+execution_phase: starting | switching | executing | direct | none
 workspace_id: <id-or-none>
 tab_id: <id-or-none>
 pane_id: <id-or-none>
@@ -77,9 +86,10 @@ session/workspace/tab/pane是 lane坐标；
 ## Recovery
 
 1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry。
-2. Herdr runtime 验证 session/workspace/tab/pane、kind、role/output_mode 与 worktree；
-   agent/model/effort 是 stored 启动坐标，不与 pane 的运行中模型对账。existing lane 不应用新 config
-   也不迁移 Workspace，新 lane 重新解析 Coordinator Pane 当前坐标。
+2. Herdr runtime 验证 session/workspace/tab/pane、kind、role/output_mode、agent/model/effort 与 worktree；
+   execution mode/source 与阶段参数也必须一致；agent/model/effort 是 stored 启动坐标，不与 pane 的
+   运行中模型对账。existing lane 不应用新 config 也不迁移 Workspace，新 lane 重新解析 Coordinator Pane
+   当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
