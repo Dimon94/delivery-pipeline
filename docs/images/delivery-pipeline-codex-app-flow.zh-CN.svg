@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1180" width="1200" height="1180" role="img" aria-labelledby="title desc">
+  <title id="title">Delivery Pipeline Codex App 开发流程</title>
+  <desc id="desc">从用户调用、协调器恢复 gate、规划与拆票、三种实施模式、终态回传，到测试、双轴审查、集成和下一批任务的完整流程。</desc>
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+    .title { font-size: 28px; font-weight: 700; }
+    .subtitle { font-size: 14px; fill: #6b7280; }
+    .section { font-size: 13px; font-weight: 700; fill: #2563eb; letter-spacing: .06em; }
+    .node-title { font-size: 16px; font-weight: 700; }
+    .label { font-size: 14px; font-weight: 600; }
+    .detail { font-size: 12px; fill: #4b5563; }
+    .edge-label { font-size: 12px; font-weight: 600; fill: #4b5563; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1180" fill="#ffffff"/>
+  <text x="600" y="42" text-anchor="middle" class="title">Delivery Pipeline · Codex App 开发流程</text>
+  <text x="600" y="68" text-anchor="middle" class="subtitle">原生 App task + App-managed Execution Worktree · 持久证据驱动恢复与推进</text>
+
+  <!-- Edges: primary gate flow -->
+  <path d="M600 152 V182" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M600 264 V286 H190 V310" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M320 346 H370" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M590 346 H640" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M770 382 V405 H600 V435" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- Mode selection and convergence -->
+  <path d="M480 475 H240 V545" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+  <path d="M600 515 V545" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+  <path d="M720 475 H960 V545" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+  <path d="M240 625 V682 H420" fill="none" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+  <path d="M600 625 V660" fill="none" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+  <path d="M960 625 V702 H780" fill="none" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+  <path d="M600 722 V815" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+
+  <!-- Verification, review, integration and recovery loop -->
+  <path d="M600 890 V920 H210 V950" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M350 990 H460" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M740 990 H850" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M1130 990 H1160 V223 H890" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-dasharray="7 5" marker-end="url(#arrow-purple)"/>
+
+  <!-- Nodes -->
+  <rect x="390" y="88" width="420" height="64" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="600" y="114" text-anchor="middle" class="node-title">调用 $delivery-pipeline-codex-app</text>
+  <text x="600" y="137" text-anchor="middle" class="detail">输入想法、map、spec 或 implementation ticket</text>
+
+  <rect x="310" y="182" width="580" height="82" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
+  <rect x="320" y="192" width="34" height="34" rx="17" fill="#10a37f"/>
+  <text x="337" y="214" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">OAI</text>
+  <text x="600" y="211" text-anchor="middle" class="node-title">Codex App Coordinator · Sol / high</text>
+  <text x="600" y="234" text-anchor="middle" class="detail">识别输入 · 恢复最早未完成 gate · 核对 registry、权限、模型与并发</text>
+  <text x="600" y="252" text-anchor="middle" class="detail">任务 completed 只是唤醒信号；用户确认与持久产物才通过 gate</text>
+
+  <text x="382" y="281" class="edge-label">最早未完成 gate</text>
+
+  <rect x="60" y="310" width="260" height="72" rx="8" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.5"/>
+  <text x="190" y="338" text-anchor="middle" class="label">Discovery + Map</text>
+  <text x="190" y="360" text-anchor="middle" class="detail">Sol 调查 · Astra / low 规划与沟通</text>
+
+  <rect x="370" y="310" width="220" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="480" y="338" text-anchor="middle" class="label">Spec</text>
+  <text x="480" y="360" text-anchor="middle" class="detail">Astra / low · 用户确认</text>
+
+  <rect x="640" y="310" width="260" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="770" y="338" text-anchor="middle" class="label">Implementation Tickets</text>
+  <text x="770" y="360" text-anchor="middle" class="detail">验收与依赖边界 · 用户确认</text>
+
+  <rect x="60" y="405" width="1080" height="370" rx="12" fill="#eff6ff" fill-opacity="0.45" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="80" y="430" class="section">IMPLEMENTATION LANE · 一个 APP TASK / WORKTREE / ACTIVE WRITER</text>
+
+  <polygon points="600,435 720,475 600,515 480,475" fill="#ffffff" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="600" y="470" text-anchor="middle" class="label">开发模式？</text>
+  <text x="600" y="489" text-anchor="middle" class="detail">ticket → map → 默认值</text>
+
+  <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="240" y="570" text-anchor="middle" class="label">astra-luna（默认）</text>
+  <text x="240" y="593" text-anchor="middle" class="detail">Astra / low 起步与首改</text>
+  <text x="240" y="612" text-anchor="middle" class="detail">同任务接续 Luna / high 实现与测试</text>
+
+  <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="600" y="570" text-anchor="middle" class="label">astra-sol</text>
+  <text x="600" y="593" text-anchor="middle" class="detail">Astra / low 起步与首改</text>
+  <text x="600" y="612" text-anchor="middle" class="detail">同任务接续 Sol / high 实现与测试</text>
+
+  <rect x="820" y="545" width="280" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="960" y="570" text-anchor="middle" class="label">sol-direct</text>
+  <text x="960" y="593" text-anchor="middle" class="detail">跳过 Prewalk</text>
+  <text x="960" y="612" text-anchor="middle" class="detail">Sol / high 从头实现与测试</text>
+
+  <rect x="420" y="660" width="360" height="62" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="600" y="686" text-anchor="middle" class="label">完成 owner 流程与最小验证</text>
+  <text x="600" y="708" text-anchor="middle" class="detail">Prewalk 不新增 gate；无法原任务换模则保留现场并受阻</text>
+  <text x="600" y="750" text-anchor="middle" class="detail">同一 threadId + hostId + Execution Worktree · checkpoint 核验 HEAD / dirty / 首改 / TODO</text>
+
+  <text x="614" y="798" class="edge-label">FINAL_REPORT · 异步唤醒</text>
+  <rect x="390" y="815" width="420" height="75" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="600" y="843" text-anchor="middle" class="label">Terminal 回传 + Role-aware Fan-in</text>
+  <text x="600" y="865" text-anchor="middle" class="detail">核验 commit / artifact / checks / verdict 与 registry，再持久化状态</text>
+  <text x="600" y="883" text-anchor="middle" class="detail">重复通知去重 · Unknown 不盲重发</text>
+
+  <rect x="70" y="950" width="280" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="210" y="978" text-anchor="middle" class="label">Whole-change Testing</text>
+  <text x="210" y="1001" text-anchor="middle" class="detail">Sol / high · output: checks</text>
+  <text x="210" y="1020" text-anchor="middle" class="detail">失败回到实施 lane 修复</text>
+
+  <rect x="460" y="950" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="600" y="978" text-anchor="middle" class="label">独立双轴 Review</text>
+  <text x="600" y="1001" text-anchor="middle" class="detail">Astra / low · Standards + Spec</text>
+  <text x="600" y="1020" text-anchor="middle" class="detail">blocking finding 修复后复核</text>
+
+  <rect x="850" y="950" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="990" y="978" text-anchor="middle" class="label">Integration + Closeout</text>
+  <text x="990" y="1001" text-anchor="middle" class="detail">集成 worktree · focused checks · archive</text>
+  <text x="990" y="1020" text-anchor="middle" class="detail">远程动作仍需独立授权</text>
+
+  <text x="946" y="209" class="edge-label">下一 ready frontier / 恢复</text>
+  <text x="600" y="1072" text-anchor="middle" class="subtitle">请求模型与宿主实际 readback 分开记录；缺少运行证据时明确记为 Unknown。</text>
+
+  <!-- Legend -->
+  <g transform="translate(250,1110)">
+    <line x1="0" y1="8" x2="36" y2="8" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <text x="48" y="13" class="detail">gate 主流程</text>
+    <line x1="190" y1="8" x2="226" y2="8" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+    <text x="238" y="13" class="detail">模型/阶段切换</text>
+    <line x1="430" y1="8" x2="466" y2="8" stroke="#9333ea" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+    <text x="478" y="13" class="detail">回传、唤醒与恢复</text>
+  </g>
+</svg>

@@ -88,6 +88,13 @@ Prewalk 在同一任务历史中接续。每次调用都执行模型、内部并
 不会随 Skill 软链应用到其他仓库。具体入口与证据边界见
 [App 开发模式](skills/delivery-pipeline-codex-app/references/development-mode.md)。
 
+#### Codex App 开发流程
+
+下图覆盖 gate 恢复、三种实施模式、同任务 Prewalk 接续、终态 fan-in、whole-change 测试、
+双轴 Review 与 Integration 收尾。
+
+[![Delivery Pipeline Codex App 开发流程](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)
+
 ## 不变量
 
 - Coordinator Pane 只承担调度；branch 与文件修改都发生在隔离 worktree。

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1180" width="1200" height="1180" role="img" aria-labelledby="title desc">
+  <title id="title">Delivery Pipeline Codex App development flow</title>
+  <desc id="desc">The complete path from invocation and gate recovery through planning, three implementation modes, terminal fan-in, testing, dual-axis review, integration, and the next frontier.</desc>
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+    .title { font-size: 28px; font-weight: 700; }
+    .subtitle { font-size: 14px; fill: #6b7280; }
+    .section { font-size: 13px; font-weight: 700; fill: #2563eb; letter-spacing: .06em; }
+    .node-title { font-size: 16px; font-weight: 700; }
+    .label { font-size: 14px; font-weight: 600; }
+    .detail { font-size: 12px; fill: #4b5563; }
+    .edge-label { font-size: 12px; font-weight: 600; fill: #4b5563; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1180" fill="#ffffff"/>
+  <text x="600" y="42" text-anchor="middle" class="title">Delivery Pipeline · Codex App Development Flow</text>
+  <text x="600" y="68" text-anchor="middle" class="subtitle">Native App tasks + App-managed Execution Worktrees · recovery and progress driven by persisted evidence</text>
+
+  <!-- Edges: primary gate flow -->
+  <path d="M600 152 V182" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M600 264 V286 H190 V310" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M320 346 H370" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M590 346 H640" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M770 382 V405 H600 V435" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- Mode selection and convergence -->
+  <path d="M480 475 H240 V545" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+  <path d="M600 515 V545" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+  <path d="M720 475 H960 V545" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+  <path d="M240 625 V682 H420" fill="none" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+  <path d="M600 625 V660" fill="none" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+  <path d="M960 625 V702 H780" fill="none" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+  <path d="M600 722 V815" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+
+  <!-- Verification, review, integration and recovery loop -->
+  <path d="M600 890 V920 H210 V950" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M350 990 H460" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M740 990 H850" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M1130 990 H1160 V223 H890" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-dasharray="7 5" marker-end="url(#arrow-purple)"/>
+
+  <!-- Nodes -->
+  <rect x="390" y="88" width="420" height="64" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="600" y="114" text-anchor="middle" class="node-title">Invoke $delivery-pipeline-codex-app</text>
+  <text x="600" y="137" text-anchor="middle" class="detail">Start from an idea, map, spec, or implementation ticket</text>
+
+  <rect x="310" y="182" width="580" height="82" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
+  <rect x="320" y="192" width="34" height="34" rx="17" fill="#10a37f"/>
+  <text x="337" y="214" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">OAI</text>
+  <text x="600" y="211" text-anchor="middle" class="node-title">Codex App Coordinator · Sol / high</text>
+  <text x="600" y="234" text-anchor="middle" class="detail">Resolve input · recover earliest unfinished gate · verify registry, permissions, model and capacity</text>
+  <text x="600" y="252" text-anchor="middle" class="detail">Task completion only wakes the coordinator; user approval and persisted artifacts pass a gate</text>
+
+  <text x="382" y="281" class="edge-label">earliest unfinished gate</text>
+
+  <rect x="60" y="310" width="260" height="72" rx="8" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.5"/>
+  <text x="190" y="338" text-anchor="middle" class="label">Discovery + Map</text>
+  <text x="190" y="360" text-anchor="middle" class="detail">Sol research · Astra / low planning</text>
+
+  <rect x="370" y="310" width="220" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="480" y="338" text-anchor="middle" class="label">Spec</text>
+  <text x="480" y="360" text-anchor="middle" class="detail">Astra / low · user approval</text>
+
+  <rect x="640" y="310" width="260" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="770" y="338" text-anchor="middle" class="label">Implementation Tickets</text>
+  <text x="770" y="360" text-anchor="middle" class="detail">Acceptance and dependency boundaries</text>
+
+  <rect x="60" y="405" width="1080" height="370" rx="12" fill="#eff6ff" fill-opacity="0.45" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="80" y="430" class="section">IMPLEMENTATION LANE · ONE APP TASK / WORKTREE / ACTIVE WRITER</text>
+
+  <polygon points="600,435 720,475 600,515 480,475" fill="#ffffff" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="600" y="470" text-anchor="middle" class="label">Development mode?</text>
+  <text x="600" y="489" text-anchor="middle" class="detail">ticket → map → default</text>
+
+  <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="240" y="570" text-anchor="middle" class="label">astra-luna (default)</text>
+  <text x="240" y="593" text-anchor="middle" class="detail">Astra / low starts and makes first edit</text>
+  <text x="240" y="612" text-anchor="middle" class="detail">Same task continues with Luna / high</text>
+
+  <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="600" y="570" text-anchor="middle" class="label">astra-sol</text>
+  <text x="600" y="593" text-anchor="middle" class="detail">Astra / low starts and makes first edit</text>
+  <text x="600" y="612" text-anchor="middle" class="detail">Same task continues with Sol / high</text>
+
+  <rect x="820" y="545" width="280" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="960" y="570" text-anchor="middle" class="label">sol-direct</text>
+  <text x="960" y="593" text-anchor="middle" class="detail">Skip Prewalk</text>
+  <text x="960" y="612" text-anchor="middle" class="detail">Sol / high implements and tests from start</text>
+
+  <rect x="420" y="660" width="360" height="62" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="600" y="686" text-anchor="middle" class="label">Complete owner flow and minimal checks</text>
+  <text x="600" y="708" text-anchor="middle" class="detail">Same-task switch failure preserves state and blocks</text>
+  <text x="600" y="750" text-anchor="middle" class="detail">Same threadId + hostId + Execution Worktree · checkpoint verifies HEAD / dirty / first edit / TODO</text>
+
+  <text x="614" y="798" class="edge-label">FINAL_REPORT · asynchronous wake-up</text>
+  <rect x="390" y="815" width="420" height="75" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="600" y="843" text-anchor="middle" class="label">Terminal Callback + Role-aware Fan-in</text>
+  <text x="600" y="865" text-anchor="middle" class="detail">Verify commit / artifact / checks / verdict and registry, then persist the state</text>
+  <text x="600" y="883" text-anchor="middle" class="detail">Deduplicate repeated reports · never resend blindly on Unknown</text>
+
+  <rect x="70" y="950" width="280" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="210" y="978" text-anchor="middle" class="label">Whole-change Testing</text>
+  <text x="210" y="1001" text-anchor="middle" class="detail">Sol / high · output: checks</text>
+  <text x="210" y="1020" text-anchor="middle" class="detail">Failures return to implementation</text>
+
+  <rect x="460" y="950" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="600" y="978" text-anchor="middle" class="label">Independent Dual-axis Review</text>
+  <text x="600" y="1001" text-anchor="middle" class="detail">Astra / low · Standards + Spec</text>
+  <text x="600" y="1020" text-anchor="middle" class="detail">Re-review after blocking findings are fixed</text>
+
+  <rect x="850" y="950" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="990" y="978" text-anchor="middle" class="label">Integration + Closeout</text>
+  <text x="990" y="1001" text-anchor="middle" class="detail">Integration worktree · focused checks · archive</text>
+  <text x="990" y="1020" text-anchor="middle" class="detail">Remote actions still need separate authority</text>
+
+  <text x="946" y="209" class="edge-label">next ready frontier / recovery</text>
+  <text x="600" y="1072" text-anchor="middle" class="subtitle">Requested model and host runtime readback are recorded separately; missing evidence remains Unknown.</text>
+
+  <!-- Legend -->
+  <g transform="translate(250,1110)">
+    <line x1="0" y1="8" x2="36" y2="8" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <text x="48" y="13" class="detail">main gate flow</text>
+    <line x1="190" y1="8" x2="226" y2="8" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+    <text x="238" y="13" class="detail">model / phase switch</text>
+    <line x1="430" y1="8" x2="466" y2="8" stroke="#9333ea" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+    <text x="478" y="13" class="detail">callback, wake-up and recovery</text>
+  </g>
+</svg>

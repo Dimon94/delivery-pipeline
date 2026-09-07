@@ -95,6 +95,13 @@ checks models, internal concurrency, and permissions; this repository's project 
 not propagate through Skill symlinks. See the [App development contract](skills/delivery-pipeline-codex-app/references/development-mode.md)
 for invocation steps and evidence limits.
 
+#### Codex App development flow
+
+The flow below shows gate recovery, the three implementation modes, same-task Prewalk continuation,
+terminal fan-in, whole-change testing, dual-axis review, and Integration closeout.
+
+[![Delivery Pipeline Codex App development flow](docs/images/delivery-pipeline-codex-app-flow.en.svg)](docs/images/delivery-pipeline-codex-app-flow.en.svg)
+
 ## Invariants
 
 - The coordinator pane remains a control plane; isolated worktrees carry branch and file changes.
