@@ -23,7 +23,7 @@ def check():
     assert sizing["read_only"] is True
     assert call("subagent", {"work": "ticket-sizing", "active_count": 3, "source": "live list", "read_only": False})["action"] == "wait"
     support = call("subagent", {"work": "assistance", "active_count": 0, "source": "live list", "read_only": True})
-    assert support["request"] == {"model": "gpt-5.6-luna", "reasoning_effort": "high", "fork_turns": "none"}
+    assert support["request"] == {"model": "gpt-5.6-luna", "reasoning_effort": "max", "fork_turns": "none"}
     assert support["read_only"] is True
     opinion = call("subagent", {"work": "second-opinion", "active_count": 0, "source": "live list", "read_only": False})
     assert opinion["request"]["model"] == "gpt-6-astra" and opinion["read_only"] is True
@@ -113,12 +113,15 @@ def check():
         assert prepared["action"] == "persist-before-send"
         assert prepared["request"]["threadId"] == "same-task"
         assert prepared["request"]["model"] == "gpt-5.6-luna"
+        assert prepared["request"]["thinking"] == "max"
+        assert prepared["overlay"]["requested_effort"] == "max"
         assert prepared["overlay"]["model"] == "Unknown"
         assert "起步轮限制已结束" in prepared["request"]["prompt"]
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
         assert call("prepare", {**data, "lane": {**lane, "execution_phase": "executing"}})["request"] is None
         sol = call("prepare", {**data, "lane": {**lane, "development_mode": "astra-sol"}})
         assert sol["request"]["model"] == "gpt-5.6-sol"
+        assert sol["request"]["thinking"] == "high"
         pending = call("prepare", {**data, "observation": {**data["observation"], "status": "active"}})
         assert pending["action"] == "wait-for-stop" and pending["request"] is None
         assert pending["target"] == {"threadId": "same-task", "hostId": "local"}

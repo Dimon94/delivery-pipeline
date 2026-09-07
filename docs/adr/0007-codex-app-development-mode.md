@@ -21,7 +21,8 @@ App task 的模型请求与宿主运行 readback 分开保存；旧 lane 沿原 
 
 实施票支持 astra-luna（默认）、astra-sol 与 sol-direct；前两种由 Astra 起步，在同一
 App task 下一轮显式请求接续模型。packet/registry 持久化选择及检查点；模式不改变 owner、
-Review 或 Integration gate。该决定是用户选定的流程合同，App 接续与 fast 仍待运行验证。
+Review 或 Integration gate。该决定是用户选定的流程合同；App 接续已有隔离运行证据。
+Luna 使用 max 且不启用 fast，service tier 沿宿主默认值，运行 readback 缺失时仍记 Unknown。
 
 本仓内部子代理默认值落在项目级 Codex 配置，外层 App task 仍显式传 model/effort。
 该配置不随 Skill 软链扩散到其他 repo，不覆盖用户全局配置或自定义角色。

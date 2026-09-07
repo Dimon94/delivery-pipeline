@@ -10,7 +10,7 @@ coordinator 启动时与每个 worker 执行前读取。本文件拥有 App 工�
 | coordinator、独立搜索调查、whole-change 测试执行 | `gpt-5.6-sol` | `high` |
 | 地图沟通/拷问、地图规划、spec、issue 拆分、原型 | `gpt-6-astra` | `low` |
 | second opinion | `gpt-6-astra` | `low` |
-| 执行会话内部检索、限定范围实现、测试、研究辅助 | `gpt-5.6-luna` | `high` |
+| 执行会话内部检索、限定范围实现、测试、研究辅助 | `gpt-5.6-luna` | `max` |
 
 按 work 判定，不只看 role：planning 中的搜索调查用 Sol，spec/tickets 用 Astra；design 中的
 原型用 Astra，正式工程实现按下面的票级开发模式选择。whole-change review 先读 owner 合同：直接承担独立判断时
@@ -57,7 +57,7 @@ whole-change testing/review 和 coordinator 沿工作分工表。实现阶段自
 
 | development_mode | 起步 | 接续实现与测试 |
 | --- | --- | --- |
-| `astra-luna`（默认） | Astra / low | Luna / high |
+| `astra-luna`（默认） | Astra / low | Luna / max |
 | `astra-sol` | Astra / low | Sol / high |
 | `sol-direct` | 无单独起步 | Sol / high 从头执行 |
 
@@ -108,7 +108,8 @@ canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 t
    到 coordinator 后结束本轮；这是中间通知，不发送 completed FINAL_REPORT，不提交或集成。
    coordinator 用 wait_threads/read_thread 核验起步轮已停止，检查点和当前文件一致才接续。
 3. **切换。** coordinator 先保存 checkpoint、目标 model/effort 与 phase: switching，随后调用
-   `send_message_to_thread`，沿同一个 threadId/hostId 显式传接续模型与 thinking: high。
+   `send_message_to_thread`，沿同一个 threadId/hostId 显式传接续模型与模式对应的 thinking
+   （Luna 为 max，Sol 为 high）。
    prompt 带 checkpoint 路径、原 owner/范围、剩余 TODO，并明确“起步轮限制已结束，完成余下
    实现、测试与 owner 要求的审查和提交”。不创建第二个 task/worktree；旧消息与工具轨迹
    必须通过原任务历史接续；checkpoint 只用于恢复与核对。接续不得改用新任务、fork、
@@ -127,14 +128,16 @@ sol-direct 创建时直接请求 `gpt-5.6-sol` + `high`，phase: executing，che
 子阶段，不新增 canonical gate 或第二个 lane owner。执行者需要重判方案时使用下方
 second opinion；模式升级由用户明确选择，沿同一 task 保存变更原因和现场证据。
 
-当前证据边界：2026-09-07 的 #94 隔离 App 探针已验证 Astra low → Luna high、
-Astra low → Sol high 在原 task/worktree 接续，以及 Sol high 直接执行。宿主 turn_context
-记录符合请求；口令回忆和产物检查通过。首轮 Luna 身份误判后修正 worker prompt，原任务
-复测通过。另一个隔离检查链已验证空闲 coordinator 被回传唤醒、自动发送同 worker 的
+当前证据边界：2026-09-07 的 #94 历史探针曾验证 Astra low → Luna high（该配置现已废止）、
+Astra low → Sol high 在原 task/worktree 接续，以及 Sol high 直接执行。切换为 max 后，复用原
+Astra/Luna task 完成 Astra low → Luna max 新探针；宿主 turn_context 回读 model/effort 为
+`gpt-5.6-luna` / `max`，口令、三个合法转换及九个非法组合检查通过。另一个隔离检查链已验证
+空闲 coordinator 被回传唤醒、自动发送同 worker 的
 下一阶段并收齐结果回传；完整业务 map 的 Review 与 Integration 尚未做端到端验证。此合同采用
 轮次间接续，不宣称工具调用边界自动热切换；实际票仍需保留全链路证据。
-Luna fast 也没有 App 运行证据；当前 task/spawn schema 未提供 service tier 时记 Unknown，
-不把 development_mode 或全局 fast 设置当作仅 Luna 已启用 fast 的证明。
+Luna 不启用 fast，沿宿主默认 service tier 运行；本机全局配置为 `service_tier = "default"`，
+项目配置不增加 fast 覆盖。当前 task/spawn schema 未提供 service tier readback 时记 Unknown，
+不以模型、effort 或任务标题推断 fast 状态。
 
 ## 参数与证据
 
@@ -158,7 +161,7 @@ Luna fast 也没有 App 运行证据；当前 task/spawn schema 未提供 servic
 enabled = true
 max_concurrent_threads_per_session = 3
 default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "high"
+default_subagent_reasoning_effort = "max"
 ```
 
 字段与角色覆盖顺序参见 [OpenAI subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
@@ -190,7 +193,7 @@ task completed 只是唤醒信号。Sol 核验用户确认及当前 gate 的持�
 
 ## 内部 Luna 辅助
 
-Sol、Astra 与获授权的执行会话均可按需直接派生 Luna / high，承担独立检索、研究、测试或有界实现。
+Sol、Astra 与获授权的执行会话均可按需直接派生 Luna / max，承担独立检索、研究、测试或有界实现。
 父会话分配允许编辑的文件边界，避免同时写同一文件；核验结果并承担最终交付。
 子代理继承父任务范围与权限：Review / second opinion 只读，Luna 也只读；规划判断、
 咨询建议和正式 Astra Review 仍由 Astra 负责。不要为没有独立工作的步骤强制派生。

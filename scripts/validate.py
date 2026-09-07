@@ -601,7 +601,12 @@ def check_app_shell() -> None:
     require(APP / "references" / "development-mode.md", (
         "gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna",
         "second opinion", "reasoning_effort", "thinking",
-        "default_subagent_reasoning_effort", "用户确认", "只读",
+        'default_subagent_reasoning_effort = "max"', 'service_tier = "default"',
+        "不启用 fast", "用户确认", "只读",
+    ))
+    require(ROOT / ".codex" / "config.toml", (
+        'default_subagent_model = "gpt-5.6-luna"',
+        'default_subagent_reasoning_effort = "max"',
     ))
     # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
     require(APP / "references" / "development-mode.md", (

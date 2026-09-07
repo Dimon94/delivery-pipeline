@@ -89,7 +89,7 @@ The App shell uses native tasks and App-managed Execution Worktrees and does not
 role configuration. To use Herdr from a Codex App session, exit the App shell and invoke canonical
 `delivery-pipeline`.
 
-New implementation lanes default to `astra-luna`; request `astra-sol` for one ticket or
+New implementation lanes default to `astra-luna` (Astra low → Luna max); request `astra-sol` for one ticket or
 `sol-direct` for subsequent new lanes. Prewalk continues in the same task history. Every invocation
 checks models, internal concurrency, and permissions; this repository's project configuration does
 not propagate through Skill symlinks. See the [App development contract](skills/delivery-pipeline-codex-app/references/development-mode.md)

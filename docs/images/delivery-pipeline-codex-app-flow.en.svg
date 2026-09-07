@@ -85,7 +85,7 @@
   <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
   <text x="240" y="570" text-anchor="middle" class="label">astra-luna (default)</text>
   <text x="240" y="593" text-anchor="middle" class="detail">Astra / low starts and makes first edit</text>
-  <text x="240" y="612" text-anchor="middle" class="detail">Same task continues with Luna / high</text>
+  <text x="240" y="612" text-anchor="middle" class="detail">Same task continues with Luna / max</text>
 
   <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
   <text x="600" y="570" text-anchor="middle" class="label">astra-sol</text>

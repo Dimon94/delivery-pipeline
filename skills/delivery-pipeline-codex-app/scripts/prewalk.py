@@ -9,7 +9,9 @@ import stat
 import subprocess
 import sys
 
-MODES = {"astra-luna": "gpt-5.6-luna", "astra-sol": "gpt-5.6-sol", "sol-direct": "gpt-5.6-sol"}
+MODES = {"astra-luna": ("gpt-5.6-luna", "max"),
+         "astra-sol": ("gpt-5.6-sol", "high"),
+         "sol-direct": ("gpt-5.6-sol", "high")}
 check_implementation = runpy.run_path(str(Path(__file__).resolve().parents[2] /
     "delivery-pipeline/scripts/implementation_gate.py"))["check"]
 
@@ -63,7 +65,7 @@ def resolve(data):
     if mode not in MODES:
         raise ValueError("非法 development_mode")
     direct = mode == "sol-direct"
-    model, effort = (MODES[mode], "high") if direct else ("gpt-6-astra", "low")
+    model, effort = MODES[mode] if direct else ("gpt-6-astra", "low")
     return {"action": "create", "overlay": {"development_mode": mode, "mode_source": source,
             "execution_phase": "executing" if direct else "starting", "checkpoint": None,
             "requested_model": model, "requested_effort": effort,
@@ -113,15 +115,15 @@ def prepare(data):
     for key in ("todo", "checks", "evidence", "decision"):
         if not checkpoint.get(key):
             raise ValueError("检查点缺失: " + key)
-    model = MODES[lane["development_mode"]]
+    model, effort = MODES[lane["development_mode"]]
     overlay = {**lane, "execution_phase": "switching", "checkpoint": str(path),
                "previous_model_evidence": {k: lane.get(k, "Unknown") for k in
                    ("requested_model", "requested_effort", "model", "effort", "model_evidence")},
-               "requested_model": model, "requested_effort": "high", "model": "Unknown",
+               "requested_model": model, "requested_effort": effort, "model": "Unknown",
                "effort": "Unknown", "model_evidence": "Unknown"}
     return {"action": "persist-before-send", "overlay": overlay,
             "request": {"threadId": lane["thread_id"], "hostId": lane["host_id"],
-                        "model": model, "thinking": "high",
+                        "model": model, "thinking": effort,
                         "prompt": "你是本任务 Execution Worktree 内的实现 worker；直接继续实现，不承担协调器监控。"
                                   "起步轮限制已结束。沿本任务历史及原 packet/owner/权限接续；读取检查点 "
                                   + str(path) + "，完成剩余实现、测试与原 owner 的交付步骤。"}}
@@ -141,7 +143,7 @@ def subagent(data):
         return {**result, "action": "wait"}
     if work == "review":
         return {**result, "action": "invoke-owner"}
-    model, effort = ("gpt-5.6-luna", "high") if work == "assistance" else ("gpt-6-astra", "low")
+    model, effort = ("gpt-5.6-luna", "max") if work == "assistance" else ("gpt-6-astra", "low")
     if work == "ticket-sizing":
         model, effort = "gpt-5.6-sol", "high"
     return {**result, "action": "spawn", "request": {

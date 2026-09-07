@@ -83,7 +83,7 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 App 壳使用 native task + App-managed Execution Worktree，不读取 CLI worker-role config。若希望
 Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipeline`。
 
-新实施票默认 `astra-luna`，可在调用时指定“本票 `astra-sol`”或“后续新票 `sol-direct`”。
+新实施票默认 `astra-luna`（Astra low → Luna max），可在调用时指定“本票 `astra-sol`”或“后续新票 `sol-direct`”。
 Prewalk 在同一任务历史中接续。每次调用都执行模型、内部并发与权限核验；本仓项目配置
 不会随 Skill 软链应用到其他仓库。具体入口与证据边界见
 [App 开发模式](skills/delivery-pipeline-codex-app/references/development-mode.md)。
