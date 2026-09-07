@@ -27,6 +27,9 @@ execution_effort: <frozen-effort-or-none>
 direct_model: <frozen-model-or-none>
 direct_effort: <frozen-effort-or-none>
 execution_phase: starting | switching | executing | direct | none
+checkpoint: <repo-external absolute path-or-none>
+checkpoint_version: <supported version-or-none>
+checkpoint_sha256: <whole-checkpoint sha256-or-none>
 workspace_id: <id-or-none>
 tab_id: <id-or-none>
 pane_id: <id-or-none>
@@ -95,3 +98,26 @@ session/workspace/tab/pane是 lane坐标；
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
 5. `integrated` / `consumed` / `close_pending` 按 cleanup contract readback或重试。
 6. registry 与现实不一致时写 `stale`并保留证据，不覆盖可能存在的 writer。
+
+## Prewalk Checkpoint
+
+`starting` implementation worker 的首改现场由 canonical
+`skills/delivery-pipeline/scripts/checkpoint.py` 生成；checkpoint 必须位于 repo 外，并由同目录临时
+文件 `flush` + `fsync` 后原子替换。JSON 使用 UTF-8、键排序和紧凑分隔；`component_sha256` 分别
+覆盖 dirty content、file mode、staged/index 与完整 snapshot，`checkpoint_sha256` 计算时排除自身。
+同一路径只允许相同指纹幂等重写；任何更新必须写入新的 repo 外 artifact 路径，旧 checkpoint 不覆盖。
+
+checkpoint 至少包含 lane/work item、runtime 与原生 session、Coordinator 坐标、CLI version、Execution
+Worktree/branch/base/HEAD、phase/development mode/source/plan、requested/tool acceptance/actual
+readback（不可读时显式 `Unknown`）、首改、检查、TODO、decision 和 evidence。dirty 路径按路径排序，
+删除项显式记录，未跟踪项纳入；ignored 路径只保存内容/模式指纹并标记 `delivery_input: Unknown`，
+直到确认没有 ignored 路径才可继续；unsupported 文件类型、缺字段、旧版本、hash 不匹配或当前 Git
+snapshot 改变均不得登记成功引用。
+
+阶段计划必须完整冻结 `starting`、`execution`、`direct` 三组 model/effort，并与当前 phase、
+`development_mode`（`legacy|staged|direct`）及 `mode_source`（`role-config|ticket|map|user-config`）
+一致；`tool_acceptance` 必须是明确的 accepted/status/source 结构。阶段信号分层：
+`PREWALK_READY` 只触发 checkpoint 持久读回；只有原 runtime 的 `runtime`、原生 `session_id`、
+coordinator thread/host 身份全部匹配，且已停止、单写者明确为 false 的 `WORKER_STOPPED` 才能返回
+`ready-for-coordinator`。active 返回等待，活动状态或身份 Unknown、关键设计 Unknown、ignored 路径、
+工具拒绝或实际模型/effort Unknown 均保留现场；该入口不发送接续、不触发 Terminal fan-in。

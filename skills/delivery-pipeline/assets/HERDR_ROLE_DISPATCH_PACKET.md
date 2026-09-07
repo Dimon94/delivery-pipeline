@@ -17,6 +17,8 @@ Effort：<configured native effort>
 Model evidence：<pi-list-models | codex-catalog | claude-env>
 Execution mode：<legacy | staged | direct>
 Execution source：<role-config | ticket | map | user-config>
+Checkpoint：<repo-external absolute checkpoint path | none>
+Checkpoint helper：<absolute delivery-pipeline/scripts/checkpoint.py | none>
 Starting model/effort：<frozen pair | none>
 Execution model/effort：<frozen pair | none>
 Direct model/effort：<frozen pair | role triple>
@@ -61,6 +63,19 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
 - 当前 Agent/Model/Effort 与 packet 不符（通常是用户在本 pane 改了模型）时不阻塞，继续执行，
   照常交付并在 final report 记录 runtime 实际值与 evidence。
+- `starting` implementation 先完成首处有意义修改与最小检查，再用 checkpoint helper 采集完整
+  Execution Worktree/Git dirty snapshot，向 repo 外同目录原子写入 checkpoint，并在持久读回后发送
+  `PREWALK_READY <lane_id> <checkpoint_path>`；发送后立即结束本回合，保留 dirty 现场，不得继续实现、
+  审查、commit、接续或 fan-in。该信号只表示 checkpoint 待核验，不能触发 Terminal fan-in、cherry-pick
+  或归档；checkpoint 更新必须使用新的 repo 外 artifact 路径，不覆盖旧阶段意图。
+- Coordinator 必须再从原 runtime 读回真实停止证据，且 observation 的 runtime、原生 session 与
+  coordinator thread/host 必须和 checkpoint 完全一致；`WORKER_STOPPED <lane_id> <checkpoint_path>`
+  之前不得继续。active、Unknown、身份不匹配、ignored 路径、工具拒绝、关键设计 Unknown、过期或不完整
+  checkpoint 均 fail-closed；helper
+  只返回 `wait`/`blocked`/`ready-for-coordinator`，不发送接续请求。
+- 直接检查可复跑为 `python3 skills/delivery-pipeline/scripts/checkpoint.py snapshot <Execution Worktree>`、
+  `validate <checkpoint> --worktree <Execution Worktree>` 与 `signal <checkpoint> <signal-line>
+  <runtime-observation-json>`；这些命令只读或写 checkpoint，不写 registry。
 - `staged` 计划在阶段 adapter 未具备时必须保持 blocked；不得把它静默改成 `direct`。`direct` 与
   `legacy` 才能生成既有三 CLI 启动请求。
 

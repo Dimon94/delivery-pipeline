@@ -39,6 +39,15 @@ Gate 顺序、owner 与通过证据统一在 `references/gate-state-machine.md`�
 
 同一 coordinator task 不因下一 lane 重读未变化的合同。
 
+`starting` implementation lane 还必须先完成首处有意义修改与最小检查，再由
+`scripts/checkpoint.py` 将 Execution Worktree 的 Git/dirty/index snapshot 写入 repo 外 checkpoint；
+`PREWALK_READY <lane_id> <checkpoint_path>` 后立即结束本回合并保留 dirty，只触发 coordinator 读回，
+不是继续实现、审查、commit、接续或 fan-in。只有原 runtime 返回 `WORKER_STOPPED <lane_id> <checkpoint_path>`，
+且 observation 身份与 checkpoint 的 runtime/session/coordinator 坐标一致、停止证据可读回、单写者为
+false、没有 ignored 路径时，才允许 coordinator 进入下一阶段；active、Unknown、身份不匹配、关键设计
+Unknown、工具拒绝、过期或不完整 checkpoint 均保留现场。checkpoint 入口不发送接续请求，也不触发
+Terminal fan-in。
+
 ## 新建 lane 的配置与 Packet
 
 按 `references/model-role-routing.md` 验证 version 2 配置或显式 version 3 执行计划

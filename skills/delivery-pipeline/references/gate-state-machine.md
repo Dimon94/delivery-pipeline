@@ -130,3 +130,9 @@ Testing 或 review 失败时保留现场，报告精确失败，不进入后续 
 ```
 
 摘要只用于报告；新会话从 tracker relationships、lane registries、Git 和 PR/MR 重建。
+
+implementation 的 `starting` / `switching` / `executing` 是 lane 内阶段，不新增业务 gate。
+`PREWALK_READY` 只表示 repo 外 checkpoint 已写入并等待 coordinator 持久读回；它不能代替停止、
+terminal outcome 或用户 gate。只有原 runtime 的 `WORKER_STOPPED`、明确无 active writer 且 checkpoint
+仍与 Git snapshot 一致，才返回可供 coordinator 判断的停止状态；active、Unknown、关键设计 Unknown
+或过期现场均保留并 fail-closed，不提前接续或 fan-in。

@@ -918,6 +918,53 @@ def check_metadata_and_helpers() -> None:
         record("validator must remain executable")
 
 
+def check_checkpoint_contract() -> None:
+    helper = CORE / "scripts" / "checkpoint.py"
+    probe = CORE / "scripts" / "checkpoint_check.py"
+    for path in (helper, probe):
+        if not path.exists():
+            record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
+    if helper.exists():
+        result = subprocess.run([sys.executable, str(helper), "self-test"],
+                                text=True, capture_output=True)
+        if result.returncode != 0:
+            record(f"checkpoint helper self-test failed: {result.stdout}{result.stderr}")
+    if probe.exists():
+        result = subprocess.run([sys.executable, str(probe)],
+                                text=True, capture_output=True,
+                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        if result.returncode != 0:
+            record(f"checkpoint isolation check failed: {result.stdout}{result.stderr}")
+    require(
+        CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
+        (
+            "Checkpoint：<repo-external absolute checkpoint path | none>",
+            "PREWALK_READY <lane_id> <checkpoint_path>",
+            "WORKER_STOPPED <lane_id> <checkpoint_path>",
+            "不发送接续请求",
+        ),
+    )
+    require(
+        CORE / "references" / "lane-registry.md",
+        (
+            "checkpoint_version:",
+            "checkpoint_sha256:",
+            "component_sha256",
+            "ignored 路径只保存内容/模式指纹",
+            "ready-for-coordinator",
+        ),
+    )
+    require(
+        CORE / "references" / "gate-state-machine.md",
+        (
+            "PREWALK_READY",
+            "WORKER_STOPPED",
+            "不新增业务 gate",
+            "不提前接续或 fan-in",
+        ),
+    )
+
+
 def main() -> None:
     check_manifest()
     check_frontmatter()
@@ -933,6 +980,7 @@ def main() -> None:
     check_context_and_docs()
     check_pruned_policy()
     check_metadata_and_helpers()
+    check_checkpoint_contract()
 
     if ERRORS:
         fail(
