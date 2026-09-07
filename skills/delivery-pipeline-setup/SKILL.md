@@ -14,13 +14,13 @@ disable-model-invocation: true
 
 1. **探测并严格验证现状。** 从本 SKILL.md realpath 解析并运行
    `scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json`，同时执行第 2 步的
-   本机 evidence probe。只有以下条件
-   全部满足才报告当前表并结束：顶层 key 精确为 `version` + `roles`（version 2）或加 `execution`（version 3）；
+   本机 evidence probe。只有配置结构与实时 evidence 都通过，且以下条件
+   全部满足，才报告当前表并结束：顶层 key 精确为 `version` + `roles`（version 2）或加 `execution`（version 3）；
    version 必须是已知版本；role key 精确
    为 `planning/design/frontend/backend/testing/review`；每个 role object 的 key 精确为
    `agent/model/effort`；agent 属于 `pi|codex|claude`；三字段非空；binary存在；model/effort命中
-   对应实时 evidence。任何失败都进入初始化，不把非法既有 v2 文件当作完成。只有用户明确要求
-   重配时才覆盖已严格验证的配置。已严格验证的旧 v2 配置继续保留旧启动行为；不会因为升级
+   对应实时 evidence。任何非法配置进入初始化，不把非法既有 v2 文件当作完成；合法配置仅在用户明确要求重配时覆盖。
+   已严格验证的旧 v2 配置继续保留旧启动行为；不会因为升级
    setup 自动迁移已有 lane 或隐式改为 staged。
 2. **探测本机 evidence。** 并行运行：
    - pi：`pi --list-models`，记录 provider/model 与 thinking 支持；
@@ -35,7 +35,7 @@ disable-model-invocation: true
 3. **逐角色选择。** 按 `planning`、`design`、`frontend`、`backend`、`testing`、`review`
    顺序，每个角色先选 agent，再从该 agent 的真实 evidence选择 model 与 effort。展示角色管辖
    工作、候选来源与当前选择。Claude model只从 settings.json env候选选择；无候选时不能选择
-   Claude。Skill 不提供内置默认，用户必须明确选择全部六角色。若用户启用 version 3，
+   Claude。Skill 不提供内置默认，由用户明确选择全部六角色。若用户启用 version 3，
    再按 `pi`、`codex`、`claude` 选择 `default_mode` 与 starting/execution/direct 三组参数；
    只为 implementation role 使用 staged，其他 role 继续 role triple。
 4. **验证选择。** 每个 agent binary可用；pi/Codex model+effort命中权威 catalog；Claude

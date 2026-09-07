@@ -2,6 +2,7 @@
 """分派 CLI 的可观察行为检查；隔离临时 Git repo，无 App 请求。"""
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,9 +11,16 @@ import tempfile
 HELPER = Path(__file__).with_name("prewalk.py")
 
 
+def git_env():
+    env = os.environ.copy()
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"):
+        env.pop(name, None)
+    return env
+
+
 def call(command, data, success=True):
     result = subprocess.run([sys.executable, str(HELPER), command], input=json.dumps(data),
-                            text=True, capture_output=True)
+                            text=True, capture_output=True, env=git_env())
     assert (result.returncode == 0) == success, result.stderr or result.stdout
     return json.loads(result.stdout) if success else result.stderr
 
@@ -98,7 +106,8 @@ def check():
         root = Path(folder) / "repo"
         root.mkdir()
         def git(*args):
-            subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True,
+                           env=git_env())
         git("init", "-b", "probe")
         git("-c", "user.name=Probe", "-c", "user.email=probe@example.invalid", "commit", "--allow-empty", "-m", "base")
         git("checkout", "--detach")
