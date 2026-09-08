@@ -92,16 +92,13 @@ The App shell uses native tasks and App-managed Execution Worktrees and does not
 role configuration. To use Herdr from a Codex App session, exit the App shell and invoke canonical
 `delivery-pipeline`.
 
-Models, reasoning efforts, and fast settings are reference defaults; explicit user choices may override them
-per task, phase, or map. Sol/high is recommended for coordination.
-
-New implementation lanes default to `sol-luna` (Sol high → Luna max); request `sol-sol` for one ticket or
-`sol-direct` for subsequent new lanes. Prewalk continues in the same task history. Implementation reviews use
-Astra low; whole-change reviews use Sol xhigh. Whole-change Testing and ticket Integration run as separate
-Luna max sub-agents. Every invocation
-checks models, internal concurrency, and permissions; this repository's project configuration does
-not propagate through Skill symlinks. See the [App development contract](skills/delivery-pipeline-codex-app/references/development-mode.md)
-for invocation steps and evidence limits.
+New implementation lanes may use only `sol-luna` (default), `sol-sol`, and `sol-direct`. `astra-luna` and
+`astra-sol` are reserved for restoring legacy lanes only when the registry already persists that mode
+and the recovery evidence matches; they are not valid choices for new tickets. Prewalk continues in
+the same task history. Every invocation checks models, internal concurrency, and permissions; this
+repository's project configuration does not propagate through Skill symlinks. See the [App development
+contract](skills/delivery-pipeline-codex-app/references/development-mode.md) for invocation steps and
+evidence limits.
 
 #### Codex App development flow
 
