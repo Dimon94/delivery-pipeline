@@ -14,9 +14,15 @@ App 壳不为任一 scope 选择 owner、model 或 effort。中断复核、自�
 ## 工作分工
 
 本文件所有 model、effort 和 fast 设置都是参考默认值，用户明确选择优先于下表和 owner 默认值。
-覆盖可针对当前任务、单个阶段/审查轴、本票或本 map；未指定的字段继续使用默认值。
-调用者在 helper 返回 request 后合入用户选择，再同步 packet/overlay 的 requested 字段并保存
-选择来源与作用范围，最后调用宿主工具；不要让后续 prepare/subagent 的默认值覆盖已保存的选择。
+覆盖可针对当前任务、单个阶段/审查轴、本票或本 map；未指定的字段继续使用该阶段默认值。
+implementation 接续若有用户覆盖，`prepare` 调用者必须把 `execution_override` 随输入传入 helper：它必须声明非空
+`source`、`scope: execution`，并至少指定 `model` 或 `effort`；未指定的字段从
+`lane.development_mode` 的默认值继承，其他字段拒绝。helper 在返回 request 前解析并冻结
+`execution_target`；App wrapper 将完整四字段 target 写入 canonical `evidence` 的保留记录，使其
+进入 checkpoint 指纹，并要求它与 `phase_plan.execution` 的 model/effort 完全一致；不要在返回后
+再改写 request。coordinator 只把返回的 overlay（含 `execution_target` 与同步的
+`requested_model`/`requested_effort`）持久化并读回，确认后按同一 target 调用宿主工具，并保存
+选择来源与作用范围。不要让后续 prepare/subagent 的默认值覆盖已保存的选择。
 Review 的覆盖一并传给 resolved owner。宿主不支持所选参数时报告实际错误，不静默替换。
 模型覆盖不改变权限、证据验收、独立双轴或同任务接续要求。
 
@@ -104,16 +110,25 @@ stdin 输入、结果从 stdout 读取；非零退出就保留现场并报告。
   helper 复用 canonical build/write/read，生成 component_sha256 与 checkpoint_sha256，以紧凑
   UTF-8 JSON 原子写入并立即完整读回。payload 使用 runtime: codex-thread、session_id: App thread、
   coordinator 坐标、phase: starting、development_mode: staged、完整 phase_plan、模型请求/接受/
-  readback、first_edit、checks、todo、decision 与 evidence。文件变化后不得补造旧证据。
+  readback、first_edit、checks、todo、decision 与 evidence。App wrapper 可在 payload 传入完整
+  `execution_target`；未传时仅按 phase_plan.execution 与 mode_source 生成默认 target。wrapper
+  将 model/effort/source/scope 四字段作为保留 evidence 记录写入 canonical payload，因此
+  checkpoint 指纹覆盖完整 resolved target；缺少该记录的 prepare 必须 fail-closed。文件变化后不得补造旧证据。
 - prepare 输入 lane（App overlay 与 lane_id/state/worktree/base_commit）、checkpoint、checkpoint_path、
-  observation（thread_id/host_id/status/source，取自刚完成的宿主 readback），以及刚核验的
-  work_item、可选 map 与 gate_evidence；不能仅凭旧 lane 存在继续实施。只有 idle 且
-  canonical 指纹、持久内容、Git/ignored/staged/unstaged 现场都一致，并由 canonical
-  `evaluate_signal` 判定 tool acceptance、停止证据与 critical_design_unknown 均可继续，才返回
-  persist-before-send 和原 task 的 request。
+  observation（thread_id/host_id/status/source，取自刚完成的宿主 readback）、可选的
+  `execution_override`，以及刚核验的 work_item、可选 map 与 gate_evidence；不能仅凭旧 lane
+  存在继续实施。`execution_override` 只允许 `source`、`scope`、`model`、`effort`，其中
+  `source` 必须是非空且非 `Unknown` 的来源，`scope` 必须为 `execution`，并至少指定
+  `model`/`effort` 之一；未指定字段继承 `lane.development_mode` 默认。helper 将解析出的
+  `execution_target` 与 canonical checkpoint 的 `phase_plan.execution` 做精确比较，未授权差异
+  并且 source/scope 未改变；缺失或不一致均 fail-closed。只有 idle 且 canonical 指纹、持久内容、Git/ignored/staged/unstaged
+  现场都一致，并由 canonical `evaluate_signal` 判定 tool acceptance、停止证据与
+  critical_design_unknown 均可继续，才返回 persist-before-send、含 `execution_target` 的
+  overlay 和原 task 的 request。
   active 返回 wait-for-stop 和原 task 坐标，不返回发送请求；按 transport 中间回传合同
   有界等待原轮停止，再重新 prepare，不能把此正常时序当作最终受阻。
-- coordinator 先把返回 overlay 合并写回既有 registry 并 readback，才调用
+- coordinator 先把返回 overlay（包括 `execution_target` 及 requested model/effort）合并写回既有
+  registry 并 readback，确认持久值与 request 使用同一 target 后，才调用
   send_message_to_thread 的 request 参数。一个 lane 只由已登记的 coordinator 分派；脚本
   不提供跨协调器锁。switching/executing 返回 readback、request: null，禁止把空请求当重试。
   prepare 与发送之间出现新消息或文件变化时重新核验；工具结果未知按原任务证据恢复。

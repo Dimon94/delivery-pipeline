@@ -14,6 +14,8 @@ MODES = {"sol-luna": ("gpt-5.6-luna", "max"),
          "astra-sol": ("gpt-5.6-sol", "high")}
 NEW_MODES = {"sol-luna", "sol-sol", "sol-direct"}
 PREWALK_MODES = {"sol-luna", "sol-sol", "astra-luna", "astra-sol"}
+EXECUTION_TARGET_MARKER = "app.execution_target:"
+EXECUTION_TARGET_KEYS = {"model", "effort", "source", "scope"}
 CORE_SCRIPTS = Path(__file__).resolve().parents[2] / "delivery-pipeline/scripts"
 CHECKPOINT = runpy.run_path(str(CORE_SCRIPTS / "checkpoint.py"))
 check_implementation = runpy.run_path(str(CORE_SCRIPTS / "implementation_gate.py"))["check"]
@@ -33,8 +35,26 @@ def checkpoint(data):
             or any(not isinstance(path, str) for path in required_ignored)):
         raise ValueError("required_ignored 必须是路径列表")
     root = data["worktree"]
+    payload = dict(data["payload"])
+    phase_plan = payload.get("phase_plan")
+    if not isinstance(phase_plan, dict) or not isinstance(phase_plan.get("execution"), dict):
+        raise ValueError("checkpoint 缺少 phase_plan.execution")
+    target = validate_execution_target(payload.pop("execution_target", {
+        "model": phase_plan["execution"].get("model"),
+        "effort": phase_plan["execution"].get("effort"),
+        "source": payload.get("mode_source"),
+        "scope": "execution",
+    }))
+    if {key: target[key] for key in ("model", "effort")} != phase_plan["execution"]:
+        raise ValueError("execution_target 与 phase_plan.execution 不一致")
+    evidence = payload.get("evidence")
+    if (not isinstance(evidence, list)
+            or any(not isinstance(item, str) for item in evidence)
+            or any(item.startswith(EXECUTION_TARGET_MARKER) for item in evidence)):
+        raise ValueError("evidence 缺失或已包含 execution_target marker")
+    payload["evidence"] = [*evidence, execution_target_marker(target)]
     document = CHECKPOINT["build_checkpoint"](
-        data["payload"], snapshot(root, required_ignored))
+        payload, snapshot(root, required_ignored))
     CHECKPOINT["write_checkpoint"](data["checkpoint_path"], document, worktree=root)
     return CHECKPOINT["read_checkpoint"](
         data["checkpoint_path"], worktree=root,
@@ -106,6 +126,65 @@ def coordinator(data):
         return {"action": "Unknown", "model": "Unknown", "effort": "Unknown", "source": "Unknown"}
     return {"action": "verified", "model": data["model"], "effort": data["effort"],
             "source": data["source"]}
+
+
+def validate_execution_target(value):
+    if not isinstance(value, dict) or set(value) != EXECUTION_TARGET_KEYS:
+        raise ValueError("execution_target 必须完整包含 model/effort/source/scope")
+    for key, item in value.items():
+        if (not isinstance(item, str) or not item.strip()
+                or item.strip().lower() == "unknown"):
+            raise ValueError("execution_target 缺失有效 " + key)
+    if value["scope"] != "execution":
+        raise ValueError("execution_target.scope 必须是 execution")
+    return {key: value[key] for key in ("model", "effort", "source", "scope")}
+
+
+def execution_target_marker(target):
+    return EXECUTION_TARGET_MARKER + json.dumps(
+        validate_execution_target(target), ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"))
+
+
+def checkpoint_execution_target(checkpoint):
+    evidence = checkpoint.get("evidence")
+    if not isinstance(evidence, list):
+        raise ValueError("checkpoint 缺少 execution_target evidence")
+    markers = [item[len(EXECUTION_TARGET_MARKER):] for item in evidence
+               if isinstance(item, str) and item.startswith(EXECUTION_TARGET_MARKER)]
+    if len(markers) != 1:
+        raise ValueError("checkpoint 缺少唯一 execution_target 记录")
+    try:
+        target = json.loads(markers[0])
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("checkpoint execution_target 记录不可解析") from error
+    target = validate_execution_target(target)
+    if {key: target[key] for key in ("model", "effort")} != checkpoint["phase_plan"]["execution"]:
+        raise ValueError("checkpoint execution_target 与 phase_plan.execution 不一致")
+    return target
+
+
+def execution_target(data, lane, default_source=None):
+    model, effort = MODES[lane["development_mode"]]
+    override = data.get("execution_override")
+    if override is None:
+        return validate_execution_target({"model": model, "effort": effort,
+                "source": default_source if default_source is not None else lane.get("mode_source"),
+                "scope": "execution"})
+    keys = set(override) if isinstance(override, dict) else set()
+    if (not isinstance(override, dict)
+            or not {"source", "scope"} <= keys <= {"model", "effort", "source", "scope"}
+            or not keys & {"model", "effort"}
+            or override.get("scope") != "execution"):
+        raise ValueError("execution_override 必须是单阶段 model/effort 覆盖")
+    for key in keys - {"scope"}:
+        value = override[key]
+        if (not isinstance(value, str) or not value.strip()
+                or value.strip().lower() == "unknown"):
+            raise ValueError("execution_override 缺失有效 " + key)
+    return validate_execution_target({"model": override.get("model", model),
+            "effort": override.get("effort", effort),
+            "source": override["source"], "scope": "execution"})
 
 
 def prepare(data):
@@ -222,11 +301,16 @@ def prepare(data):
             raise ValueError("canonical checkpoint 阻塞: " + evaluation.get("reason", evaluation["action"]))
         checkpoint_format = "canonical-v1"
         checkpoint_hash = checkpoint[CHECKPOINT["FINGERPRINT_FIELD"]]
-    model, effort = MODES[lane["development_mode"]]
-    if not legacy and checkpoint["phase_plan"]["execution"] != {"model": model, "effort": effort}:
-        raise ValueError("canonical 检查点接续计划与 App lane 不匹配")
+    persisted_target = None if legacy else checkpoint_execution_target(checkpoint)
+    target = execution_target(data, lane,
+                              default_source=None if persisted_target is None
+                              else persisted_target["source"])
+    model, effort = target["model"], target["effort"]
+    if not legacy and target != persisted_target:
+        raise ValueError("canonical 检查点与完整 resolved execution target 不匹配")
     overlay = {**lane, "execution_phase": "switching", "checkpoint": str(path),
                "checkpoint_format": checkpoint_format, "checkpoint_sha256": checkpoint_hash,
+               "execution_target": target,
                "previous_model_evidence": {k: lane.get(k, "Unknown") for k in
                    ("requested_model", "requested_effort", "model", "effort", "model_evidence")},
                "requested_model": model, "requested_effort": effort, "model": "Unknown",

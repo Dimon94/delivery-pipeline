@@ -4,12 +4,15 @@ import copy
 import json
 import os
 from pathlib import Path
+import runpy
 import stat
 import subprocess
 import sys
 import tempfile
 
 HELPER = Path(__file__).with_name("prewalk.py")
+CHECKPOINT = runpy.run_path(str(HELPER.resolve().parents[2] / "delivery-pipeline/scripts/checkpoint.py"))
+EXECUTION_TARGET_MARKER = "app.execution_target:"
 
 
 def git_env():
@@ -231,11 +234,80 @@ def check():
         assert prepared["request"]["thinking"] == "max"
         assert prepared["overlay"]["requested_effort"] == "max"
         assert prepared["overlay"]["model"] == "Unknown"
+        assert prepared["overlay"]["execution_target"] == {
+            "model": "gpt-5.6-luna", "effort": "max",
+            "source": "user-config", "scope": "execution"}
         assert prepared["overlay"]["checkpoint_sha256"] == checkpoint["checkpoint_sha256"]
         assert "起步轮限制已结束" in prepared["request"]["prompt"]
         assert "不得取消或中断正式 reviewer" in prepared["request"]["prompt"]
         assert "resolved owner 和 review_scope" in prepared["request"]["prompt"]
         assert "不得报告 completed" in prepared["request"]["prompt"]
+        effort_path = Path(folder) / "effort-override-checkpoint.json"
+        effort_payload = copy.deepcopy(payload)
+        effort_payload["checkpoint_path"] = str(effort_path)
+        effort_payload["phase_plan"]["execution"]["effort"] = "high"
+        effort_payload["execution_target"] = {
+            "model": "gpt-5.6-luna", "effort": "high",
+            "source": "user task override", "scope": "execution"}
+        effort_checkpoint = call("checkpoint", {
+            "worktree": str(root), "checkpoint_path": str(effort_path),
+            "payload": effort_payload})
+        effort_override = call("prepare", {
+            **data, "checkpoint": effort_checkpoint, "checkpoint_path": str(effort_path),
+            "execution_override": {"effort": "high", "source": "user task override",
+                                   "scope": "execution"}})
+        assert effort_override["request"]["model"] == "gpt-5.6-luna"
+        assert effort_override["request"]["thinking"] == "high"
+        assert effort_override["overlay"]["execution_target"] == {
+            "model": "gpt-5.6-luna", "effort": "high",
+            "source": "user task override", "scope": "execution"}
+        changed_source = {**data, "checkpoint": effort_checkpoint,
+                          "checkpoint_path": str(effort_path),
+                          "execution_override": {"effort": "high", "source": "another source",
+                                                  "scope": "execution"}}
+        assert "完整 resolved execution target" in call("prepare", changed_source, False)
+        changed_scope = {**data, "checkpoint": effort_checkpoint,
+                         "checkpoint_path": str(effort_path),
+                         "execution_override": {"effort": "high", "source": "user task override",
+                                                 "scope": "direct"}}
+        call("prepare", changed_scope, False)
+        missing_target = copy.deepcopy(effort_checkpoint)
+        missing_target["evidence"] = [item for item in missing_target["evidence"]
+                                        if not item.startswith(EXECUTION_TARGET_MARKER)]
+        missing_target[CHECKPOINT["FINGERPRINT_FIELD"]] = CHECKPOINT["checkpoint_sha256"](missing_target)
+        effort_path.write_bytes(CHECKPOINT["canonical_bytes"](missing_target))
+        assert "execution_target" in call("prepare", {
+            **data, "checkpoint": missing_target, "checkpoint_path": str(effort_path),
+            "execution_override": {"effort": "high", "source": "user task override",
+                                    "scope": "execution"}}, False)
+        effort_path.write_bytes(CHECKPOINT["canonical_bytes"](effort_checkpoint))
+        model_path = Path(folder) / "model-override-checkpoint.json"
+        model_payload = copy.deepcopy(payload)
+        model_payload["checkpoint_path"] = str(model_path)
+        model_payload["phase_plan"]["execution"]["model"] = "gpt-5.6-sol"
+        model_payload["execution_target"] = {
+            "model": "gpt-5.6-sol", "effort": "max",
+            "source": "user task override", "scope": "execution"}
+        model_checkpoint = call("checkpoint", {
+            "worktree": str(root), "checkpoint_path": str(model_path),
+            "payload": model_payload})
+        model_override = call("prepare", {
+            **data, "checkpoint": model_checkpoint, "checkpoint_path": str(model_path),
+            "execution_override": {"model": "gpt-5.6-sol", "source": "user task override",
+                                   "scope": "execution"}})
+        assert model_override["request"]["model"] == "gpt-5.6-sol"
+        assert model_override["request"]["thinking"] == "max"
+        assert "resolved execution target" in call("prepare", {
+            **data, "checkpoint": model_checkpoint, "checkpoint_path": str(model_path)}, False)
+        for invalid_override in (
+                {"effort": "high", "source": "user task override", "scope": "starting"},
+                {"model": "gpt-5.6-sol", "source": "Unknown", "scope": "execution"},
+                {"model": "gpt-5.6-sol", "source": "user task override", "scope": "execution",
+                 "unexpected": "value"},
+        ):
+            invalid = {**data, "checkpoint": model_checkpoint, "checkpoint_path": str(model_path),
+                       "execution_override": invalid_override}
+            call("prepare", invalid, False)
         assert "持久恢复证据" in call("prepare", {
             **data, "lane": {**lane, "development_mode": "astra-luna"}}, False)
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
