@@ -60,3 +60,20 @@ Local probe evidence:
   changes.
 - This ADR supersedes ADR-0003 and the CLI worker-binding portions of ADR-0002. ADR-0001 worktree
   isolation and ADR-0002 Codex App native transport remain accepted.
+
+## 2026-09-08：为 version 3 重开决策（#107）
+
+原决策 3/5 只定义并写入 version 2，与 #95 的显式分阶段执行计划冲突。
+重开理由：需要在原 session 中冻结起步、执行与直接执行的选择，且现有 Pi/Codex native
+adapter 已实现，入口不能继续以 adapter 缺失拒绝 staged。放弃 #50 历史恢复；以当前实现为准。
+
+- version 2 保留六角色 schema、role triple 与一次启动的 legacy 行为，不自动迁移配置或已有 lane。
+  `legacy-config` 仅表示解析兼容；所有实际 startup（包括 v2）必须提供当前 binary、model 与
+  对应 effort 的 capability evidence，无证据或不匹配一律 fail-closed。
+- version 3 显式增加每个 agent 的 default_mode 与 starting/execution/direct 三组 model/effort。
+  仅 commit output 的 implementation role 消费该计划，选择顺序为 ticket → map → user-config。
+  staged 三组参数完整冻结到 packet/registry，缺项或读回不一致不得启动；不静默降级 direct。
+- setup 可按用户选择写入 v2 或 v3，并校验当前能力。生产 startup/continuation 入口复用现有
+  Pi TUI、Codex 精确 session resume 与 Claude adapter，不另建 dispatcher。
+  接续计划不替代停止核验、registry、发送 lease 或实际 runtime readback。
+- App transport、已有 lane 恢复语义与 worktree 隔离保持原决策；能力请求不是实际模型运行证据。

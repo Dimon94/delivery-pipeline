@@ -161,7 +161,7 @@ def check_core_contract() -> None:
     require(
         CORE / "references" / "dispatch-runtime-routing.md",
         (
-            "worker kind 完全由 version 2 role config",
+            "worker kind 完全由 version 2/3 role config",
             "pi → `herdr-pi-pane`",
             "codex → `herdr-codex-pane`",
             "claude → `herdr-claude-pane`",
@@ -1052,8 +1052,9 @@ def check_claude_adapter_contract() -> None:
             "def continuation_request",
             "delivery-pipeline",
             '"resume"',
-            "仅 Claude staged",
-            "staged execution adapter unavailable",
+            "codex_cli_adapter.resume_from_checkpoint",
+            "build_tui_switch(request)",
+            'plan.get("capability") != "verified"',
         ),
     )
     require(

@@ -47,7 +47,8 @@ disable-model-invocation: true
    artifact/checks/verdict lanes 继续沿原 role 行为；不能把计划选择写进 coordinator 配置。
 
 完成标准：六角色都由用户明确选择，配置 readback与选择一致；没有默认值、空字段、非法 agent、
-额外字段或未命中本机 evidence 的 model/effort。version 3 的 staged 计划只能进入已有 adapter
-caller：Claude 使用 `model_config.py start` 起步、`model_config.py resume --request <payload.json>`
-接续；尚无对应 adapter 的 Pi/Codex staged 计划必须明确 blocked，任何 agent 都不能静默生成
-direct 启动请求；direct 仍可沿既有 Dispatch Model 验证。
+额外字段或未命中本机 evidence 的 model/effort。所有 startup（含 version 2）都需要当前
+capability evidence。Pi/Codex/Claude staged 均通过 `model_config.py start` 起步，
+`model_config.py resume --request <payload.json>` 复用各自现有 native adapter 生成接续计划；
+payload 与核验合同见 `../delivery-pipeline/references/model-role-routing.md`。
+任何 agent 都不能静默生成 direct 启动请求。

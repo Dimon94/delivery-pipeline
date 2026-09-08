@@ -59,22 +59,27 @@ agent 都必须显式填写 `default_mode`（`staged` 或 `direct`）以及 `sta
 
 示例中的空对象只表示省略重复字段；实际配置不能省略 `model` 或 `effort`，也不能写
 `Unknown`。setup 只有在每个模型、effort 命中本机 evidence 且对应 binary 存在时才写入并 readback。
-分阶段 adapter 按 agent 独立提供：Pi 使用 `scripts/pi_adapter.py` 的原生 TUI 接缝，能够生成
-staged 起步请求并在原 session 中执行 `/model`、`/thinking`；Claude 使用下方的 staged continuation
-adapter；其他 agent 在各自 adapter 具备前只能冻结并报告阻塞。任何 agent 都不得把 `staged` 静默改成
-`direct`；`direct` 计划仍进入既有 Dispatch Model。
-Claude 起步轮仍由既有 `delivery-pipeline-setup/scripts/model_config.py start` 进入 Herdr
-`agent start` caller；停止现场完成 registry persist/readback 后，coordinator 通过同一 setup
-入口的 `resume --request <payload.json>` 调用本 adapter。该入口只返回已核验的原生计划，不替代
-coordinator 的 registry 写入、发送 lease 或 runtime readback。
+Pi/Codex/Claude 的 staged 起步均通过 `delivery-pipeline-setup/scripts/model_config.py start`
+进入既有 Herdr caller。停止现场完成 registry persist/readback 后，通过同一入口的
+`resume --request <payload.json>` 复用现有 adapter：Pi 的 `scripts/pi_adapter.py` 生成原 session
+`/model`、`/thinking` TUI 命令；Codex 的 `scripts/codex_cli_adapter.py` 生成精确 session resume；
+Claude 使用下方的 staged continuation adapter。不得静默降级 direct。
+
+Pi/Codex payload 精确包含 `runtime`、`checkpoint_path`、`request`、`observation`、`evidence`。
+request 是已持久化的 canonical continuation request；observation 必须匹配 checkpoint 身份，
+确认 ready/stop evidence、writer/coordinator 停止且原 session 可恢复；evidence 使用下方归一化格式。
+入口读回 checkpoint/Git、核验停止现场与 intent，并验证目标能力，再返回原生计划。
+Claude payload 继续遵循现有 adapter 合同。该入口不发送请求，不替代 coordinator 的 registry、
+发送 lease 或 runtime readback；Pi 计划由原 pane 的 TUI apply 接缝应用并读回。
 
 setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude": { "binary": true,
 "models": { "<model>": ["<supported-effort>"] } } }`，交给
 `model_config.py resolve ... --output-mode commit --evidence`。
-缺 evidence、binary、model 或所选 model 不支持该 effort 时返回阻塞；没有 evidence 的 version 3 计划只能作为
-`unverified` 解析结果，不能生成启动请求。version 2 的 `legacy-config` 仍沿既有已验证配置启动。
+缺 evidence、binary、model 或所选 model 不支持该 effort 时返回阻塞；没有 evidence 的计划只能解析，不能生成启动请求。version 2 的 `legacy-config`
+仅保留 schema/一次启动兼容，实际 startup 同样必须传入当前 evidence。
 `model_config.py freeze ...` 输出同一冻结 overlay，coordinator 将其写入既有 packet 与 lane registry 后
-必须 readback 校验；它不是第二套配置或 registry truth。
+必须用 `verify_overlay` 精确 readback 校验；staged 完整包含 starting/execution/direct 三组
+model/effort，缺项、空值或不匹配 fail-closed；它不是第二套配置或 registry truth。
 
 skill 与 reference 不提供默认 agent/model/effort。有效 version 2 配置顶层只有 `version` 与 `roles`；
 有效 version 3 配置再增加 `execution`；两者的 roles key 与六角色精确相等；每个 role object 只有
