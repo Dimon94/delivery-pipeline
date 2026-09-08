@@ -23,6 +23,7 @@ def main():
         ]
         (root / 'frames.json').write_text(json.dumps(frames))
         (root / 'count').write_text('0')
+        (root / 'a-attempts').write_text('0')
         (root / 'herdr').write_text(f'#!{sys.executable}\n' + '''import json
 from pathlib import Path
 import sys
@@ -37,6 +38,11 @@ elif args[:2] == ['pane', 'get']:
     pass
 elif args[:2] == ['agent', 'prompt']:
     assert args[2] == 'coordinator'
+    if '/tmp/a.json' in args[3]:
+        attempts = int((root / 'a-attempts').read_text())
+        (root / 'a-attempts').write_text(str(attempts + 1))
+        if attempts == 0:
+            raise SystemExit(1)
     with (root / 'prompts.jsonl').open('a') as stream:
         stream.write(json.dumps([int((root / 'count').read_text()), args[3]]) + '\\n')
 else:
@@ -53,7 +59,9 @@ else:
         )
         assert result.returncode == 0, (result.returncode, result.stderr)
         prompts = [json.loads(line) for line in (root / 'prompts.jsonl').read_text().splitlines()]
-        assert [item[0] for item in prompts] == [2, 4, 6], f'callback frames: {prompts}'
+        assert int((root / 'a-attempts').read_text()) == 2, 'failed PREWALK_READY must be retried'
+        assert sum('/tmp/a.json' in item[1] for item in prompts) == 1, f'a callbacks: {prompts}'
+        assert sum('/tmp/b checkpoint.json' in item[1] for item in prompts) == 1, f'b callbacks: {prompts}'
         for (_, message), path in zip(prompts[:2], ('/tmp/a.json', '/tmp/b checkpoint.json')):
             assert f'PREWALK_READY lane {path}' in message, message
             assert 'checkpoint' in message and '停止证据' in message, message

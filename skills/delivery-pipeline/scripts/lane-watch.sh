@@ -19,9 +19,10 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     case "$LINE" in
       "PREWALK_READY $LANE_ID /"*)
         if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE"; then
-          SEEN_PREWALK="${SEEN_PREWALK}${LINE}
+          if herdr agent prompt "$COORD" "WAKE: $LABEL 的 pane $PANE 输出阶段标记：${LINE}。请仅核验 checkpoint 与原 runtime 停止证据；此信号不证明已停止或完成，不授权接续、fan-in、Integration 或 cleanup。watcher 继续监听 LANE_DONE。" >/dev/null 2>&1; then
+            SEEN_PREWALK="${SEEN_PREWALK}${LINE}
 "
-          herdr agent prompt "$COORD" "WAKE: $LABEL 的 pane $PANE 输出阶段标记：${LINE}。请仅核验 checkpoint 与原 runtime 停止证据；此信号不证明已停止或完成，不授权接续、fan-in、Integration 或 cleanup。watcher 继续监听 LANE_DONE。" >/dev/null 2>&1
+          fi
         fi
         ;;
     esac
