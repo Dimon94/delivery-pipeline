@@ -38,6 +38,8 @@ disable-model-invocation: true
    绝对路径：commit 使用 Execution Base commit，verdict 使用 map registry base commit，沿同一
    Review Evidence Bundle 合同运行只读子审查。内部 Testing、Review 与 Integration 每次先走
    `references/development-mode.md` 的 subagent 入口。
+   正式 Review 由 coordinator 管理；实施 worker 的自评不能放行。候选 commit 在集成前必须通过
+   `references/codex-app-dispatch.md` 的“独立 Review 放行”和 `scripts/prewalk.py review`。
 5. 当前 App 明确选择 Herdr 时退出本壳，改用 canonical `delivery-pipeline`；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 

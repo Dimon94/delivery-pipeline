@@ -109,13 +109,35 @@ worker 对 completed 与 blocked 都执行，所有 output mode 共用：
 coordinator 收到报告后按 registry 核对 worker task、work item 与 output mode。通知可能早于
 worker 最终回复：此时直接核验消息中的报告与 Git/artifact 持久证据。重复通知以 registry 的
 integrated/consumed/closed 状态去重，避免重复 cherry-pick；close_pending 仅恢复 cleanup。
-blocked 进入受阻分支，其余 ready lanes 继续推进；回传不扩大 tracker 或远程发布权限。
+blocked 进入受阻分支，其余 ready lanes 继续推进；若原因为“实现已保存、审查待完成”，
+coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，不等待用户重复要求。
+回传不扩大 tracker 或远程发布权限。
 
 报告中的 `completed` 是 FINAL_REPORT outcome，不是 registry state，禁止写入 `state: completed`。
 核验成功后先写 `terminal`，再按 output mode 写 `integrated` 或 `consumed`；报告为 `blocked` 才写
 `blocked`。这样所有成功 lane 都进入下面同一次 fan-in 的 archive，不会绕过状态机。
 
 ## Role-aware Fan-in
+
+### 独立 Review 放行
+
+正式两轴由 coordinator 调用 code-review owner 管理，implementation worker 不拥有取消、
+改写 verdict 或豁免的权限。原 worker 内嵌审查可作预审，不替代 coordinator 的最终放行。
+worker 可保存候选 commit，但缺独立结论时按 blocked 回传“实现已保存、审查待完成”。
+coordinator 收到候选提交后冻结 base/head，生成 Review Evidence Bundle，启动两轴只读审查。
+修复回原 worker，完成后冻结新 head 并复核；不沿用旧 head 的 PASS。
+
+cherry-pick、integrated、关闭实施票之前，coordinator 必须独立读取 reviewer 宿主记录，调用
+`scripts/prewalk.py review`。输入 worktree、worker_id、base_commit、head_commit 和 reviews，
+reviews 必须包含 standards/spec 两轴；每轴包含 reviewer_id、source（宿主任务/轮次与时间）、
+status、verdict、verdict_text（原始最终结论）、blocking_findings（未解决阻断项数）、base_commit、
+head_commit。只有 completed + pass + 零阻断项、两轴身份独立且版本匹配才可放行。
+source 和 verdict 必须由 coordinator 直接核对，不能复制 worker 提供的“通过凭证”；
+helper 校验结构和当前 Git 现场，不验证宿主来源真实性，不是宿主权限沙箱。
+中断、超时、缺结果、自评和旧版本结论均不得替代 PASS，测试通过也不能替代审查。
+需取消时由 coordinator 记录原因并恢复或重派；已有合适 reviewer 可复用，无需重复建任务。
+用户明确豁免须单独记录原话、来源、代码版本和范围，人工放行单列，不伪造 helper PASS。
+whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接回读核验，无有效结果则补审。
 
 外层 task terminal 后 `read_thread` 一次；内部 Testing、Review、Integration 则读取 subagent
 回传与持久证据。随后按 output mode 验证：

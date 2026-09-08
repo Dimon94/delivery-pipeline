@@ -18,6 +18,8 @@ def call(command, data, success=True):
 
 
 def check():
+    review = {"worktree": "unused", "base_commit": "unused", "head_commit": "unused", "reviews": {}}
+    assert "缺少独立两轴结论" in call("review", review, False)
     coordinator = call("coordinator", {"model": "gpt-5.6-sol", "effort": "high", "source": "turn_context"})
     assert coordinator["action"] == "verified"
     for model, effort, source in (("gpt-5.6-sol", "low", "turn_context"),
@@ -131,6 +133,8 @@ def check():
         assert prepared["overlay"]["requested_effort"] == "max"
         assert prepared["overlay"]["model"] == "Unknown"
         assert "起步轮限制已结束" in prepared["request"]["prompt"]
+        assert "不得取消或中断正式 reviewer" in prepared["request"]["prompt"]
+        assert "不得报告 completed" in prepared["request"]["prompt"]
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
         assert call("prepare", {**data, "lane": {**lane, "execution_phase": "executing"}})["request"] is None
         sol = call("prepare", {**data, "lane": {**lane, "development_mode": "sol-sol"}})
@@ -154,6 +158,26 @@ def check():
         git("reset")
         (root / "extra.txt").write_text("untracked")
         assert "检查点已过期" in call("prepare", data, False)
+        git("add", "worker.py", "extra.txt")
+        git("-c", "user.name=Probe", "-c", "user.email=probe@example.invalid", "commit", "-m", "candidate")
+        head = call("snapshot", {"worktree": str(root)})["head"]
+        receipt = {"worktree": str(root), "worker_id": "worker", "base_commit": snap["head"],
+                   "head_commit": head, "reviews": {}}
+        for name in ("standards", "spec"):
+            receipt["reviews"][name] = {"reviewer_id": name, "source": "host turn result",
+                "status": "completed", "verdict": "pass", "verdict_text": "无阻断项",
+                "blocking_findings": 0, "base_commit": snap["head"], "head_commit": head}
+        assert call("review", receipt)["action"] == "review-passed"
+        for field, value in (("status", "interrupted"), ("status", "running"),
+                             ("verdict", "self-approved"), ("blocking_findings", 1),
+                             ("blocking_findings", False), ("head_commit", snap["head"]),
+                             ("reviewer_id", "worker"), ("reviewer_id", "standards"),
+                             ("source", ""), ("verdict_text", "Unknown")):
+            bad = copy.deepcopy(receipt)
+            bad["reviews"]["spec"][field] = value
+            call("review", bad, False)
+        (root / "extra.txt").write_text("changed after review")
+        call("review", receipt, False)
     print("prewalk dispatch: pass (coordinator, spec/tickets gate, modes, recovery, same-task, stopped, stale, duplicate, Unknown)")
 
 

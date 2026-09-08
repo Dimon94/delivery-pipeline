@@ -3,6 +3,12 @@
 coordinator 启动时与每个 worker 执行前读取。本文件拥有 App 工作分工、内部辅助和技术咨询；
 正式双轴审查的模型规则由 resolved `code-review` owner 拥有，Pipeline 只传 Review Evidence Bundle。
 
+正式 Review 的生命周期与放行由 coordinator 管理，优先于下文及旧 owner 的 worker 内嵌
+Review 步骤。implementation worker 可保存候选 commit，缺最终结论则 blocked 回传并注明待审；
+coordinator 接收后按 `codex-app-dispatch.md` 的“独立 Review 放行”启动两轴并验收。
+worker 内已有审查只作预审；可由 coordinator 回读现有有效结果复用，不必再做相同审查。
+中断复核只说明未完成，不能用实现者自评或测试通过替代。模型覆盖不等于用户豁免审查。
+
 ## 工作分工
 
 本文件所有 model、effort 和 fast 设置都是参考默认值，用户明确选择优先于下表和 owner 默认值。

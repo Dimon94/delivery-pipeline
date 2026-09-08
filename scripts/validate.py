@@ -586,6 +586,10 @@ def check_lane_wakeup() -> None:
 
 
 def check_app_shell() -> None:
+    require(APP / "references" / "codex-app-dispatch.md", (
+        "scripts/prewalk.py review", "独立 Review 放行", "不验证宿主来源真实性",
+    ))
+    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", ("不写 completed", "不能把 blocked 当作无需处理"))
     if not os.access(APP / "scripts" / "prewalk.py", os.X_OK):
         record("App prewalk helper must be executable")
     subprocess.run([sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True)

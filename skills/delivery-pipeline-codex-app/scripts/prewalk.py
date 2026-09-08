@@ -78,6 +78,31 @@ def resolve(data):
             "request": {"model": model, "thinking": effort}}
 
 
+def review(data):
+    """校验 coordinator 从宿主读取的结果；输入 JSON 本身不是可信凭证。"""
+    axes = data.get("reviews")
+    if not isinstance(axes, dict) or set(axes) != {"standards", "spec"}:
+        raise ValueError("缺少独立两轴结论")
+    identities = set()
+    for axis in axes.values():
+        for key in ("reviewer_id", "source", "verdict_text"):
+            if not isinstance(axis.get(key), str) or not axis[key].strip() or axis[key] == "Unknown":
+                raise ValueError("缺失 reviewer 宿主证据: " + key)
+        identities.add(axis["reviewer_id"])
+        if (axis.get("status") != "completed" or axis.get("verdict") != "pass"
+                or type(axis.get("blocking_findings")) is not int or axis["blocking_findings"] != 0):
+            raise ValueError("独立审查未通过；中断或自评不能放行")
+        if any(axis.get(k) != data[k] for k in ("base_commit", "head_commit")):
+            raise ValueError("Review 代码版本已过期")
+    if len(identities) != 2 or data["worker_id"] in identities:
+        raise ValueError("执行者与两轴 reviewer 必须独立")
+    root = data["worktree"]
+    if snapshot(root)["dirty"] or git(root, "rev-parse", "HEAD").decode().strip() != data["head_commit"]:
+        raise ValueError("待集成代码已变化")
+    git(root, "merge-base", "--is-ancestor", data["base_commit"], data["head_commit"])
+    return {"action": "review-passed", "head_commit": data["head_commit"]}
+
+
 def coordinator(data):
     if not all(isinstance(data.get(k), str) and data[k].strip() and data[k] != "Unknown"
                for k in ("model", "effort", "source")):
@@ -139,7 +164,13 @@ def prepare(data):
                         "model": model, "thinking": effort,
                         "prompt": "你是本任务 Execution Worktree 内的实现 worker；直接继续实现，不承担协调器监控。"
                                   "起步轮限制已结束。沿本任务历史及原 packet/owner/权限接续；读取检查点 "
-                                  + str(path) + "，完成剩余实现、测试与原 owner 的交付步骤。"}}
+                                  + str(path) + "，完成剩余实现、测试与原 owner 的交付步骤。"
+                                  "执行者约束：不得取消或中断正式 reviewer，不得催促其直接通过；"
+                                  "不得用自评、测试通过或已修复声明替代独立 verdict，不得自行豁免验收。"
+                                  "审查超时、中断或缺结论时保留现场，可保存候选 commit，"
+                                  "但必须按 blocked 回传‘实现已保存、审查待完成’，不得报告 completed。"
+                                  "由 coordinator 管理审查、核验原始结果并决定放行；"
+                                  "执行者不得自行集成、关闭票或更改审查范围来规避 finding。"}}
 
 
 def subagent(data):
@@ -175,6 +206,8 @@ def main():
             result = snapshot(data["worktree"])
         elif command == "coordinator":
             result = coordinator(data)
+        elif command == "review":
+            result = review(data)
         elif command == "resolve":
             result = resolve(data)
         elif command == "subagent":

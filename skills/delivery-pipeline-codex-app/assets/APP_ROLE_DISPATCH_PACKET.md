@@ -62,6 +62,11 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - `verdict`：按 Review evidence preflight 一次物化 Git/path/staged 证据，再运行 review owner；
   所有只读子 reviewer 共用 bundle并报告 verdict/findings；保持 clean。
 - 保留 tracker fan-in、cherry-pick、Integration 与 remote actions 给 coordinator。
+- 正式 reviewer 由 coordinator 管理；worker 不得取消审查或用自评替代独立 verdict。
+  不得调用 interrupt_agent 中断正式 reviewer、催促其直接通过、删减审查范围规避 finding，
+  或以测试通过/“已修复”自行豁免验收。需要取消或重派时向 coordinator 说明原因；等待不是通过。
+  可以保存候选 commit，但独立审查缺失、中断或待复核时回传 blocked，注明“实现已保存、审查待完成”，
+  不写 completed；由 coordinator 按 Terminal 合同接收并补审，不能把 blocked 当作无需处理。
 - completed 与 blocked 都在最终回复前执行 Terminal 回传合同，将下面的完整报告发送给
   Coordinator task；工具成功后才声明 FINAL_REPORT 已回传，失败则报告回传受阻与恢复坐标。
 
