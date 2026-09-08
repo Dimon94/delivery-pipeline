@@ -10,6 +10,7 @@ PANE="$1"; COORD="$2"; LANE_ID="$3"; LABEL="$4"
 export HERDR_ENV=1
 DEADLINE=$(( $(date +%s) + 7200 ))
 SEEN_PREWALK=''
+PENDING_PREWALK=''
 
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   # --source visible 只取当前屏幕，避免匹配到已滚动走的历史回显（packet 指令文本本身含 LANE_DONE 字样，曾致两次误报）
@@ -18,15 +19,22 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   while IFS= read -r LINE; do
     case "$LINE" in
       "PREWALK_READY $LANE_ID /"*)
-        if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE"; then
-          if herdr agent prompt "$COORD" "WAKE: $LABEL 的 pane $PANE 输出阶段标记：${LINE}。请仅核验 checkpoint 与原 runtime 停止证据；此信号不证明已停止或完成，不授权接续、fan-in、Integration 或 cleanup。watcher 继续监听 LANE_DONE。" >/dev/null 2>&1; then
-            SEEN_PREWALK="${SEEN_PREWALK}${LINE}
+        if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
+           ! printf '%s\n' "$PENDING_PREWALK" | grep -qxF -- "$LINE"; then
+          PENDING_PREWALK="${PENDING_PREWALK}${LINE}
 "
-          fi
         fi
         ;;
     esac
   done <<< "$OUT"
+  while IFS= read -r LINE; do
+    [ -n "$LINE" ] || continue
+    if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
+       herdr agent prompt "$COORD" "WAKE: $LABEL 的 pane $PANE 输出阶段标记：${LINE}。请仅核验 checkpoint 与原 runtime 停止证据；此信号不证明已停止或完成，不授权接续、fan-in、Integration 或 cleanup。watcher 继续监听 LANE_DONE。" >/dev/null 2>&1; then
+      SEEN_PREWALK="${SEEN_PREWALK}${LINE}
+"
+    fi
+  done <<< "$PENDING_PREWALK"
   if printf '%s' "$OUT" | grep -qF "LANE_DONE $LANE_ID"; then
     herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出出现 LANE_DONE $LANE_ID 标记)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane(每条新 lane 复用 scripts/lane-watch.sh 挂 watcher)。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
     exit 0

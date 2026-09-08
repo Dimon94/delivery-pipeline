@@ -16,9 +16,10 @@ def main():
             'PREWALK_READY lane relative.json\nPREWALK_READY lane\n'
             '`PREWALK_READY lane /tmp/a.json`',
             'PREWALK_READY lane /tmp/a.json',
-            'PREWALK_READY lane /tmp/a.json',
+            'worker idle',
             'PREWALK_READY lane /tmp/b checkpoint.json',
-            'PREWALK_READY lane /tmp/a.json',
+            'PREWALK_READY lane /tmp/b checkpoint.json',
+            'worker idle',
             'LANE_DONE lane',
         ]
         (root / 'frames.json').write_text(json.dumps(frames))
