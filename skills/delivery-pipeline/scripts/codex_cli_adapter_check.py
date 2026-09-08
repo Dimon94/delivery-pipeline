@@ -18,9 +18,24 @@ GIT_CONFIG_VARS = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_SYSTE
 REPO_ENV = os.environ.copy()
 for name in GIT_REPO_VARS:
     REPO_ENV.pop(name, None)
-COMMON_GIT_DIR = Path(subprocess.check_output(
-    ["git", "rev-parse", "--git-common-dir"],
-    cwd=REPO_ROOT, text=True, env=REPO_ENV).strip()).resolve()
+
+
+def git_common_dir() -> Path:
+    """从真实 worktree 读取共享 Git 配置；快照本身可以没有 .git。"""
+    for candidate in (REPO_ROOT, Path.cwd()):
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=candidate, text=True, capture_output=True, env=REPO_ENV,
+        )
+        if result.returncode == 0:
+            common_dir = Path(result.stdout.strip())
+            if not common_dir.is_absolute():
+                common_dir = candidate / common_dir
+            return common_dir.resolve()
+    raise RuntimeError("无法从检查脚本或调用进程定位 Git worktree")
+
+
+COMMON_GIT_DIR = git_common_dir()
 COMMON_CONFIG = COMMON_GIT_DIR / "config"
 INTENT = "a" * 64
 SPEC = importlib.util.spec_from_file_location("codex_cli_adapter", ROOT / "codex_cli_adapter.py")
