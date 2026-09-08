@@ -976,6 +976,68 @@ def check_checkpoint_contract() -> None:
             "ready-for-coordinator",
         ),
     )
+
+
+def check_claude_adapter_contract() -> None:
+    helper = CORE / "scripts" / "claude_adapter.py"
+    probe = CORE / "scripts" / "claude_adapter_check.py"
+    setup = SETUP / "scripts" / "model_config.py"
+    for path in (helper, probe):
+        if not path.exists():
+            record(f"missing Claude adapter helper: {path.relative_to(ROOT)}")
+    if probe.exists():
+        result = subprocess.run(
+            [sys.executable, str(probe)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(f"Claude adapter check failed: {result.stdout}{result.stderr}")
+    if setup.exists():
+        result = subprocess.run(
+            [sys.executable, str(setup), "self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(f"Claude dispatch caller check failed: {result.stdout}{result.stderr}")
+    require(
+        helper,
+        (
+            "resume-same-session",
+            "herdr-claude-pane",
+            "checkpoint/Git readback",
+            "coordinator_active",
+            "tui_probe",
+            "effort_evidence",
+            '"--resume"',
+            '"--dangerously-skip-permissions"',
+            '"actual_model": UNKNOWN',
+            '"actual_effort": UNKNOWN',
+        ),
+    )
+    require(
+        CORE / "references" / "model-role-routing.md",
+        (
+            "Claude staged continuation adapter",
+            "精确原生 session",
+            "实际 model/effort",
+            "model_config.py start",
+            "resume --request <payload.json>",
+        ),
+    )
+    require(
+        setup,
+        (
+            "def continuation_request",
+            "delivery-pipeline",
+            '"resume"',
+            "仅 Claude staged",
+            "staged execution adapter unavailable",
+        ),
+    )
     require(
         CORE / "references" / "gate-state-machine.md",
         (
@@ -1033,6 +1095,7 @@ def main() -> None:
     check_pruned_policy()
     check_metadata_and_helpers()
     check_checkpoint_contract()
+    check_claude_adapter_contract()
 
     if ERRORS:
         fail(

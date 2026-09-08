@@ -60,9 +60,13 @@ agent 都必须显式填写 `default_mode`（`staged` 或 `direct`）以及 `sta
 示例中的空对象只表示省略重复字段；实际配置不能省略 `model` 或 `effort`，也不能写
 `Unknown`。setup 只有在每个模型、effort 命中本机 evidence 且对应 binary 存在时才写入并 readback。
 分阶段 adapter 按 agent 独立提供：Pi 使用 `scripts/pi_adapter.py` 的原生 TUI 接缝，能够生成
-staged 起步请求并在原 session 中执行 `/model`、`/thinking`；其他 agent 在各自 adapter 具备前只能
-冻结并报告阻塞。任何 agent 都不得把 `staged` 静默改成 `direct`；`direct` 计划仍进入既有
-Dispatch Model。
+staged 起步请求并在原 session 中执行 `/model`、`/thinking`；Claude 使用下方的 staged continuation
+adapter；其他 agent 在各自 adapter 具备前只能冻结并报告阻塞。任何 agent 都不得把 `staged` 静默改成
+`direct`；`direct` 计划仍进入既有 Dispatch Model。
+Claude 起步轮仍由既有 `delivery-pipeline-setup/scripts/model_config.py start` 进入 Herdr
+`agent start` caller；停止现场完成 registry persist/readback 后，coordinator 通过同一 setup
+入口的 `resume --request <payload.json>` 调用本 adapter。该入口只返回已核验的原生计划，不替代
+coordinator 的 registry 写入、发送 lease 或 runtime readback。
 
 setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude": { "binary": true,
 "models": { "<model>": ["<supported-effort>"] } } }`，交给
@@ -143,6 +147,18 @@ herdr agent start "$agent_name" --kind claude --pane "$pane_id" -- \
 
 Claude env 候选是本机可配置选项的证据。Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` /
 `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择；字段不存在时不能把该 Claude model 分配给 role。
+
+### Claude staged continuation adapter
+
+`scripts/claude_adapter.py` 只消费已由 `continuation.py` 核验并持久化的 request，先读回
+checkpoint 与当前 Execution Worktree 的 Git/dirty snapshot，再核对 runtime、原 session、旧
+writer/coordinator 已停止、staged starting 阶段和 continuation intent。它还要求 TUI 探测明确为
+`unavailable`/`unreliable`、Claude CLI effort 枚举含目标值，才生成 Claude 原生接续计划：使用
+精确原生 session 的 `--resume <session-id>`，并传递冻结的 `--model` 与 `--effort`；计划明确禁止
+`--fork-session`。它不把 requested model/effort 当作实际运行值，`tool_acceptance`、
+`actual_model` 与 `actual_effort` 初始均为 `Unknown`，必须由原生新轮的接受、session、turn、
+实际 model/effort 读回分别填充。Herdr/TUI 不可见时，只能使用这个有界原生 resume 接缝并保留
+现场，不能猜最近会话、静默降级或替代 runtime。
 
 配置仅作为新 lane 的前置 gate；既有 lane 的恢复与 replacement 使用
 `dispatch-runtime-routing.md` 的“恢复与切换”。

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import json
 import sys
 import tempfile
@@ -200,11 +201,25 @@ def verify_overlay(plan: dict, overlay: object) -> dict:
     return expected
 
 
+def continuation_request(payload: dict) -> dict:
+    """调用 canonical Claude adapter；不发送请求，也不替代 coordinator registry。"""
+    if not isinstance(payload, dict) or payload.get("runtime") != "herdr-claude-pane":
+        raise ValueError("Claude continuation caller 只接受 herdr-claude-pane")
+    adapter_path = Path(__file__).resolve().parents[2] / "delivery-pipeline" / "scripts" / "claude_adapter.py"
+    spec = importlib.util.spec_from_file_location("delivery_pipeline_claude_adapter", adapter_path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Claude adapter 不可加载: {adapter_path}")
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    try:
+        return adapter.resume_plan(payload)
+    except (adapter.ClaudeAdapterError, OSError, TypeError) as error:
+        raise ValueError(f"Claude continuation adapter rejected: {error}") from error
+
+
 def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
-    """构造 Herdr 原生请求；Pi staged 使用原生 TUI adapter。"""
-    if plan.get("mode") == "staged":
-        if plan.get("agent") != "pi":
-            raise ValueError(f"staged execution adapter unavailable for {plan.get('agent')}; refusing silent direct fallback")
+    """构造 Herdr 原生请求；Pi staged 使用 TUI，且仅 Claude staged 进入现有 caller。"""
+    if plan.get("mode") == "staged" and plan.get("agent") == "pi":
         if plan.get("capability") != "verified":
             raise ValueError("capability evidence is required before staged startup")
         starting = plan.get("starting")
@@ -215,7 +230,9 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
                                        model=starting.get("model"), effort=starting.get("effort"))
         except PiAdapterError as error:
             raise ValueError(str(error)) from error
-    if plan.get("mode") not in {"legacy", "direct"}:
+    if plan.get("mode") == "staged" and plan.get("agent") != "claude":
+        raise ValueError(f"staged execution adapter unavailable for {plan.get('agent')}; refusing silent direct fallback")
+    if plan.get("mode") not in {"legacy", "direct", "staged"}:
         raise ValueError("execution plan is not runnable")
     if plan.get("capability") not in {"legacy-config", "verified"}:
         raise ValueError("capability evidence is required before startup")
@@ -338,17 +355,29 @@ def self_test() -> list[str]:
     else:
         if command[5] != "pi" or "--thinking" not in command:
             failures.append("Pi staged startup omitted its native model/thinking arguments")
-    for agent in ("codex", "claude"):
-        case = json.loads(json.dumps(phased))
-        case["roles"]["backend"]["agent"] = agent
-        try:
-            plan = resolve_plan(case, "backend", evidence=evidence, output_mode="commit")
-            startup_request(plan, worker_name="worker", pane_id="pane")
-        except ValueError as error:
-            if "adapter unavailable" not in str(error):
-                failures.append(f"{agent} staged mode failed for the wrong reason")
-        else:
-            failures.append(f"{agent} staged mode silently became runnable")
+    case = json.loads(json.dumps(phased))
+    case["roles"]["backend"]["agent"] = "codex"
+    try:
+        plan = resolve_plan(case, "backend", evidence=evidence, output_mode="commit")
+        startup_request(plan, worker_name="worker", pane_id="pane")
+    except ValueError as error:
+        if "adapter unavailable" not in str(error):
+            failures.append("codex staged mode failed for the wrong reason")
+    else:
+        failures.append("codex staged mode silently became runnable")
+    claude_case = json.loads(json.dumps(phased))
+    claude_case["roles"]["backend"]["agent"] = "claude"
+    claude_staged = resolve_plan(claude_case, "backend", evidence=evidence, output_mode="commit")
+    claude_command = startup_request(claude_staged, worker_name="worker", pane_id="pane")
+    if (claude_command[5] != "claude" or "--model" not in claude_command
+            or "--effort" not in claude_command):
+        failures.append("Claude staged plan did not enter the existing startup caller")
+    try:
+        continuation_request({"runtime": "herdr-codex-pane"})
+    except ValueError:
+        pass
+    else:
+        failures.append("non-Claude continuation was accepted by Claude caller")
     for agent in sorted(AGENTS):
         plan = {"mode": "direct", "agent": agent, "model": "provider/model", "effort": "high",
                 "capability": "verified"}
@@ -390,7 +419,7 @@ def self_test() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate delivery-pipeline model role config")
-    parser.add_argument("command", choices=("validate", "self-test", "resolve", "freeze", "start"))
+    parser.add_argument("command", choices=("validate", "self-test", "resolve", "freeze", "start", "resume"))
     parser.add_argument("path", nargs="?", default="~/.config/delivery-pipeline/model-roles.json")
     parser.add_argument("role", nargs="?")
     parser.add_argument("--ticket-mode")
@@ -399,6 +428,7 @@ def main() -> int:
     parser.add_argument("--evidence", help="归一化实时能力 evidence JSON")
     parser.add_argument("--worker-name", default="worker")
     parser.add_argument("--pane-id", default="pane")
+    parser.add_argument("--request", help="persisted Claude continuation payload JSON")
     args = parser.parse_args()
 
     if args.command == "self-test":
@@ -409,6 +439,17 @@ def main() -> int:
         errors = validate_path(Path(args.path))
         print(json.dumps({"valid": not errors, "errors": errors}, ensure_ascii=False, indent=2))
         return 0 if not errors else 1
+    if args.command == "resume":
+        if not args.request:
+            parser.error("resume 需要 --request PAYLOAD_JSON")
+        try:
+            payload = json.loads(Path(args.request).expanduser().read_text())
+            result = continuation_request(payload)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(json.dumps({"valid": False, "errors": [str(error)]}, ensure_ascii=False, indent=2))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     if not args.role:
         parser.error(f"{args.command} 需要 ROLE")
     try:

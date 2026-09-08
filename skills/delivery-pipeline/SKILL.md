@@ -48,6 +48,11 @@ false、没有 ignored 路径时，才允许 coordinator 进入下一阶段；ac
 Unknown、工具拒绝、过期或不完整 checkpoint 均保留现场。checkpoint 入口不发送接续请求，也不触发
 Terminal fan-in。
 
+Claude staged lane 在上述 registry persist/readback 后，调用 setup 的
+`model_config.py resume --request <payload.json>` 取得原生 `--resume` 计划；该 caller 只做
+Claude adapter 核验与计划翻译，不替代 registry、send lease 或 runtime readback。Herdr gate
+不可用时保留 blocked 现场。
+
 ## 新建 lane 的配置与 Packet
 
 按 `references/model-role-routing.md` 验证 version 2 配置或显式 version 3 执行计划

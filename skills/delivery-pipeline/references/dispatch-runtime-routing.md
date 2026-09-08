@@ -67,10 +67,13 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
   replacement 验证 stored agent/model/effort 的实时可用性（使用 `model-role-routing.md` 的 evidence），
   不要求当前配置一致；失败时保留 `setup_blocked`，不静默回落。用户明确选择改配时才经 setup
   验证新配置并更新 registry。
-- version 2 role triple 与 `direct` 计划都沿既有一次启动流程；`staged` 计划在对应阶段 adapter
-  具备前只保存冻结结果并保持 blocked，不能退回 direct。Pi 的 `staged` 计划由
-  `scripts/pi_adapter.py` 复用原生 TUI 接缝，其他 agent 在对应 adapter 具备前只保存冻结结果并
-  保持 blocked，不能退回 direct。
+- version 2 role triple 与 `direct` 计划都沿既有一次启动流程；`staged` 计划必须调用对应阶段
+  adapter 并在发送前保留其计划与 evidence；adapter 缺失或核验失败即保持 blocked，不能退回
+  `direct`。Pi 的 `staged` 计划由 `scripts/pi_adapter.py` 复用原生 TUI 接缝；Claude 的 staged
+  起步与接续 caller 见 `model-role-routing.md`，其他 agent 在对应 adapter 具备前保持 blocked。
+- Claude staged lane 的起步调用仍使用 `model_config.py start`；完成既有 continuation registry
+  persist/readback 后仅由 `model_config.py resume --request <payload.json>` 调用 Claude adapter，
+  再把返回的 `--resume` 计划交给原 lane runtime。该入口不创建第二 dispatcher，也不写 registry。
 - cleanup 只关闭本 lane pane并按 `pane-lifecycle-rules.md` 同步 tab label,以及本 lane
   Execution Worktree/branch;保留 Coordinator Pane及承载它的 user-visible session/workspace。
 - Herdr unavailable 时输出完整 durable packet并报告 `dispatch unavailable`，不假装已经派发。

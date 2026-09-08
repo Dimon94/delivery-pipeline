@@ -47,5 +47,7 @@ disable-model-invocation: true
    artifact/checks/verdict lanes 继续沿原 role 行为；不能把计划选择写进 coordinator 配置。
 
 完成标准：六角色都由用户明确选择，配置 readback与选择一致；没有默认值、空字段、非法 agent、
-额外字段或未命中本机 evidence 的 model/effort。version 3 的 staged adapter 未具备时，解析结果
-必须明确 blocked，不能静默生成 direct 启动请求；direct 仍可沿既有 Dispatch Model 验证。
+额外字段或未命中本机 evidence 的 model/effort。version 3 的 staged 计划只能进入已有 adapter
+caller：Claude 使用 `model_config.py start` 起步、`model_config.py resume --request <payload.json>`
+接续；尚无对应 adapter 的 Pi/Codex staged 计划必须明确 blocked，任何 agent 都不能静默生成
+direct 启动请求；direct 仍可沿既有 Dispatch Model 验证。
