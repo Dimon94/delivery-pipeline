@@ -925,7 +925,10 @@ def check_checkpoint_contract() -> None:
     continuation_probe = CORE / "scripts" / "continuation_check.py"
     pi_adapter = CORE / "scripts" / "pi_adapter.py"
     pi_adapter_probe = CORE / "scripts" / "pi_adapter_check.py"
-    for path in (helper, probe, continuation, continuation_probe, pi_adapter, pi_adapter_probe):
+    codex_adapter = CORE / "scripts" / "codex_cli_adapter.py"
+    codex_adapter_probe = CORE / "scripts" / "codex_cli_adapter_check.py"
+    for path in (helper, probe, continuation, continuation_probe,
+                 pi_adapter, pi_adapter_probe, codex_adapter, codex_adapter_probe):
         if not path.exists():
             record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
     if helper.exists():
@@ -957,6 +960,12 @@ def check_checkpoint_contract() -> None:
                                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         if result.returncode != 0:
             record(f"Pi adapter isolation check failed: {result.stdout}{result.stderr}")
+    if codex_adapter_probe.exists():
+        result = subprocess.run([sys.executable, str(codex_adapter_probe)],
+                                text=True, capture_output=True,
+                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        if result.returncode != 0:
+            record(f"Codex CLI adapter check failed: {result.stdout}{result.stderr}")
     require(
         CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
         (
@@ -974,6 +983,15 @@ def check_checkpoint_contract() -> None:
             "component_sha256",
             "ignored 路径只保存内容/模式指纹",
             "ready-for-coordinator",
+        ),
+    )
+    require(
+        codex_adapter,
+        (
+            "resume_from_checkpoint",
+            "herdr-codex-pane",
+            "model_reasoning_effort",
+            "禁止 --last",
         ),
     )
 
@@ -1059,6 +1077,15 @@ def check_claude_adapter_contract() -> None:
             "dispatching",
             "send-authorized",
             "send-unknown",
+        ),
+    )
+    require(
+        CORE / "scripts" / "codex_cli_adapter.py",
+        (
+            "resume_from_checkpoint",
+            "herdr-codex-pane",
+            "model_reasoning_effort",
+            "禁止 --last",
         ),
     )
     require(

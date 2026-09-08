@@ -67,6 +67,11 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
   replacement 验证 stored agent/model/effort 的实时可用性（使用 `model-role-routing.md` 的 evidence），
   不要求当前配置一致；失败时保留 `setup_blocked`，不静默回落。用户明确选择改配时才经 setup
   验证新配置并更新 registry。
+- Codex CLI staged continuation 使用 `scripts/codex_cli_adapter.py`：它只消费已持久化的
+  canonical checkpoint 与 `continuation.py` request，校验 `herdr-codex-pane`、原生 session UUID、
+  Execution Worktree 和 execution model/effort 后生成 `codex resume <SESSION_ID>` 参数；禁止
+  `--last`、最近会话猜测和跨 runtime request。adapter 不写 registry、不发送 prompt，Herdr 继续拥有
+  pane 生命周期与可见 TUI。
 - version 2 role triple 与 `direct` 计划都沿既有一次启动流程；`staged` 计划必须调用对应阶段
   adapter 并在发送前保留其计划与 evidence；adapter 缺失或核验失败即保持 blocked，不能退回
   `direct`。Pi 的 `staged` 计划由 `scripts/pi_adapter.py` 复用原生 TUI 接缝；Claude 的 staged
