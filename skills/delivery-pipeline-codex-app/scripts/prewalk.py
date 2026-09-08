@@ -179,7 +179,7 @@ def prepare(data):
                 or set(decision) != {"critical_design_unknown", "reason"}
                 or type(decision["critical_design_unknown"]) is not bool
                 or not isinstance(decision["reason"], str)
-                or not decision["reason"].strip() or decision["reason"].strip() == "Unknown"):
+                or not decision["reason"].strip() or CHECKPOINT["_is_unknown"](decision["reason"])):
             raise ValueError("legacy decision 缺失、Unknown 或形状不支持")
         if decision["critical_design_unknown"]:
             raise ValueError("legacy 关键设计 Unknown")

@@ -165,7 +165,9 @@ def check():
         legacy_path.write_text(json.dumps(legacy_checkpoint))
         for bad_decision in (None, "Unknown", {},
                              {"critical_design_unknown": "Unknown", "reason": "minimal"},
-                             {"critical_design_unknown": False, "reason": "Unknown"}):
+                             {"critical_design_unknown": False, "reason": "Unknown"},
+                             {"critical_design_unknown": False, "reason": " unknown "},
+                             {"critical_design_unknown": False, "reason": "UNKNOWN"}):
             bad_legacy = copy.deepcopy(legacy_data)
             bad_legacy["checkpoint"]["decision"] = bad_decision
             legacy_path.write_text(json.dumps(bad_legacy["checkpoint"]))
