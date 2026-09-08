@@ -923,7 +923,9 @@ def check_checkpoint_contract() -> None:
     probe = CORE / "scripts" / "checkpoint_check.py"
     continuation = CORE / "scripts" / "continuation.py"
     continuation_probe = CORE / "scripts" / "continuation_check.py"
-    for path in (helper, probe, continuation, continuation_probe):
+    pi_adapter = CORE / "scripts" / "pi_adapter.py"
+    pi_adapter_probe = CORE / "scripts" / "pi_adapter_check.py"
+    for path in (helper, probe, continuation, continuation_probe, pi_adapter, pi_adapter_probe):
         if not path.exists():
             record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
     if helper.exists():
@@ -943,6 +945,18 @@ def check_checkpoint_contract() -> None:
                                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         if result.returncode != 0:
             record(f"continuation isolation check failed: {result.stdout}{result.stderr}")
+    if pi_adapter.exists():
+        result = subprocess.run([sys.executable, str(pi_adapter), "self-test"],
+                                text=True, capture_output=True,
+                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        if result.returncode != 0:
+            record(f"Pi adapter self-test failed: {result.stdout}{result.stderr}")
+    if pi_adapter_probe.exists():
+        result = subprocess.run([sys.executable, str(pi_adapter_probe)],
+                                text=True, capture_output=True,
+                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        if result.returncode != 0:
+            record(f"Pi adapter isolation check failed: {result.stdout}{result.stderr}")
     require(
         CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
         (

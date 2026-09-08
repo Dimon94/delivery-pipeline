@@ -59,8 +59,10 @@ agent 都必须显式填写 `default_mode`（`staged` 或 `direct`）以及 `sta
 
 示例中的空对象只表示省略重复字段；实际配置不能省略 `model` 或 `effort`，也不能写
 `Unknown`。setup 只有在每个模型、effort 命中本机 evidence 且对应 binary 存在时才写入并 readback。
-分阶段 adapter 尚未提供时，`staged` 计划只能被冻结并报告阻塞；启动入口必须拒绝静默改成
-`direct`。`direct` 计划仍进入既有 Dispatch Model。
+分阶段 adapter 按 agent 独立提供：Pi 使用 `scripts/pi_adapter.py` 的原生 TUI 接缝，能够生成
+staged 起步请求并在原 session 中执行 `/model`、`/thinking`；其他 agent 在各自 adapter 具备前只能
+冻结并报告阻塞。任何 agent 都不得把 `staged` 静默改成 `direct`；`direct` 计划仍进入既有
+Dispatch Model。
 
 setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude": { "binary": true,
 "models": { "<model>": ["<supported-effort>"] } } }`，交给
@@ -154,7 +156,8 @@ Claude env 候选是本机可配置选项的证据。Setup 只允许从这些 `*
 4. registry 在启动前写 role、output_mode、agent、model、effort、model_evidence、runtime 与 permission mode；
    精确 readback 后才能启动 worker。
 
-直接启动参数按 agent 映射：pi 使用 `--approve --model <model> --thinking <effort>`，Codex 使用
+直接启动参数按 agent 映射：pi 使用 `--approve --model <model> --thinking <effort>`，Pi staged
+起步同样通过 `scripts/pi_adapter.py` 生成该参数；Codex 使用
 `--model <model> -c model_reasoning_effort="<effort>" -s danger-full-access -a never`，Claude
 使用 `--model <model> --effort <effort> --dangerously-skip-permissions`。这些参数由冻结的
 `direct` 计划（或 version 2 legacy role triple）提供，不从 coordinator 模型推断。分阶段计划
