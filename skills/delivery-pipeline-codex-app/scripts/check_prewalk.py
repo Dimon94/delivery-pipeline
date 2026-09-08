@@ -143,7 +143,8 @@ def check():
                              "host_id": lane["host_id"], "base_commit": lane["base_commit"],
                              "first_edit": ["worker.py"], "snapshot": legacy_snapshot,
                              "todo": ["finish"], "checks": ["start passed"],
-                             "evidence": ["spec"], "decision": "minimal"}
+                             "evidence": ["spec"], "decision": {
+                                 "critical_design_unknown": False, "reason": "minimal"}}
         legacy_path.write_text(json.dumps(legacy_checkpoint))
         legacy_lane = {**lane, "development_mode": "astra-luna",
                        "checkpoint_format": "legacy-app-v0",
@@ -155,6 +156,22 @@ def check():
         legacy = call("prepare", legacy_data)
         assert legacy["overlay"]["checkpoint_format"] == "legacy-app-v0"
         assert legacy["overlay"]["checkpoint_sha256"] == "Unknown"
+        critical_legacy = copy.deepcopy(legacy_data)
+        critical_legacy["checkpoint"]["decision"] = {
+            "critical_design_unknown": True, "reason": "unresolved architecture"}
+        legacy_path.write_text(json.dumps(critical_legacy["checkpoint"]))
+        critical_error = json.loads(call("prepare", critical_legacy, False))
+        assert "关键设计 Unknown" in critical_error["error"] and "request" not in critical_error
+        legacy_path.write_text(json.dumps(legacy_checkpoint))
+        for bad_decision in (None, "Unknown", {},
+                             {"critical_design_unknown": "Unknown", "reason": "minimal"},
+                             {"critical_design_unknown": False, "reason": "Unknown"}):
+            bad_legacy = copy.deepcopy(legacy_data)
+            bad_legacy["checkpoint"]["decision"] = bad_decision
+            legacy_path.write_text(json.dumps(bad_legacy["checkpoint"]))
+            decision_error = json.loads(call("prepare", bad_legacy, False))
+            assert "legacy decision" in decision_error["error"] and "request" not in decision_error
+        legacy_path.write_text(json.dumps(legacy_checkpoint))
         call("prepare", {**legacy_data, "lane": lane}, False)
         mismatch_lane = {**legacy_lane, "checkpoint": str(Path(folder) / "other.json")}
         assert "path 不匹配" in call("prepare", {**legacy_data, "lane": mismatch_lane}, False)

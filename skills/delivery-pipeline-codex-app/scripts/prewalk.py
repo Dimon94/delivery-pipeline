@@ -174,7 +174,16 @@ def prepare(data):
         if not isinstance(first_edit, list) or not first_edit or any(
                 not isinstance(name, str) or name not in current["dirty"] for name in first_edit):
             raise ValueError("缺少可核对的首处实现路径")
-        for key in ("todo", "checks", "evidence", "decision"):
+        decision = checkpoint.get("decision")
+        if (not isinstance(decision, dict)
+                or set(decision) != {"critical_design_unknown", "reason"}
+                or type(decision["critical_design_unknown"]) is not bool
+                or not isinstance(decision["reason"], str)
+                or not decision["reason"].strip() or decision["reason"].strip() == "Unknown"):
+            raise ValueError("legacy decision 缺失、Unknown 或形状不支持")
+        if decision["critical_design_unknown"]:
+            raise ValueError("legacy 关键设计 Unknown")
+        for key in ("todo", "checks", "evidence"):
             if not checkpoint.get(key):
                 raise ValueError("检查点缺失: " + key)
         checkpoint_format, checkpoint_hash = "legacy-app-v0", "Unknown"
