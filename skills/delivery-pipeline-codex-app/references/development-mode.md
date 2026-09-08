@@ -108,16 +108,19 @@ stdin 输入、结果从 stdout 读取；非零退出就保留现场并报告。
 - prepare 输入 lane（App overlay 与 lane_id/state/worktree/base_commit）、checkpoint、checkpoint_path、
   observation（thread_id/host_id/status/source，取自刚完成的宿主 readback），以及刚核验的
   work_item、可选 map 与 gate_evidence；不能仅凭旧 lane 存在继续实施。只有 idle 且
-  canonical 指纹、持久内容、Git/ignored/staged/unstaged 现场都一致才返回 persist-before-send 和原 task 的 request。
+  canonical 指纹、持久内容、Git/ignored/staged/unstaged 现场都一致，并由 canonical
+  `evaluate_signal` 判定 tool acceptance、停止证据与 critical_design_unknown 均可继续，才返回
+  persist-before-send 和原 task 的 request。
   active 返回 wait-for-stop 和原 task 坐标，不返回发送请求；按 transport 中间回传合同
   有界等待原轮停止，再重新 prepare，不能把此正常时序当作最终受阻。
 - coordinator 先把返回 overlay 合并写回既有 registry 并 readback，才调用
   send_message_to_thread 的 request 参数。一个 lane 只由已登记的 coordinator 分派；脚本
   不提供跨协调器锁。switching/executing 返回 readback、request: null，禁止把空请求当重试。
   prepare 与发送之间出现新消息或文件变化时重新核验；工具结果未知按原任务证据恢复。
-- 旧已持久 App checkpoint 只有恢复既有 lane 时可显式传 legacy_checkpoint: true；helper 只按旧
-  内容原样核验并标记 legacy-app-v0 / Unknown，不生成或回填 canonical 指纹。新 checkpoint、
-  canonical checkpoint 或缺既有恢复证据时禁止走 legacy 分支。
+- 旧已持久 App checkpoint 只有 registry 中旧 `astra-*` mode、legacy-app-v0 format 与 exact
+  checkpoint path 同时匹配，且 snapshot 明确 `ignored.delivery_input: none` 时可显式传
+  legacy_checkpoint: true；helper 只按旧内容原样核验并标记 legacy-app-v0 / Unknown，不生成或
+  回填 canonical 指纹。新 checkpoint、canonical checkpoint 或缺既有恢复证据时禁止走 legacy 分支。
 - review 输入 coordinator 直接回读的 resolved owner triple、review_scope、固定 base/head 与两轴
   宿主结论；helper 不返回任何模型选择，只验证 reviewer 独立性、终态、零阻断项和当前 Git 版本。
 
@@ -148,9 +151,9 @@ canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 t
    观察到原 task 新执行轮后保存 phase: executing；模型读不到仍为 Unknown。发送结果未知时
    保持 switching，先读原 task 是否收到接续消息/产生新轮，不能盲目重发；无法消歧则报告
    恢复坐标。App 工具没有已验证的幂等键，registry 标记本身不保证外部调用 exactly-once。
-5. **交付。** Luna/Sol 完成剩余 owner 流程后保存候选 commit并走原 FINAL_REPORT 与 fan-in。
-   Sol 起步不算 Review；coordinator 按 resolved code-review owner 与 review_scope 启动正式
-   Standards/Spec 独立审查。blocking finding 修复后按 owner 复核；App 壳不增加或替换模型 gate。
+5. **交付。** Luna/Sol 完成剩余 owner 流程后保存候选 commit并走原 FINAL_REPORT。Sol 起步
+   不算 Review；coordinator 按 resolved code-review owner 与 review_scope 启动正式 Standards/Spec
+   独立审查。blocking finding 修复后按 owner 复核；App 壳不增加或替换模型 gate。
 
 sol-direct 创建时直接请求 `gpt-5.6-sol` + `high`，phase: executing，checkpoint: none，
 跳过起步与换模型步骤；其测试、Review 与集成标准相同。Prewalk phase 是 App overlay 的
@@ -159,7 +162,7 @@ second opinion；模式升级由用户明确选择，沿同一 task 保存变更
 
 当前证据边界：2026-09-07 的历史探针验证过 Astra low → Luna max、Astra low → Sol high 与
 Sol high 直接执行；这些旧模式只保留恢复兼容。新默认 Sol high → Luna max、Sol high → Sol high
-已通过 helper 的同任务检查点与非法转换检查，尚未做 App 端到端模型 readback。另一个隔离检查链曾验证
+已通过 helper 的同任务检查点与非法转换检查，尚未做 App 端到端模型 readback。另一个隔离检查链已验证
 空闲 coordinator 被回传唤醒、自动发送同 worker 的
 下一阶段并收齐结果回传；完整业务 map 的 Review 与 Integration 尚未做端到端验证。此合同采用
 轮次间接续，不宣称工具调用边界自动热切换；实际票仍需保留全链路证据。

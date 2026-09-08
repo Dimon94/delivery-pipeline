@@ -102,6 +102,8 @@ def check():
     assert default["overlay"]["development_mode"] == "sol-luna"
     assert default["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
     assert call("resolve", {**base, "map_mode": "sol-sol"})["overlay"]["mode_source"] == "map"
+    for legacy_mode in ("astra-luna", "astra-sol"):
+        call("resolve", {**base, "ticket_mode": legacy_mode}, False)
     direct = call("resolve", {**base, "ticket_mode": "sol-direct", "map_mode": "sol-luna"})
     assert direct["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
     assert direct["overlay"]["execution_phase"] == "executing"
@@ -135,6 +137,7 @@ def check():
         legacy_snapshot = {key: snap[key] for key in
                            ("worktree", "head", "branch", "common_dir", "index_sha256")}
         legacy_snapshot["dirty"] = legacy_dirty
+        legacy_snapshot["ignored"] = {"delivery_input": "none"}
         legacy_path = Path(folder) / "legacy-checkpoint.json"
         legacy_checkpoint = {"lane_id": lane["lane_id"], "thread_id": lane["thread_id"],
                              "host_id": lane["host_id"], "base_commit": lane["base_commit"],
@@ -142,13 +145,24 @@ def check():
                              "todo": ["finish"], "checks": ["start passed"],
                              "evidence": ["spec"], "decision": "minimal"}
         legacy_path.write_text(json.dumps(legacy_checkpoint))
-        legacy_data = {**gate, "lane": lane, "checkpoint": legacy_checkpoint,
+        legacy_lane = {**lane, "development_mode": "astra-luna",
+                       "checkpoint_format": "legacy-app-v0",
+                       "checkpoint": str(legacy_path)}
+        legacy_data = {**gate, "lane": legacy_lane, "checkpoint": legacy_checkpoint,
                        "checkpoint_path": str(legacy_path), "legacy_checkpoint": True,
                        "observation": {"thread_id": "same-task", "host_id": "local",
                                        "status": "idle", "source": "probe"}}
         legacy = call("prepare", legacy_data)
         assert legacy["overlay"]["checkpoint_format"] == "legacy-app-v0"
         assert legacy["overlay"]["checkpoint_sha256"] == "Unknown"
+        call("prepare", {**legacy_data, "lane": lane}, False)
+        mismatch_lane = {**legacy_lane, "checkpoint": str(Path(folder) / "other.json")}
+        assert "path 不匹配" in call("prepare", {**legacy_data, "lane": mismatch_lane}, False)
+        ignored_legacy = copy.deepcopy(legacy_data)
+        ignored_legacy["checkpoint"]["snapshot"]["ignored"] = {"delivery_input": "Unknown"}
+        legacy_path.write_text(json.dumps(ignored_legacy["checkpoint"]))
+        assert "legacy ignored" in call("prepare", ignored_legacy, False)
+        legacy_path.write_text(json.dumps(legacy_checkpoint))
         without_legacy = copy.deepcopy(legacy_data)
         del without_legacy["legacy_checkpoint"]
         call("prepare", without_legacy, False)
@@ -203,6 +217,8 @@ def check():
         assert "不得取消或中断正式 reviewer" in prepared["request"]["prompt"]
         assert "resolved owner 和 review_scope" in prepared["request"]["prompt"]
         assert "不得报告 completed" in prepared["request"]["prompt"]
+        assert "持久恢复证据" in call("prepare", {
+            **data, "lane": {**lane, "development_mode": "astra-luna"}}, False)
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
         assert call("prepare", {**data, "lane": {**lane, "execution_phase": "executing"}})["request"] is None
         sol_path = Path(folder) / "sol-checkpoint.json"
@@ -211,8 +227,8 @@ def check():
         sol_payload["phase_plan"]["execution"] = {"model": "gpt-5.6-sol", "effort": "high"}
         sol_checkpoint = call("checkpoint", {"worktree": str(root), "checkpoint_path": str(sol_path),
                                              "payload": sol_payload})
-        sol_data = {**data, "checkpoint": sol_checkpoint, "checkpoint_path": str(sol_path)}
-        sol = call("prepare", {**sol_data, "lane": {**lane, "development_mode": "sol-sol"}})
+        sol = call("prepare", {**data, "lane": {**lane, "development_mode": "sol-sol"},
+                               "checkpoint": sol_checkpoint, "checkpoint_path": str(sol_path)})
         assert sol["request"]["model"] == "gpt-5.6-sol"
         assert sol["request"]["thinking"] == "high"
         legacy = call("prepare", {**data, "lane": {**lane, "development_mode": "astra-luna"}})
@@ -248,6 +264,15 @@ def check():
         assert "ignored 交付输入" in call("prepare", ignored_data, False)
         (root / "ignored.txt").unlink()
         (root / ".gitignore").unlink()
+        critical_path = Path(folder) / "critical-checkpoint.json"
+        critical_payload = copy.deepcopy(payload)
+        critical_payload["checkpoint_path"] = str(critical_path)
+        critical_payload["decision"] = {"critical_design_unknown": True, "reason": "still unknown"}
+        critical_checkpoint = call("checkpoint", {"worktree": str(root),
+            "checkpoint_path": str(critical_path), "payload": critical_payload})
+        critical_data = {**data, "checkpoint": critical_checkpoint,
+                         "checkpoint_path": str(critical_path)}
+        assert "关键设计 Unknown" in call("prepare", critical_data, False)
         git("add", "worker.py")
         git("-c", "user.name=Probe", "-c", "user.email=probe@example.invalid", "commit", "-m", "candidate")
         head = call("snapshot", {"worktree": str(root)})["head"]

@@ -26,7 +26,7 @@ App task 的模型请求与宿主运行 readback 分开保存；旧 lane 沿原 
 六角色显式配置、owner、权限、Integration、archive 与远程授权边界不变。
 
 新实施票支持 sol-luna（默认）、sol-sol 与 sol-direct；前两种由 Sol / high 起步，在同一
-App task 下一轮显式请求接续模型。旧 astra-luna/astra-sol 只用于恢复已持久化 lane。
+App task 下一轮显式请求接续模型。旧 astra-luna/astra-sol 只恢复 registry 已持久化的 lane。
 packet/registry 持久化选择及检查点；模式不改变 owner、
 Review 或 Integration gate。该决定是用户选定的流程合同；App 接续已有隔离运行证据。
 Luna 使用 max 且不启用 fast，service tier 沿宿主默认值，运行 readback 缺失时仍记 Unknown。
@@ -40,7 +40,8 @@ Luna 使用 max 且不启用 fast，service tier 沿宿主默认值，运行 rea
 ## Consequences
 
 App Prewalk 新检查点复用 canonical checkpoint 的 Git 隔离、ignored/staged/unstaged 指纹、整体
-SHA-256 与原子持久读回；旧 App 检查点只能在恢复既有 lane 时显式走 legacy 兼容，不补造指纹。
+SHA-256、原子持久读回与阶段信号判定；旧 App 检查点只能在 registry 已持久化旧模式、格式与
+exact path 同时匹配且 ignored 交付输入为 none 时显式走 legacy 兼容，不补造指纹。
 
 2026-09-08 补充：正式两轴 Review 的生命周期与最终放行归 coordinator，实施 worker 只能提交
 候选代码和修复说明。中断、超时或测试成功不能替代独立 verdict；集成前核对宿主原始结论、

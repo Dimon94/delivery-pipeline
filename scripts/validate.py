@@ -639,8 +639,9 @@ def check_app_shell() -> None:
     # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
     require(APP / "references" / "development-mode.md", (
         "`sol-luna`（默认）", "`sol-sol`", "`sol-direct`",
+        "已持久化的 `astra-luna` / `astra-sol` 只用于恢复旧 lane",
         "PREWALK_READY", "send_message_to_thread", "phase: switching",
-        "不能盲目重发", "尚未做端到端验证",
+        "不能盲目重发", "尚未做 App 端到端模型 readback", "`evaluate_signal`",
     ))
     require(APP / "references" / "codex-app-dispatch.md", (
         "development_mode:", "mode_source:", "execution_phase:", "checkpoint:",

@@ -9,7 +9,7 @@ import sys
 MODES = {"sol-luna": ("gpt-5.6-luna", "max"),
          "sol-sol": ("gpt-5.6-sol", "high"),
          "sol-direct": ("gpt-5.6-sol", "high"),
-         # 只用于恢复已持久化的旧 lane。
+         # 只用于恢复 registry 已持久化的旧 lane。
          "astra-luna": ("gpt-5.6-luna", "max"),
          "astra-sol": ("gpt-5.6-sol", "high")}
 NEW_MODES = {"sol-luna", "sol-sol", "sol-direct"}
@@ -136,6 +136,11 @@ def prepare(data):
     if type(legacy) is not bool:
         raise ValueError("legacy_checkpoint 必须是显式布尔值")
     if legacy:
+        if (lane.get("development_mode") not in ("astra-luna", "astra-sol")
+                or lane.get("checkpoint_format") != "legacy-app-v0"
+                or not isinstance(lane.get("checkpoint"), str)
+                or Path(lane["checkpoint"]).resolve(strict=False) != path.resolve(strict=False)):
+            raise ValueError("legacy 恢复缺少 registry 持久来源或 checkpoint path 不匹配")
         if "checkpoint_version" in checkpoint:
             raise ValueError("canonical checkpoint 不允许走 legacy 恢复")
         if (not path.is_absolute() or not path.is_file()
@@ -160,6 +165,9 @@ def prepare(data):
         current = {key: canonical[key] for key in
                    ("worktree", "head", "branch", "common_dir", "index_sha256")}
         current["dirty"] = dirty
+        current["ignored"] = {"delivery_input": canonical["ignored"]["delivery_input"]}
+        if checkpoint.get("snapshot", {}).get("ignored") != {"delivery_input": "none"}:
+            raise ValueError("legacy ignored 交付输入未确认无关")
         if current != checkpoint.get("snapshot"):
             raise ValueError("检查点已过期")
         first_edit = checkpoint.get("first_edit")
@@ -171,6 +179,12 @@ def prepare(data):
                 raise ValueError("检查点缺失: " + key)
         checkpoint_format, checkpoint_hash = "legacy-app-v0", "Unknown"
     else:
+        if lane.get("checkpoint_format") != "canonical-v1":
+            raise ValueError("canonical lane 缺少 checkpoint format")
+        if (lane.get("development_mode") in ("astra-luna", "astra-sol")
+                and (not isinstance(lane.get("checkpoint"), str)
+                     or Path(lane["checkpoint"]).resolve(strict=False) != path.resolve(strict=False))):
+            raise ValueError("旧 astra lane 缺少 registry 持久恢复证据")
         persisted = CHECKPOINT["read_checkpoint"](
             path, worktree=root, expected_lane=lane["lane_id"],
             expected_base=lane.get("base_commit"))
@@ -187,8 +201,16 @@ def prepare(data):
         }
         if any(checkpoint.get(key) != value for key, value in expected.items()):
             raise ValueError("canonical 检查点 App 坐标或阶段不匹配")
-        if checkpoint["snapshot"]["ignored"]["delivery_input"] != "none":
-            raise ValueError("ignored 交付输入未确认无关")
+        evaluation = CHECKPOINT["evaluate_signal"](
+            checkpoint, f"WORKER_STOPPED {lane['lane_id']} {path}", {
+                "runtime": "codex-thread", "session_id": lane.get("thread_id"),
+                "coordinator_thread_id": lane.get("coordinator_thread_id"),
+                "coordinator_host_id": lane.get("coordinator_host_id"),
+                "status": "stopped", "writer_active": False,
+                "stop_evidence": True, "ready_seen": True,
+            })
+        if evaluation["action"] != "ready-for-coordinator":
+            raise ValueError("canonical checkpoint 阻塞: " + evaluation.get("reason", evaluation["action"]))
         checkpoint_format = "canonical-v1"
         checkpoint_hash = checkpoint[CHECKPOINT["FINGERPRINT_FIELD"]]
     model, effort = MODES[lane["development_mode"]]
