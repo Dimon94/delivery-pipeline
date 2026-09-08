@@ -83,15 +83,17 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 App 壳使用 native task + App-managed Execution Worktree，不读取 CLI worker-role config。若希望
 Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipeline`。
 
-新实施票默认 `astra-luna`（Astra low → Luna max），可在调用时指定“本票 `astra-sol`”或“后续新票 `sol-direct`”。
-Prewalk 在同一任务历史中接续。每次调用都执行模型、内部并发与权限核验；本仓项目配置
+新实施票默认 `sol-luna`（Sol high → Luna max），可在调用时指定“本票 `sol-sol`”或“后续新票 `sol-direct`”。
+所有模型、思考档位和 fast 设置均为参考默认值，用户可按任务、阶段或 map 覆盖；协调任务推荐 Sol/high。
+Prewalk 在同一任务历史中接续。实施票 Review 使用 Astra low，whole-change Review 使用 Sol xhigh；
+whole-change Testing 与逐票 Integration 分开使用 Luna max 子代理。每次调用都执行模型、内部并发与权限核验；本仓项目配置
 不会随 Skill 软链应用到其他仓库。具体入口与证据边界见
 [App 开发模式](skills/delivery-pipeline-codex-app/references/development-mode.md)。
 
 #### Codex App 开发流程
 
-下图覆盖 gate 恢复、三种实施模式、同任务 Prewalk 接续、终态 fan-in、whole-change 测试、
-双轴 Review 与 Integration 收尾。
+下图覆盖 gate 恢复、三种实施模式、同任务 Prewalk 接续、终态 fan-in、独立 whole-change 测试、
+按 scope 分配的双轴 Review 与 Integration 收尾。
 
 [![Delivery Pipeline Codex App 开发流程](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)
 

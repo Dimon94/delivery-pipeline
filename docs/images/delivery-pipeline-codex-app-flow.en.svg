@@ -65,7 +65,7 @@
 
   <rect x="60" y="310" width="260" height="72" rx="8" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.5"/>
   <text x="190" y="338" text-anchor="middle" class="label">Discovery + Map</text>
-  <text x="190" y="360" text-anchor="middle" class="detail">Sol research · Astra / low planning</text>
+  <text x="190" y="360" text-anchor="middle" class="detail">Sol research/prototype · Astra / low planning</text>
 
   <rect x="370" y="310" width="220" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
   <text x="480" y="338" text-anchor="middle" class="label">Spec</text>
@@ -83,13 +83,13 @@
   <text x="600" y="489" text-anchor="middle" class="detail">ticket → map → default</text>
 
   <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
-  <text x="240" y="570" text-anchor="middle" class="label">astra-luna (default)</text>
-  <text x="240" y="593" text-anchor="middle" class="detail">Astra / low starts and makes first edit</text>
+  <text x="240" y="570" text-anchor="middle" class="label">sol-luna (default)</text>
+  <text x="240" y="593" text-anchor="middle" class="detail">Sol / high Prewalk and first edit</text>
   <text x="240" y="612" text-anchor="middle" class="detail">Same task continues with Luna / max</text>
 
   <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="600" y="570" text-anchor="middle" class="label">astra-sol</text>
-  <text x="600" y="593" text-anchor="middle" class="detail">Astra / low starts and makes first edit</text>
+  <text x="600" y="570" text-anchor="middle" class="label">sol-sol</text>
+  <text x="600" y="593" text-anchor="middle" class="detail">Sol / high Prewalk and first edit</text>
   <text x="600" y="612" text-anchor="middle" class="detail">Same task continues with Sol / high</text>
 
   <rect x="820" y="545" width="280" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
@@ -98,29 +98,29 @@
   <text x="960" y="612" text-anchor="middle" class="detail">Sol / high implements and tests from start</text>
 
   <rect x="420" y="660" width="360" height="62" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="600" y="686" text-anchor="middle" class="label">Complete owner flow and minimal checks</text>
+  <text x="600" y="686" text-anchor="middle" class="label">Complete owner flow · Astra / low ticket review</text>
   <text x="600" y="708" text-anchor="middle" class="detail">Same-task switch failure preserves state and blocks</text>
   <text x="600" y="750" text-anchor="middle" class="detail">Same threadId + hostId + Execution Worktree · checkpoint verifies HEAD / dirty / first edit / TODO</text>
 
   <text x="614" y="798" class="edge-label">FINAL_REPORT · asynchronous wake-up</text>
   <rect x="390" y="815" width="420" height="75" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
   <text x="600" y="843" text-anchor="middle" class="label">Terminal Callback + Role-aware Fan-in</text>
-  <text x="600" y="865" text-anchor="middle" class="detail">Verify commit / artifact / checks / verdict and registry, then persist the state</text>
+  <text x="600" y="865" text-anchor="middle" class="detail">Luna / max ticket Integration · coordinator verifies Git and persists state</text>
   <text x="600" y="883" text-anchor="middle" class="detail">Deduplicate repeated reports · never resend blindly on Unknown</text>
 
   <rect x="70" y="950" width="280" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
   <text x="210" y="978" text-anchor="middle" class="label">Whole-change Testing</text>
-  <text x="210" y="1001" text-anchor="middle" class="detail">Sol / high · output: checks</text>
+  <text x="210" y="1001" text-anchor="middle" class="detail">Luna / max sub-agent · output: checks</text>
   <text x="210" y="1020" text-anchor="middle" class="detail">Failures return to implementation</text>
 
   <rect x="460" y="950" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="600" y="978" text-anchor="middle" class="label">Independent Dual-axis Review</text>
-  <text x="600" y="1001" text-anchor="middle" class="detail">Astra / low · Standards + Spec</text>
+  <text x="600" y="978" text-anchor="middle" class="label">Whole-change Dual-axis Review</text>
+  <text x="600" y="1001" text-anchor="middle" class="detail">Sol / xhigh · Standards + Spec</text>
   <text x="600" y="1020" text-anchor="middle" class="detail">Re-review after blocking findings are fixed</text>
 
   <rect x="850" y="950" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
   <text x="990" y="978" text-anchor="middle" class="label">Integration + Closeout</text>
-  <text x="990" y="1001" text-anchor="middle" class="detail">Integration worktree · focused checks · archive</text>
+  <text x="990" y="1001" text-anchor="middle" class="detail">Coordinator readback · focused checks · archive</text>
   <text x="990" y="1020" text-anchor="middle" class="detail">Remote actions still need separate authority</text>
 
   <text x="946" y="209" class="edge-label">next ready frontier / recovery</text>

@@ -65,7 +65,7 @@
 
   <rect x="60" y="310" width="260" height="72" rx="8" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.5"/>
   <text x="190" y="338" text-anchor="middle" class="label">Discovery + Map</text>
-  <text x="190" y="360" text-anchor="middle" class="detail">Sol 调查 · Astra / low 规划与沟通</text>
+  <text x="190" y="360" text-anchor="middle" class="detail">Sol 调查/原型 · Astra / low 规划与沟通</text>
 
   <rect x="370" y="310" width="220" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
   <text x="480" y="338" text-anchor="middle" class="label">Spec</text>
@@ -83,13 +83,13 @@
   <text x="600" y="489" text-anchor="middle" class="detail">ticket → map → 默认值</text>
 
   <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
-  <text x="240" y="570" text-anchor="middle" class="label">astra-luna（默认）</text>
-  <text x="240" y="593" text-anchor="middle" class="detail">Astra / low 起步与首改</text>
+  <text x="240" y="570" text-anchor="middle" class="label">sol-luna（默认）</text>
+  <text x="240" y="593" text-anchor="middle" class="detail">Sol / high Prewalk 与首改</text>
   <text x="240" y="612" text-anchor="middle" class="detail">同任务接续 Luna / max 实现与测试</text>
 
   <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="600" y="570" text-anchor="middle" class="label">astra-sol</text>
-  <text x="600" y="593" text-anchor="middle" class="detail">Astra / low 起步与首改</text>
+  <text x="600" y="570" text-anchor="middle" class="label">sol-sol</text>
+  <text x="600" y="593" text-anchor="middle" class="detail">Sol / high Prewalk 与首改</text>
   <text x="600" y="612" text-anchor="middle" class="detail">同任务接续 Sol / high 实现与测试</text>
 
   <rect x="820" y="545" width="280" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
@@ -98,29 +98,29 @@
   <text x="960" y="612" text-anchor="middle" class="detail">Sol / high 从头实现与测试</text>
 
   <rect x="420" y="660" width="360" height="62" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="600" y="686" text-anchor="middle" class="label">完成 owner 流程与最小验证</text>
+  <text x="600" y="686" text-anchor="middle" class="label">完成 owner 流程 · Astra / low 实施票 Review</text>
   <text x="600" y="708" text-anchor="middle" class="detail">Prewalk 不新增 gate；无法原任务换模则保留现场并受阻</text>
   <text x="600" y="750" text-anchor="middle" class="detail">同一 threadId + hostId + Execution Worktree · checkpoint 核验 HEAD / dirty / 首改 / TODO</text>
 
   <text x="614" y="798" class="edge-label">FINAL_REPORT · 异步唤醒</text>
   <rect x="390" y="815" width="420" height="75" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
   <text x="600" y="843" text-anchor="middle" class="label">Terminal 回传 + Role-aware Fan-in</text>
-  <text x="600" y="865" text-anchor="middle" class="detail">核验 commit / artifact / checks / verdict 与 registry，再持久化状态</text>
+  <text x="600" y="865" text-anchor="middle" class="detail">Luna / max 逐票 Integration · coordinator 核验 Git 并持久化状态</text>
   <text x="600" y="883" text-anchor="middle" class="detail">重复通知去重 · Unknown 不盲重发</text>
 
   <rect x="70" y="950" width="280" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
   <text x="210" y="978" text-anchor="middle" class="label">Whole-change Testing</text>
-  <text x="210" y="1001" text-anchor="middle" class="detail">Sol / high · output: checks</text>
+  <text x="210" y="1001" text-anchor="middle" class="detail">Luna / max 子代理 · output: checks</text>
   <text x="210" y="1020" text-anchor="middle" class="detail">失败回到实施 lane 修复</text>
 
   <rect x="460" y="950" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="600" y="978" text-anchor="middle" class="label">独立双轴 Review</text>
-  <text x="600" y="1001" text-anchor="middle" class="detail">Astra / low · Standards + Spec</text>
+  <text x="600" y="978" text-anchor="middle" class="label">Whole-change 双轴 Review</text>
+  <text x="600" y="1001" text-anchor="middle" class="detail">Sol / xhigh · Standards + Spec</text>
   <text x="600" y="1020" text-anchor="middle" class="detail">blocking finding 修复后复核</text>
 
   <rect x="850" y="950" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
   <text x="990" y="978" text-anchor="middle" class="label">Integration + Closeout</text>
-  <text x="990" y="1001" text-anchor="middle" class="detail">集成 worktree · focused checks · archive</text>
+  <text x="990" y="1001" text-anchor="middle" class="detail">coordinator 回读 · focused checks · archive</text>
   <text x="990" y="1020" text-anchor="middle" class="detail">远程动作仍需独立授权</text>
 
   <text x="946" y="209" class="edge-label">下一 ready frontier / 恢复</text>
