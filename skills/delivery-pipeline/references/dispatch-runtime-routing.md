@@ -68,9 +68,7 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
   不要求当前配置一致；失败时保留 `setup_blocked`，不静默回落。用户明确选择改配时才经 setup
   验证新配置并更新 registry。
 - version 2 role triple 与 `direct` 计划都沿既有一次启动流程；`staged` 计划在对应阶段 adapter
-  具备前只保存冻结结果并保持 blocked，不能退回 direct。Pi 的 `staged` 计划由
-  `scripts/pi_adapter.py` 复用原生 TUI 接缝，其他 agent 在对应 adapter 具备前只保存冻结结果并
-  保持 blocked，不能退回 direct。
+ 具备前只保存冻结结果并保持 blocked，不能退回 direct。
 - cleanup 只关闭本 lane pane并按 `pane-lifecycle-rules.md` 同步 tab label,以及本 lane
   Execution Worktree/branch;保留 Coordinator Pane及承载它的 user-visible session/workspace。
 - Herdr unavailable 时输出完整 durable packet并报告 `dispatch unavailable`，不假装已经派发。

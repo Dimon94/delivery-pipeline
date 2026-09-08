@@ -5,10 +5,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-CORE_SCRIPTS = Path(__file__).resolve().parents[2] / "delivery-pipeline" / "scripts"
-sys.path.insert(0, str(CORE_SCRIPTS))
-from pi_adapter import PiAdapterError, build_start_command
-
 ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}
 AGENTS = {"pi", "codex", "claude"}
 FIELDS = {"agent", "model", "effort"}
@@ -201,20 +197,9 @@ def verify_overlay(plan: dict, overlay: object) -> dict:
 
 
 def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
-    """构造 Herdr 原生请求；Pi staged 使用原生 TUI adapter。"""
+    """构造 Herdr 原生请求；阶段 adapter 缺失时让 staged lane 失败。"""
     if plan.get("mode") == "staged":
-        if plan.get("agent") != "pi":
-            raise ValueError(f"staged execution adapter unavailable for {plan.get('agent')}; refusing silent direct fallback")
-        if plan.get("capability") != "verified":
-            raise ValueError("capability evidence is required before staged startup")
-        starting = plan.get("starting")
-        if not isinstance(starting, dict):
-            raise ValueError("Pi staged plan is missing starting model/effort")
-        try:
-            return build_start_command(worker_name=worker_name, pane_id=pane_id,
-                                       model=starting.get("model"), effort=starting.get("effort"))
-        except PiAdapterError as error:
-            raise ValueError(str(error)) from error
+        raise ValueError("staged execution adapter unavailable; refusing silent direct fallback")
     if plan.get("mode") not in {"legacy", "direct"}:
         raise ValueError("execution plan is not runnable")
     if plan.get("capability") not in {"legacy-config", "verified"}:
@@ -330,25 +315,13 @@ def self_test() -> list[str]:
         pass
     else:
         failures.append("v2 capability mismatch was accepted")
-    staged_pi = resolve_plan(phased, "backend", evidence=evidence, output_mode="commit")
     try:
-        command = startup_request(staged_pi, worker_name="worker", pane_id="pane")
-    except ValueError:
-        failures.append("Pi staged mode did not use its native adapter")
+        startup_request(resolve_plan(phased, "backend", output_mode="commit"), worker_name="worker", pane_id="pane")
+    except ValueError as error:
+        if "adapter unavailable" not in str(error):
+            failures.append("staged mode failed for the wrong reason")
     else:
-        if command[5] != "pi" or "--thinking" not in command:
-            failures.append("Pi staged startup omitted its native model/thinking arguments")
-    for agent in ("codex", "claude"):
-        case = json.loads(json.dumps(phased))
-        case["roles"]["backend"]["agent"] = agent
-        try:
-            plan = resolve_plan(case, "backend", evidence=evidence, output_mode="commit")
-            startup_request(plan, worker_name="worker", pane_id="pane")
-        except ValueError as error:
-            if "adapter unavailable" not in str(error):
-                failures.append(f"{agent} staged mode failed for the wrong reason")
-        else:
-            failures.append(f"{agent} staged mode silently became runnable")
+        failures.append("staged mode silently became runnable")
     for agent in sorted(AGENTS):
         plan = {"mode": "direct", "agent": agent, "model": "provider/model", "effort": "high",
                 "capability": "verified"}
