@@ -290,6 +290,49 @@ def check() -> None:
                       "readback-after-lease")
         registry.persist({"continuation": leased["continuation"]})
         leased = registry.readback()
+        # #110：lease 已落盘但发送前崩溃，只有 lease 后权威未见回读可恢复。
+        recovery_registry = Registry(leased)
+        lease_observation = post_marker_observation(document, leased)
+        lease_observation["request_probe"]["after_lease"] = True
+        lease_observation["request_probe"]["read_at"] = "2026-09-08T00:00:40Z"
+        for changed in (
+            {"status": "seen"}, {"status": "Unknown"}, {"request_id": "other-request"},
+            {"after_lease": False}, {"after_lease": "Unknown"}, {"settled": False},
+            {"source": "Unknown"}, {"read_at": ""},
+        ):
+            unsafe = copy.deepcopy(lease_observation)
+            unsafe["request_probe"].update(changed)
+            result = prepare(document, recovery_registry.readback(), unsafe)
+            assert result["request"] is None and result["overlay"] is None
+        for seen in (True, "Unknown", None):
+            unsafe = copy.deepcopy(lease_observation)
+            unsafe["request_seen"] = seen
+            assert prepare(document, recovery_registry.readback(), unsafe)["overlay"] is None
+        recovery = prepare(document, recovery_registry.readback(), lease_observation)
+        assert_action(recovery, "persist-request-before-send")
+        assert recovery["request"] is None and recovery_registry.send_count == 0
+        try:
+            recovery_registry.persist(recovery["overlay"], fail=True)
+        except OSError:
+            pass
+        assert recovery_registry.readback() == leased
+        assert ready_to_send(document, recovery_registry.readback(), lease_observation)["request"] is None
+        recovery_registry.persist(recovery["overlay"])
+        recovered = recovery_registry.readback()
+        assert recovered["continuation"]["state"] == "dispatching"
+        new_lease = ready_to_send(document, recovered, lease_observation)
+        assert_action(new_lease, "persist-send-lease")
+        recovery_registry.persist(new_lease["overlay"])
+        assert recovery_registry.readback()["continuation"] == new_lease["overlay"]["continuation"]
+        recovery_registry.send_count += 1
+        assert new_lease["request"] is not None
+        # 同一回读不能回收刚由它生成的 lease。
+        assert ready_to_send(document, recovery_registry.readback(), lease_observation)["overlay"] is None
+        seen_observation = copy.deepcopy(lease_observation)
+        seen_observation["request_seen"] = True
+        seen_observation["request_probe"]["status"] = "seen"
+        assert prepare(document, recovery_registry.readback(), seen_observation)["request"] is None
+        assert recovery_registry.send_count == 1
         acceptance_first = copy.deepcopy(leased)
         acceptance_first, status = CONTINUATION.record_event(acceptance_first, "acceptance", {
             "accepted": True, "status": "accepted", "source": "session-readback",

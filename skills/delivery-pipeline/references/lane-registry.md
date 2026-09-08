@@ -134,6 +134,13 @@ SHA-256 和 target request 唯一确定；`state` 依次记录 `prepared`、`dis
 `dispatching` 只能在带当前 `request_id`、`after_marker: true`、`settled: true`、非空来源/时间的发送后
 readback 且明确 `not_seen` 时返回可发送请求；旧 stopped 观测、在途调用或缺少 readback 只能回读，不能重发。
 
+`send-authorized` 已落盘但发送前崩溃时，只有当前 `request_id` 的权威回读明确
+`request_seen: false`、`not_seen`、`after_marker: true`、`after_lease: true`、`settled: true`，
+且来源/时间非空、不是生成当前 lease 的同一 `send_probe`，才返回恢复到 `dispatching` 的 overlay。
+该步返回 `request: null`；coordinator 必须持久化并读回后，再生成、持久化并读回新的 send lease 才发送。
+同一 intent 保持既有 request_id；恢复回读保存在 `send_probe`，不新增协议或 journal。
+seen、Unknown、身份不匹配或仅有 lease 前回读均保留现场，不重发；acceptance 可独立先于发送回执到达。
+
 `request`、`tool_acceptance`、`new_turn`、`actual_model` 是四个独立字段；发送结果 Unknown 只允许
 回读原 session，不允许增加请求数。`new_turn` 必须绑定本次 `request_id`、原 session 和新的
 `turn_id`；只有原 session 的 `new_turn.started: true` 才能把 `execution_phase` 写为 `executing`。

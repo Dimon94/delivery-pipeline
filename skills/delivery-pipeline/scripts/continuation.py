@@ -376,8 +376,14 @@ def ready_to_send(
                 "request": None, "overlay": {"continuation": next_continuation},
                 "intent_sha256": continuation["intent"][CHECKPOINT.INTENT_FINGERPRINT_FIELD],
                 "reason": "发送前先持久化 dispatching request marker"}
-    if state == "dispatching":
+    if state in {"dispatching", "send-authorized"}:
         marker = continuation.get("request")
+        if state == "send-authorized" and (
+                not _not_seen_after_marker(marker, observation)
+                or observation["request_probe"].get("after_lease") is not True
+                or observation["request_probe"] == continuation.get("send_probe")):
+            return _blocked("send lease 缺少新的 lease 后 settled not_seen 回读；禁止再次授权",
+                            action="readback-after-lease")
         if observation.get("request_seen") is not False:
             return _blocked("dispatching request 的 runtime readback 为 Unknown/已见，禁止盲重发",
                             action="readback-after-unknown")
@@ -388,12 +394,21 @@ def ready_to_send(
                 or marker.get("request_id") != "request-" + expected_intent_sha
                 or marker.get("intent_sha256") != expected_intent_sha
                 or marker.get("target_request") != continuation["intent"]["target_request"]
-                or marker.get("status") != "dispatching"):
+                or marker.get("status") != state):
             return _blocked("dispatching request marker 与 intent 不匹配，禁止发送")
         try:
             _text(marker.get("source"), "request_marker.source")
         except ContinuationError as error:
             return _blocked(str(error))
+        if state == "send-authorized":
+            recovered = copy.deepcopy(continuation)
+            recovered["state"] = "dispatching"
+            recovered["request"]["status"] = "dispatching"
+            recovered["send_probe"] = copy.deepcopy(observation["request_probe"])
+            return {"action": "persist-request-before-send", "can_continue": False, "fan_in": False,
+                    "request": None, "overlay": {"continuation": recovered},
+                    "intent_sha256": expected_intent_sha,
+                    "reason": "lease 后权威未见；先持久化恢复 overlay 并读回，再生成新 send lease"}
         if not _not_seen_after_marker(marker, observation):
             return _blocked("缺少当前 dispatching request 的发送后 readback，禁止重发",
                             action="readback-after-unknown")
@@ -410,9 +425,6 @@ def ready_to_send(
                 "request": request, "overlay": {"continuation": lease},
                 "intent_sha256": continuation["intent"][CHECKPOINT.INTENT_FINGERPRINT_FIELD],
                 "reason": "发送授权只消费一次；先持久化 send lease + readback，再使用 request"}
-    if state == "send-authorized":
-        return _blocked("send lease 已持久化，禁止再次授权；等待 runtime 回传",
-                        action="readback-after-lease")
     if state == "send-unknown":
         return _blocked("send result Unknown，必须先回读原 session", action="readback-after-unknown")
     if state in {"sent", "accepted", "started", "executing"}:
