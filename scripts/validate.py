@@ -591,8 +591,9 @@ def check_app_shell() -> None:
     subprocess.run([sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True)
     require(APP / "SKILL.md", ("每次调用的执行核验", "subagent 入口"))
     require(APP / "references" / "development-mode.md", (
-        "scripts/prewalk.py subagent", "active_count", "invoke-owner",
+        "scripts/prewalk.py coordinator", "scripts/prewalk.py subagent", "active_count", "invoke-owner",
         "宿主更低上限仍优先", "不改其他 repo 或全局配置",
+        "每次启动或恢复前", "gpt-5.6-sol` / `high", "用户明确选择优先", "该入口不限制模型",
     ))
     require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
         "执行 helper：", "absolute resolved", "每次调用的执行核验",
@@ -601,6 +602,8 @@ def check_app_shell() -> None:
     require(APP / "references" / "development-mode.md", (
         "gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna",
         "second opinion", "reasoning_effort", "thinking",
+        "implementation 两轴使用 Astra / low", "whole-change 两轴使用 Sol / xhigh",
+        "Testing 与 Integration 分两次串行",
         'default_subagent_reasoning_effort = "max"', 'service_tier = "default"',
         "不启用 fast", "用户确认", "只读",
     ))
@@ -610,7 +613,7 @@ def check_app_shell() -> None:
     ))
     # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
     require(APP / "references" / "development-mode.md", (
-        "`astra-luna`（默认）", "`astra-sol`", "`sol-direct`",
+        "`sol-luna`（默认）", "`sol-sol`", "`sol-direct`",
         "PREWALK_READY", "send_message_to_thread", "phase: switching",
         "不能盲目重发", "尚未做端到端验证",
     ))
@@ -629,6 +632,7 @@ def check_app_shell() -> None:
     ))
     require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
         "开发模式合同：", "Requested model：", "Requested effort：",
+        "review_scope: implementation", "review_scope: whole-change",
     ))
     require(
         APP / "SKILL.md",
@@ -638,11 +642,13 @@ def check_app_shell() -> None:
             "coordinator_runtime: codex-app",
             "dispatch_runtime: codex-app",
             "跳过 canonical CLI 主干的 model-role 配置 gate",
-            "canonical 的六个 delegated roles 全部使用 `runtime: codex-thread`",
+            "canonical 六个 role 与 output mode 保持不变",
             "planning → `output_mode: artifact`",
             "design/frontend/backend implementation → `output_mode: commit`",
             "testing → `output_mode: checks`",
             "review → `output_mode: verdict`",
+            "Testing 与 Review 不另建 App task/worktree",
+            "Integration 由 coordinator 单独串行委派 Luna / max",
             "App-managed Execution Worktree",
             "references/codex-app-dispatch.md",
             "assets/APP_ROLE_DISPATCH_PACKET.md",

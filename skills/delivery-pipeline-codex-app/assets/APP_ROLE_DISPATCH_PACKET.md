@@ -11,7 +11,7 @@ Terminal 回传合同：<absolute delivery-pipeline-codex-app/references/codex-a
 Role：<planning | design | frontend | backend | testing | review>
 Output mode：<commit | artifact | checks | verdict>
 Agent：codex-app
-Development mode：<astra-luna | astra-sol | sol-direct | none; 按开发模式合同解析>
+Development mode：<sol-luna | sol-sol | sol-direct | none; legacy astra-* 仅恢复>
 Mode source：<ticket 用户选择 | map 持久选择 | default | existing lane>
 Execution phase：<starting | switching | executing | none>
 Checkpoint：<absolute checkpoint artifact path | none>
@@ -52,7 +52,8 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   处理 Work item。invocation label 只是元数据。
 - 当前 owner 直接或嵌套调用 `code-review` 时，完整读取 Review evidence preflight；`commit` mode
   的 Review fixed point 等于本 Execution Worktree 的 Base commit，`verdict` mode 等于 map registry
-  base commit。preflight bundle 完成前不派生 Standards/Spec 子审查。
+  base commit。前者传 `review_scope: implementation`，后者传 `review_scope: whole-change`；
+  preflight bundle 完成前不派生 Standards/Spec 子审查。
 - 只处理本 Work item，不领取 sibling/dependent item，也不进入下一 gate。
 - `commit`：先按 Development mode 与 Execution phase 执行开发模式合同；starting 时按机械核验入口生成并保存 checkpoint snapshot，PREWALK_READY 后停止，只有 executing 继续下面的最终交付步骤。实现变更；owner 调用 `code-review` 时先按 Review evidence preflight 物化当前 dirty
   worktree 证据，再创建单一 local commit并报告 hash。

@@ -18,6 +18,14 @@ def call(command, data, success=True):
 
 
 def check():
+    coordinator = call("coordinator", {"model": "gpt-5.6-sol", "effort": "high", "source": "turn_context"})
+    assert coordinator["action"] == "verified"
+    for model, effort, source in (("gpt-5.6-sol", "low", "turn_context"),
+                                  ("gpt-6-astra", "high", "turn_context"),
+                                  ("gpt-5.6-sol", "high", "")):
+        observed = call("coordinator", {"model": model, "effort": effort, "source": source})
+        assert observed["action"] == ("verified" if source else "Unknown")
+        assert observed["model"] == (model if source else "Unknown")
     sizing = call("subagent", {"work": "ticket-sizing", "active_count": 0, "source": "live list", "read_only": False})
     assert sizing["request"] == {"model": "gpt-5.6-sol", "reasoning_effort": "high", "fork_turns": "none"}
     assert sizing["read_only"] is True
@@ -27,13 +35,19 @@ def check():
     assert support["read_only"] is True
     opinion = call("subagent", {"work": "second-opinion", "active_count": 0, "source": "live list", "read_only": False})
     assert opinion["request"]["model"] == "gpt-6-astra" and opinion["read_only"] is True
+    for work in ("testing", "integration"):
+        delegated = call("subagent", {"work": work, "active_count": 0, "source": "live list", "read_only": False})
+        assert delegated["request"] == {"model": "gpt-5.6-luna", "reasoning_effort": "max", "fork_turns": "none"}
+        assert delegated["read_only"] is (work == "testing")
+        call("subagent", {"work": work, "active_count": 1, "source": "live list", "read_only": False}, False)
+    call("subagent", {"work": "integration", "active_count": 0, "source": "live list", "read_only": True}, False)
     assert call("subagent", {"work": "assistance", "active_count": 3, "source": "live list", "read_only": False})["request"] is None
     assert call("subagent", {"work": "review", "active_count": 2, "source": "live list", "read_only": True})["action"] == "wait"
     assert call("subagent", {"work": "review", "active_count": 0, "source": "live list", "read_only": True})["action"] == "invoke-owner"
     call("subagent", {"work": "assistance", "active_count": -1, "source": "live list", "read_only": True}, False)
     call("subagent", {"work": "assistance", "active_count": 0, "source": "", "read_only": True}, False)
     # #638/#642：原型的实施建议没有 Spec/拆票证据，不能创建实施 lane。
-    for mode in ("astra-luna", "astra-sol", "sol-direct"):
+    for mode in ("sol-luna", "sol-sol", "sol-direct"):
         call("resolve", {"role": "frontend", "output_mode": "commit", "ticket_mode": mode}, False)
     gate = {"work_item": "ticket-643", "map": "map-638", "gate_evidence": {
         "readback": "fixture tracker snapshot 2026-09-07", "discovery": "decision resolution and user confirmation",
@@ -69,10 +83,10 @@ def check():
     del missing_sizing["gate_evidence"]["ticket"]["sizing"]
     call("resolve", missing_sizing, False)
     default = call("resolve", base)
-    assert default["overlay"]["development_mode"] == "astra-luna"
-    assert default["request"] == {"model": "gpt-6-astra", "thinking": "low"}
-    assert call("resolve", {**base, "map_mode": "astra-sol"})["overlay"]["mode_source"] == "map"
-    direct = call("resolve", {**base, "ticket_mode": "sol-direct", "map_mode": "astra-luna"})
+    assert default["overlay"]["development_mode"] == "sol-luna"
+    assert default["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
+    assert call("resolve", {**base, "map_mode": "sol-sol"})["overlay"]["mode_source"] == "map"
+    direct = call("resolve", {**base, "ticket_mode": "sol-direct", "map_mode": "sol-luna"})
     assert direct["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
     assert direct["overlay"]["execution_phase"] == "executing"
     assert call("resolve", {**base, "existing_lane": {"model": "old"}})["request"] is None
@@ -119,9 +133,11 @@ def check():
         assert "起步轮限制已结束" in prepared["request"]["prompt"]
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
         assert call("prepare", {**data, "lane": {**lane, "execution_phase": "executing"}})["request"] is None
-        sol = call("prepare", {**data, "lane": {**lane, "development_mode": "astra-sol"}})
+        sol = call("prepare", {**data, "lane": {**lane, "development_mode": "sol-sol"}})
         assert sol["request"]["model"] == "gpt-5.6-sol"
         assert sol["request"]["thinking"] == "high"
+        legacy = call("prepare", {**data, "lane": {**lane, "development_mode": "astra-luna"}})
+        assert legacy["request"]["model"] == "gpt-5.6-luna"
         pending = call("prepare", {**data, "observation": {**data["observation"], "status": "active"}})
         assert pending["action"] == "wait-for-stop" and pending["request"] is None
         assert pending["target"] == {"threadId": "same-task", "hostId": "local"}
@@ -138,7 +154,7 @@ def check():
         git("reset")
         (root / "extra.txt").write_text("untracked")
         assert "检查点已过期" in call("prepare", data, False)
-    print("prewalk dispatch: pass (spec/tickets gate, modes, recovery, same-task, stopped, stale, duplicate, Unknown)")
+    print("prewalk dispatch: pass (coordinator, spec/tickets gate, modes, recovery, same-task, stopped, stale, duplicate, Unknown)")
 
 
 if __name__ == "__main__":

@@ -9,9 +9,14 @@ import stat
 import subprocess
 import sys
 
-MODES = {"astra-luna": ("gpt-5.6-luna", "max"),
-         "astra-sol": ("gpt-5.6-sol", "high"),
-         "sol-direct": ("gpt-5.6-sol", "high")}
+MODES = {"sol-luna": ("gpt-5.6-luna", "max"),
+         "sol-sol": ("gpt-5.6-sol", "high"),
+         "sol-direct": ("gpt-5.6-sol", "high"),
+         # 只用于恢复已持久化的旧 lane。
+         "astra-luna": ("gpt-5.6-luna", "max"),
+         "astra-sol": ("gpt-5.6-sol", "high")}
+NEW_MODES = {"sol-luna", "sol-sol", "sol-direct"}
+PREWALK_MODES = {"sol-luna", "sol-sol", "astra-luna", "astra-sol"}
 check_implementation = runpy.run_path(str(Path(__file__).resolve().parents[2] /
     "delivery-pipeline/scripts/implementation_gate.py"))["check"]
 
@@ -57,15 +62,15 @@ def resolve(data):
     if data.get("output_mode") != "commit" or data.get("role") not in ("design", "frontend", "backend"):
         return {"action": "not-applicable", "request": None}
     check_implementation(data)
-    mode, source = "astra-luna", "default"
+    mode, source = "sol-luna", "default"
     for key in ("ticket_mode", "map_mode"):
         if data.get(key) is not None:
             mode, source = data[key], key.removesuffix("_mode")
             break
-    if mode not in MODES:
+    if mode not in NEW_MODES:
         raise ValueError("非法 development_mode")
     direct = mode == "sol-direct"
-    model, effort = MODES[mode] if direct else ("gpt-6-astra", "low")
+    model, effort = "gpt-5.6-sol", "high"
     return {"action": "create", "overlay": {"development_mode": mode, "mode_source": source,
             "execution_phase": "executing" if direct else "starting", "checkpoint": None,
             "requested_model": model, "requested_effort": effort,
@@ -73,11 +78,19 @@ def resolve(data):
             "request": {"model": model, "thinking": effort}}
 
 
+def coordinator(data):
+    if not all(isinstance(data.get(k), str) and data[k].strip() and data[k] != "Unknown"
+               for k in ("model", "effort", "source")):
+        return {"action": "Unknown", "model": "Unknown", "effort": "Unknown", "source": "Unknown"}
+    return {"action": "verified", "model": data["model"], "effort": data["effort"],
+            "source": data["source"]}
+
+
 def prepare(data):
     lane = data["lane"]
     if lane.get("execution_phase") in ("switching", "executing"):
         return {"action": "readback", "overlay": lane, "request": None}
-    if lane.get("execution_phase") != "starting" or lane.get("development_mode") not in ("astra-luna", "astra-sol"):
+    if lane.get("execution_phase") != "starting" or lane.get("development_mode") not in PREWALK_MODES:
         raise ValueError("当前 lane 不允许 Prewalk 接续")
     if lane.get("state") != "running":
         raise ValueError("当前 lane 非 running")
@@ -132,18 +145,22 @@ def prepare(data):
 def subagent(data):
     """父会话先读宿主活跃列表；这个入口不创建或锁定子代理。"""
     work, count = data["work"], data["active_count"]
-    if work not in ("assistance", "second-opinion", "review", "ticket-sizing"):
+    if work not in ("assistance", "second-opinion", "review", "ticket-sizing", "testing", "integration"):
         raise ValueError("非法内部工作类型")
     if type(count) is not int or count < 0 or not data.get("source") or type(data.get("read_only")) is not bool:
         raise ValueError("缺少有效的宿主并发/父权限观测")
     slots = 2 if work == "review" else 1
-    result = {"request": None, "read_only": data["read_only"] or work != "assistance",
+    if work in ("testing", "integration") and count != 0:
+        raise ValueError(work + " 需要独占父会话的子代理容量")
+    if work == "integration" and data["read_only"]:
+        raise ValueError("integration 需要父任务写权限")
+    result = {"request": None, "read_only": data["read_only"] or work not in ("assistance", "integration"),
               "required_slots": slots, "limit": 3}
     if count + slots > 3:
         return {**result, "action": "wait"}
     if work == "review":
         return {**result, "action": "invoke-owner"}
-    model, effort = ("gpt-5.6-luna", "max") if work == "assistance" else ("gpt-6-astra", "low")
+    model, effort = ("gpt-5.6-luna", "max") if work in ("assistance", "testing", "integration") else ("gpt-6-astra", "low")
     if work == "ticket-sizing":
         model, effort = "gpt-5.6-sol", "high"
     return {**result, "action": "spawn", "request": {
@@ -156,6 +173,8 @@ def main():
         command = sys.argv[1]
         if command == "snapshot":
             result = snapshot(data["worktree"])
+        elif command == "coordinator":
+            result = coordinator(data)
         elif command == "resolve":
             result = resolve(data)
         elif command == "subagent":

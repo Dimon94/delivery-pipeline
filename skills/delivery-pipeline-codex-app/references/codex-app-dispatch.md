@@ -1,7 +1,7 @@
 # Codex App Native Dispatch Adapter
 
 仅 `delivery-pipeline-codex-app` 加载。本文件拥有 Codex App task/thread transport、App registry
-overlay 与六角色 fan-in；canonical CLI/Herdr 主干不读取它。
+overlay、外层 task fan-in 与内部 gate subagents；canonical CLI/Herdr 主干不读取它。
 
 ## Capability
 
@@ -11,15 +11,16 @@ overlay 与六角色 fan-in；canonical CLI/Herdr 主干不读取它。
 
 ## Role Coverage
 
-| Role/work | Output mode | Fan-in |
-|---|---|---|
-| planning / design HITL | `artifact` | artifact/tracker readback → consumed |
-| design/frontend/backend implementation | `commit` | cherry-pick + focused checks → integrated |
-| testing | `checks` | check evidence readback → consumed |
-| review | `verdict` | verdict/findings readback → consumed |
+| Role/work | Execution | Output mode | Fan-in |
+|---|---|---|---|
+| planning / design HITL | App task | `artifact` | artifact/tracker readback → consumed |
+| design/frontend/backend implementation | App task | `commit` | Integration subagent + focused checks → integrated |
+| testing | Luna / max subagent | `checks` | check evidence readback → consumed |
+| review | code-review 双轴 subagents | `verdict` | verdict/findings readback → consumed |
 
-所有 delegated roles 使用 `../assets/APP_ROLE_DISPATCH_PACKET.md`；没有 role 可以回落到不存在的
-CLI config。模型选择与首次建图入口读取 `development-mode.md`；用户 gate 判断由 coordinator
+外层 task roles 使用 `../assets/APP_ROLE_DISPATCH_PACKET.md`；内部 Testing、Review 与 Integration
+由 coordinator 组装同等范围、证据和权限 prompt。没有 role 可以回落到不存在的 CLI config。
+模型选择与首次建图入口读取 `development-mode.md`；用户 gate 判断由 coordinator
 核验确认与持久产物。
 
 ## App Registry Overlay
@@ -29,7 +30,7 @@ App lane 在 canonical role/state字段之外增加：
 ```yaml
 runtime: codex-thread
 agent: codex-app
-development_mode: <astra-luna | astra-sol | sol-direct | none>
+development_mode: <sol-luna | sol-sol | sol-direct | none; legacy astra-* only on recovery>
 mode_source: <ticket | map | default | existing lane>
 execution_phase: <starting | switching | executing | none>
 checkpoint: <absolute artifact path | none>
@@ -54,6 +55,9 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 
 ## 创建
 
+先从宿主读取当前 task 的实际 model/effort/source，用 `scripts/prewalk.py coordinator` 记录；
+推荐配置允许用户覆盖，Unknown 或偏离推荐值本身不阻断创建或恢复。
+
 1. implementation 新 lane 先回读 canonical gate-state-machine 的实施前置证据，再按开发模式合同
    调用 `scripts/prewalk.py resolve`；非零退出不得创建任务，把通过后的模式与
    当前阶段请求写入 packet/overlay；recover 只恢复、不新建。解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
@@ -73,6 +77,12 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 5. 写 base registry + App overlay并精确 readback；task 已接受 packet后写 running/awaiting_human。
 6. 整批 startup 完成后用 `wait_threads`（`timeoutMs: 0`，targets 带 threadId/hostId）读一次快照，
    保存返回 cursor；已终态的 lane 立即 fan-in，其余在确认 packet 包含回传合同后 Dispatch Handoff。
+
+Testing 和 Review gate 不进入本节创建流程。coordinator 先持久化 gate fixed point 与不可变证据，
+再通过 `scripts/prewalk.py subagent` 取得显式模型参数；Testing 单独请求 Luna / max，Review
+调用 owner 并传 `implementation` 或 `whole-change` scope。两者都只读并在回传后由 coordinator
+核验结果。逐票 Integration 也走 subagent 入口，但要求父任务可写、active_count 为 0，并只允许
+写指定 Integration Worktree；完成后 coordinator 重新读取 HEAD、commit、worktree 状态与 checks。
 
 ## Prewalk 中间回传
 
@@ -107,15 +117,17 @@ blocked 进入受阻分支，其余 ready lanes 继续推进；回传不扩大 t
 
 ## Role-aware Fan-in
 
-terminal 后 `read_thread` 一次并验证 output mode：
+外层 task terminal 后 `read_thread` 一次；内部 Testing、Review、Integration 则读取 subagent
+回传与持久证据。随后按 output mode 验证：
 
 - `commit`：先回读 canonical gate-state-machine 的实施前置证据，缺失则保留现场并阻塞 Integration；要求 terminal commit、内嵌 code-review 的 Review fixed point 等于 lane base commit、
   Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
   focused checks通过后写 integrated。
 - `artifact`：验证 tracker/artifact坐标；无必要 repo 变更时 worktree必须 clean，写 consumed。
-- `checks`：验证测试命令/结果且 worktree clean，写 consumed；失败阻塞 review。
+- `checks`：验证 Luna / max 测试命令/结果且 worktree clean，写 consumed；失败阻塞 review。
 - `verdict`：验证 Review fixed point 等于 map registry base commit、Review Evidence Bundle readback、
-  review verdict/findings且 worktree clean，写 consumed；blocking finding阻塞 closeout。
+  `whole-change` scope、Sol / xhigh 两轴 review verdict/findings且 worktree clean，写 consumed；
+  blocking finding阻塞 closeout。
 
 非 commit lane 不要求 commit，也不 cherry-pick；unexpected file changes fail closed。
 
@@ -134,5 +146,6 @@ terminal 后 `read_thread` 一次并验证 output mode：
   live task。
 - commit lane focused checks失败时 task保持未归档；artifact/checks/verdict lane证据失败同样保留 task。
 
-完成标准：六角色都有 task transport、output-mode fan-in与 archive路径；App overlay、task、
-App-managed Execution Worktree 与持久证据一致。
+完成标准：外层 roles 有 task transport 与 archive 路径；内部 Testing/Review/Integration 有
+subagent 请求、运行 readback、output-mode fan-in 与持久证据。App overlay、task/worktree 与
+持久证据一致。
