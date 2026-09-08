@@ -53,9 +53,9 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再按其 contract
   处理 Work item。invocation label 只是元数据。
 - 正式 Review 由 coordinator 调用 resolved code-review owner；packet 只传 owner triple、
-  `review_scope: implementation | whole-change` 与 Review evidence preflight，不替 owner 选择模型或 effort。`commit` mode 的 scope
-  为 `implementation`、fixed point 等于 Execution Base commit；`verdict` mode 的 scope 为
-  `whole-change`、fixed point 等于 map registry base commit。preflight bundle 完成前不派生
+  Review scope 与 Review evidence preflight，不替 owner 选择模型或 effort。`commit` mode 传
+  `review_scope: implementation`，fixed point 等于 Execution Base commit；`verdict` mode 传
+  `review_scope: whole-change`，fixed point 等于 map registry base commit。preflight bundle 完成前不派生
   Standards/Spec 子审查。
 - 只处理本 Work item，不领取 sibling/dependent item，也不进入下一 gate。
 - `commit`：先按 Development mode 与 Execution phase 执行开发模式合同；starting 时通过

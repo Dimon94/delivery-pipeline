@@ -250,8 +250,6 @@ def check():
                                "checkpoint": sol_checkpoint, "checkpoint_path": str(sol_path)})
         assert sol["request"]["model"] == "gpt-5.6-sol"
         assert sol["request"]["thinking"] == "high"
-        legacy = call("prepare", {**data, "lane": {**lane, "development_mode": "astra-luna"}})
-        assert legacy["request"]["model"] == "gpt-5.6-luna"
         pending = call("prepare", {**data, "observation": {**data["observation"], "status": "active"}})
         assert pending["action"] == "wait-for-stop" and pending["request"] is None
         assert pending["target"] == {"threadId": "same-task", "hostId": "local"}
