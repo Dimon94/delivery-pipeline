@@ -65,7 +65,9 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   照常交付并在 final report 记录 runtime 实际值与 evidence。
 - `starting` implementation 先完成首处有意义修改与最小检查，再用 checkpoint helper 采集完整
   Execution Worktree/Git dirty snapshot，向 repo 外同目录原子写入 checkpoint，并在持久读回后发送
-  `PREWALK_READY <lane_id> <checkpoint_path>`；发送后立即结束本回合，保留 dirty 现场，不得继续实现、
+  `PREWALK_READY <lane_id> <checkpoint_path>` 独立完整行（不加引号、反引号或说明前缀，path 为绝对路径）；
+  watcher 在本进程内对同一完整 marker 只唤醒一次 coordinator 核验 checkpoint/停止证据，继续监听 LANE_DONE。
+  发送后立即结束本回合，保留 dirty 现场，不得继续实现、
   审查、commit、接续或 fan-in。该信号只表示 checkpoint 待核验，不能触发 Terminal fan-in、cherry-pick
   或归档；checkpoint 更新必须使用新的 repo 外 artifact 路径，不覆盖旧阶段意图。
 - Coordinator 必须再从原 runtime 读回真实停止证据，且 observation 的 runtime、原生 session 与

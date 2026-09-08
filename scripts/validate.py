@@ -560,6 +560,7 @@ def check_lane_wakeup() -> None:
         (
             "Lane ID：",
             "LANE_DONE <lane_id>",
+            "同一完整 marker 只唤醒一次",
         ),
     )
     lifecycle = CORE / "references" / "pane-lifecycle-rules.md"
@@ -569,6 +570,8 @@ def check_lane_wakeup() -> None:
             "scripts/lane-watch.sh",
             "LANE_DONE <lane_id>",
             "`done` 事件",
+            "PREWALK_READY <lane_id> <checkpoint_path>",
+            "watcher 不退出并继续监听 LANE_DONE",
         ),
     )
     code_blocks = re.findall(
@@ -595,6 +598,7 @@ def check_lane_wakeup() -> None:
         if banned in watcher_text:
             record(f"lane-watch.sh carries session-specific hardcode: {banned}")
     subprocess.run(["bash", "-n", str(watcher)], check=True)
+    subprocess.run([sys.executable, str(CORE / "scripts" / "lane_watch_check.py")], check=True)
 
 
 def check_app_shell() -> None:

@@ -105,6 +105,13 @@ Pane；pane 异常消失或两小时超时也会唤醒 coordinator 处理。HITL
 信号为准，watcher 只作 terminal 补充。WAKE 只负责唤醒；Git、tracker、artifact 与 registry
 承载完成证据。
 
+watcher 还逐行精确识别 `PREWALK_READY <lane_id> <checkpoint_path>`：lane ID 字面相等，
+checkpoint_path 为绝对路径（可含空格），不加引号、反引号或说明前缀。每个完整 marker 在
+同一 watcher 进程内只唤醒一次，即使持续可见或再次出现；新 artifact 路径视为新 marker。
+此回调只请 coordinator 核验 checkpoint/停止证据，不直接接续、不触发 terminal fan-in，
+watcher 不退出并继续监听 LANE_DONE。重启 watcher 后仍由 coordinator 持久证据与既有 lease
+去重。可复跑检查：`python3 skills/delivery-pipeline/scripts/lane_watch_check.py`。
+
 ## Lifecycle 配对
 
 派发:tab create/pane split → placement verify → start → non-blocking prompt → rename/label
