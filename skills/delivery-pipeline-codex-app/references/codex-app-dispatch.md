@@ -34,6 +34,8 @@ development_mode: <sol-luna | sol-sol | sol-direct | none; legacy astra-* only o
 mode_source: <ticket | map | default | existing lane>
 execution_phase: <starting | switching | executing | none>
 checkpoint: <absolute artifact path | none>
+checkpoint_format: <canonical-v1 | legacy-app-v0>
+checkpoint_sha256: <SHA-256 | Unknown，仅 legacy 恢复>
 requested_model: <development-mode current phase selection>
 requested_effort: <development-mode work selection>
 model: Unknown
@@ -121,34 +123,35 @@ coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，�
 
 ### 独立 Review 放行
 
-正式两轴由 coordinator 调用 code-review owner 管理，implementation worker 不拥有取消、
-改写 verdict 或豁免的权限。原 worker 内嵌审查可作预审，不替代 coordinator 的最终放行。
-worker 可保存候选 commit，但缺独立结论时按 blocked 回传“实现已保存、审查待完成”。
-coordinator 收到候选提交后冻结 base/head，生成 Review Evidence Bundle，启动两轴只读审查。
-修复回原 worker，完成后冻结新 head 并复核；不沿用旧 head 的 PASS。
+正式两轴由 coordinator 调用 resolved code-review owner 管理；App 壳只传 owner triple、
+`review_scope: implementation | whole-change` 与 Review Evidence Bundle，不硬编码 owner、model 或
+effort。implementation worker 不拥有取消、改写 verdict 或豁免的权限，可保存候选 commit，但
+缺独立结论时按 blocked 回传“实现已保存、审查待完成”。修复回原 worker，完成后冻结新 head
+并复核；旧 head 的 PASS 不覆盖新代码。
 
-cherry-pick、integrated、关闭实施票之前，coordinator 必须独立读取 reviewer 宿主记录，调用
-`scripts/prewalk.py review`。输入 worktree、worker_id、base_commit、head_commit 和 reviews，
-reviews 必须包含 standards/spec 两轴；每轴包含 reviewer_id、source（宿主任务/轮次与时间）、
-status、verdict、verdict_text（原始最终结论）、blocking_findings（未解决阻断项数）、base_commit、
-head_commit。只有 completed + pass + 零阻断项、两轴身份独立且版本匹配才可放行。
-source 和 verdict 必须由 coordinator 直接核对，不能复制 worker 提供的“通过凭证”；
-helper 校验结构和当前 Git 现场，不验证宿主来源真实性，不是宿主权限沙箱。
-中断、超时、缺结果、自评和旧版本结论均不得替代 PASS，测试通过也不能替代审查。
+cherry-pick、integrated、关闭实施票之前，coordinator 必须直接读取 reviewer 宿主记录，调用
+`scripts/prewalk.py review`。输入 worktree、worker_id、base_commit、head_commit、resolved owner
+triple、review_scope 与 reviews；reviews 必须包含 standards/spec 两轴，每轴包含 reviewer_id、
+source（宿主任务/轮次与时间）、status、verdict、verdict_text（原始最终结论）、
+blocking_findings（未解决阻断项数）、review_scope、base_commit、head_commit。只有 completed + pass
+零阻断项、两轴身份独立且版本匹配才可放行。source 和 verdict 必须由 coordinator 直接核对，
+不能复制 worker 提供的“通过凭证”；helper 校验结构和当前 Git 现场，不验证宿主来源真实性，
+不是宿主权限沙箱。中断、超时、缺结果、自评和旧版本结论都不能替代 PASS。
+用户明确豁免须单列原话、来源、代码版本和 scope，不伪造 helper PASS。
+
 需取消时由 coordinator 记录原因并恢复或重派；已有合适 reviewer 可复用，无需重复建任务。
-用户明确豁免须单独记录原话、来源、代码版本和范围，人工放行单列，不伪造 helper PASS。
 whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接回读核验，无有效结果则补审。
 
 外层 task terminal 后 `read_thread` 一次；内部 Testing、Review、Integration 则读取 subagent
 回传与持久证据。随后按 output mode 验证：
 
-- `commit`：先回读 canonical gate-state-machine 的实施前置证据，缺失则保留现场并阻塞 Integration；要求 terminal commit、内嵌 code-review 的 Review fixed point 等于 lane base commit、
-  Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
+- `commit`：先回读 canonical gate-state-machine 的实施前置证据，缺失则保留现场并阻塞 Integration；要求候选 commit、`implementation` scope、resolved owner、Review fixed point 等于 lane base commit、
+  独立两轴 Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
   focused checks通过后写 integrated。
 - `artifact`：验证 tracker/artifact坐标；无必要 repo 变更时 worktree必须 clean，写 consumed。
 - `checks`：验证 Luna / max 测试命令/结果且 worktree clean，写 consumed；失败阻塞 review。
 - `verdict`：验证 Review fixed point 等于 map registry base commit、Review Evidence Bundle readback、
-  `whole-change` scope、Sol / xhigh 两轴 review verdict/findings且 worktree clean，写 consumed；
+  resolved owner、`whole-change` scope 与 review verdict/findings且 worktree clean，写 consumed；
   blocking finding阻塞 closeout。
 
 非 commit lane 不要求 commit，也不 cherry-pick；unexpected file changes fail closed。

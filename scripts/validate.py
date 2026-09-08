@@ -604,8 +604,12 @@ def check_lane_wakeup() -> None:
 def check_app_shell() -> None:
     require(APP / "references" / "codex-app-dispatch.md", (
         "scripts/prewalk.py review", "独立 Review 放行", "不验证宿主来源真实性",
+        "review_scope: implementation | whole-change",
     ))
-    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", ("不写 completed", "不能把 blocked 当作无需处理"))
+    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
+        "Review scope：<implementation | whole-change | none>", "不写 completed",
+        "不能把 blocked 当作无需处理",
+    ))
     if not os.access(APP / "scripts" / "prewalk.py", os.X_OK):
         record("App prewalk helper must be executable")
     subprocess.run([sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True)
@@ -614,6 +618,8 @@ def check_app_shell() -> None:
         "scripts/prewalk.py coordinator", "scripts/prewalk.py subagent", "active_count", "invoke-owner",
         "宿主更低上限仍优先", "不改其他 repo 或全局配置",
         "每次启动或恢复前", "gpt-5.6-sol` / `high", "用户明确选择优先", "该入口不限制模型",
+        "canonical build/write/read", "legacy_checkpoint: true",
+        "review_scope: implementation | whole-change",
     ))
     require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
         "执行 helper：", "absolute resolved", "每次调用的执行核验",
@@ -622,7 +628,6 @@ def check_app_shell() -> None:
     require(APP / "references" / "development-mode.md", (
         "gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna",
         "second opinion", "reasoning_effort", "thinking",
-        "implementation 两轴使用 Astra / low", "whole-change 两轴使用 Sol / xhigh",
         "Testing 与 Integration 分两次串行",
         'default_subagent_reasoning_effort = "max"', 'service_tier = "default"',
         "不启用 fast", "用户确认", "只读",
@@ -643,17 +648,36 @@ def check_app_shell() -> None:
     ))
     require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
         "Development mode：", "Mode source：", "Execution phase：", "Checkpoint：", "Lane registry：",
-        "PREWALK_READY 后停止",
+        "Checkpoint format/hash：", "PREWALK_READY 后停止",
     ))
     require(APP / "SKILL.md", ("references/development-mode.md",))
     require(APP / "references" / "codex-app-dispatch.md", (
         "requested_model:", "requested_effort:", "model: Unknown",
-        "effort: Unknown", "model_evidence: Unknown", "旧 lane",
+        "effort: Unknown", "model_evidence: Unknown", "checkpoint_sha256:", "旧 lane",
     ))
     require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
         "开发模式合同：", "Requested model：", "Requested effort：",
         "review_scope: implementation", "review_scope: whole-change",
     ))
+    formal_review_model = re.compile(
+        r"(?:implementation|whole-change).*(?:Review|审查).*(?:gpt-5|\bAstra\b|\bSol\b|\bLuna\b)|"
+        r"(?:gpt-5|\bAstra\b|\bSol\b|\bLuna\b).*(?:implementation|whole-change).*(?:Review|审查)",
+        re.IGNORECASE,
+    )
+    for path in (
+        ROOT / "docs" / "adr" / "0007-codex-app-development-mode.md",
+        APP / "SKILL.md",
+        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
+        APP / "references" / "codex-app-dispatch.md",
+        APP / "references" / "development-mode.md",
+    ):
+        content = path.read_text()
+        for phrase in ("正式 Astra Review", "implementation 两轴使用 Astra", "whole-change 两轴使用 Sol"):
+            if phrase in content:
+                record(f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}: {phrase}")
+        for lineno, line in enumerate(content.splitlines(), 1):
+            if formal_review_model.search(line):
+                record(f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}:{lineno}")
     require(
         APP / "SKILL.md",
         (

@@ -7,7 +7,9 @@ coordinator 启动时与每个 worker 执行前读取。本文件拥有 App 工�
 Review 步骤。implementation worker 可保存候选 commit，缺最终结论则 blocked 回传并注明待审；
 coordinator 接收后按 `codex-app-dispatch.md` 的“独立 Review 放行”启动两轴并验收。
 worker 内已有审查只作预审；可由 coordinator 回读现有有效结果复用，不必再做相同审查。
-中断复核只说明未完成，不能用实现者自评或测试通过替代。模型覆盖不等于用户豁免审查。
+coordinator 将 resolved owner triple 与 `review_scope: implementation | whole-change` 一并传递，
+App 壳不为任一 scope 选择 owner、model 或 effort。中断复核、自评或测试通过不能替代 verdict；
+模型覆盖不等于用户豁免审查。
 
 ## 工作分工
 
@@ -21,15 +23,15 @@ Review 的覆盖一并传给 resolved owner。宿主不支持所选参数时报�
 | 工作 | 请求 model | 请求 effort |
 | --- | --- | --- |
 | coordinator、独立搜索调查、原型、implementation Prewalk | `gpt-5.6-sol` | `high` |
-| 地图沟通/拷问、地图规划、spec、issue 拆分、implementation 双轴 Review | `gpt-6-astra` | `low` |
-| whole-change 双轴 Review | `gpt-5.6-sol` | `xhigh` |
+| 地图沟通/拷问、地图规划、spec、issue 拆分 | `gpt-6-astra` | `low` |
+| implementation / whole-change 双轴 Review | resolved code-review owner | owner contract |
 | whole-change testing、逐票 Integration | `gpt-5.6-luna` | `max` |
 | second opinion | `gpt-6-astra` | `low` |
 | 执行会话内部检索、限定范围实现、研究辅助 | `gpt-5.6-luna` | `max` |
 
 按 work 判定，不只看 role：planning 中的搜索调查用 Sol，spec/tickets 用 Astra；design 中的
-原型用 Sol。正式工程实现按下面的票级开发模式选择。code-review owner 按 evidence scope 路由：
-implementation 两轴使用 Astra / low，whole-change 两轴使用 Sol / xhigh。正式两轴不得整体交 Luna。
+原型用 Sol。正式工程实现按下面的票级开发模式选择。formal Review 先解析 owner 并传入
+review_scope，由 owner 合同决定两轴模型、effort 与汇总方式；正式两轴不得由实施 worker 自评替代。
 所有 Astra 用途默认 low；不自动提高推理档位。
 
 外层是独立 App task + App-managed Execution Worktree，内层是该会话的 subagents。
@@ -58,10 +60,9 @@ model、effort 与来源，调用 `scripts/prewalk.py coordinator` 记录观测�
    （父任务是否只读）。同一父会话串行做核验与分派，宿主更低上限仍优先。
    wait 表示等待并回读；spawn 才可使用返回参数，prompt 必须带父范围、允许编辑路径和
    read_only 约束。只读由宿主权限和任务边界共同执行，返回字段本身不是权限沙箱。
-4. review 预留两轴容量，invoke-owner 后完整读取 resolved code-review；模型规则仍由 owner
-   拥有。implementation scope 核对 Astra / low，whole-change scope 核对 Sol / xhigh，并核验
-   Review Evidence Bundle；有用户覆盖时按覆盖值核对，owner 未体现该选择时
-   明确报告，不能使用安装目录里的旧副本。地图 artifact 的用户确认与 Terminal 回传沿下方
+4. review 预留 owner 要求的两轴容量，invoke-owner 后完整读取 resolved code-review；把
+   implementation 或 whole-change scope 与 Review Evidence Bundle 传入，模型规则仍由 owner
+   拥有。owner 或 scope 不匹配时明确报告，不能使用安装目录里的旧副本。地图 artifact 的用户确认与 Terminal 回传沿下方
    和 transport 合同核验；任务 completed 不能代替用户确认。
 
 完成标准：当前入口、模型请求、父权限、并发观测、owner与回传坐标齐备后才调用工具。
@@ -88,29 +89,37 @@ packet 与 registry 同时保存 development_mode 和选择来源；非法值阻
 
 ### 机械核验入口
 
-从本 skill realpath 调用 `scripts/prewalk.py`，命令为 coordinator / resolve / snapshot / prepare / subagent，JSON 从
+从本 skill realpath 调用 `scripts/prewalk.py`，命令为 coordinator / resolve / snapshot / checkpoint / prepare /
+review / subagent，JSON 从
 stdin 输入、结果从 stdout 读取；非零退出就保留现场并报告。脚本不调用 App、不写 registry。
 
 - resolve 输入 role、output_mode，以及可选 ticket_mode / map_mode / existing_lane。新 implementation
   还必须输入 canonical `../../delivery-pipeline/references/gate-state-machine.md` 定义的
   work_item、可选 map 与 gate_evidence；helper 在选择任何开发模式前验证实施前置证据。返回
   overlay 和创建用 model/thinking；existing_lane 直接返回 recover，不套用默认值。
-- snapshot 输入 worktree（Git 顶层绝对路径），输出 HEAD、branch（detached 时为 HEAD）、
-  common_dir、暂存 diff 指纹与所有非 ignored dirty 文件的内容/模式指纹。ignored 文件不是
-  交付输入；若任务依赖它们，先将相关输入显式纳入证据或报告 Unknown。特殊 dirty 类型受阻。
-- checkpoint 是 repo 外 JSON：lane_id、thread_id、host_id、base_commit、first_edit（非空首改路径列表，必须属于 dirty）、snapshot 以及非空 todo、checks、
-  evidence、decision。Prewalk 执行者完成首处修改时生成 snapshot，结束后 coordinator 核验；不能在
-  文件已变后补造一份“相同”检查点。通过 packet 的 Lane registry 坐标保存路径。
+- snapshot 直接复用 canonical `../../delivery-pipeline/scripts/checkpoint.py`，输入 Git 顶层
+  worktree 与可选 required_ignored，输出隔离 GIT_* 后的 HEAD/branch/common_dir、ignored、
+  staged/index、working-tree diff 及全部 dirty 内容/模式指纹。ignored 交付输入未确认无关时受阻。
+- checkpoint 输入 worktree、repo 外 checkpoint_path、canonical payload 与可选 required_ignored；
+  helper 复用 canonical build/write/read，生成 component_sha256 与 checkpoint_sha256，以紧凑
+  UTF-8 JSON 原子写入并立即完整读回。payload 使用 runtime: codex-thread、session_id: App thread、
+  coordinator 坐标、phase: starting、development_mode: staged、完整 phase_plan、模型请求/接受/
+  readback、first_edit、checks、todo、decision 与 evidence。文件变化后不得补造旧证据。
 - prepare 输入 lane（App overlay 与 lane_id/state/worktree/base_commit）、checkpoint、checkpoint_path、
   observation（thread_id/host_id/status/source，取自刚完成的宿主 readback），以及刚核验的
   work_item、可选 map 与 gate_evidence；不能仅凭旧 lane 存在继续实施。只有 idle 且
-  检查点坐标、持久内容、Git 现场都一致才返回 persist-before-send 和原 task 的 request。
+  canonical 指纹、持久内容、Git/ignored/staged/unstaged 现场都一致才返回 persist-before-send 和原 task 的 request。
   active 返回 wait-for-stop 和原 task 坐标，不返回发送请求；按 transport 中间回传合同
   有界等待原轮停止，再重新 prepare，不能把此正常时序当作最终受阻。
 - coordinator 先把返回 overlay 合并写回既有 registry 并 readback，才调用
   send_message_to_thread 的 request 参数。一个 lane 只由已登记的 coordinator 分派；脚本
   不提供跨协调器锁。switching/executing 返回 readback、request: null，禁止把空请求当重试。
   prepare 与发送之间出现新消息或文件变化时重新核验；工具结果未知按原任务证据恢复。
+- 旧已持久 App checkpoint 只有恢复既有 lane 时可显式传 legacy_checkpoint: true；helper 只按旧
+  内容原样核验并标记 legacy-app-v0 / Unknown，不生成或回填 canonical 指纹。新 checkpoint、
+  canonical checkpoint 或缺既有恢复证据时禁止走 legacy 分支。
+- review 输入 coordinator 直接回读的 resolved owner triple、review_scope、固定 base/head 与两轴
+  宿主结论；helper 不返回任何模型选择，只验证 reviewer 独立性、终态、零阻断项和当前 Git 版本。
 
 完成标准：helper 通过、overlay 持久读回、原 task 请求与回读证据对应。此入口没有新增
 canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 transport 合同执行。
@@ -121,9 +130,10 @@ canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 t
    `gpt-5.6-sol` + `high`，execution_phase: starting，checkpoint: none。Sol 完整读取规则、owner、spec 与直接调用者，确定最小路径，
    列出剩余 TODO 与验收命令，只完成第一处有意义的实现和最小检查，然后停止本轮。
    设计仍有关键 Unknown 时按 blocked 回传，不为了交接伪造首处修改。
-2. **检查点。** Sol 在 packet 指定的 repo 外 lane registry 旁保存 checkpoint artifact：lane/task、
-   worktree/branch、base/HEAD、全部 dirty 路径及其内容指纹（含未跟踪文件）、已读证据、
-   决策理由、首处修改、检查结果、剩余 TODO。发送 `PREWALK_READY <lane_id> <checkpoint_path>`
+2. **检查点。** Sol 通过 helper 的 checkpoint 命令在 packet 指定的 repo 外 lane registry 旁
+   保存 canonical checkpoint artifact，包含 lane/task、worktree/branch、base/HEAD、ignored、
+   staged/unstaged 与全部 dirty 指纹、组件/整体 SHA-256、已读证据、首改、检查及 TODO。
+   完整持久读回后发送 `PREWALK_READY <lane_id> <checkpoint_path>`
    到 coordinator 后结束本轮；这是中间通知，不发送 completed FINAL_REPORT，不提交或集成。
    coordinator 用 wait_threads/read_thread 核验起步轮已停止，检查点和当前文件一致才接续。
 3. **切换。** coordinator 先保存 checkpoint、目标 model/effort 与 phase: switching，随后调用
@@ -138,9 +148,9 @@ canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 t
    观察到原 task 新执行轮后保存 phase: executing；模型读不到仍为 Unknown。发送结果未知时
    保持 switching，先读原 task 是否收到接续消息/产生新轮，不能盲目重发；无法消歧则报告
    恢复坐标。App 工具没有已验证的幂等键，registry 标记本身不保证外部调用 exactly-once。
-5. **交付。** Luna/Sol 完成剩余 owner 流程后走原 FINAL_REPORT 与 fan-in。Prewalk 不算
-   Review；implementation Standards/Spec 独立审查仍按 code-review owner 使用 Astra / low。
-   blocking finding 修复后按 owner 复核；不额外增加 Sol 全量核验 gate。
+5. **交付。** Luna/Sol 完成剩余 owner 流程后保存候选 commit并走原 FINAL_REPORT 与 fan-in。
+   Sol 起步不算 Review；coordinator 按 resolved code-review owner 与 review_scope 启动正式
+   Standards/Spec 独立审查。blocking finding 修复后按 owner 复核；App 壳不增加或替换模型 gate。
 
 sol-direct 创建时直接请求 `gpt-5.6-sol` + `high`，phase: executing，checkpoint: none，
 跳过起步与换模型步骤；其测试、Review 与集成标准相同。Prewalk phase 是 App overlay 的

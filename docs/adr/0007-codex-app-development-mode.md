@@ -18,8 +18,10 @@ App task 的模型请求与宿主运行 readback 分开保存；旧 lane 沿原 
 首次无 map 时先以输入 artifact 和 Source HEAD 登记建图 lane，map 建立后回填 Integration
 坐标；正式实现始终从 Integration HEAD 分派。
 
-正式双轴模型规则归 resolved code-review owner；implementation 使用 Astra / low，whole-change
-使用 Sol / xhigh。Pipeline 只负责证据 transport。技术咨询
+正式双轴的模型、effort 与 owner 规则归 resolved code-review owner；Pipeline 只传
+`review_scope: implementation | whole-change` 与证据 transport，不另设 App 默认。Review 生命周期
+和最终放行由 coordinator 管理，实施 worker 只能提交候选代码与修复说明，不能以自评、测试通过
+或中断的审查替代独立两轴 verdict。技术咨询
 与内部辅助规则同时传给 coordinator 和 worker。此决定补充 ADR-0004 的 App 例外，CLI 的
 六角色显式配置、owner、权限、Integration、archive 与远程授权边界不变。
 
@@ -36,6 +38,9 @@ Luna 使用 max 且不启用 fast，service tier 沿宿主默认值，运行 rea
 该配置不随 Skill 软链扩散到其他 repo，不覆盖用户全局配置或自定义角色。
 
 ## Consequences
+
+App Prewalk 新检查点复用 canonical checkpoint 的 Git 隔离、ignored/staged/unstaged 指纹、整体
+SHA-256 与原子持久读回；旧 App 检查点只能在恢复既有 lane 时显式走 legacy 兼容，不补造指纹。
 
 2026-09-08 补充：正式两轴 Review 的生命周期与最终放行归 coordinator，实施 worker 只能提交
 候选代码和修复说明。中断、超时或测试成功不能替代独立 verdict；集成前核对宿主原始结论、

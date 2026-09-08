@@ -4,6 +4,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -18,15 +19,20 @@ def git_env():
     return env
 
 
-def call(command, data, success=True):
+def call(command, data, success=True, extra_env=None):
+    env = git_env()
+    env.update(extra_env or {})
     result = subprocess.run([sys.executable, str(HELPER), command], input=json.dumps(data),
-                            text=True, capture_output=True, env=git_env())
+                            text=True, capture_output=True, env=env)
     assert (result.returncode == 0) == success, result.stderr or result.stdout
     return json.loads(result.stdout) if success else result.stderr
 
 
 def check():
-    review = {"worktree": "unused", "base_commit": "unused", "head_commit": "unused", "reviews": {}}
+    review = {"worktree": "unused", "base_commit": "unused", "head_commit": "unused",
+              "review_scope": "implementation",
+              "owner": {"name": "code-review", "skill_path": "/resolved/code-review/SKILL.md",
+                        "invocation_label": "$code-review"}, "reviews": {}}
     assert "缺少独立两轴结论" in call("review", review, False)
     coordinator = call("coordinator", {"model": "gpt-5.6-sol", "effort": "high", "source": "turn_context"})
     assert coordinator["action"] == "verified"
@@ -113,24 +119,75 @@ def check():
         git("checkout", "--detach")
         (root / "worker.py").write_text("first edit\n")
         snap = call("snapshot", {"worktree": str(root)})
+        assert call("snapshot", {"worktree": str(root)}, extra_env={
+            "GIT_DIR": str(root / ".git"), "GIT_WORK_TREE": str(root / "elsewhere"),
+            "GIT_INDEX_FILE": str(root / "bogus-index"), "GIT_COMMON_DIR": str(root / "bogus-common")}) == snap
         lane = {**default["overlay"], "lane_id": "probe", "thread_id": "same-task", "host_id": "local",
+                "coordinator_thread_id": "coordinator-task", "coordinator_host_id": "local",
                 "worktree": str(root), "state": "running", "base_commit": snap["head"]}
-        checkpoint = {k: lane[k] for k in ("lane_id", "thread_id", "host_id")}
-        checkpoint.update(base_commit=lane["base_commit"], first_edit=["worker.py"], snapshot=snap, todo=["finish"], checks=["start passed"], evidence=["spec"], decision="minimal")
+        legacy_dirty = {}
+        for name, item in snap["dirty"].items():
+            if item["deleted"]:
+                legacy_dirty[name] = {"deleted": True}
+            else:
+                kind = stat.S_IFLNK if item["kind"] == "symlink" else stat.S_IFREG
+                legacy_dirty[name] = {"mode": kind | item["mode"], "sha256": item["content_sha256"]}
+        legacy_snapshot = {key: snap[key] for key in
+                           ("worktree", "head", "branch", "common_dir", "index_sha256")}
+        legacy_snapshot["dirty"] = legacy_dirty
+        legacy_path = Path(folder) / "legacy-checkpoint.json"
+        legacy_checkpoint = {"lane_id": lane["lane_id"], "thread_id": lane["thread_id"],
+                             "host_id": lane["host_id"], "base_commit": lane["base_commit"],
+                             "first_edit": ["worker.py"], "snapshot": legacy_snapshot,
+                             "todo": ["finish"], "checks": ["start passed"],
+                             "evidence": ["spec"], "decision": "minimal"}
+        legacy_path.write_text(json.dumps(legacy_checkpoint))
+        legacy_data = {**gate, "lane": lane, "checkpoint": legacy_checkpoint,
+                       "checkpoint_path": str(legacy_path), "legacy_checkpoint": True,
+                       "observation": {"thread_id": "same-task", "host_id": "local",
+                                       "status": "idle", "source": "probe"}}
+        legacy = call("prepare", legacy_data)
+        assert legacy["overlay"]["checkpoint_format"] == "legacy-app-v0"
+        assert legacy["overlay"]["checkpoint_sha256"] == "Unknown"
+        without_legacy = copy.deepcopy(legacy_data)
+        del without_legacy["legacy_checkpoint"]
+        call("prepare", without_legacy, False)
         path = Path(folder) / "checkpoint.json"
-        path.write_text(json.dumps(checkpoint))
+        payload = {
+            "lane_id": lane["lane_id"], "work_item": gate["work_item"], "runtime": "codex-thread",
+            "session_id": lane["thread_id"], "coordinator_thread_id": lane["coordinator_thread_id"],
+            "coordinator_host_id": lane["coordinator_host_id"], "cli_version": "Unknown",
+            "execution_worktree": snap["worktree"], "execution_branch": snap["branch"],
+            "base_commit": snap["head"], "head_commit": snap["head"], "phase": "starting",
+            "development_mode": "staged", "mode_source": "user-config",
+            "phase_plan": {"starting": {"model": "gpt-5.6-sol", "effort": "high"},
+                           "execution": {"model": "gpt-5.6-luna", "effort": "max"},
+                           "direct": {"model": "gpt-5.6-sol", "effort": "high"}},
+            "requested_model": "gpt-5.6-sol", "requested_effort": "high",
+            "tool_acceptance": {"accepted": True, "status": "accepted", "source": "host readback"},
+            "actual_model": "gpt-5.6-sol", "actual_effort": "high",
+            "actual_readback_source": "host turn context", "actual_readback_at": "2026-09-08T00:00:00Z",
+            "first_edit": ["worker.py"], "checks": [{"command": "compile worker.py", "result": "exit 0"}],
+            "todo": ["finish"], "decision": {"critical_design_unknown": False, "reason": "minimal"},
+            "evidence": ["spec"], "checkpoint_path": str(path),
+        }
+        checkpoint = call("checkpoint", {"worktree": str(root), "checkpoint_path": str(path),
+                                         "payload": payload})
+        assert checkpoint["checkpoint_sha256"]
+        assert path.read_text() == json.dumps(checkpoint, ensure_ascii=False, sort_keys=True,
+                                              separators=(",", ":"))
         data = {**gate, "lane": lane, "checkpoint": checkpoint, "checkpoint_path": str(path),
                 "observation": {"thread_id": "same-task", "host_id": "local", "status": "idle", "source": "probe"}}
         bad = copy.deepcopy(data)
         del bad["checkpoint"]["first_edit"]
-        path.write_text(json.dumps(bad["checkpoint"]))
+        path.write_text(json.dumps(bad["checkpoint"], ensure_ascii=False, sort_keys=True, separators=(",", ":")))
         call("prepare", bad, False)
         for field, value in (("first_edit", ["unrelated.py"]), ("base_commit", "wrong-base")):
             bad = copy.deepcopy(data)
             bad["checkpoint"][field] = value
-            path.write_text(json.dumps(bad["checkpoint"]))
+            path.write_text(json.dumps(bad["checkpoint"], ensure_ascii=False, sort_keys=True, separators=(",", ":")))
             call("prepare", bad, False)
-        path.write_text(json.dumps(checkpoint))
+        path.write_text(json.dumps(checkpoint, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
         missing_gate = copy.deepcopy(data)
         del missing_gate["gate_evidence"]
         call("prepare", missing_gate, False)
@@ -141,12 +198,21 @@ def check():
         assert prepared["request"]["thinking"] == "max"
         assert prepared["overlay"]["requested_effort"] == "max"
         assert prepared["overlay"]["model"] == "Unknown"
+        assert prepared["overlay"]["checkpoint_sha256"] == checkpoint["checkpoint_sha256"]
         assert "起步轮限制已结束" in prepared["request"]["prompt"]
         assert "不得取消或中断正式 reviewer" in prepared["request"]["prompt"]
+        assert "resolved owner 和 review_scope" in prepared["request"]["prompt"]
         assert "不得报告 completed" in prepared["request"]["prompt"]
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
         assert call("prepare", {**data, "lane": {**lane, "execution_phase": "executing"}})["request"] is None
-        sol = call("prepare", {**data, "lane": {**lane, "development_mode": "sol-sol"}})
+        sol_path = Path(folder) / "sol-checkpoint.json"
+        sol_payload = copy.deepcopy(payload)
+        sol_payload["checkpoint_path"] = str(sol_path)
+        sol_payload["phase_plan"]["execution"] = {"model": "gpt-5.6-sol", "effort": "high"}
+        sol_checkpoint = call("checkpoint", {"worktree": str(root), "checkpoint_path": str(sol_path),
+                                             "payload": sol_payload})
+        sol_data = {**data, "checkpoint": sol_checkpoint, "checkpoint_path": str(sol_path)}
+        sol = call("prepare", {**sol_data, "lane": {**lane, "development_mode": "sol-sol"}})
         assert sol["request"]["model"] == "gpt-5.6-sol"
         assert sol["request"]["thinking"] == "high"
         legacy = call("prepare", {**data, "lane": {**lane, "development_mode": "astra-luna"}})
@@ -160,34 +226,64 @@ def check():
             call("prepare", bad, False)
         call("prepare", {**data, "lane": {**lane, "state": "integrated"}}, False)
         (root / "worker.py").write_text("changed after checkpoint\n")
-        assert "检查点已过期" in call("prepare", data, False)
+        assert "已过期" in call("prepare", data, False)
         (root / "worker.py").write_text("first edit\n")
         git("add", "worker.py")
-        assert "检查点已过期" in call("prepare", data, False)
+        assert "已过期" in call("prepare", data, False)
         git("reset")
         (root / "extra.txt").write_text("untracked")
-        assert "检查点已过期" in call("prepare", data, False)
-        git("add", "worker.py", "extra.txt")
+        assert "已过期" in call("prepare", data, False)
+        (root / "extra.txt").unlink()
+        (root / ".gitignore").write_text("ignored.txt\n")
+        (root / "ignored.txt").write_text("delivery input\n")
+        ignored_path = Path(folder) / "ignored-checkpoint.json"
+        ignored_payload = copy.deepcopy(payload)
+        ignored_payload["checkpoint_path"] = str(ignored_path)
+        call("checkpoint", {"worktree": str(root), "checkpoint_path": str(ignored_path),
+                            "payload": ignored_payload, "required_ignored": ["ignored.txt"]}, False)
+        ignored_checkpoint = call("checkpoint", {"worktree": str(root),
+                                                  "checkpoint_path": str(ignored_path),
+                                                  "payload": ignored_payload})
+        ignored_data = {**data, "checkpoint": ignored_checkpoint, "checkpoint_path": str(ignored_path)}
+        assert "ignored 交付输入" in call("prepare", ignored_data, False)
+        (root / "ignored.txt").unlink()
+        (root / ".gitignore").unlink()
+        git("add", "worker.py")
         git("-c", "user.name=Probe", "-c", "user.email=probe@example.invalid", "commit", "-m", "candidate")
         head = call("snapshot", {"worktree": str(root)})["head"]
+        owner = {"name": "code-review", "skill_path": "/resolved/code-review/SKILL.md",
+                 "invocation_label": "$code-review"}
         receipt = {"worktree": str(root), "worker_id": "worker", "base_commit": snap["head"],
-                   "head_commit": head, "reviews": {}}
+                   "head_commit": head, "review_scope": "implementation", "owner": owner, "reviews": {}}
         for name in ("standards", "spec"):
             receipt["reviews"][name] = {"reviewer_id": name, "source": "host turn result",
                 "status": "completed", "verdict": "pass", "verdict_text": "无阻断项",
-                "blocking_findings": 0, "base_commit": snap["head"], "head_commit": head}
-        assert call("review", receipt)["action"] == "review-passed"
+                "blocking_findings": 0, "review_scope": "implementation",
+                "base_commit": snap["head"], "head_commit": head}
+        reviewed = call("review", receipt)
+        assert reviewed["review_scope"] == "implementation" and reviewed["owner"] == owner
+        whole_receipt = copy.deepcopy(receipt)
+        whole_receipt["review_scope"] = "whole-change"
+        for axis in whole_receipt["reviews"].values():
+            axis["review_scope"] = "whole-change"
+        whole_change = call("review", whole_receipt)
+        assert whole_change["review_scope"] == "whole-change"
         for field, value in (("status", "interrupted"), ("status", "running"),
                              ("verdict", "self-approved"), ("blocking_findings", 1),
                              ("blocking_findings", False), ("head_commit", snap["head"]),
+                             ("review_scope", "whole-change"),
                              ("reviewer_id", "worker"), ("reviewer_id", "standards"),
                              ("source", ""), ("verdict_text", "Unknown")):
             bad = copy.deepcopy(receipt)
             bad["reviews"]["spec"][field] = value
             call("review", bad, False)
-        (root / "extra.txt").write_text("changed after review")
+        for field in ("owner", "review_scope"):
+            bad = copy.deepcopy(receipt)
+            del bad[field]
+            call("review", bad, False)
+        (root / "worker.py").write_text("changed after review")
         call("review", receipt, False)
-    print("prewalk dispatch: pass (coordinator, spec/tickets gate, modes, recovery, same-task, stopped, stale, duplicate, Unknown)")
+    print("prewalk dispatch: pass (coordinator, spec/tickets gate, Sol modes, canonical checkpoint, legacy recovery, ignored, review independence)")
 
 
 if __name__ == "__main__":
