@@ -362,6 +362,11 @@ def check_prompt_branches() -> None:
             "Execution Worktree",
             "合并",
             "累计消耗不等于同时占用的上下文",
+            "每张候选票必须主动给出 token 预测",
+            "预测区间不能用 Unknown 代替",
+            "上下文峰值预测（tokens）",
+            "执行预算（tokens）",
+            "最终回复也必须展示逐票预测",
             "拆票流程的 owner 是 `to-tickets`",
         ),
     )
