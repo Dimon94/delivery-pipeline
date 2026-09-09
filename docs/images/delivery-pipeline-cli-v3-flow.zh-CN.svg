@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1430" width="1200" height="1430" role="img" aria-labelledby="title desc">
+  <title id="title">Delivery Pipeline · CLI / Herdr version-3 开发流程</title>
+  <desc id="desc">从用户调用、gate 恢复和配置冻结，到 Pi、Codex CLI、Claude CLI 的同会话分阶段接续、测试、审查与集成收尾。</desc>
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+    .title { font-size: 28px; font-weight: 700; }
+    .subtitle { font-size: 14px; fill: #6b7280; }
+    .section { font-size: 13px; font-weight: 700; fill: #2563eb; letter-spacing: .05em; }
+    .node-title { font-size: 16px; font-weight: 700; }
+    .label { font-size: 14px; font-weight: 600; }
+    .detail { font-size: 12px; fill: #4b5563; }
+    .small { font-size: 11px; fill: #4b5563; }
+    .edge-label { font-size: 12px; font-weight: 600; fill: #4b5563; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="1430" fill="#ffffff"/>
+  <text x="600" y="42" text-anchor="middle" class="title">Delivery Pipeline · CLI / Herdr version-3 开发流程</text>
+  <text x="600" y="68" text-anchor="middle" class="subtitle">同一 canonical skill · 配置驱动 Pi / Codex CLI / Claude CLI · 同 session + Execution Worktree</text>
+  <path d="M600 152 V182" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M600 268 V292 H185 V315" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M310 350 H365" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M585 350 H640" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M770 385 V410" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M600 490 V560" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M480 600 H330 V680" fill="none" stroke="#ea580c" stroke-width="2"  marker-end="url(#arrow-orange)"/>
+  <path d="M720 600 H985 V680" fill="none" stroke="#ea580c" stroke-width="2"  marker-end="url(#arrow-orange)"/>
+  <path d="M330 750 V780" fill="none" stroke="#9333ea" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+  <path d="M330 856 V880 H150 V900" fill="none" stroke="#ea580c" stroke-width="2"  marker-end="url(#arrow-orange)"/>
+  <path d="M330 880 H350 V900" fill="none" stroke="#ea580c" stroke-width="2"  marker-end="url(#arrow-orange)"/>
+  <path d="M330 880 H550 V900" fill="none" stroke="#ea580c" stroke-width="2"  marker-end="url(#arrow-orange)"/>
+  <path d="M150 980 V995 H400 V1010" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M350 980 V1010" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M550 980 V995 H400 V1010" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M400 1082 V1100 H600 V1120" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M985 770 V1088 H1120 V1157 H810" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M600 1194 V1212 H190 V1230" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M320 1270 H460" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M740 1270 H850" fill="none" stroke="#2563eb" stroke-width="2"  marker-end="url(#arrow-blue)"/>
+  <path d="M1130 1270 H1170 V225 H920" fill="none" stroke="#9333ea" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-purple)"/>
+  <rect x="360" y="88" width="480" height="64" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="600" y="114" text-anchor="middle" class="node-title">调用 delivery-pipeline</text>
+  <text x="600" y="137" text-anchor="middle" class="detail">输入想法、map、spec 或 implementation ticket</text>
+  <rect x="280" y="182" width="640" height="86" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
+  <polygon points="320,196 340,207 340,229 320,240 300,229 300,207" fill="#7c3aed"/>
+  <text x="320" y="222" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">CTL</text>
+  <text x="600" y="211" text-anchor="middle" class="node-title">当前 CLI 会话 = Coordinator</text>
+  <text x="600" y="235" text-anchor="middle" class="detail">恢复最早未完成 gate · 核对 tracker、registry、权限与并发</text>
+  <text x="600" y="254" text-anchor="middle" class="detail">Coordinator 模型不进入 worker 配置；持久证据决定是否推进</text>
+  <text x="380" y="286" class="edge-label">最早未完成 gate</text>
+  <rect x="60" y="315" width="250" height="70" rx="8" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.5"/>
+  <text x="185" y="343" text-anchor="middle" class="label">Discovery + Map</text>
+  <text x="185" y="366" text-anchor="middle" class="detail">调查、原型与用户决策</text>
+  <rect x="365" y="315" width="220" height="70" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="475" y="343" text-anchor="middle" class="label">Spec</text>
+  <text x="475" y="366" text-anchor="middle" class="detail">验收边界 · 用户确认</text>
+  <rect x="640" y="315" width="260" height="70" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="770" y="343" text-anchor="middle" class="label">Implementation Tickets</text>
+  <text x="770" y="366" text-anchor="middle" class="detail">依赖与并行边界</text>
+  <rect x="260" y="410" width="680" height="80" rx="9" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="600" y="436" text-anchor="middle" class="label">读取 version-3 Worker 配置 + 实时 capability evidence</text>
+  <text x="600" y="459" text-anchor="middle" class="detail">六角色 role triple；implementation 额外解析 Pi / Codex / Claude execution plan</text>
+  <text x="600" y="478" text-anchor="middle" class="detail">ticket → map → user-config 选择 mode；完整计划冻结到 packet + registry 并 readback</text>
+  <rect x="50" y="520" width="1100" height="590" rx="12" fill="#eff6ff" fill-opacity="0.42" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="70" y="546" class="section">IMPLEMENTATION LANE · 一个 HERDR PANE / SESSION / WORKTREE / ACTIVE WRITER</text>
+  <polygon points="600,560 720,600 600,640 480,600" fill="#ffffff" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="600" y="595" text-anchor="middle" class="label">执行模式？</text>
+  <text x="600" y="616" text-anchor="middle" class="detail">staged 或 direct</text>
+  <rect x="80" y="680" width="500" height="70" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="330" y="704" text-anchor="middle" class="label">Starting Phase · Prewalk + 首改</text>
+  <text x="330" y="726" text-anchor="middle" class="detail">使用配置的 starting model / effort</text>
+  <text x="330" y="744" text-anchor="middle" class="detail">只到 PREWALK_READY，不越阶段提交</text>
+  <rect x="850" y="680" width="270" height="90" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="985" y="708" text-anchor="middle" class="label">Direct Mode</text>
+  <text x="985" y="733" text-anchor="middle" class="detail">使用 direct model / effort 从头实现</text>
+  <text x="985" y="752" text-anchor="middle" class="detail">跳过 checkpoint / resume</text>
+  <rect x="80" y="780" width="500" height="76" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="330" y="804" text-anchor="middle" class="label">持久 checkpoint + 停止现场核验</text>
+  <text x="330" y="827" text-anchor="middle" class="detail">HEAD / dirty / index / 首改 / TODO / 完整 execution target</text>
+  <text x="330" y="846" text-anchor="middle" class="detail">WORKER_STOPPED + 原 session 可恢复；证据不足即阻塞</text>
+  <rect x="60" y="900" width="180" height="80" rx="8" fill="#f0fdfa" stroke="#5eead4" stroke-width="1.5"/>
+  <circle cx="82" cy="922" r="14" fill="#5eead4"/>
+  <text x="82" y="926" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">Pi</text>
+  <text x="160" y="924" text-anchor="middle" class="label">Pi 原 pane</text>
+  <text x="150" y="949" text-anchor="middle" class="small">/model + /thinking</text>
+  <text x="150" y="968" text-anchor="middle" class="small">TUI apply + readback</text>
+  <rect x="260" y="900" width="180" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <circle cx="282" cy="922" r="14" fill="#93c5fd"/>
+  <text x="282" y="926" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">CX</text>
+  <text x="360" y="924" text-anchor="middle" class="label">Codex CLI</text>
+  <text x="350" y="949" text-anchor="middle" class="small">精确 codex resume</text>
+  <text x="350" y="968" text-anchor="middle" class="small">同 session，不用 --last</text>
+  <rect x="460" y="900" width="180" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <circle cx="482" cy="922" r="14" fill="#fdba74"/>
+  <text x="482" y="926" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">CL</text>
+  <text x="560" y="924" text-anchor="middle" class="label">Claude CLI</text>
+  <text x="550" y="949" text-anchor="middle" class="small">--resume session-id</text>
+  <text x="550" y="968" text-anchor="middle" class="small">禁止 --fork-session</text>
+  <rect x="150" y="1010" width="500" height="72" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="400" y="1034" text-anchor="middle" class="label">Execution Phase · 同 session / 同 Execution Worktree</text>
+  <text x="400" y="1057" text-anchor="middle" class="detail">切换为配置的 execution model / effort，完成 owner 实现与测试</text>
+  <text x="400" y="1076" text-anchor="middle" class="detail">实际模型由 runtime readback 证明；缺失时记 Unknown</text>
+  <rect x="390" y="1120" width="420" height="74" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="600" y="1146" text-anchor="middle" class="label">LANE_DONE + Candidate Commit + Role-aware Fan-in</text>
+  <text x="600" y="1168" text-anchor="middle" class="detail">Coordinator 核验 Git / tracker / artifact / registry；逐票 Integration</text>
+  <text x="600" y="1187" text-anchor="middle" class="detail">重复通知去重；失败回到原 lane 修复</text>
+  <rect x="60" y="1230" width="260" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="190" y="1258" text-anchor="middle" class="label">Whole-change Testing</text>
+  <text x="190" y="1281" text-anchor="middle" class="detail">独立 checks lane</text>
+  <text x="190" y="1300" text-anchor="middle" class="detail">失败回实施票修复</text>
+  <rect x="460" y="1230" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="600" y="1258" text-anchor="middle" class="label">Whole-change 双轴 Review</text>
+  <text x="600" y="1281" text-anchor="middle" class="detail">Standards + Spec</text>
+  <text x="600" y="1300" text-anchor="middle" class="detail">同一冻结 bundle / scope</text>
+  <rect x="850" y="1230" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="990" y="1258" text-anchor="middle" class="label">Integration + Closeout</text>
+  <text x="990" y="1281" text-anchor="middle" class="detail">readback · 状态闭环</text>
+  <text x="990" y="1300" text-anchor="middle" class="detail">远程动作仍需独立授权</text>
+  <text x="941" y="211" class="edge-label">下一 ready frontier / 恢复</text>
+  <text x="600" y="1344" text-anchor="middle" class="subtitle">version 2 继续一次启动兼容；只有 output_mode=commit 的 design / frontend / backend 消费分阶段计划。</text>
+  <g transform="translate(205,1380)">
+    <line x1="0" y1="8" x2="36" y2="8" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <text x="48" y="13" class="detail">gate / 交付主流程</text>
+    <line x1="250" y1="8" x2="286" y2="8" stroke="#ea580c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+    <text x="298" y="13" class="detail">模型与阶段切换</text>
+    <line x1="520" y1="8" x2="556" y2="8" stroke="#9333ea" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+    <text x="568" y="13" class="detail">证据、回传与恢复</text>
+  </g>
+</svg>

@@ -79,8 +79,17 @@ Use delivery-pipeline-setup to initialize or reconfigure worker routing.
 
 Then invoke the canonical `delivery-pipeline` with any map/spec/ticket issue. It reconstructs the
 chain from tracker relationships and dispatches planning/design/frontend/backend/testing/review
-lanes according to version 2 configuration. New Herdr lanes stay in the coordinator's current
-workspace by default; a new workspace is created only when the user explicitly requests one.
+lanes according to version 2-compatible or version 3 configuration. New Herdr lanes stay in the
+coordinator's current workspace by default; a new workspace is created only when the user explicitly
+requests one.
+
+#### CLI / Herdr version-3 development flow
+
+The flow below shows version-3 configuration and capability evidence, ticket → map → user-config mode
+selection, staged/direct execution, same-session continuation for Pi/Codex/Claude, terminal fan-in,
+and whole-change closeout.
+
+[![Delivery Pipeline CLI / Herdr version-3 development flow](docs/images/delivery-pipeline-cli-v3-flow.en.svg)](docs/images/delivery-pipeline-cli-v3-flow.en.svg)
 
 ### Codex App
 

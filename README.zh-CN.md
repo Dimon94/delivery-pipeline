@@ -76,6 +76,13 @@ triage labels 与 domain docs；这与 worker model routing 的 `delivery-pipeli
 relationships 从最早未完成 gate 恢复，并按配置派发 planning/design/frontend/backend/testing/review
 lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户显式要求时才创建新 Workspace。
 
+#### CLI / Herdr version-3 开发流程
+
+下图覆盖 version-3 配置与 capability evidence、ticket → map → user config 模式选择、staged/direct
+实施、Pi/Codex/Claude 同 session 接续、终态 fan-in 与 whole-change 收尾。
+
+[![Delivery Pipeline CLI / Herdr version-3 开发流程](docs/images/delivery-pipeline-cli-v3-flow.zh-CN.svg)](docs/images/delivery-pipeline-cli-v3-flow.zh-CN.svg)
+
 ### Codex App
 
 ```text
