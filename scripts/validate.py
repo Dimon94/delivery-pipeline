@@ -622,7 +622,7 @@ def check_app_shell() -> None:
     require(APP / "references" / "development-mode.md", (
         "scripts/prewalk.py coordinator", "scripts/prewalk.py subagent", "active_count", "invoke-owner",
         "宿主更低上限仍优先", "不改其他 repo 或全局配置",
-        "每次启动或恢复前", "gpt-5.6-sol` / `high", "用户明确选择优先", "该入口不限制模型",
+        "每次启动或恢复前", "work.coordinator", "用户明确选择优先", "该入口不限制模型",
         "canonical build/write/read", "legacy_checkpoint: true",
         "review_scope: implementation | whole-change",
     ))
@@ -631,20 +631,22 @@ def check_app_shell() -> None:
     ))
     # App 请求值与运行证据分离；这只是提示合同检查。
     require(APP / "references" / "development-mode.md", (
-        "gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna",
+        "config/models.json", "review_models", "model_override",
         "second opinion", "reasoning_effort", "thinking",
         "Testing 与 Integration 分两次串行",
-        'default_subagent_reasoning_effort = "max"', 'service_tier = "default"',
+        "service tier 沿宿主默认",
         "不启用 fast", "用户确认", "只读",
     ))
     require(ROOT / ".codex" / "config.toml", (
-        'default_subagent_model = "gpt-5.6-luna"',
-        'default_subagent_reasoning_effort = "max"',
+        "enabled = true", "max_concurrent_threads_per_session = 3",
     ))
+    for path in [APP / "SKILL.md", APP / "scripts/prewalk.py", *APP.glob("references/*.md"),
+                 APP / "assets/APP_ROLE_DISPATCH_PACKET.md", ROOT / ".codex/config.toml"]:
+        if re.search(r"gpt-\d|default_subagent_model\s*=|default_subagent_reasoning_effort\s*=", path.read_text()):
+            record(f"App 模型值必须只存在于 config/models.json: {path.relative_to(ROOT)}")
     # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
     require(APP / "references" / "development-mode.md", (
-        "`sol-luna`（默认）", "`sol-sol`", "`sol-direct`",
-        "已持久化的 `astra-luna` / `astra-sol` 只用于恢复旧 lane",
+        "default_mode", "phase_plan", "phase_targets", "execution_target",
         "PREWALK_READY", "send_message_to_thread", "phase: switching",
         "不能盲目重发", "尚未做 App 端到端模型 readback", "`evaluate_signal`",
     ))
@@ -698,7 +700,7 @@ def check_app_shell() -> None:
             "testing → `output_mode: checks`",
             "review → `output_mode: verdict`",
             "Testing 与 Review 不另建 App task/worktree",
-            "Integration 由 coordinator 单独串行委派 Luna / max",
+            "Integration 由 coordinator 单独串行委派配置中 integration 模型",
             "App-managed Execution Worktree",
             "references/codex-app-dispatch.md",
             "assets/APP_ROLE_DISPATCH_PACKET.md",

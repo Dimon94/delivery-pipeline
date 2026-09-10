@@ -10,7 +10,7 @@
 当前调用会话，implementation 外层仍用独立 App task 与 App-managed Execution Worktree。
 Testing、Review 与 Integration 由 coordinator 在原 gate/owner 边界内显式委派内部子代理。
 所有模型、思考档位与 fast 设置都是参考默认值，用户明确选择优先，可按任务、阶段或 map 覆盖。
-coordinator 推荐 `gpt-5.6-sol` / `high`；运行观测 Unknown 或偏离推荐值本身不停止编排。
+coordinator 推荐值读取 App 专用模型配置；运行观测 Unknown 或偏离推荐值本身不停止编排。
 实际值与用户请求分别记录；不以 prompt 自述或 registry 请求值代替运行证据。
 
 App task 的模型请求与宿主运行 readback 分开保存；旧 lane 沿原 registry 恢复。地图沟通
@@ -18,24 +18,26 @@ App task 的模型请求与宿主运行 readback 分开保存；旧 lane 沿原 
 首次无 map 时先以输入 artifact 和 Source HEAD 登记建图 lane，map 建立后回填 Integration
 坐标；正式实现始终从 Integration HEAD 分派。
 
-正式双轴的模型、effort 与 owner 规则归 resolved code-review owner；Pipeline 只传
-`review_scope: implementation | whole-change` 与证据 transport，不另设 App 默认。Review 生命周期
+正式双轴由 resolved code-review owner 执行；Pipeline 从 App 配置解析两轴模型/effort，
+作为用户选择参数连同 `review_scope: implementation | whole-change` 与证据 transport 传给 owner。Review 生命周期
 和最终放行由 coordinator 管理，实施 worker 只能提交候选代码与修复说明，不能以自评、测试通过
 或中断的审查替代独立两轴 verdict。技术咨询
 与内部辅助规则同时传给 coordinator 和 worker。此决定补充 ADR-0004 的 App 例外，CLI 的
 六角色显式配置、owner、权限、Integration、archive 与远程授权边界不变。
 
-新实施票支持 sol-luna（默认）、sol-sol 与 sol-direct；前两种由 Sol / high 起步，在同一
-App task 下一轮显式请求接续模型。旧 astra-luna/astra-sol 只恢复 registry 已持久化的 lane。
-packet/registry 持久化选择及检查点；模式不改变 owner、
-Review 或 Integration gate。该决定是用户选定的流程合同；App 接续已有隔离运行证据。
-Luna 使用 max 且不启用 fast，service tier 沿宿主默认值，运行 readback 缺失时仍记 Unknown。
+2026-09-10 用户要求统一 App 模型配置，Prewalk 默认选择 astra-sol。
+唯一模型值来源为 App skill 的 `config/models.json`；模式、各阶段 model/effort、工作分工和
+两轴 Review 参数均由 helper 读取。SKILL、packet、dispatch reference 查询配置，不复制模型值。
+新分派按本票 → map → config.default_mode 选择；resolve 冻结阶段计划和来源到 packet/registry。
+prepare 沿冻结目标与 canonical checkpoint 精确核验，配置变更不迁移既有 lane。
+旧 canonical checkpoint 以持久 phase_plan 恢复；无计划的 legacy App 格式使用配置中的
+legacy_execution，显式标记历史兼容与 Unknown。该配置段只用于旧格式恢复，不当作新票模式。
 
-原型使用 Sol / high。whole-change Testing 与逐票 Integration 分开串行请求 Luna / max；Testing
-只读，Integration 要求父任务可写且无其他活跃子代理。coordinator 对二者的产物与 Git 现场负责。
-
-本仓内部子代理默认值落在项目级 Codex 配置，外层 App task 仍显式传 model/effort。
-该配置不随 Skill 软链扩散到其他 repo，不覆盖用户全局配置或自定义角色。
+配置位于 skill realpath 内，软链安装即可使用；可显式传另一份完整配置的绝对路径，记录到
+packet/registry。缺配置或非法配置阻塞新分派，不回落到 CLI 或宿主模型默认。
+项目 `.codex/config.toml` 只保存能力和并发；模型经 App task/spawn 参数显式传递。
+Testing 只读，Integration 要求父任务可写且无其他活跃子代理，二者串行执行。
+service tier 沿宿主默认；不改变宿主或其他仓库的配置。
 
 ## Consequences
 

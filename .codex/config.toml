@@ -1,6 +1,4 @@
-# 本仓内部子代理默认值；App 外层任务仍按 packet 显式指定 model/effort。
+# 本仓子代理能力；Pipeline 模型由 App skill 的 config/models.json 统一解析并显式传入。
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 3
-default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "max"

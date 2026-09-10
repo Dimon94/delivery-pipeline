@@ -101,17 +101,21 @@ The App shell uses native tasks and App-managed Execution Worktrees and does not
 role configuration. To use Herdr from a Codex App session, exit the App shell and invoke canonical
 `delivery-pipeline`.
 
-New implementation lanes may use only `sol-luna` (default), `sol-sol`, and `sol-direct`. `astra-luna` and
-`astra-sol` are reserved for restoring legacy lanes only when the registry already persists that mode
-and the recovery evidence matches; they are not valid choices for new tickets. Prewalk continues in
-the same task history. Every invocation checks models, internal concurrency, and permissions; this
-repository's project configuration does not propagate through Skill symlinks. See the [App development
-contract](skills/delivery-pipeline-codex-app/references/development-mode.md) for invocation steps and
-evidence limits.
+Edit [config/models.json](skills/delivery-pipeline-codex-app/config/models.json) for all App model selections.
+Prewalk defaults to `astra-sol`; available modes and phase parameters come from that file. The helper reads
+it from the skill realpath, including symlink installations. New lanes freeze their plans; configuration
+changes do not alter running lanes. No project `.codex/config.toml` copy is needed.
+
+```sh
+python3 skills/delivery-pipeline-codex-app/scripts/prewalk.py models <<<'{}'
+```
+
+Use `model` with `{"work":"planning"}` for a single selection. See the [App development
+contract](skills/delivery-pipeline-codex-app/references/development-mode.md) for overrides and recovery.
 
 #### Codex App development flow
 
-The flow below shows gate recovery, the three implementation modes, same-task Prewalk continuation,
+The flow below shows gate recovery, configured implementation modes, same-task Prewalk continuation,
 terminal fan-in, separate whole-change testing, scope-aware dual-axis review, and Integration closeout.
 
 [![Delivery Pipeline Codex App development flow](docs/images/delivery-pipeline-codex-app-flow.en.svg)](docs/images/delivery-pipeline-codex-app-flow.en.svg)

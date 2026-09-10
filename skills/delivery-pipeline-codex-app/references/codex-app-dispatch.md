@@ -15,7 +15,7 @@ overlay、外层 task fan-in 与内部 gate subagents；canonical CLI/Herdr 主�
 |---|---|---|---|
 | planning / design HITL | App task | `artifact` | artifact/tracker readback → consumed |
 | design/frontend/backend implementation | App task | `commit` | Integration subagent + focused checks → integrated |
-| testing | Luna / max subagent | `checks` | check evidence readback → consumed |
+| testing | 配置的 testing subagent | `checks` | check evidence readback → consumed |
 | review | code-review 双轴 subagents | `verdict` | verdict/findings readback → consumed |
 
 外层 task roles 使用 `../assets/APP_ROLE_DISPATCH_PACKET.md`；内部 Testing、Review 与 Integration
@@ -30,8 +30,13 @@ App lane 在 canonical role/state字段之外增加：
 ```yaml
 runtime: codex-thread
 agent: codex-app
-development_mode: <sol-luna | sol-sol | sol-direct | none; legacy astra-* only on recovery>
+development_mode: <配置 modes 中的 key | none；恢复沿持久值>
 mode_source: <ticket | map | default | existing lane>
+config_path: <absolute resolved config/models.json>
+execution_kind: <staged | direct>
+phase_plan: <frozen starting/execution/direct model + effort>
+phase_targets: <frozen phase model/effort/source/scope>
+execution_target: <frozen execution model/effort/source/scope>
 execution_phase: <starting | switching | executing | none>
 checkpoint: <absolute artifact path | none>
 checkpoint_format: <canonical-v1 | legacy-app-v0>
@@ -62,9 +67,10 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 
 1. implementation 新 lane 先回读 canonical gate-state-machine 的实施前置证据，再按开发模式合同
    调用 `scripts/prewalk.py resolve`；非零退出不得创建任务，把通过后的模式与
-   当前阶段请求写入 packet/overlay；recover 只恢复、不新建。解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
+   完整返回 overlay（含配置路径、阶段计划和来源）与当前阶段请求写入 packet/overlay；recover 只恢复、不新建。解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
    packet 填入真实 coordinator 坐标、repo 外 lane registry 绝对路径与本文件绝对路径作为 Terminal 回传合同；新建与接管 packet
    都保留该入口。完成回传属于本 lane 的调度授权。
+   非 implementation artifact 根据工作内容调用 `prewalk.py model`（planning/research/prototype），保存 target/config_path 与模型请求；恢复沿原记录。
 2. 按 `task-coordinate-title.md` 生成 role-aware title；同批 lanes 并行调用 `create_thread`，显式
    设置 title、project、Integration branch `startingState` 及 requested_model → `model`、
    requested_effort → `thinking`。先确认用户已明确要求新任务；仅维护 skill 不满足该条件。
@@ -81,8 +87,8 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
    保存返回 cursor；已终态的 lane 立即 fan-in，其余在确认 packet 包含回传合同后 Dispatch Handoff。
 
 Testing 和 Review gate 不进入本节创建流程。coordinator 先持久化 gate fixed point 与不可变证据，
-再通过 `scripts/prewalk.py subagent` 取得显式模型参数；Testing 单独请求 Luna / max，Review
-调用 owner 并传 `implementation` 或 `whole-change` scope。两者都只读并在回传后由 coordinator
+再通过 `scripts/prewalk.py subagent` 取得显式模型参数；Testing 单独读取 work.testing，Review
+传 review_scope 取得 review_models，再把参数与 `implementation` 或 `whole-change` scope 交给 owner。两者都只读并在回传后由 coordinator
 核验结果。逐票 Integration 也走 subagent 入口，但要求父任务可写、active_count 为 0，并只允许
 写指定 Integration Worktree；完成后 coordinator 重新读取 HEAD、commit、worktree 状态与 checks。
 
@@ -124,8 +130,7 @@ coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，�
 ### 独立 Review 放行
 
 正式两轴由 coordinator 调用 resolved code-review owner 管理；App 壳只传 owner triple、
-`review_scope: implementation | whole-change` 与 Review Evidence Bundle，不硬编码 owner、model 或
-effort。implementation worker 不拥有取消、改写 verdict 或豁免的权限，可保存候选 commit，但
+`review_scope: implementation | whole-change` 与 Review Evidence Bundle；两轴模型从配置读取并作为 review_models 传给 owner。implementation worker 不拥有取消、改写 verdict 或豁免的权限，可保存候选 commit，但
 缺独立结论时按 blocked 回传“实现已保存、审查待完成”。修复回原 worker，完成后冻结新 head
 并复核；旧 head 的 PASS 不覆盖新代码。
 
@@ -149,7 +154,7 @@ whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接
   独立两轴 Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
   focused checks通过后写 integrated。
 - `artifact`：验证 tracker/artifact坐标；无必要 repo 变更时 worktree必须 clean，写 consumed。
-- `checks`：验证 Luna / max 测试命令/结果且 worktree clean，写 consumed；失败阻塞 review。
+- `checks`：验证 testing 命令/结果且 worktree clean，写 consumed；失败阻塞 review。
 - `verdict`：验证 Review fixed point 等于 map registry base commit、Review Evidence Bundle readback、
   resolved owner、`whole-change` scope 与 review verdict/findings且 worktree clean，写 consumed；
   blocking finding阻塞 closeout。

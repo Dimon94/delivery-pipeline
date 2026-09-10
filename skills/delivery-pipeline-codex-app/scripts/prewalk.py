@@ -6,19 +6,84 @@ import runpy
 import stat
 import sys
 
-MODES = {"sol-luna": ("gpt-5.6-luna", "max"),
-         "sol-sol": ("gpt-5.6-sol", "high"),
-         "sol-direct": ("gpt-5.6-sol", "high"),
-         # 只用于恢复 registry 已持久化的旧 lane。
-         "astra-luna": ("gpt-5.6-luna", "max"),
-         "astra-sol": ("gpt-5.6-sol", "high")}
-NEW_MODES = {"sol-luna", "sol-sol", "sol-direct"}
-PREWALK_MODES = {"sol-luna", "sol-sol", "astra-luna", "astra-sol"}
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/models.json"
 EXECUTION_TARGET_MARKER = "app.execution_target:"
 EXECUTION_TARGET_KEYS = {"model", "effort", "source", "scope"}
 CORE_SCRIPTS = Path(__file__).resolve().parents[2] / "delivery-pipeline/scripts"
 CHECKPOINT = runpy.run_path(str(CORE_SCRIPTS / "checkpoint.py"))
 check_implementation = runpy.run_path(str(CORE_SCRIPTS / "implementation_gate.py"))["check"]
+
+
+def pair(value):
+    if (not isinstance(value, dict) or set(value) != {"model", "effort"}
+            or any(not isinstance(v, str) or not v.strip() or v.strip().lower() == "unknown"
+                   for v in value.values())):
+        raise ValueError("模型配置必须包含有效 model/effort")
+    return dict(value)
+
+
+def models(data):
+    path = Path(data.get("config_path", CONFIG_PATH)).expanduser()
+    if not path.is_absolute():
+        raise ValueError("config_path 必须是绝对路径")
+    path = path.resolve(strict=True)
+    config = json.loads(path.read_text())
+    if (not isinstance(config, dict) or set(config) != {
+            "version", "default_mode", "work", "modes", "review", "legacy_execution"}
+            or type(config["version"]) is not int or config["version"] != 1):
+        raise ValueError("非法 App 模型配置 version/schema")
+    if any(not isinstance(config[key], dict) for key in ("work", "modes", "review", "legacy_execution")):
+        raise ValueError("App 配置各分区必须是对象")
+    if set(config["work"]) != {"coordinator", "research", "prototype", "planning", "testing",
+                              "integration", "assistance", "second-opinion", "ticket-sizing"}:
+        raise ValueError("App work 配置缺失或未知")
+    for value in config["work"].values():
+        pair(value)
+    if not config["modes"] or config["default_mode"] not in config["modes"]:
+        raise ValueError("App default_mode 不在 modes 中")
+    for name, mode in config["modes"].items():
+        if (not name.strip() or not isinstance(mode, dict) or set(mode) != {"kind", "phase_plan"}
+                or mode["kind"] not in ("staged", "direct")
+                or not isinstance(mode["phase_plan"], dict)
+                or set(mode["phase_plan"]) != {"starting", "execution", "direct"}):
+            raise ValueError("非法 App mode/phase_plan")
+        for value in mode["phase_plan"].values():
+            pair(value)
+    if set(config["review"]) != {"implementation", "whole-change"}:
+        raise ValueError("缺失 Review scope 配置")
+    for axes in config["review"].values():
+        if not isinstance(axes, dict) or set(axes) != {"standards", "spec"}:
+            raise ValueError("缺失 Review 两轴配置")
+        for value in axes.values():
+            pair(value)
+    if set(config["legacy_execution"]) != {"astra-luna", "astra-sol"}:
+        raise ValueError("缺失 legacy 恢复配置")
+    for value in config["legacy_execution"].values():
+        pair(value)
+    return {"config_path": str(path), "config": config}
+
+
+def select(value, override, source, scope):
+    target = {**pair(value), "source": source, "scope": scope}
+    if override is not None:
+        if (not isinstance(override, dict) or not {"source", "scope"} <= set(override)
+                or not set(override) <= {"model", "effort", "source", "scope"}
+                or not set(override) & {"model", "effort"} or override["scope"] != scope
+                or not isinstance(override["source"], str) or not override["source"].strip()
+                or override["source"].strip().lower() == "unknown"):
+            raise ValueError("非法模型覆盖 source/scope/model/effort")
+        target.update(override)
+        pair({k: target[k] for k in ("model", "effort")})
+    return target
+
+
+def model(data):
+    loaded = models(data)
+    work = data["work"]
+    value = loaded["config"]["work"][work]
+    target = select(value, data.get("model_override"), loaded["config_path"] + "#work." + work, work)
+    return {"config_path": loaded["config_path"], "target": target,
+            "request": {"model": target["model"], "thinking": target["effort"]}}
 
 
 def git(root, *args):
@@ -68,16 +133,30 @@ def resolve(data):
     if data.get("output_mode") != "commit" or data.get("role") not in ("design", "frontend", "backend"):
         return {"action": "not-applicable", "request": None}
     check_implementation(data)
-    mode, source = "sol-luna", "default"
+    loaded = models(data)
+    config = loaded["config"]
+    mode, source = config["default_mode"], "default"
     for key in ("ticket_mode", "map_mode"):
         if data.get(key) is not None:
             mode, source = data[key], key.removesuffix("_mode")
             break
-    if mode not in NEW_MODES:
+    if mode not in config["modes"]:
         raise ValueError("非法 development_mode")
-    direct = mode == "sol-direct"
-    model, effort = "gpt-5.6-sol", "high"
+    selected = config["modes"][mode]
+    direct = selected["kind"] == "direct"
+    overrides = data.get("model_overrides", {})
+    if not isinstance(overrides, dict) or not set(overrides) <= {"starting", "execution", "direct"}:
+        raise ValueError("非法阶段 model_overrides")
+    targets = {phase: select(value, overrides.get(phase),
+               loaded["config_path"] + "#modes." + mode + "." + phase, phase)
+               for phase, value in selected["phase_plan"].items()}
+    plan = {phase: {k: value[k] for k in ("model", "effort")} for phase, value in targets.items()}
+    target = targets["direct" if direct else "starting"]
+    model, effort = target["model"], target["effort"]
     return {"action": "create", "overlay": {"development_mode": mode, "mode_source": source,
+            "config_path": loaded["config_path"], "execution_kind": selected["kind"],
+            "phase_plan": plan, "phase_targets": targets,
+            "execution_target": targets["execution"],
             "execution_phase": "executing" if direct else "starting", "checkpoint": None,
             "checkpoint_format": "canonical-v1", "checkpoint_sha256": None,
             "requested_model": model, "requested_effort": effort,
@@ -121,11 +200,12 @@ def review(data):
 
 
 def coordinator(data):
+    recommendation = model({**data, "work": "coordinator"})["target"]
     if not all(isinstance(data.get(k), str) and data[k].strip() and data[k] != "Unknown"
                for k in ("model", "effort", "source")):
-        return {"action": "Unknown", "model": "Unknown", "effort": "Unknown", "source": "Unknown"}
+        return {"action": "Unknown", "model": "Unknown", "effort": "Unknown", "source": "Unknown", "recommendation": recommendation}
     return {"action": "verified", "model": data["model"], "effort": data["effort"],
-            "source": data["source"]}
+            "source": data["source"], "recommendation": recommendation}
 
 
 def validate_execution_target(value):
@@ -165,33 +245,27 @@ def checkpoint_execution_target(checkpoint):
 
 
 def execution_target(data, lane, default_source=None):
-    model, effort = MODES[lane["development_mode"]]
-    override = data.get("execution_override")
-    if override is None:
-        return validate_execution_target({"model": model, "effort": effort,
-                "source": default_source if default_source is not None else lane.get("mode_source"),
-                "scope": "execution"})
-    keys = set(override) if isinstance(override, dict) else set()
-    if (not isinstance(override, dict)
-            or not {"source", "scope"} <= keys <= {"model", "effort", "source", "scope"}
-            or not keys & {"model", "effort"}
-            or override.get("scope") != "execution"):
-        raise ValueError("execution_override 必须是单阶段 model/effort 覆盖")
-    for key in keys - {"scope"}:
-        value = override[key]
-        if (not isinstance(value, str) or not value.strip()
-                or value.strip().lower() == "unknown"):
-            raise ValueError("execution_override 缺失有效 " + key)
-    return validate_execution_target({"model": override.get("model", model),
-            "effort": override.get("effort", effort),
-            "source": override["source"], "scope": "execution"})
+    frozen = lane.get("execution_target")
+    if frozen is not None:
+        baseline = validate_execution_target(frozen)
+        if lane.get("phase_plan") and pair(lane["phase_plan"]["execution"]) != {
+                k: baseline[k] for k in ("model", "effort")}:
+            raise ValueError("lane 冻结 phase_plan 与 execution_target 不一致")
+    else:
+        plan = lane.get("phase_plan") or data["checkpoint"].get("phase_plan")
+        value = (pair(plan["execution"]) if plan is not None else
+                 models(data)["config"]["legacy_execution"][lane["development_mode"]])
+        baseline = {**value, "source": default_source or lane.get("mode_source"), "scope": "execution"}
+    return validate_execution_target(select(
+        {k: baseline[k] for k in ("model", "effort")}, data.get("execution_override"),
+        baseline["source"], "execution"))
 
 
 def prepare(data):
     lane = data["lane"]
     if lane.get("execution_phase") in ("switching", "executing"):
         return {"action": "readback", "overlay": lane, "request": None}
-    if lane.get("execution_phase") != "starting" or lane.get("development_mode") not in PREWALK_MODES:
+    if lane.get("execution_phase") != "starting" or lane.get("execution_kind", "staged") != "staged":
         raise ValueError("当前 lane 不允许 Prewalk 接续")
     if lane.get("state") != "running":
         raise ValueError("当前 lane 非 running")
@@ -269,7 +343,7 @@ def prepare(data):
     else:
         if lane.get("checkpoint_format") != "canonical-v1":
             raise ValueError("canonical lane 缺少 checkpoint format")
-        if (lane.get("development_mode") in ("astra-luna", "astra-sol")
+        if ("phase_plan" not in lane and lane.get("development_mode") in ("astra-luna", "astra-sol")
                 and (not isinstance(lane.get("checkpoint"), str)
                      or Path(lane["checkpoint"]).resolve(strict=False) != path.resolve(strict=False))):
             raise ValueError("旧 astra lane 缺少 registry 持久恢复证据")
@@ -308,6 +382,10 @@ def prepare(data):
     model, effort = target["model"], target["effort"]
     if not legacy and target != persisted_target:
         raise ValueError("canonical 检查点与完整 resolved execution target 不匹配")
+    if not legacy and lane.get("phase_plan"):
+        for phase in ("starting", "direct"):
+            if lane["phase_plan"][phase] != checkpoint["phase_plan"][phase]:
+                raise ValueError("checkpoint 与 lane 冻结 phase_plan 不一致")
     overlay = {**lane, "execution_phase": "switching", "checkpoint": str(path),
                "checkpoint_format": checkpoint_format, "checkpoint_sha256": checkpoint_hash,
                "execution_target": target,
@@ -315,6 +393,10 @@ def prepare(data):
                    ("requested_model", "requested_effort", "model", "effort", "model_evidence")},
                "requested_model": model, "requested_effort": effort, "model": "Unknown",
                "effort": "Unknown", "model_evidence": "Unknown"}
+    if not legacy:
+        overlay["phase_plan"] = checkpoint["phase_plan"]
+        if "phase_targets" in lane:
+            overlay["phase_targets"] = {**lane["phase_targets"], "execution": target}
     return {"action": "persist-before-send", "overlay": overlay,
             "request": {"threadId": lane["thread_id"], "hostId": lane["host_id"],
                         "model": model, "thinking": effort,
@@ -348,19 +430,32 @@ def subagent(data):
     if count + slots > 3:
         return {**result, "action": "wait"}
     if work == "review":
-        return {**result, "action": "invoke-owner"}
-    model, effort = ("gpt-5.6-luna", "max") if work in ("assistance", "testing", "integration") else ("gpt-6-astra", "low")
-    if work == "ticket-sizing":
-        model, effort = "gpt-5.6-sol", "high"
-    return {**result, "action": "spawn", "request": {
-        "model": model, "reasoning_effort": effort, "fork_turns": "none"}}
+        loaded = models(data)
+        scope = data["review_scope"]
+        axes = loaded["config"]["review"][scope]
+        overrides = data.get("review_overrides", {})
+        if not isinstance(overrides, dict) or not set(overrides) <= set(axes):
+            raise ValueError("非法 review_overrides")
+        targets = {axis: select(value, overrides.get(axis),
+                   loaded["config_path"] + "#review." + scope + "." + axis, scope + "." + axis)
+                   for axis, value in axes.items()}
+        return {**result, "action": "invoke-owner", "review_scope": scope,
+                "review_models": targets, "config_path": loaded["config_path"]}
+    selected = model(data)
+    target = selected["target"]
+    return {**result, "action": "spawn", "target": target, "config_path": selected["config_path"],
+            "request": {"model": target["model"], "reasoning_effort": target["effort"], "fork_turns": "none"}}
 
 
 def main():
     try:
         data = json.load(sys.stdin)
         command = sys.argv[1]
-        if command == "snapshot":
+        if command == "models":
+            result = models(data)
+        elif command == "model":
+            result = model(data)
+        elif command == "snapshot":
             result = snapshot(data["worktree"], data.get("required_ignored", []))
         elif command == "coordinator":
             result = coordinator(data)

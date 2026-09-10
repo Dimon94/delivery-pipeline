@@ -92,14 +92,21 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 App 壳使用 native task + App-managed Execution Worktree，不读取 CLI worker-role config。若希望
 Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipeline`。
 
-新实施 lane 只支持 `sol-luna`（默认）、`sol-sol` 与 `sol-direct`。`astra-luna` 与 `astra-sol` 仅可在
-registry 已持久化对应模式且恢复证据匹配时恢复旧 lane；不能作为新票选择。Prewalk 在同一任务
-历史中接续。每次调用都执行模型、内部并发与权限核验；本仓项目配置不会随 Skill 软链应用到其他
-仓库。具体入口与证据边界见 [App 开发模式](skills/delivery-pipeline-codex-app/references/development-mode.md)。
+App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/config/models.json) 修改。
+Prewalk 默认模式为 `astra-sol`；可选模式、阶段模型和档位以配置为准。配置随 skill realpath 读取，
+不需要向业务仓库复制 `.codex/config.toml`。新 lane 冻结计划；配置修改不改变已运行的 lane。
+
+查询全部配置（JSON stdin；`model` 命令可用 `{"work":"planning"}` 查询单项）：
+
+```sh
+python3 skills/delivery-pipeline-codex-app/scripts/prewalk.py models <<<'{}'
+```
+
+工作入口、覆盖参数与恢复边界见 [App 开发模式](skills/delivery-pipeline-codex-app/references/development-mode.md)。
 
 #### Codex App 开发流程
 
-下图覆盖 gate 恢复、三种实施模式、同任务 Prewalk 接续、终态 fan-in、独立 whole-change 测试、
+下图覆盖 gate 恢复、配置的实施模式、同任务 Prewalk 接续、终态 fan-in、独立 whole-change 测试、
 按 scope 分配的双轴 Review 与 Integration 收尾。
 
 [![Delivery Pipeline Codex App 开发流程](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)

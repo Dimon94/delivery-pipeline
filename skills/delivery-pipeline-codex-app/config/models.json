@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "default_mode": "astra-sol",
+  "work": {
+    "coordinator": {
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    },
+    "research": {
+      "model": "gpt-5.6-luna",
+      "effort": "max"
+    },
+    "prototype": {
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    },
+    "planning": {
+      "model": "gpt-6-astra",
+      "effort": "low"
+    },
+    "testing": {
+      "model": "gpt-5.6-luna",
+      "effort": "max"
+    },
+    "integration": {
+      "model": "gpt-5.6-luna",
+      "effort": "max"
+    },
+    "assistance": {
+      "model": "gpt-5.6-luna",
+      "effort": "max"
+    },
+    "second-opinion": {
+      "model": "gpt-6-astra",
+      "effort": "low"
+    },
+    "ticket-sizing": {
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    }
+  },
+  "modes": {
+    "astra-sol": {
+      "kind": "staged",
+      "phase_plan": {
+        "starting": {
+          "model": "gpt-6-astra",
+          "effort": "low"
+        },
+        "execution": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "direct": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        }
+      }
+    },
+    "sol-luna": {
+      "kind": "staged",
+      "phase_plan": {
+        "starting": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "execution": {
+          "model": "gpt-5.6-luna",
+          "effort": "max"
+        },
+        "direct": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        }
+      }
+    },
+    "sol-sol": {
+      "kind": "staged",
+      "phase_plan": {
+        "starting": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "execution": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "direct": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        }
+      }
+    },
+    "sol-direct": {
+      "kind": "direct",
+      "phase_plan": {
+        "starting": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "execution": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "direct": {
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        }
+      }
+    }
+  },
+  "review": {
+    "implementation": {
+      "standards": {
+        "model": "gpt-6-astra",
+        "effort": "low"
+      },
+      "spec": {
+        "model": "gpt-6-astra",
+        "effort": "low"
+      }
+    },
+    "whole-change": {
+      "standards": {
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh"
+      },
+      "spec": {
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh"
+      }
+    }
+  },
+  "legacy_execution": {
+    "astra-luna": {
+      "model": "gpt-5.6-luna",
+      "effort": "max"
+    },
+    "astra-sol": {
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    }
+  }
+}

@@ -32,6 +32,9 @@ def call(command, data, success=True, extra_env=None):
 
 
 def check():
+    configured = call("models", {})
+    assert configured["config"]["default_mode"] == "astra-sol"
+    assert call("model", {"work": "planning"})["target"]["model"] == "gpt-6-astra"
     review = {"worktree": "unused", "base_commit": "unused", "head_commit": "unused",
               "review_scope": "implementation",
               "owner": {"name": "code-review", "skill_path": "/resolved/code-review/SKILL.md",
@@ -61,8 +64,8 @@ def check():
         call("subagent", {"work": work, "active_count": 1, "source": "live list", "read_only": False}, False)
     call("subagent", {"work": "integration", "active_count": 0, "source": "live list", "read_only": True}, False)
     assert call("subagent", {"work": "assistance", "active_count": 3, "source": "live list", "read_only": False})["request"] is None
-    assert call("subagent", {"work": "review", "active_count": 2, "source": "live list", "read_only": True})["action"] == "wait"
-    assert call("subagent", {"work": "review", "active_count": 0, "source": "live list", "read_only": True})["action"] == "invoke-owner"
+    assert call("subagent", {"work": "review", "review_scope": "implementation", "active_count": 2, "source": "live list", "read_only": True})["action"] == "wait"
+    assert call("subagent", {"work": "review", "review_scope": "implementation", "active_count": 0, "source": "live list", "read_only": True})["action"] == "invoke-owner"
     call("subagent", {"work": "assistance", "active_count": -1, "source": "live list", "read_only": True}, False)
     call("subagent", {"work": "assistance", "active_count": 0, "source": "", "read_only": True}, False)
     # #638/#642：原型的实施建议没有 Spec/拆票证据，不能创建实施 lane。
@@ -75,6 +78,57 @@ def check():
         "ticket": {"url": "ticket-643", "parent": "spec-650", "body": "ticket body",
                    "owner_run": "to-tickets artifact", "sizing": "ticket-sizing per-ticket assessment artifact", "confirmation": "user approved breakdown", "dependencies": []}}}
     base = {"role": "backend", "output_mode": "commit", **gate}
+    # 修改配置本身必须改变每条分派路径；无需修改 Python 或 SKILL。
+    with tempfile.TemporaryDirectory() as config_folder:
+        config_path = Path(config_folder) / "models.json"
+        config = copy.deepcopy(configured["config"])
+        custom = {"model": "host-test-model", "effort": "medium"}
+        config["work"] = {work: custom for work in config["work"]}
+        config["modes"]["custom"] = {"kind": "staged", "phase_plan": {
+            phase: custom for phase in ("starting", "execution", "direct")}}
+        config["default_mode"] = "custom"
+        config["review"] = {scope: {axis: custom for axis in axes}
+                            for scope, axes in config["review"].items()}
+        config_path.write_text(json.dumps(config))
+        source = {"config_path": str(config_path)}
+        for work in config["work"]:
+            assert call("model", {**source, "work": work})["request"] == {
+                "model": custom["model"], "thinking": custom["effort"]}
+        for work in ("assistance", "testing", "integration", "second-opinion", "ticket-sizing"):
+            actual = call("subagent", {**source, "work": work, "active_count": 0,
+                "source": "live list", "read_only": False})
+            assert actual["request"]["model"] == custom["model"]
+            assert actual["request"]["reasoning_effort"] == custom["effort"]
+        assert call("coordinator", source)["recommendation"]["model"] == custom["model"]
+        for scope in config["review"]:
+            actual = call("subagent", {**source, "work": "review", "review_scope": scope,
+                "active_count": 0, "source": "live list", "read_only": True})
+            assert all(target["model"] == custom["model"] for target in actual["review_models"].values())
+        resolved = call("resolve", {**base, **source})
+        assert resolved["overlay"]["development_mode"] == "custom"
+        assert resolved["request"] == {"model": custom["model"], "thinking": custom["effort"]}
+        override = call("resolve", {**base, **source, "model_overrides": {
+            "starting": {"effort": "high", "scope": "starting", "source": "user"},
+            "execution": {"model": "user-execution", "scope": "execution", "source": "user"}}})
+        assert override["request"]["thinking"] == "high"
+        assert override["overlay"]["execution_target"]["model"] == "user-execution"
+        assert override["overlay"]["execution_target"]["effort"] == custom["effort"]
+        config["modes"]["custom"]["kind"] = "direct"
+        config["modes"]["custom"]["phase_plan"]["direct"] = {"model": "direct-test", "effort": "low"}
+        config_path.write_text(json.dumps(config))
+        assert call("resolve", {**base, **source})["request"]["model"] == "direct-test"
+        assert call("model", {**source, "work": "research", "model_override": {
+            "model": "user-model", "scope": "research", "source": "user"}})["target"]["model"] == "user-model"
+        for invalid in ({}, {**config, "work": []}, {**config, "version": True},
+                        {**config, "default_mode": "missing"}, {**config, "review": {}},
+                        {**config, "work": {**config["work"], "planning": {"model": "Unknown", "effort": "low"}}}):
+            config_path.write_text(json.dumps(invalid))
+            assert "error" in json.loads(call("models", source, False))
+            call("resolve", {**base, **source}, False)
+        config_path.unlink()
+        call("models", source, False)
+        assert call("resolve", {**source, "existing_lane": resolved["overlay"]})["action"] == "recover"
+        call("models", {"config_path": "relative.json"}, False)
     core_helper = HELPER.resolve().parents[2] / "delivery-pipeline/scripts/implementation_gate.py"
     for payload, expected in ((gate, 0), ({"work_item": "ticket-643"}, 1)):
         result = subprocess.run([sys.executable, str(core_helper)], input=json.dumps(payload),
@@ -102,10 +156,11 @@ def check():
     del missing_sizing["gate_evidence"]["ticket"]["sizing"]
     call("resolve", missing_sizing, False)
     default = call("resolve", base)
-    assert default["overlay"]["development_mode"] == "sol-luna"
-    assert default["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
+    assert default["overlay"]["development_mode"] == "astra-sol"
+    assert default["request"] == {"model": "gpt-6-astra", "thinking": "low"}
+    default = call("resolve", {**base, "ticket_mode": "sol-luna"})
     assert call("resolve", {**base, "map_mode": "sol-sol"})["overlay"]["mode_source"] == "map"
-    for legacy_mode in ("astra-luna", "astra-sol"):
+    for legacy_mode in ("astra-luna",):
         call("resolve", {**base, "ticket_mode": legacy_mode}, False)
     direct = call("resolve", {**base, "ticket_mode": "sol-direct", "map_mode": "sol-luna"})
     assert direct["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
@@ -152,6 +207,8 @@ def check():
         legacy_lane = {**lane, "development_mode": "astra-luna",
                        "checkpoint_format": "legacy-app-v0",
                        "checkpoint": str(legacy_path)}
+        for key in ("phase_plan", "phase_targets", "execution_target", "execution_kind", "config_path"):
+            legacy_lane.pop(key, None)
         legacy_data = {**gate, "lane": legacy_lane, "checkpoint": legacy_checkpoint,
                        "checkpoint_path": str(legacy_path), "legacy_checkpoint": True,
                        "observation": {"thread_id": "same-task", "host_id": "local",
@@ -196,6 +253,7 @@ def check():
             "execution_worktree": snap["worktree"], "execution_branch": snap["branch"],
             "base_commit": snap["head"], "head_commit": snap["head"], "phase": "starting",
             "development_mode": "staged", "mode_source": "user-config",
+            "execution_target": lane["execution_target"],
             "phase_plan": {"starting": {"model": "gpt-5.6-sol", "effort": "high"},
                            "execution": {"model": "gpt-5.6-luna", "effort": "max"},
                            "direct": {"model": "gpt-5.6-sol", "effort": "high"}},
@@ -236,12 +294,30 @@ def check():
         assert prepared["overlay"]["model"] == "Unknown"
         assert prepared["overlay"]["execution_target"] == {
             "model": "gpt-5.6-luna", "effort": "max",
-            "source": "user-config", "scope": "execution"}
+            "source": lane["execution_target"]["source"], "scope": "execution"}
         assert prepared["overlay"]["checkpoint_sha256"] == checkpoint["checkpoint_sha256"]
         assert "起步轮限制已结束" in prepared["request"]["prompt"]
         assert "不得取消或中断正式 reviewer" in prepared["request"]["prompt"]
         assert "resolved owner 和 review_scope" in prepared["request"]["prompt"]
         assert "不得报告 completed" in prepared["request"]["prompt"]
+        # 默认 astra-sol 的 checkpoint -> prepare；配置消失也不能改动已冻结目标。
+        astra_lane = {**lane, **call("resolve", base)["overlay"]}
+        astra_path = Path(folder) / "astra-checkpoint.json"
+        astra_payload = {**payload, "phase_plan": astra_lane["phase_plan"],
+            "execution_target": astra_lane["execution_target"], "checkpoint_path": str(astra_path),
+            "requested_model": "gpt-6-astra", "requested_effort": "low",
+            "actual_model": "gpt-6-astra", "actual_effort": "low"}
+        astra_checkpoint = call("checkpoint", {"worktree": str(root),
+            "checkpoint_path": str(astra_path), "payload": astra_payload})
+        astra_prepared = call("prepare", {**data, "lane": astra_lane, "checkpoint": astra_checkpoint,
+            "checkpoint_path": str(astra_path), "config_path": str(Path(folder) / "missing.json")})
+        assert astra_prepared["request"]["model"] == "gpt-5.6-sol"
+        assert astra_prepared["request"]["thinking"] == "high"
+        assert astra_prepared["request"]["threadId"] == lane["thread_id"]
+        corrupt = {**astra_lane, "phase_plan": {**astra_lane["phase_plan"],
+                   "execution": {"model": "changed", "effort": "high"}}}
+        call("prepare", {**data, "lane": corrupt, "checkpoint": astra_checkpoint,
+            "checkpoint_path": str(astra_path)}, False)
         effort_path = Path(folder) / "effort-override-checkpoint.json"
         effort_payload = copy.deepcopy(payload)
         effort_payload["checkpoint_path"] = str(effort_path)
@@ -308,17 +384,19 @@ def check():
             invalid = {**data, "checkpoint": model_checkpoint, "checkpoint_path": str(model_path),
                        "execution_override": invalid_override}
             call("prepare", invalid, False)
+        old_lane = {k: v for k, v in lane.items() if k not in ("phase_plan", "phase_targets", "execution_target", "execution_kind", "config_path")}
         assert "持久恢复证据" in call("prepare", {
-            **data, "lane": {**lane, "development_mode": "astra-luna"}}, False)
+            **data, "lane": {**old_lane, "development_mode": "astra-luna"}}, False)
         assert call("prepare", {**data, "lane": prepared["overlay"]})["request"] is None
         assert call("prepare", {**data, "lane": {**lane, "execution_phase": "executing"}})["request"] is None
         sol_path = Path(folder) / "sol-checkpoint.json"
         sol_payload = copy.deepcopy(payload)
         sol_payload["checkpoint_path"] = str(sol_path)
         sol_payload["phase_plan"]["execution"] = {"model": "gpt-5.6-sol", "effort": "high"}
+        sol_payload["execution_target"] = call("resolve", {**base, "ticket_mode": "sol-sol"})["overlay"]["execution_target"]
         sol_checkpoint = call("checkpoint", {"worktree": str(root), "checkpoint_path": str(sol_path),
                                              "payload": sol_payload})
-        sol = call("prepare", {**data, "lane": {**lane, "development_mode": "sol-sol"},
+        sol = call("prepare", {**data, "lane": {**lane, **call("resolve", {**base, "ticket_mode": "sol-sol"})["overlay"]},
                                "checkpoint": sol_checkpoint, "checkpoint_path": str(sol_path)})
         assert sol["request"]["model"] == "gpt-5.6-sol"
         assert sol["request"]["thinking"] == "high"
@@ -397,7 +475,7 @@ def check():
             call("review", bad, False)
         (root / "worker.py").write_text("changed after review")
         call("review", receipt, False)
-    print("prewalk dispatch: pass (coordinator, spec/tickets gate, Sol modes, canonical checkpoint, legacy recovery, ignored, review independence)")
+    print("prewalk dispatch: pass (coordinator, spec/tickets gate, configured modes, canonical checkpoint, legacy recovery, ignored, review independence)")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,10 @@ Terminal 回传合同：<absolute delivery-pipeline-codex-app/references/codex-a
 Role：<planning | design | frontend | backend | testing | review>
 Output mode：<commit | artifact | checks | verdict>
 Agent：codex-app
-Development mode：<sol-luna | sol-sol | sol-direct | none; legacy astra-* 仅恢复>
+Development mode：<配置 modes 中的 key | none；恢复沿持久值>
+模型配置：<absolute resolved config/models.json；每次 helper 传 config_path>
+Frozen phase plan/targets：<resolve overlay 的 phase_plan/phase_targets/execution_target，非实施填 none>
+Review models：<subagent review_models + source/scope | none>
 Mode source：<ticket 用户选择 | map 持久选择 | default | existing lane>
 Execution phase：<starting | switching | executing | none>
 Checkpoint：<absolute checkpoint artifact path | none>
@@ -47,13 +50,13 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
 - `commit` 写入前读取实施前置合同与证据，核对本票的 to-spec、to-tickets、ticket-sizing 产物和用户确认；缺失则 blocked 回传。
 - 你是当前 task/worktree 的实现或验收 worker；Coordinator task 是回传目标，不是你的身份。
   直接执行本票，不承担 coordinator 的任务监控。
-- 先读取开发模式合同：完成“每次调用的执行核验”。内部辅助、second opinion 和
+- 先按模型配置绝对路径查询 helper，再读取开发模式合同：完成“每次调用的执行核验”。内部辅助、second opinion 和
   Review 前调用执行 helper 的 subagent 入口；子代理权限不超过本 Work item。
 - 确认 cwd 位于 App-managed Execution Worktree，common dir 属于 Repo，HEAD 包含 Base commit。
 - 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再按其 contract
   处理 Work item。invocation label 只是元数据。
 - 正式 Review 由 coordinator 调用 resolved code-review owner；packet 只传 owner triple、
-  Review scope 与 Review evidence preflight，不替 owner 选择模型或 effort。`commit` mode 传
+  Review scope 与 Review evidence preflight，将配置解析的 Review models 作为模型参数传给 owner。`commit` mode 传
   `review_scope: implementation`，fixed point 等于 Execution Base commit；`verdict` mode 传
   `review_scope: whole-change`，fixed point 等于 map registry base commit。preflight bundle 完成前不派生
   Standards/Spec 子审查。
