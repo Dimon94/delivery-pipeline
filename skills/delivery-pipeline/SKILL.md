@@ -34,8 +34,10 @@ Gate 顺序、owner 与通过证据统一在 `references/gate-state-machine.md`�
 | --- | --- | --- |
 | discovery | `references/wayfinder-frontier-loop.md` | 重算 ready frontier 或进入 spec |
 | 新建 lane | `references/model-role-routing.md`、`references/owner-skill-resolution.md`、`references/frontier-lanes.md`、`references/dispatch-runtime-routing.md`、`references/pane-lifecycle-rules.md` | 整批 Dispatch Handoff |
-| terminal/user completion signal 或显式 monitor | `references/child-monitoring.md`、`references/execution-worktree-integration.md`、`references/frontier-lanes.md` | 验证交付，自动推进下一 ready frontier |
+| terminal/user completion signal 或显式 monitor | `references/child-monitoring.md`、`references/execution-worktree-integration.md`、`references/frontier-lanes.md` | 验证交付，按 Cleanup 六步收口到 `closed`，自动推进下一 ready frontier |
 | testing/review 后收尾 | `references/test-decision-and-rebase.md` | 复用适用的测试选择，按授权收尾或报告剩余 gate |
+
+Terminal fan-in 以 `references/execution-worktree-integration.md` §Cleanup 六步走到 `closed` 为完成标准；cleanup 失败写 `close_pending` 并保留坐标。未走 Cleanup 不算收口，不关 pane 不算完成。
 
 同一 coordinator task 不因下一 lane 重读未变化的合同。
 
