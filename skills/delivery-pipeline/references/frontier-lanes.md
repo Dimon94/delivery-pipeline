@@ -16,7 +16,7 @@ Dispatch blocker。
 ## Role Binding
 
 | 工作 | Role | Output mode |
-|---|---|---|
+| --- | --- | --- |
 | AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |
 | grilling/prototype HITL | `design` | `artifact` |
 | design implementation | `design` | `commit` |
@@ -32,6 +32,9 @@ mode/source 也必须随 packet 和 registry 保存。
 ## Execution Lanes
 
 - 每个 work item 一个 fresh Herdr lane、一个 Execution Worktree、一个 active writer。
+- 落点拓扑与容量只按 `pane-lifecycle-rules.md` 的「拓扑与命名」执行：coordinator 所在 tab
+  不放 worker lane；worker tab `X` 最多 4 pane，第 5 条 lane 开溢出 tab `X-2`/`X-3`；不采用
+  herdr skill “sibling pane in the current tab” 的默认。
 - pi → `herdr-pi-pane`；codex → `herdr-codex-pane`；claude → `herdr-claude-pane`。
 - 所有 kind 使用 `HERDR_ROLE_DISPATCH_PACKET.md`；packet 持久化 role + output_mode，owner path 是绝对路径。
 - worker 只处理 packet 的 work item，不领取 sibling/dependent item或进入下一 gate。
