@@ -9,7 +9,7 @@ Canonical 本文件只定义 Herdr/base schema；特殊 transport overlay 与其
 
 ```yaml
 work_item: <url-or-gate-coordinate>
-role: planning | design | frontend | backend | testing | review | map
+role: planning | design | frontend | backend | testing | review | map   # 持久化字段名保留；新 lane 写入任务类型
 output_mode: commit | artifact | checks | verdict | none
 lane_id: <stable-id>
 runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator
@@ -18,8 +18,9 @@ agent: pi | codex | claude | none
 model: <configured-model-or-none>
 effort: <configured-effort-or-none>
 model_evidence: pi-list-models | codex-catalog | claude-env | none
-execution_mode: legacy | staged | direct | none
-execution_source: role-config | ticket | map | user-config | none
+execution_mode: legacy | staged | direct | none   # legacy 仅 version 4 前 lane；新 lane 用 staged | direct | none
+execution_mode_name: <modes 中的命名预设-or-none>   # version 4 新 lane 记录 mode 名
+execution_source: role-config | ticket | map | user-config | work | none   # role-config 仅旧 lane；非实现任务用 work
 starting_model: <frozen-model-or-none>
 starting_effort: <frozen-effort-or-none>
 execution_model: <frozen-model-or-none>

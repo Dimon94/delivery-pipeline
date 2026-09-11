@@ -22,17 +22,19 @@ Codex App native task/worktree 是唯一特殊 transport，入口为 `delivery-p
 - Codex CLI：`codex debug models`
 - Claude CLI：`~/.claude/settings.json` 的 `env` 模型映射与 effort
 
-然后要求用户为六个角色明确选择 `agent + model + effort`：
+然后要求用户为每个必需任务类型与 review 矩阵明确选择 `agent + model + effort`：
 
 ```text
-planning  design  frontend  backend  testing  review
+planning  design  frontend  backend  testing  review(implementation/whole-change × standards/spec)
 ```
 
-配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 2 兼容层；需要阶段计划时显式升级到 version 3）。
-Skill 不包含默认模型；配置缺失、未知 version、缺角色或字段非法都会阻塞派发并重新进入 setup。
-version 3 为三个 CLI agent 显式保存 staged/direct 的 starting、execution、direct model/effort；
-新 implementation lane 按本票 → map → 用户配置冻结选择，旧 v2 与已有 lane 不自动迁移。Coordinator 不在配置中，
-当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
+配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 4；与 Codex App 壳的
+`config/models.json` 共用 `skills/delivery-pipeline/references/model-config-schema.md` 定义的同一份 schema）。
+命名 `modes` 预设按 agent 保存 staged/direct 的 starting、execution、direct model/effort；
+新 implementation lane 按本票 → map → 配置 `default_mode` 冻结 mode 名选择，已有 lane 沿 registry 恢复不迁移；
+旧版本配置由 `model_config.py migrate` 机械迁移。
+Skill 不包含默认模型；配置缺失、未知 version、缺任务类型或字段非法都会阻塞派发并重新进入 setup。
+Coordinator 不在配置中，当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
 
 agent 决定 lane kind：
 
@@ -89,7 +91,7 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 使用 $delivery-pipeline-codex-app 继续 <任意 map/spec/ticket issue>。
 ```
 
-App 壳使用 native task + App-managed Execution Worktree，不读取 CLI worker-role config。若希望
+App 壳使用 native task + App-managed Execution Worktree，任务类型全部绑定 `agent: codex-app` 的独立配置实例。若希望
 Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipeline`。
 
 App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/config/models.json) 修改。

@@ -26,7 +26,6 @@ DEPENDENCIES = [
     "resolving-merge-conflicts",
     "herdr",
 ]
-ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}
 OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "none"}
 STATES = {
     "created",
@@ -146,8 +145,8 @@ def check_core_contract() -> None:
             "dispatch_runtime: herdr",
             "~/.config/delivery-pipeline/model-roles.json",
             "scripts/model_config.py validate <config>",
-            "version 2",
-            "agent`、`model`、`effort",
+            "version 4",
+            "agent`、`model`、`effort`",
             "Dispatch Handoff",
             "Execution Worktree",
             "Integration",
@@ -161,7 +160,7 @@ def check_core_contract() -> None:
     require(
         CORE / "references" / "dispatch-runtime-routing.md",
         (
-            "worker kind 完全由 version 2/3 role config",
+            "worker kind 完全由 version 4 work config",
             "pi → `herdr-pi-pane`",
             "codex → `herdr-codex-pane`",
             "claude → `herdr-claude-pane`",
@@ -232,14 +231,14 @@ def check_core_contract() -> None:
         (
             "普通 repo 文件路径重叠只进入 Integration 冲突检测",
             "maximal safe batch",
-            "Role Binding",
+            "Task Binding",
             "| AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |",
             "| grilling/prototype HITL | `design` | `artifact` |",
             "| design implementation | `design` | `commit` |",
             "| frontend implementation | `frontend` | `commit` |",
             "| backend/other implementation | `backend` | `commit` |",
             "| whole-change tests | `testing` | `checks` |",
-            "| code review | `review` | `verdict` |",
+            "| code review | review 矩阵（见下） | `verdict` |",
             "HERDR_ROLE_DISPATCH_PACKET.md",
             "整批成功 lanes 完成 startup",
             "落点拓扑与容量只按 `pane-lifecycle-rules.md` 的「拓扑与命名」执行",
@@ -420,27 +419,45 @@ def extract_schema_example(path: Path) -> dict:
 
 
 def check_model_contract() -> None:
+    schema_doc = CORE / "references" / "model-config-schema.md"
+    require(
+        schema_doc,
+        (
+            "version 4",
+            "任务类型",
+            "codex-app",
+            "default_mode",
+            "modes",
+            "starting",
+            "execution",
+            "direct",
+            "本票 → map → 配置 `default_mode`",
+            "未知 key 拒绝",
+            "legacy_execution",
+            "migrate",
+            "Transport 必需集",
+            "standards",
+            "spec",
+            "skill 与 reference 不提供默认 agent/model/effort",
+            "`pi|codex|claude|codex-app`",
+        ),
+    )
+    schema = extract_schema_example(schema_doc)
+    if schema.get("version") != 4:
+        record("model config schema version must be 4")
+    if not {"default_mode", "work", "modes", "review"} <= set(schema):
+        record("model config schema example must define default_mode/work/modes/review")
     routing = CORE / "references" / "model-role-routing.md"
     require(
         routing,
         (
-            "schema version 2",
-            "version 3",
+            "model-config-schema.md",
+            "version 4",
+            "migrate",
             "default_mode",
-            "starting",
-            "execution",
-            "direct",
-            "本票 → map → 用户配置",
+            "本票 → map → 配置 `default_mode`",
             "不得把起步模型的请求回显当成执行模型已运行",
-            "六个角色全部必填",
-            "agent`、`model`、`effort",
-            "skill 与 reference 不提供默认 agent/model/effort",
-            "顶层只有 `version` 与 `roles`",
-            "roles key 与六角色精确相等",
-            "每个 role object 只有 `agent`、`model`、`effort`",
-            "agent 属于 `pi|codex|claude`",
-            "Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择",
-            "settings.json env 候选与 CLI effort 枚举",
+            "agent`、`model`、`effort`",
             "frontier-lanes.md",
             "pi --list-models",
             "codex debug models",
@@ -451,27 +468,18 @@ def check_model_contract() -> None:
             "ANTHROPIC_MODEL",
             "CLAUDE_CODE_SUBAGENT_MODEL",
             "CLAUDE_CODE_EFFORT_LEVEL",
+            "Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择",
+            "settings.json env 候选与 CLI effort 枚举",
             '--approve --model "$model" --thinking "$effort"',
             "model_reasoning_effort",
             '--model "$model" --effort "$effort"',
         ),
     )
-    schema = extract_schema_example(routing)
-    if schema.get("version") != 2:
-        record("model-role schema version must be 2")
-    roles = schema.get("roles") or {}
-    if set(roles) != ROLES:
-        record(
-            f"model-role schema must define exactly {sorted(ROLES)}, got {sorted(roles)}"
-        )
-    for role, value in roles.items():
-        if set(value) != {"agent", "model", "effort"}:
-            record(f"role {role} must define exactly agent/model/effort")
     if (
         "orchestration" in routing.read_text()
         or "orchestration" in (SETUP / "SKILL.md").read_text()
     ):
-        record("coordinator/orchestration must not appear as a configured worker role")
+        record("coordinator/orchestration must not appear as a configured worker task")
     if (
         "user-confirmed" in routing.read_text()
         or "user-confirmed" in (SETUP / "SKILL.md").read_text()
@@ -483,20 +491,21 @@ def check_model_contract() -> None:
     require(
         SETUP / "SKILL.md",
         (
-            "version 2",
-            "version 3",
+            "version 4",
             "default_mode",
             "starting/execution/direct",
-            "本票 → map → 用户配置",
+            "本票 → map → 配置 `default_mode`",
             "不能静默生成 direct 启动请求",
             "不派发 lane",
+            "../delivery-pipeline/references/model-config-schema.md",
             "../delivery-pipeline/references/model-role-routing.md",
             "scripts/model_config.py validate",
+            "scripts/model_config.py migrate",
             "配置结构与实时 evidence 都通过",
             "非法配置进入初始化",
             "合法配置仅在用户明确要求重配时覆盖",
             "不提供内置默认",
-            "用户明确选择全部六角色",
+            "用户明确选择全部必需项",
             "写入并 readback",
         ),
     )
@@ -605,70 +614,161 @@ def check_lane_wakeup() -> None:
         if banned in watcher_text:
             record(f"lane-watch.sh carries session-specific hardcode: {banned}")
     subprocess.run(["bash", "-n", str(watcher)], check=True)
-    subprocess.run([sys.executable, str(CORE / "scripts" / "lane_watch_check.py")], check=True)
+    subprocess.run(
+        [sys.executable, str(CORE / "scripts" / "lane_watch_check.py")], check=True
+    )
 
 
 def check_app_shell() -> None:
-    require(APP / "references" / "codex-app-dispatch.md", (
-        "scripts/prewalk.py review", "独立 Review 放行", "不验证宿主来源真实性",
-        "review_scope: implementation | whole-change",
-    ))
-    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
-        "Review scope：<implementation | whole-change | none>", "不写 completed",
-        "不能把 blocked 当作无需处理",
-    ))
+    require(
+        APP / "references" / "codex-app-dispatch.md",
+        (
+            "scripts/prewalk.py review",
+            "独立 Review 放行",
+            "不验证宿主来源真实性",
+            "review_scope: implementation | whole-change",
+        ),
+    )
+    require(
+        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
+        (
+            "Review scope：<implementation | whole-change | none>",
+            "不写 completed",
+            "不能把 blocked 当作无需处理",
+        ),
+    )
     if not os.access(APP / "scripts" / "prewalk.py", os.X_OK):
         record("App prewalk helper must be executable")
-    subprocess.run([sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True)
+    subprocess.run(
+        [sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True
+    )
     require(APP / "SKILL.md", ("每次调用的执行核验", "subagent 入口"))
-    require(APP / "references" / "development-mode.md", (
-        "scripts/prewalk.py coordinator", "scripts/prewalk.py subagent", "active_count", "invoke-owner",
-        "宿主更低上限仍优先", "不改其他 repo 或全局配置",
-        "每次启动或恢复前", "work.coordinator", "用户明确选择优先", "该入口不限制模型",
-        "canonical build/write/read", "legacy_checkpoint: true",
-        "review_scope: implementation | whole-change",
-    ))
-    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
-        "执行 helper：", "absolute resolved", "每次调用的执行核验",
-    ))
+    require(
+        APP / "references" / "development-mode.md",
+        (
+            "scripts/prewalk.py coordinator",
+            "scripts/prewalk.py subagent",
+            "active_count",
+            "invoke-owner",
+            "宿主更低上限仍优先",
+            "不改其他 repo 或全局配置",
+            "每次启动或恢复前",
+            "work.coordinator",
+            "用户明确选择优先",
+            "该入口不限制模型",
+            "canonical build/write/read",
+            "legacy_checkpoint: true",
+            "review_scope: implementation | whole-change",
+        ),
+    )
+    require(
+        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
+        (
+            "执行 helper：",
+            "absolute resolved",
+            "每次调用的执行核验",
+        ),
+    )
     # App 请求值与运行证据分离；这只是提示合同检查。
-    require(APP / "references" / "development-mode.md", (
-        "config/models.json", "review_models", "model_override",
-        "second opinion", "reasoning_effort", "thinking",
-        "Testing 与 Integration 分两次串行",
-        "service tier 沿宿主默认",
-        "不启用 fast", "用户确认", "只读",
-    ))
-    require(ROOT / ".codex" / "config.toml", (
-        "enabled = true", "max_concurrent_threads_per_session = 3",
-    ))
-    for path in [APP / "SKILL.md", APP / "scripts/prewalk.py", *APP.glob("references/*.md"),
-                 APP / "assets/APP_ROLE_DISPATCH_PACKET.md", ROOT / ".codex/config.toml"]:
-        if re.search(r"gpt-\d|default_subagent_model\s*=|default_subagent_reasoning_effort\s*=", path.read_text()):
-            record(f"App 模型值必须只存在于 config/models.json: {path.relative_to(ROOT)}")
+    require(
+        APP / "references" / "development-mode.md",
+        (
+            "config/models.json",
+            "review_models",
+            "model_override",
+            "second opinion",
+            "reasoning_effort",
+            "thinking",
+            "Testing 与 Integration 分两次串行",
+            "service tier 沿宿主默认",
+            "不启用 fast",
+            "用户确认",
+            "只读",
+        ),
+    )
+    require(
+        ROOT / ".codex" / "config.toml",
+        (
+            "enabled = true",
+            "max_concurrent_threads_per_session = 3",
+        ),
+    )
+    for path in [
+        APP / "SKILL.md",
+        APP / "scripts/prewalk.py",
+        *APP.glob("references/*.md"),
+        APP / "assets/APP_ROLE_DISPATCH_PACKET.md",
+        ROOT / ".codex/config.toml",
+    ]:
+        if re.search(
+            r"gpt-\d|default_subagent_model\s*=|default_subagent_reasoning_effort\s*=",
+            path.read_text(),
+        ):
+            record(
+                f"App 模型值必须只存在于 config/models.json: {path.relative_to(ROOT)}"
+            )
     # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
-    require(APP / "references" / "development-mode.md", (
-        "default_mode", "phase_plan", "phase_targets", "execution_target",
-        "PREWALK_READY", "send_message_to_thread", "phase: switching",
-        "不能盲目重发", "尚未做 App 端到端模型 readback", "`evaluate_signal`",
-    ))
-    require(APP / "references" / "codex-app-dispatch.md", (
-        "development_mode:", "mode_source:", "execution_phase:", "checkpoint:",
-        "## Prewalk 中间回传", "不进入 Terminal fan-in",
-    ))
-    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
-        "Development mode：", "Mode source：", "Execution phase：", "Checkpoint：", "Lane registry：",
-        "Checkpoint format/hash：", "PREWALK_READY 后停止",
-    ))
+    require(
+        APP / "references" / "development-mode.md",
+        (
+            "default_mode",
+            "phase_plan",
+            "phase_targets",
+            "execution_target",
+            "PREWALK_READY",
+            "send_message_to_thread",
+            "phase: switching",
+            "不能盲目重发",
+            "尚未做 App 端到端模型 readback",
+            "`evaluate_signal`",
+        ),
+    )
+    require(
+        APP / "references" / "codex-app-dispatch.md",
+        (
+            "development_mode:",
+            "mode_source:",
+            "execution_phase:",
+            "checkpoint:",
+            "## Prewalk 中间回传",
+            "不进入 Terminal fan-in",
+        ),
+    )
+    require(
+        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
+        (
+            "Development mode：",
+            "Mode source：",
+            "Execution phase：",
+            "Checkpoint：",
+            "Lane registry：",
+            "Checkpoint format/hash：",
+            "PREWALK_READY 后停止",
+        ),
+    )
     require(APP / "SKILL.md", ("references/development-mode.md",))
-    require(APP / "references" / "codex-app-dispatch.md", (
-        "requested_model:", "requested_effort:", "model: Unknown",
-        "effort: Unknown", "model_evidence: Unknown", "checkpoint_sha256:", "旧 lane",
-    ))
-    require(APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md", (
-        "开发模式合同：", "Requested model：", "Requested effort：",
-        "review_scope: implementation", "review_scope: whole-change",
-    ))
+    require(
+        APP / "references" / "codex-app-dispatch.md",
+        (
+            "requested_model:",
+            "requested_effort:",
+            "model: Unknown",
+            "effort: Unknown",
+            "model_evidence: Unknown",
+            "checkpoint_sha256:",
+            "旧 lane",
+        ),
+    )
+    require(
+        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
+        (
+            "开发模式合同：",
+            "Requested model：",
+            "Requested effort：",
+            "review_scope: implementation",
+            "review_scope: whole-change",
+        ),
+    )
     formal_review_model = re.compile(
         r"(?:implementation|whole-change).*(?:Review|审查).*(?:gpt-5|\bAstra\b|\bSol\b|\bLuna\b)|"
         r"(?:gpt-5|\bAstra\b|\bSol\b|\bLuna\b).*(?:implementation|whole-change).*(?:Review|审查)",
@@ -682,12 +782,20 @@ def check_app_shell() -> None:
         APP / "references" / "development-mode.md",
     ):
         content = path.read_text()
-        for phrase in ("正式 Astra Review", "implementation 两轴使用 Astra", "whole-change 两轴使用 Sol"):
+        for phrase in (
+            "正式 Astra Review",
+            "implementation 两轴使用 Astra",
+            "whole-change 两轴使用 Sol",
+        ):
             if phrase in content:
-                record(f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}: {phrase}")
+                record(
+                    f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}: {phrase}"
+                )
         for lineno, line in enumerate(content.splitlines(), 1):
             if formal_review_model.search(line):
-                record(f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}:{lineno}")
+                record(
+                    f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}:{lineno}"
+                )
     require(
         APP / "SKILL.md",
         (
@@ -695,8 +803,9 @@ def check_app_shell() -> None:
             "../delivery-pipeline/SKILL.md",
             "coordinator_runtime: codex-app",
             "dispatch_runtime: codex-app",
-            "跳过 canonical CLI 主干的 model-role 配置 gate",
-            "canonical 六个 role 与 output mode 保持不变",
+            "config/models.json",
+            "version 4",
+            "canonical 任务类型与 output mode 保持不变",
             "planning → `output_mode: artifact`",
             "design/frontend/backend implementation → `output_mode: commit`",
             "testing → `output_mode: checks`",
@@ -828,8 +937,9 @@ def check_context_and_docs() -> None:
             "Configured Planning Lane",
             "Review Evidence Bundle",
             "Reviewers consume the same bundle with read/search access",
-            "Worker Role Configuration",
-            "exactly six worker roles",
+            "Worker Task Configuration",
+            "model-config-schema.md",
+            "current calling session is the coordinator",
             "current calling session is the coordinator",
             "Coordinator Pane",
             "new workspace requires explicit user request",
@@ -888,6 +998,15 @@ def check_context_and_docs() -> None:
             "exactly six worker roles",
             "skills/delivery-pipeline-codex-app",
             "supersedes ADR-0003",
+        ),
+    )
+    require(
+        ROOT / "docs" / "adr" / "0008-unified-task-type-config-schema.md",
+        (
+            "Status:** Accepted",
+            "model-config-schema.md",
+            "codex-app",
+            "model_config.py migrate",
         ),
     )
     require(
@@ -965,43 +1084,71 @@ def check_checkpoint_contract() -> None:
     pi_adapter_probe = CORE / "scripts" / "pi_adapter_check.py"
     codex_adapter = CORE / "scripts" / "codex_cli_adapter.py"
     codex_adapter_probe = CORE / "scripts" / "codex_cli_adapter_check.py"
-    for path in (helper, probe, continuation, continuation_probe,
-                 pi_adapter, pi_adapter_probe, codex_adapter, codex_adapter_probe):
+    for path in (
+        helper,
+        probe,
+        continuation,
+        continuation_probe,
+        pi_adapter,
+        pi_adapter_probe,
+        codex_adapter,
+        codex_adapter_probe,
+    ):
         if not path.exists():
             record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
     if helper.exists():
-        result = subprocess.run([sys.executable, str(helper), "self-test"],
-                                text=True, capture_output=True)
+        result = subprocess.run(
+            [sys.executable, str(helper), "self-test"], text=True, capture_output=True
+        )
         if result.returncode != 0:
-            record(f"checkpoint helper self-test failed: {result.stdout}{result.stderr}")
+            record(
+                f"checkpoint helper self-test failed: {result.stdout}{result.stderr}"
+            )
     if probe.exists():
-        result = subprocess.run([sys.executable, str(probe)],
-                                text=True, capture_output=True,
-                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        result = subprocess.run(
+            [sys.executable, str(probe)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
         if result.returncode != 0:
             record(f"checkpoint isolation check failed: {result.stdout}{result.stderr}")
     if continuation_probe.exists():
-        result = subprocess.run([sys.executable, str(continuation_probe)],
-                                text=True, capture_output=True,
-                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        result = subprocess.run(
+            [sys.executable, str(continuation_probe)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
         if result.returncode != 0:
-            record(f"continuation isolation check failed: {result.stdout}{result.stderr}")
+            record(
+                f"continuation isolation check failed: {result.stdout}{result.stderr}"
+            )
     if pi_adapter.exists():
-        result = subprocess.run([sys.executable, str(pi_adapter), "self-test"],
-                                text=True, capture_output=True,
-                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        result = subprocess.run(
+            [sys.executable, str(pi_adapter), "self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
         if result.returncode != 0:
             record(f"Pi adapter self-test failed: {result.stdout}{result.stderr}")
     if pi_adapter_probe.exists():
-        result = subprocess.run([sys.executable, str(pi_adapter_probe)],
-                                text=True, capture_output=True,
-                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        result = subprocess.run(
+            [sys.executable, str(pi_adapter_probe)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
         if result.returncode != 0:
             record(f"Pi adapter isolation check failed: {result.stdout}{result.stderr}")
     if codex_adapter_probe.exists():
-        result = subprocess.run([sys.executable, str(codex_adapter_probe)],
-                                text=True, capture_output=True,
-                                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        result = subprocess.run(
+            [sys.executable, str(codex_adapter_probe)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
         if result.returncode != 0:
             record(f"Codex CLI adapter check failed: {result.stdout}{result.stderr}")
     require(
@@ -1058,7 +1205,9 @@ def check_claude_adapter_contract() -> None:
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
         if result.returncode != 0:
-            record(f"Claude dispatch caller check failed: {result.stdout}{result.stderr}")
+            record(
+                f"Claude dispatch caller check failed: {result.stdout}{result.stderr}"
+            )
     require(
         helper,
         (

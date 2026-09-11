@@ -13,9 +13,9 @@
 或用户明确要求串行时排除。普通 repo 文件路径重叠只进入 Integration 冲突检测，不构成
 Dispatch blocker。
 
-## Role Binding
+## Task Binding
 
-| 工作 | Role | Output mode |
+| 工作 | Task type | Output mode |
 | --- | --- | --- |
 | AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |
 | grilling/prototype HITL | `design` | `artifact` |
@@ -23,11 +23,13 @@ Dispatch blocker。
 | frontend implementation | `frontend` | `commit` |
 | backend/other implementation | `backend` | `commit` |
 | whole-change tests | `testing` | `checks` |
-| code review | `review` | `verdict` |
+| code review | review 矩阵（见下） | `verdict` |
 
-role 只选择 config entry，不暗含 agent。agent/model/effort 只从
-`model-role-routing.md` 的 version 2 兼容配置或 version 3 冻结计划读取；implementation lane 的
-mode/source 也必须随 packet 和 registry 保存。
+review lane 无独立 work 项：CLI 用配置 `review.<scope>.standards` 的 `{agent, model, effort}`
+启动 pane，packet 携带该 scope 的两轴矩阵配置给 resolved code-review owner。
+
+task type 只选择配置项，不暗含 agent。agent/model/effort 只从 `model-config-schema.md` 定义的
+version 4 配置读取；implementation lane 的 mode 名/source 也必须随 packet 和 registry 保存。
 
 ## Execution Lanes
 

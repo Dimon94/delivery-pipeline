@@ -57,18 +57,19 @@ Pi/Codex/Claude staged lane 在上述 registry persist/readback 后，调用 set
 
 ## 新建 lane 的配置与 Packet
 
-按 `references/model-role-routing.md` 验证 version 2 配置或显式 version 3 执行计划
+按 `references/model-config-schema.md` 验证 version 4 配置
 `~/.config/delivery-pipeline/model-roles.json`：从 setup skill realpath 运行
-`scripts/model_config.py validate <config>`，再验证本机实时 evidence。缺失或非法时完整读取
+`scripts/model_config.py validate <config>`，再验证本机实时 evidence。旧 version 2/3 文件先运行
+`scripts/model_config.py migrate <config>` 机械迁移；缺失或非法时完整读取
 `../delivery-pipeline-setup/SKILL.md` 并在当前会话执行初始化；通过后才创建新 lane，不静默回落。
 已有 lane 的恢复按 registry；replacement 的条件与验证见 dispatch runtime 合同。
 
-新 implementation lane 按本票 → map → 用户配置解析 execution mode 与阶段参数，并将 mode、source、
-starting/execution/direct model 与 effort 冻结到 packet 和 lane registry。version 2 继续既有 direct
-启动行为；只有 `output_mode: commit` 的 implementation lane 消费 staged/direct 计划，其他 output
-mode 沿原 role 行为。staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
+新 implementation lane 按本票 → map → 配置 `default_mode` 解析命名 execution mode 与阶段参数，并将
+mode 名、source、starting/execution/direct model 与 effort 冻结到 packet 和 lane registry。只有
+`output_mode: commit` 的 implementation lane 消费 modes 计划，其他 output mode 直接用 work 项。
+staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
 
-从 role 配置解析 `agent`、`model`、`effort`，使用 `assets/HERDR_ROLE_DISPATCH_PACKET.md`。
+从 work 项配置解析 `agent`、`model`、`effort`，使用 `assets/HERDR_ROLE_DISPATCH_PACKET.md`。
 commit/review lane 创建 packet 时加载 `references/code-review-evidence-preflight.md`：
 `commit` 写 `Review fixed point: <Execution Base commit>`；`verdict` 写 map registry 的 base commit。
 两者都传 preflight 绝对路径；worker 在派生子审查前生成 Review Evidence Bundle。

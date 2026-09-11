@@ -2,7 +2,7 @@
 
 创建、恢复或替换任何 worker lane 前读取。本文件是 canonical CLI 主干的 transport adapter；
 Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通过 Herdr，worker kind
-完全由 version 2/3 role config 的 `agent` 决定。
+完全由 version 4 work config 的 `agent` 决定。
 
 恢复既有 lane 直接进入“恢复与切换”，不运行新 lane 的配置 gate。
 
@@ -12,11 +12,11 @@ Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通�
    Unknown并让用户确认。当前宿主不改写 worker 配置。
 2. 固定 `dispatch_runtime: herdr`。验证 `command -v herdr`、visible Herdr session 与
    `herdr agent start --help` 支持 `pi`、`codex`、`claude` kind。
-3. 加载 `model-role-routing.md`，从 role entry 读取 agent/model/effort；implementation lane 还要
-   按本票 → map → 用户配置冻结执行 mode 与阶段参数。三字段、计划或 evidence 验证失败时阻塞并
+3. 加载 `model-config-schema.md` 与 `model-role-routing.md`，从 work 项读取 agent/model/effort；implementation lane 还要
+   按本票 → map → 配置 `default_mode` 冻结命名 mode 与阶段参数。三字段、计划或 evidence 验证失败时阻塞并
    运行 setup，不替换成 coordinator 自身 agent。
 4. agent 映射 runtime：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude →
-   `herdr-claude-pane`。同一 role 可由用户重跑 setup 后改变，existing lane 仍按 registry 恢复。
+   `herdr-claude-pane`。同一任务类型可由用户重跑 setup 后改变 agent，existing lane 仍按 registry 恢复。
 5. `bootstrap_authority: trusted_execution_bootstrap` 覆盖已配置 worker 在精确 Execution
    Worktree 内的 kind-specific startup permission；不覆盖 remote publication。
 
@@ -51,7 +51,7 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
 1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
    path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
    agent model evidence。
-2. registry 先写 role、agent、model、effort、model_evidence、execution mode/source、阶段 model/effort、
+2. registry 先写 task type、agent、model、effort、model_evidence、execution mode 名/source、阶段 model/effort、
    runtime、permission mode、pane/worktree 计划坐标与 base commit，再精确 readback。
 3. 从同一 Integration HEAD 创建各 lane Execution Worktree，branch prefix 与 agent kind 一致。
 4. 填写 `assets/HERDR_ROLE_DISPATCH_PACKET.md`；按 `model-role-routing.md` 启动 kind-matched CLI。
@@ -72,7 +72,7 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
   Execution Worktree 和 execution model/effort 后生成 `codex resume <SESSION_ID>` 参数；禁止
   `--last`、最近会话猜测和跨 runtime request。adapter 不写 registry、不发送 prompt，Herdr 继续拥有
   pane 生命周期与可见 TUI。
-- version 2 role triple 与 `direct` 计划都沿既有一次启动流程；`staged` 计划必须调用对应阶段
+- version 4 work 项与 kind 为 `direct` 的命名 mode 都沿既有一次启动流程；kind 为 `staged` 的计划必须调用对应阶段
   adapter 并在发送前保留其计划与 evidence；adapter 缺失或核验失败即保持 blocked，不能退回
   `direct`。Pi/Codex/Claude 的 staged 起步与接续统一使用 `model_config.py start` 与
   `model_config.py resume --request <payload.json>`，复用既有 native adapter；payload 合同见

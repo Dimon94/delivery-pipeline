@@ -23,19 +23,20 @@ Before the first CLI dispatch, run `delivery-pipeline-setup`. It probes:
 - Codex CLI: `codex debug models`
 - Claude CLI: model mappings and effort from `~/.claude/settings.json` `env`
 
-The user explicitly chooses `agent + model + effort` for six roles:
+The user explicitly chooses `agent + model + effort` for each required task type and the review matrix:
 
 ```text
-planning  design  frontend  backend  testing  review
+planning  design  frontend  backend  testing  review(implementation/whole-change × standards/spec)
 ```
 
-The version 2-compatible configuration is stored at `~/.config/delivery-pipeline/model-roles.json`;
-users explicitly select version 3 when implementation lanes need staged execution. Skills contain no
+The version 4 configuration is stored at `~/.config/delivery-pipeline/model-roles.json`; its schema is shared
+with the Codex App shell's `config/models.json` and defined once in
+`skills/delivery-pipeline/references/model-config-schema.md`. Named `modes` presets carry the staged/direct
+starting, execution, and direct model/effort pairs per agent. New implementation lanes freeze a
+ticket → map → `default_mode` mode-name selection; existing lanes recover from their registry and are not
+migrated. Older config versions migrate mechanically via `model_config.py migrate`. Skills contain no
 default models. Missing, unknown, incomplete, or invalid configuration blocks dispatch and re-enters
-setup. Version 3 stores starting, execution, and direct model/effort pairs for pi, Codex CLI, and
-Claude CLI. New implementation lanes freeze ticket → map → user-config selection; existing version 2
-lanes keep their old startup behavior and are not migrated. The coordinator is not configured:
-whichever agent/model invoked the skill remains coordinator.
+setup. The coordinator is not configured: whichever agent/model invoked the skill remains coordinator.
 
 Agent selects lane kind:
 

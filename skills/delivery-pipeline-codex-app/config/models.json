@@ -1,40 +1,49 @@
 {
-  "version": 1,
+  "version": 4,
   "default_mode": "astra-sol",
   "work": {
     "coordinator": {
+      "agent": "codex-app",
       "model": "gpt-5.6-sol",
       "effort": "high"
     },
     "research": {
+      "agent": "codex-app",
       "model": "gpt-5.6-luna",
       "effort": "max"
     },
     "prototype": {
+      "agent": "codex-app",
       "model": "gpt-5.6-sol",
       "effort": "high"
     },
     "planning": {
+      "agent": "codex-app",
       "model": "gpt-6-astra",
       "effort": "low"
     },
     "testing": {
+      "agent": "codex-app",
       "model": "gpt-5.6-luna",
       "effort": "max"
     },
     "integration": {
+      "agent": "codex-app",
       "model": "gpt-5.6-luna",
       "effort": "max"
     },
     "assistance": {
+      "agent": "codex-app",
       "model": "gpt-5.6-luna",
       "effort": "max"
     },
     "second-opinion": {
+      "agent": "codex-app",
       "model": "gpt-6-astra",
       "effort": "low"
     },
     "ticket-sizing": {
+      "agent": "codex-app",
       "model": "gpt-5.6-sol",
       "effort": "high"
     }
@@ -42,69 +51,77 @@
   "modes": {
     "astra-sol": {
       "kind": "staged",
-      "phase_plan": {
-        "starting": {
-          "model": "gpt-6-astra",
-          "effort": "low"
-        },
-        "execution": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
-        },
-        "direct": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
+      "agents": {
+        "codex-app": {
+          "starting": {
+            "model": "gpt-6-astra",
+            "effort": "low"
+          },
+          "execution": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          },
+          "direct": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          }
         }
       }
     },
     "sol-luna": {
       "kind": "staged",
-      "phase_plan": {
-        "starting": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
-        },
-        "execution": {
-          "model": "gpt-5.6-luna",
-          "effort": "max"
-        },
-        "direct": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
+      "agents": {
+        "codex-app": {
+          "starting": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          },
+          "execution": {
+            "model": "gpt-5.6-luna",
+            "effort": "max"
+          },
+          "direct": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          }
         }
       }
     },
     "sol-sol": {
       "kind": "staged",
-      "phase_plan": {
-        "starting": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
-        },
-        "execution": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
-        },
-        "direct": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
+      "agents": {
+        "codex-app": {
+          "starting": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          },
+          "execution": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          },
+          "direct": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          }
         }
       }
     },
     "sol-direct": {
       "kind": "direct",
-      "phase_plan": {
-        "starting": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
-        },
-        "execution": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
-        },
-        "direct": {
-          "model": "gpt-5.6-sol",
-          "effort": "high"
+      "agents": {
+        "codex-app": {
+          "starting": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          },
+          "execution": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          },
+          "direct": {
+            "model": "gpt-5.6-sol",
+            "effort": "high"
+          }
         }
       }
     }
@@ -112,20 +129,24 @@
   "review": {
     "implementation": {
       "standards": {
+        "agent": "codex-app",
         "model": "gpt-6-astra",
         "effort": "low"
       },
       "spec": {
+        "agent": "codex-app",
         "model": "gpt-6-astra",
         "effort": "low"
       }
     },
     "whole-change": {
       "standards": {
+        "agent": "codex-app",
         "model": "gpt-5.6-sol",
         "effort": "xhigh"
       },
       "spec": {
+        "agent": "codex-app",
         "model": "gpt-5.6-sol",
         "effort": "xhigh"
       }

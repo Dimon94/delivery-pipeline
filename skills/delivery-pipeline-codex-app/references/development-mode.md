@@ -1,7 +1,9 @@
 # Codex App 开发模式
 
 coordinator 启动时与每个 worker 执行前读取。本文件拥有 App 工作分工、内部辅助和技术咨询；
-所有模型选择读取 `../config/models.json`；正式双轴审查仍由 resolved `code-review` owner 执行。
+配置格式遵循 canonical `../../delivery-pipeline/references/model-config-schema.md` 的 version 4
+schema（本仓的 `config/models.json` 是它的 App 实例，所有任务类型绑定 `agent: codex-app`）；
+正式双轴审查仍由 resolved `code-review` owner 执行。
 
 正式 Review 的生命周期与放行由 coordinator 管理，优先于下文及旧 owner 的 worker 内嵌
 Review 步骤。implementation worker 可保存候选 commit，缺最终结论则 blocked 回传并注明待审；
@@ -13,10 +15,10 @@ App 壳从配置解析两轴模型作为显式参数传给 owner，不选择或�
 
 ## 工作分工
 
-模型与 effort 的唯一默认来源是本 skill realpath 下的 `config/models.json`，用户明确选择优先。
+模型与 effort 的唯一默认来源是本 skill realpath 下的 `config/models.json`（version 4 App 实例），用户明确选择优先。
 启动与新分派用 `scripts/prewalk.py models` 校验并回读该文件；JSON stdin 可指定绝对
 `config_path` 使用另一份完整配置，并把返回绝对路径传入 packet/registry 和每次 helper 调用。
-不合并隐式全局/项目配置，不读取 CLI 的 model-roles.json；缺文件、缺键、非法值时阻塞新分派。
+不合并隐式全局/项目配置，不读取 CLI 实例的 model-roles.json；缺文件、缺键、非法值时阻塞新分派。
 配置文件由用户编辑，helper 不改配置、不发 App 请求。模型可用性由当前宿主 schema/接受结果核验。
 
 | 模型选择位置 | 查询配置 | 执行入口 |
@@ -103,9 +105,10 @@ kind: staged 表示起步后同任务接续，kind: direct 表示直接执行；
 review / subagent，JSON 从
 stdin 输入、结果从 stdout 读取；非零退出就保留现场并报告。脚本不调用 App、不写 registry。
 
-- resolve 输入 role、output_mode，以及可选 ticket_mode / map_mode / existing_lane。新 implementation
+- resolve 输入 task（design/frontend/backend）、output_mode，以及可选 ticket_mode / map_mode / existing_lane。新 implementation
   还必须输入 canonical `../../delivery-pipeline/references/gate-state-machine.md` 定义的
-  work_item、可选 map 与 gate_evidence；helper 在选择任何开发模式前验证实施前置证据。返回
+  work_item、可选 map 与 gate_evidence；helper 在选择任何开发模式前验证实施前置证据。ticket_mode、
+  map_mode 与配置 `default_mode` 的值都是 `modes` 中的命名预设。返回
   含冻结 phase_plan/phase_targets/execution_target/config_path 的 overlay 和创建用 model/thinking；existing_lane 直接返回 recover，不套用默认值。
 - snapshot 直接复用 canonical `../../delivery-pipeline/scripts/checkpoint.py`，输入 Git 顶层
   worktree 与可选 required_ignored，输出隔离 GIT_* 后的 HEAD/branch/common_dir、ignored、
