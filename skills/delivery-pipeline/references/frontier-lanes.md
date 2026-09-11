@@ -44,6 +44,8 @@ mode/source 也必须随 packet 和 registry 保存。
 
 每条 lane 的 pane、Execution Worktree、packet、owner/work item、role config 与 registry 已互相验证，
 worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`，即完成该 lane startup。
+`working` 确认后立即按 `pane-lifecycle-rules.md` 挂 `lane-watch.sh` watcher；未挂 watcher 的 lane
+不算完成 Dispatch Handoff——terminal 与 `PREWALK_READY` 都不会唤醒 coordinator，只能靠用户手动发现。
 整批成功 lanes 完成 startup、失败项隔离为 `setup_blocked` 后，统一报告全部坐标并立即 yield；
 不等待 routine progress、首个问题或最终结果。
 

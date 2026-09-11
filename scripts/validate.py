@@ -243,6 +243,7 @@ def check_core_contract() -> None:
             "HERDR_ROLE_DISPATCH_PACKET.md",
             "整批成功 lanes 完成 startup",
             "落点拓扑与容量只按 `pane-lifecycle-rules.md` 的「拓扑与命名」执行",
+            "`working` 确认后立即按 `pane-lifecycle-rules.md` 挂 `lane-watch.sh` watcher",
         ),
     )
     registry = CORE / "references" / "lane-registry.md"
