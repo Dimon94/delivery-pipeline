@@ -4,11 +4,13 @@
   "entrypoints": {
     "cli": "skills/delivery-pipeline/SKILL.md",
     "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
+    "orca": "skills/delivery-pipeline-orca/SKILL.md",
     "setup": "skills/delivery-pipeline-setup/SKILL.md"
   },
   "install": {
     "sharedSkillDirectory": "skills/delivery-pipeline",
     "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
+    "orcaSkillDirectory": "skills/delivery-pipeline-orca",
     "setupSkillDirectory": "skills/delivery-pipeline-setup"
   },
   "requires": [
@@ -66,6 +68,16 @@
       "name": "herdr",
       "source": "herdr",
       "reason": "Terminal multiplexer for configured pi, Codex CLI, and Claude CLI workers."
+    },
+    {
+      "name": "orca-cli",
+      "source": "orca",
+      "reason": "Version-matched Orca CLI discovery and command reference."
+    },
+    {
+      "name": "orchestration",
+      "source": "orca",
+      "reason": "Version-matched Orca worker orchestration contract."
     }
   ]
 }

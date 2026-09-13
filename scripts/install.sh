@@ -15,35 +15,55 @@ Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 
 Default target: codex
 
-Installs one canonical delivery-pipeline and delivery-pipeline-setup into each selected CLI home.
+Installs canonical delivery-pipeline, delivery-pipeline-orca, and delivery-pipeline-setup into each selected CLI home.
 Codex also receives delivery-pipeline-codex-app; Codex and Claude receive ticket-sizing.
-All skills symlink to this checkout. The pre-commit validator is installed unless --no-hooks is used.
+All skills symlink to this checkout. Symlinks establish discovery only; Orca runtime and
+capability evidence still require preflight. The pre-commit validator is installed unless --no-hooks is used.
 EOF
 }
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --no-hooks) WITH_HOOKS=0 ;;
-    --target)
-      [ "$#" -ge 2 ] || { echo "--target requires codex, claude, pi, or all" >&2; exit 1; }
-      TARGET="$2"; shift ;;
-    --codex) TARGET="codex" ;;
-    --claude) TARGET="claude" ;;
-    --pi) TARGET="pi" ;;
-    --all) TARGET="all" ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+  --no-hooks) WITH_HOOKS=0 ;;
+  --target)
+    [ "$#" -ge 2 ] || {
+      echo "--target requires codex, claude, pi, or all" >&2
+      exit 1
+    }
+    TARGET="$2"
+    shift
+    ;;
+  --codex) TARGET="codex" ;;
+  --claude) TARGET="claude" ;;
+  --pi) TARGET="pi" ;;
+  --all) TARGET="all" ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "Unknown argument: $1" >&2
+    usage
+    exit 1
+    ;;
   esac
   shift
 done
 
-case "$TARGET" in codex|claude|pi|all) ;; *) echo "Invalid --target: $TARGET" >&2; exit 1 ;; esac
+case "$TARGET" in codex | claude | pi | all) ;; *)
+  echo "Invalid --target: $TARGET" >&2
+  exit 1
+  ;;
+esac
 
 command -v python3 >/dev/null 2>&1 && python3 "$ROOT/scripts/validate.py"
 
 link_skill() {
   local source="$1" dest="$2" label="$3"
-  [ -f "$source/SKILL.md" ] || { echo "Cannot find $label at $source" >&2; exit 1; }
+  [ -f "$source/SKILL.md" ] || {
+    echo "Cannot find $label at $source" >&2
+    exit 1
+  }
   rm -rf "$dest"
   mkdir -p "$(dirname "$dest")"
   ln -s "$source" "$dest"
@@ -57,6 +77,8 @@ install_codex() {
     "$CODEX_HOME_DIR/skills/delivery-pipeline-setup" "Codex delivery-pipeline-setup"
   link_skill "$ROOT/skills/delivery-pipeline-codex-app" \
     "$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app" "Codex App shell"
+  link_skill "$ROOT/skills/delivery-pipeline-orca" \
+    "$CODEX_HOME_DIR/skills/delivery-pipeline-orca" "Codex Orca entrypoint"
   link_skill "$ROOT/skills/ticket-sizing" \
     "$CODEX_HOME_DIR/skills/ticket-sizing" "Codex ticket-sizing"
 }
@@ -66,6 +88,8 @@ install_claude() {
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline" "Claude canonical delivery-pipeline"
   link_skill "$ROOT/skills/delivery-pipeline-setup" \
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-setup" "Claude delivery-pipeline-setup"
+  link_skill "$ROOT/skills/delivery-pipeline-orca" \
+    "$CLAUDE_HOME_DIR/skills/delivery-pipeline-orca" "Claude Orca entrypoint"
   # The retired pane-dispatch compatibility helper is superseded by the canonical core.
   rm -rf "$CLAUDE_HOME_DIR/skills/pane-dispatch"
   link_skill "$ROOT/skills/ticket-sizing" \
@@ -79,14 +103,20 @@ install_pi() {
     "$PI_HOME_DIR/agent/skills/delivery-pipeline" "pi canonical delivery-pipeline"
   link_skill "$ROOT/skills/delivery-pipeline-setup" \
     "$PI_HOME_DIR/agent/skills/delivery-pipeline-setup" "pi delivery-pipeline-setup"
+  link_skill "$ROOT/skills/delivery-pipeline-orca" \
+    "$PI_HOME_DIR/agent/skills/delivery-pipeline-orca" "pi Orca entrypoint"
 }
 
 install_hooks() {
   local source="$ROOT/scripts/hooks/pre-commit" hooks_dir
   hooks_dir="$(git -C "$ROOT" rev-parse --git-path hooks 2>/dev/null)" || {
-    echo "Not a Git checkout, skipping pre-commit hook install" >&2; return 0;
+    echo "Not a Git checkout, skipping pre-commit hook install" >&2
+    return 0
   }
-  [ -f "$source" ] || { echo "Cannot find hook source at $source" >&2; exit 1; }
+  [ -f "$source" ] || {
+    echo "Cannot find hook source at $source" >&2
+    exit 1
+  }
   mkdir -p "$hooks_dir"
   ln -sf "$source" "$hooks_dir/pre-commit"
   chmod +x "$source"
@@ -95,8 +125,11 @@ install_hooks() {
 
 report_owner_availability() {
   echo "Dependency availability (diagnostic only, never blocks):"
-  command -v python3 >/dev/null 2>&1 || { echo "  skipped: python3 unavailable"; return 0; }
-  local name found
+  command -v python3 >/dev/null 2>&1 || {
+    echo "  skipped: python3 unavailable"
+    return 0
+  }
+  local name found joined
   while IFS= read -r name; do
     found=()
     compgen -G "$CLAUDE_HOME_DIR/plugins/cache/*/mattpocock-skills/*/skills/*/$name/SKILL.md" >/dev/null && found+=("plugin-cache")
@@ -105,23 +138,28 @@ report_owner_availability() {
     [ -f "$PI_HOME_DIR/agent/skills/$name/SKILL.md" ] && found+=("pi-home")
     [ -f "$AGENTS_HOME_DIR/skills/$name/SKILL.md" ] && found+=("agents-home")
     if [ "${#found[@]}" -gt 0 ]; then
-      printf '  %s\t%s\n' "$name" "$(IFS=,; echo "${found[*]}")"
+      printf -v joined '%s,' "${found[@]}"
+      printf '  %s\t%s\n' "$name" "${joined%,}"
     else
       printf '  %s\tMISSING\n' "$name"
     fi
   done < <(python3 -c 'import json; print("\n".join(x["name"] for x in json.load(open("'"$ROOT"'/skill-bundle.json"))["requires"]))')
-  for binary in herdr pi codex claude; do
-    command -v "$binary" >/dev/null 2>&1 \
-      && printf '  %s CLI\t%s\n' "$binary" "$(command -v "$binary")" \
-      || printf '  %s CLI\tMISSING\n' "$binary"
+  for binary in herdr orca pi codex claude; do
+    command -v "$binary" >/dev/null 2>&1 &&
+      printf '  %s CLI\t%s\n' "$binary" "$(command -v "$binary")" ||
+      printf '  %s CLI\tMISSING\n' "$binary"
   done
 }
 
 case "$TARGET" in
-  codex) install_codex ;;
-  claude) install_claude ;;
-  pi) install_pi ;;
-  all) install_codex; install_claude; install_pi ;;
+codex) install_codex ;;
+claude) install_claude ;;
+pi) install_pi ;;
+all)
+  install_codex
+  install_claude
+  install_pi
+  ;;
 esac
 
 [ "$WITH_HOOKS" -eq 0 ] || install_hooks

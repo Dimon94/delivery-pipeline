@@ -10,6 +10,7 @@ from typing import NoReturn
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "skills" / "delivery-pipeline"
 APP = ROOT / "skills" / "delivery-pipeline-codex-app"
+ORCA = ROOT / "skills" / "delivery-pipeline-orca"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
 TICKET_SIZING = ROOT / "skills" / "ticket-sizing"
 
@@ -25,6 +26,8 @@ DEPENDENCIES = [
     "code-review",
     "resolving-merge-conflicts",
     "herdr",
+    "orca-cli",
+    "orchestration",
 ]
 OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "none"}
 STATES = {
@@ -84,6 +87,13 @@ def require(path: Path, strings: tuple[str, ...]) -> None:
             record(f"missing invariant in {path.relative_to(ROOT)}: {item}")
 
 
+def is_executable(path: Path) -> bool:
+    try:
+        return path.is_file() and os.access(path, os.X_OK)
+    except OSError:
+        return False
+
+
 def check_skill_links(path: Path) -> None:
     for token in re.findall(r"`([^`]+\.md)`", path.read_text()):
         if token.startswith(("references/", "assets/", "../")):
@@ -93,8 +103,11 @@ def check_skill_links(path: Path) -> None:
 
 
 def check_manifest() -> None:
-    # pi-lens-ignore: unchecked-throwing-call-python
-    manifest = json.loads((ROOT / "skill-bundle.json").read_text())
+    try:
+        manifest = json.loads((ROOT / "skill-bundle.json").read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        record(f"bundle manifest is unreadable: {error}")
+        return
     if manifest.get("format") != "multi-runtime-skill-bundle/v2":
         record("bundle format must be multi-runtime-skill-bundle/v2")
     if manifest.get("name") != "delivery-pipeline":
@@ -102,12 +115,14 @@ def check_manifest() -> None:
     if manifest.get("entrypoints") != {
         "cli": "skills/delivery-pipeline/SKILL.md",
         "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
+        "orca": "skills/delivery-pipeline-orca/SKILL.md",
         "setup": "skills/delivery-pipeline-setup/SKILL.md",
     }:
         record("v2 entrypoints mismatch")
     if manifest.get("install") != {
         "sharedSkillDirectory": "skills/delivery-pipeline",
         "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
+        "orcaSkillDirectory": "skills/delivery-pipeline-orca",
         "setupSkillDirectory": "skills/delivery-pipeline-setup",
     }:
         record("v2 install directories mismatch")
@@ -119,6 +134,7 @@ def check_frontmatter() -> None:
     expected = (
         (CORE / "SKILL.md", "delivery-pipeline"),
         (APP / "SKILL.md", "delivery-pipeline-codex-app"),
+        (ORCA / "SKILL.md", "delivery-pipeline-orca"),
         (SETUP / "SKILL.md", "delivery-pipeline-setup"),
     )
     for path, name in expected:
@@ -511,7 +527,7 @@ def check_model_contract() -> None:
     )
     config_validator = SETUP / "scripts" / "model_config.py"
     # pi-lens-ignore: unchecked-throwing-call-python
-    if not config_validator.exists() or not os.access(config_validator, os.X_OK):
+    if not is_executable(config_validator):
         record("model_config.py must exist and remain executable")
     else:
         result = subprocess.run(
@@ -637,7 +653,7 @@ def check_app_shell() -> None:
             "不能把 blocked 当作无需处理",
         ),
     )
-    if not os.access(APP / "scripts" / "prewalk.py", os.X_OK):
+    if not is_executable(APP / "scripts" / "prewalk.py"):
         record("App prewalk helper must be executable")
     subprocess.run(
         [sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True
@@ -880,6 +896,69 @@ def check_app_shell() -> None:
         check_skill_links(path)
 
 
+def check_orca_contract() -> None:
+    preflight = ORCA / "scripts" / "preflight.py"
+    require(
+        ORCA / "SKILL.md",
+        (
+            "严格绑定 Orca",
+            "ORCA_CLI_COMMAND",
+            "skills get orca-cli",
+            "skills get orchestration",
+            "agent-context",
+            "skills installed --json",
+            "scripts/preflight.py run",
+            "model_config.py",
+            "dispatch unavailable",
+            "preflight-ready",
+            "authority: false",
+            "caller-declared",
+            "target_host",
+            "target + runtimeId",
+            "实际读取命令",
+            "not-run/Unknown",
+            "不 fallback 到 Herdr 或 Codex App",
+        ),
+    )
+    require(
+        preflight,
+        (
+            "resolve_orca_executable",
+            "ORCA_SKILL_NAME",
+            'path.name != "SKILL.md"',
+            '"skills", "get", name, "--full"',
+            '"agent-context"',
+            '"status"',
+            '"skills", "installed"',
+            '"terminal", "show"',
+            "MODEL_CONFIG",
+            '"resolve"',
+            '"freeze"',
+            '"dispatch": "unavailable"',
+            '"dispatch": "preflight-ready"',
+            '"authority": False',
+            '"fallback": False',
+            "caller-declared; coordinator must validate native provenance",
+            "目标 host identity",
+            '"executable": executable',
+            "shared agent/model/effort runtime readback",
+            "staged native same-session capability",
+        ),
+    )
+    if not is_executable(preflight):
+        record("Orca preflight helper must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(preflight), "self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(f"Orca preflight self-test failed: {result.stdout}{result.stderr}")
+    check_skill_links(ORCA / "SKILL.md")
+
+
 def check_tree_ownership() -> None:
     retired = (
         ROOT / "skills" / "delivery-pipeline-pi",
@@ -916,7 +995,12 @@ def check_installer() -> None:
             '"$PI_HOME_DIR/agent/skills/delivery-pipeline-setup"',
             'link_skill "$ROOT/skills/delivery-pipeline-codex-app"',
             '"$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app"',
+            'link_skill "$ROOT/skills/delivery-pipeline-orca"',
+            '"$CODEX_HOME_DIR/skills/delivery-pipeline-orca"',
+            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-orca"',
+            '"$PI_HOME_DIR/agent/skills/delivery-pipeline-orca"',
             'rm -rf "$PI_HOME_DIR/agent/skills/delivery-pipeline-pi"',
+            "Symlinks establish discovery only",
         ),
     )
     if text.count('link_skill "$ROOT/skills/delivery-pipeline"') != 3:
@@ -927,6 +1011,8 @@ def check_installer() -> None:
         record("setup skill must be installed into exactly three CLI homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-codex-app"') != 1:
         record("Codex App shell must be installed exactly once")
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline-orca"') != 3:
+        record("Orca entrypoint must be installed into exactly three agent homes")
     subprocess.run(["bash", "-n", str(install_path)], check=True)
 
 
@@ -945,6 +1031,9 @@ def check_context_and_docs() -> None:
             "new workspace requires explicit user request",
             "map isolation belongs to Map Integration Worktrees and Execution Worktrees",
             "skills/delivery-pipeline-codex-app",
+            "Orca Entrypoint",
+            "skills/delivery-pipeline-orca",
+            "dispatch unavailable",
             "There are no built-in agent/model/effort defaults",
             "repository file overlap is an Integration risk",
             "all lane types share the same worker-tab capacity pool",
@@ -965,7 +1054,14 @@ def check_context_and_docs() -> None:
             (
                 "delivery-pipeline-setup",
                 "delivery-pipeline-codex-app",
+                "delivery-pipeline-orca",
                 "model-roles.json",
+                "orca-cli",
+                "orchestration",
+                "skills installed --json",
+                "caller-declared",
+                "authority: false",
+                "host",
                 "planning",
                 "design",
                 "frontend",
@@ -1001,6 +1097,20 @@ def check_context_and_docs() -> None:
         ),
     )
     require(
+        ROOT / "docs" / "adr" / "0009-orca-runtime-entrypoint.md",
+        (
+            "Status:** Accepted",
+            "skills/delivery-pipeline-orca",
+            "version-matched",
+            "dispatch unavailable",
+            "preflight-ready",
+            "authority: false",
+            "target + runtimeId",
+            "不 fallback 到 Herdr/Codex App",
+            "#121–#128",
+        ),
+    )
+    require(
         ROOT / "docs" / "adr" / "0008-unified-task-type-config-schema.md",
         (
             "Status:** Accepted",
@@ -1033,7 +1143,7 @@ def check_context_and_docs() -> None:
 
 
 def check_pruned_policy() -> None:
-    roots = (CORE, APP, SETUP, TICKET_SIZING)
+    roots = (CORE, APP, ORCA, SETUP, TICKET_SIZING)
     forbidden = (
         re.compile(r"估时"),
         re.compile(r"估档"),
@@ -1070,8 +1180,16 @@ def check_metadata_and_helpers() -> None:
             "allow_implicit_invocation: false",
         ),
     )
+    require(
+        ORCA / "agents" / "openai.yaml",
+        (
+            'display_name: "Delivery Pipeline (Orca)"',
+            "$delivery-pipeline-orca",
+            "allow_implicit_invocation: false",
+        ),
+    )
     # pi-lens-ignore: unchecked-throwing-call-python
-    if not os.access(ROOT / "scripts" / "validate.py", os.X_OK):
+    if not is_executable(ROOT / "scripts" / "validate.py"):
         record("validator must remain executable")
 
 
@@ -1304,6 +1422,7 @@ def main() -> None:
     check_packets()
     check_lane_wakeup()
     check_app_shell()
+    check_orca_contract()
     check_tree_ownership()
     check_installer()
     check_context_and_docs()

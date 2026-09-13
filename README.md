@@ -11,9 +11,12 @@ idea/map -> discovery -> spec -> implementation tickets
 
 `skills/delivery-pipeline` is the single canonical CLI/Herdr core, installed unchanged for pi,
 Codex CLI, and Claude CLI. The calling session is the coordinator; worker agent/model/effort comes
-from user configuration. Codex App native tasks/worktrees are the sole transport exception,
+from user configuration. Codex App native tasks/worktrees remain an explicit transport exception,
 exposed by `delivery-pipeline-codex-app` with all App-specific packets and references co-located
-inside that shell.
+inside that shell. `delivery-pipeline-orca` is a separate, Orca-bound entrypoint: it reads the
+active binary's version-matched guides and blocks with `dispatch unavailable` when runtime,
+discovery, worker-policy, identity, or operation capability evidence is missing. It never falls
+back to Herdr or Codex App.
 
 ## Worker Configuration
 
@@ -48,6 +51,8 @@ Agent selects lane kind:
 
 - At least one of pi, Codex CLI, or Claude CLI as coordinator; every worker CLI named in config must exist.
 - Herdr CLI as the canonical core's terminal multiplexer.
+- Orca CLI for the independent `delivery-pipeline-orca` entrypoint; its current-runtime
+  `orca-cli` and `orchestration` guides must be readable.
 - Owner skills: `wayfinder`, `grilling`, `domain-modeling`, `prototype`, `research`, `to-spec`,
   `to-tickets`, `implement`, `code-review`, and `resolving-merge-conflicts`.
 
@@ -61,8 +66,8 @@ all four CLIs without blocking installation.
 ```
 
 The installer symlinks the same `skills/delivery-pipeline` directory into Codex, Claude, and pi
-skill homes and installs setup in all three. Codex additionally receives
-`delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
+skill homes, installs setup in all three, and exposes `delivery-pipeline-orca` in those same native
+skill discovery directories. Codex additionally receives `delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
 to skip it.
 
 Before first use in a project repo, also run `setup-matt-pocock-skills` for tracker, triage, and
@@ -120,6 +125,23 @@ The flow below shows gate recovery, configured implementation modes, same-task P
 terminal fan-in, separate whole-change testing, scope-aware dual-axis review, and Integration closeout.
 
 [![Delivery Pipeline Codex App development flow](docs/images/delivery-pipeline-codex-app-flow.en.svg)](docs/images/delivery-pipeline-codex-app-flow.en.svg)
+
+### Orca
+
+```text
+Use $delivery-pipeline-orca with <any-map-spec-or-ticket-issue>.
+```
+
+The Orca entrypoint reuses the same version 4 CLI worker configuration and owner contracts. Before
+an operation it fixes one Orca executable, reads that binary's version and `orca-cli`/`orchestration`
+guides with the exact native command provenance, then verifies runtime ready/reachable/connected,
+the status-bound target host, current terminal identity, exact `skills installed --json` discovery, and
+only the requested command/runtime capabilities. Shared agent/model/effort and same-session fields are caller-declared evidence pointers: the helper checks
+shape, binding, and readable absolute source paths, while the coordinator must read the native
+source before authorizing. A structural success is `preflight-ready` with `authority: false`.
+Missing or Unknown evidence is a visible blocked result; the entrypoint does not map agents,
+downgrade staged mode, create a second config/installer/dispatcher, or fall back to Herdr/Codex App.
+Installation and static validation do not prove a live Orca operation.
 
 ## Invariants
 

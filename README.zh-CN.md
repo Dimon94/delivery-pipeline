@@ -11,8 +11,10 @@ idea/map -> discovery -> spec -> implementation tickets
 
 `skills/delivery-pipeline` 是唯一 canonical CLI/Herdr 主干，同一份物理 skill 供 pi、Codex CLI、
 Claude CLI 使用。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
-Codex App native task/worktree 是唯一特殊 transport，入口为 `delivery-pipeline-codex-app`，其 packet
-与 references 全部共置在该壳内。
+Codex App native task/worktree 保持显式特殊 transport，入口为 `delivery-pipeline-codex-app`，其
+packet 与 references 全部共置在该壳内。`delivery-pipeline-orca` 是严格绑定 Orca 的独立入口：
+读取当前 binary 的 version-matched guide；runtime、discovery、worker policy、identity 或当前
+operation capability 缺证据时明确返回 `dispatch unavailable`，不 fallback 到 Herdr/Codex App。
 
 ## Worker 配置
 
@@ -46,6 +48,8 @@ agent 决定 lane kind：
 
 - pi、Codex CLI、Claude CLI 中至少安装一个作为 coordinator；配置引用的 worker CLI 必须存在。
 - Herdr CLI：canonical CLI 主干的 terminal multiplexer。
+- Orca CLI：独立 `delivery-pipeline-orca` 入口；必须能从当前 runtime 读取 version-matched
+  `orca-cli` 与 `orchestration` guide。
 - Owner skills：`wayfinder`、`grilling`、`domain-modeling`、`prototype`、`research`、`to-spec`、
   `to-tickets`、`implement`、`code-review`、`resolving-merge-conflicts`。
 
@@ -57,8 +61,9 @@ agent 决定 lane kind：
 ./scripts/install.sh --target all
 ```
 
-安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup 也安装到
-三端。Codex 额外获得 `delivery-pipeline-codex-app`。默认安装 pre-commit validator；
+安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup 与
+`delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
+`delivery-pipeline-codex-app`。默认安装 pre-commit validator；
 `--no-hooks` 可跳过。
 
 首次使用项目 repo 前，还需运行 `setup-matt-pocock-skills`，配置 owner skills 使用的 tracker、
@@ -112,6 +117,22 @@ python3 skills/delivery-pipeline-codex-app/scripts/prewalk.py models <<<'{}'
 按 scope 分配的双轴 Review 与 Integration 收尾。
 
 [![Delivery Pipeline Codex App 开发流程](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)
+
+### Orca
+
+```text
+使用 $delivery-pipeline-orca 继续 <任意 map/spec/ticket issue>。
+```
+
+Orca 入口复用同一 version 4 CLI worker 配置与 owner 合同。每次 operation 前只固定一个
+Orca executable，读取该 binary 的 version 与 `orca-cli`/`orchestration` guide 并记录精确原生
+命令来源，然后核对 runtime ready/reachable/connected、与 status 绑定的目标 host、当前 terminal
+identity、`skills installed --json` 精确发现，以及本次要求的 command/runtime capabilities。shared
+agent/model/effort 与 same-session 字段只是 caller-declared evidence 指针：helper 校验结构、绑定和
+可读绝对 source path；coordinator 必须读回原生 source 后才可授权。结构成功只返回 `preflight-ready` 与
+`authority: false`。证据缺失或 Unknown 即明确 blocked；不映射 agent、不把 staged 降级为
+direct、不新增配置/安装器/dispatcher，也不 fallback 到 Herdr/Codex App。安装与静态
+validator 通过不证明 Orca 真机 operation 可运行。
 
 ## 不变量
 

@@ -1,0 +1,8 @@
+interface:
+  display_name: "Delivery Pipeline (Orca)"
+  short_description: "Preflight delivery against the active Orca runtime"
+  default_prompt: >-
+    Use $delivery-pipeline-orca to preflight this issue against the current Orca
+    runtime without fallback.
+policy:
+  allow_implicit_invocation: false
