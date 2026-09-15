@@ -268,7 +268,13 @@ def check_core_contract() -> None:
             "<!-- wayfinder-lane-registry:v2 -->",
             "role: planning | design | frontend | backend | testing | review | map",
             "output_mode: commit | artifact | checks | verdict | none",
-            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator",
+            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator | orca",
+            "coordinator_runtime: pi-cli | codex-cli | claude-cli | orca-terminal | none",
+            "dispatch_runtime: herdr | orca | none",
+            "orca: <opaque-overlay-or-none>",
+            "Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`",
+            "两者都显式记录 `dispatch_runtime: orca`",
+            "按持久化的 `runtime` 与 `dispatch_runtime` 选择原 transport",
             "integration_conflict",
             "integration_checks_failed",
             "path_conflict",
@@ -917,6 +923,9 @@ def check_orca_contract() -> None:
             "target + runtimeId",
             "实际读取命令",
             "not-run/Unknown",
+            "registry_overlay.py apply",
+            "record_native_coordinates",
+            "record_readback",
             "不 fallback 到 Herdr 或 Codex App",
         ),
     )
@@ -945,6 +954,43 @@ def check_orca_contract() -> None:
             "staged native same-session capability",
         ),
     )
+    overlay = ORCA / "scripts" / "registry_overlay.py"
+    require(
+        overlay,
+        (
+            "empty_overlay",
+            "validate_overlay",
+            "persist_overlay",
+            "bind_map_run",
+            "rebind_map_coordinator",
+            "bind_lane_task",
+            "bind_attempt",
+            "record_mutation",
+            "record_observation",
+            "record_native_coordinates",
+            "record_readback",
+            "recover_map",
+            "recover_lane",
+            "recover_attempt",
+            "apply_request",
+            'sys.argv[1] == "apply"',
+            "不从当前环境推断",
+            "保留旧证据，不覆盖",
+        ),
+    )
+    if not is_executable(overlay):
+        record("Orca registry overlay helper must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(overlay), "self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"Orca registry overlay self-test failed: {result.stdout}{result.stderr}"
+            )
     if not is_executable(preflight):
         record("Orca preflight helper must exist and remain executable")
     else:

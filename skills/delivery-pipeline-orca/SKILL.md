@@ -7,8 +7,9 @@ disable-model-invocation: true
 # Delivery Pipeline（Orca）
 
 本入口与 CLI/Herdr、Codex App 并列，严格绑定 Orca。当前 Orca terminal 是 coordinator；
-外部会话不能冒充该身份。本入口只做 preflight，不创建 Run/Task/Dispatch 或 Execution
-Worktree；dispatch 尚未交付时返回 `dispatch unavailable`，不调用其他入口代办。
+外部会话不能冒充该身份。本入口先做 preflight；coordinator 核验 native provenance 后，才可通过
+既有共享 registry 的 overlay caller 创建或恢复 map Run / lane Task。Dispatch 与 Execution
+Worktree 尚未交付时返回 `dispatch unavailable`，不调用其他入口代办。
 
 ## 复用边界
 
@@ -71,6 +72,59 @@ helper 只调用 `--version`、`skills get`、`agent-context`、`status`、`term
 `agent-context` 对照，不执行。结构和路径均通过时返回 `status: ready`、
 `dispatch: preflight-ready`、`authority: false`；这不是 dispatch 授权。失败返回带具体 blockers
 的 `blocked`，不产生 mutation。
+
+- Orca-specific Run/Task 坐标不进入共享 base 顶层；由
+  `scripts/registry_overlay.py` 以 `orca:` 嵌套 opaque overlay 表达。该 helper 只翻译并核验
+  caller 提供的 registry readback，不创建第二份 registry、dispatcher 或 Orca API schema。
+- 使用顺序固定为：先用 `record_mutation(..., request_id=None, receipt_reference=None)` 持久化
+  intent/readback，再补 native request/receipt；原生坐标通过 `record_native_coordinates` /
+  `record_readback` 由 caller 提供真实 readback。写入由共享 registry owner 的 `persist_overlay`
+  callback 完成，写后必须精确读回。
+- `recover_map` / `recover_lane` 只在 stored identity、native identity 与 `writer_active: false`
+  全部明确且一致时返回 `create_*: false`；Unknown、冲突或 active writer 返回 `blocked`，不创建
+  第二 Run/Task/writer。
+
+## 共享 registry caller
+
+`preflight-ready` 本身不能进入此步骤。coordinator 核验 native source provenance 后，从既有
+tracker registry 读取 latest map/lane row，把一个操作写入 repo 外 JSON：
+
+```json
+{
+  "action": "record_mutation",
+  "kind": "map",
+  "row": {"runtime": "orchestrator", "dispatch_runtime": "orca", "coordinator_runtime": "orca-terminal", "orca": null},
+  "arguments": {"operation": "run-create"}
+}
+```
+
+然后调用唯一的 Orca overlay 入口：
+
+```text
+python3 <Orca skill realpath>/scripts/registry_overlay.py apply <absolute-request.json>
+```
+
+`kind` 必须为 `map` 或 `lane`，caller 会在操作前后核验对应 transport markers。`action` 只允许
+`record_mutation`、`record_native_coordinates`、`record_readback`、`bind_map_run`、
+`rebind_map_coordinator`、`bind_lane_task`、`bind_attempt`、`recover_map`、`recover_lane`、
+`recover_attempt`。
+每次输出仍由同一个 tracker registry owner 写回原 row 并精确 readback；下一次请求只消费该
+readback。helper 不直接访问 tracker，也不缓存 row。
+
+- 已有 Orca map/lane 先分别调用 `recover_map` / `recover_lane`；map 的 Run 与 coordinator
+  origin、lane 的 Run/Task、以及 `writer_active` 必须来自本次 native readback。旧 coordinator
+  已确认终止后，native `run-use` 只复用同一 Run，再由 `rebind_map_coordinator` 更新当前 host/terminal
+  并写入新的 mutation/readback。已有 `dispatch_id` 时还必须调用 `recover_attempt` 精确核对五项
+  attempt 坐标。任一步返回 `blocked` 都不运行 create。
+- 新 map 先用 `record_mutation` 持久化 `run-create` intent，再按 version-matched guide 做一次真实
+  Run mutation；只有真实 Run ID/request/receipt 可读时，才依次用 `bind_map_run`、
+  `record_mutation`、`record_readback` 写回并读回同一 map row。
+- 新 lane 沿已持久 map Run，先持久化 `task-create` intent，再做一次真实 Task mutation；只有真实
+  Task/Run readback 可用时，才依次用 `bind_lane_task`、`record_mutation`、`record_readback` 写回并
+  读回同一 lane row。`bind_attempt` 只记录后续阶段提供的真实 Dispatch readback，并由
+  `recover_attempt` 恢复；本票不创建 Dispatch。
+- mutation 响应或 native identity 丢失时先只读枚举；仍不能唯一消歧就保留 intent 并明确
+  `blocked`，不得再次 create、猜 ID 或声称恢复成功。
 
 ## 结果与权限
 

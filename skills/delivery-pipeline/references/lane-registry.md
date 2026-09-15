@@ -1,7 +1,7 @@
 # Durable Lane Registry
 
 每个 dispatched work item 用 tracker checkpoint保存可恢复坐标；聊天摘要与 pane label不是 registry。
-Canonical 本文件只定义 Herdr/base schema；特殊 transport overlay 与其所有者共置。
+Canonical 本文件只定义共享 base schema 与 transport markers；特殊 transport overlay 与其所有者共置。
 
 ## Base Schema
 
@@ -12,7 +12,7 @@ work_item: <url-or-gate-coordinate>
 role: planning | design | frontend | backend | testing | review | map   # 持久化字段名保留；新 lane 写入任务类型
 output_mode: commit | artifact | checks | verdict | none
 lane_id: <stable-id>
-runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator
+runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator | orca
 state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed
 agent: pi | codex | claude | none
 model: <configured-model-or-none>
@@ -35,8 +35,9 @@ continuation: <single persisted continuation overlay-or-none>
 workspace_id: <id-or-none>
 tab_id: <id-or-none>
 pane_id: <id-or-none>
-coordinator_runtime: pi-cli | codex-cli | claude-cli | none
-dispatch_runtime: herdr | none
+coordinator_runtime: pi-cli | codex-cli | claude-cli | orca-terminal | none
+dispatch_runtime: herdr | orca | none
+orca: <opaque-overlay-or-none>
 herdr_session_name: <name-or-none>
 herdr_session_owned: true | false | none
 bootstrap_authority: trusted_execution_bootstrap | none
@@ -54,7 +55,15 @@ test_strategy: test_in_integration | rebase_then_test | skip_extra_test | none
 updated_at: <ISO-8601>
 ```
 
-不写 secrets。更新后精确 readback；失败时不声称 lane可恢复。特殊 transport 字段不进入本 schema。
+Orca overlay 的写入由 `skills/delivery-pipeline-orca/scripts/registry_overlay.py` 提供最小翻译与核验：
+先持久化 mutation intent，再补 native request/receipt 与真实坐标；共享 registry owner 必须
+在写入后精确 readback。helper 不持有第二份 registry、dispatcher 或 event journal。
+`orca` 仅为共享 registry 的嵌套 opaque overlay 槽位；其内部字段、操作与恢复合同全部归
+`../../delivery-pipeline-orca/SKILL.md` 及其 helper，本文件不枚举 runtime-specific schema。
+
+Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`；
+两者都显式记录 `dispatch_runtime: orca`，coordinator 为 `coordinator_runtime: orca-terminal`。
+非 Orca lane 不补写这些 markers，也不因当前配置自动迁移。
 
 ## Worker State Machine
 
@@ -90,7 +99,8 @@ session/workspace/tab/pane是 lane坐标；
 
 ## Recovery
 
-1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry。
+1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry；按持久化的 `runtime` 与 `dispatch_runtime` 选择原 transport。
+   Orca markers 缺失或互相矛盾时保留现场并 blocked/stale，不从当前 coordinator、配置或环境推断。
 2. Herdr runtime 验证 session/workspace/tab/pane、kind、role/output_mode、agent/model/effort 与 worktree；
    execution mode/source 与阶段参数也必须一致；agent/model/effort 是 stored 启动坐标，不与 pane 的
    运行中模型对账。existing lane 不应用新 config 也不迁移 Workspace，新 lane 重新解析 Coordinator Pane
