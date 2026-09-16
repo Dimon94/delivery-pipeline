@@ -1103,6 +1103,23 @@ def check_orca_contract() -> None:
             record(
                 f"Orca project lifecycle self-test failed: {result.stdout}{result.stderr}"
             )
+    recovery = ORCA / "scripts" / "recovery.py"
+    recovery_check = ORCA / "scripts" / "recovery_check.py"
+    require(ORCA / "SKILL.md", ("references/orca-recovery.md", "scripts/recovery.py check"))
+    require(ORCA / "references" / "orca-recovery.md", (
+        "request-show", "retry-same-task", "not-run/Unknown", "worker-start --terminal",
+        "continuation.record_event", "不发最终 `worker_done`",
+    ))
+    for path in (recovery, recovery_check):
+        if not is_executable(path):
+            record(f"Orca recovery helper must exist and remain executable: {path.name}")
+    if recovery_check.exists():
+        result = subprocess.run(
+            [sys.executable, str(recovery_check)], text=True, capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(f"Orca recovery check failed: {result.stdout}{result.stderr}")
     if not is_executable(overlay):
         record("Orca registry overlay helper must exist and remain executable")
     else:

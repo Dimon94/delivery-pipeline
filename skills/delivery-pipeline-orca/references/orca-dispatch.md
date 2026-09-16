@@ -10,6 +10,10 @@
 4. 原生 receipt/readback 缺任一 Run/Task/Dispatch、requested/effective launch、terminal、Execution Worktree path/branch/base/HEAD、selector 或 execution host 时，保持 blocked，不猜坐标、不重建资源。
 5. 将完整 startup success/failure 与上述坐标沿 `registry_overlay.py` 写入同一 lane row；写前必须核对 lane Run/Task，首个与 retry attempt index 来自已持久身份并与 native `retryOfDispatchId` 相符。写后精确 readback，再把控制权交给 worker。worker_done 只作为唤醒，不是项目完成证据。
 
+retry/startup 前先走 [`orca-recovery.md`](orca-recovery.md) 的 `recovery.py` 门禁，证明原 attempt
+failed/stopped、旧 writer 已退出、原生 circuit-break 未触发；仍用同 Task，不以新 Run 绕过。
+response lost 先 request-show，重启沿原 registry 身份；该门禁不替代下面的 startup readback。
+
 ## Receipt/readback 最小字段
 
 ```json
@@ -39,7 +43,7 @@
 orca orchestration check --run <run_id> --wait --types 'worker_done,escalation,question' --timeout-ms <bounded> --json
 ```
 
-`check` 的 `deliveryId` 标识整批 Delivery，`messages` 才是其中有序的完整 batch；不能把每条 message 伪建模成一个 Delivery。完整 batch 可以包含多个 worker 的消息，因此 caller 必须提供当前 Run 内由 native `worker-list` 读回的 Task/Dispatch/terminal bindings；每条 message 按 sender terminal 绑定对应 Dispatch，`worker_done` payload 还须精确匹配该 Task/Dispatch。每次返回先按顺序处理完整 batch：
+`check` 的 `deliveryId` 标识整批 Delivery，`messages` 才是其中有序的完整 batch；不能把每条 message 伪建模成一个 Delivery。完整 batch 可以包含多个 worker 的消息，因此 caller 必须提供当前 Run 内由 native `worker-list` 读回的 Task/Dispatch/terminal bindings；每条 message 按 sender terminal 或原生 `dispatch:<id>` 唯一绑定对应 Dispatch，`worker_done` payload 还须精确匹配该 Task/Dispatch。每次返回先按顺序处理完整 batch：
 
 - 通过共享 overlay 的通用 `mutation`/`observation` 字段记录本次 Delivery/完整 message IDs、Task/Dispatch、fan-in、terminal ownership 与下一步决策的 repo 外 readback 引用；完整细节保留在原生 JSON artifact，不扩展第二套 registry schema；
 - 精确 readback 写入成功后，才 `check --ack <delivery_id>`；未 ack 消息不可跳过、不可伪消费；

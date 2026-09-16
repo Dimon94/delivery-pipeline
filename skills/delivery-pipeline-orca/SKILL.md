@@ -131,6 +131,16 @@ readback。helper 不直接访问 tracker，也不缓存 row。
 - mutation 响应或 native identity 丢失时先只读枚举；仍不能唯一消歧就保留 intent 并明确
   `blocked`，不得再次 create、猜 ID 或声称恢复成功。
 
+## Recovery 与 staged continuation
+
+失败、取消、response lost、重启、question/escalation 或 staged 中间信号进入
+[`references/orca-recovery.md`](references/orca-recovery.md)，先运行
+`scripts/recovery.py check <absolute-request.json>`。只消费 latest registry 与 native readback；
+返回 `authority: false`、`mutations: []`，不创建 Run/Task、counter 或第二份 journal。
+只有正面 failed/stopped 才考虑同 Task retry；Unknown 保留现场。staged 复用 canonical
+checkpoint/continuation，同 provider session 的真实 transport 未证明就 blocked，不降级 direct。
+真实 staged/retry/restart/pending 验收为 `not-run/Unknown` 时，#124 / Phase 1 不得关闭。
+
 ## 项目侧 fan-in 与 cleanup
 
 `worker_done`、settled 或 reclaimable 只触发项目证据检查。coordinator 必须把 `project_lifecycle.py`

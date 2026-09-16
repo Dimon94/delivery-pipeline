@@ -505,6 +505,12 @@ def _message(
         raise WorkerLifecycleError(f"batch[{index}] Run identity 不匹配")
     from_handle = _known_text(value["from_handle"], f"batch[{index}].from_handle")
     binding = bindings.get(from_handle)
+    if binding is None:
+        # 原生 ask 使用稳定 Dispatch sender；仍只接受当前 fleet 中唯一的 binding。
+        matches = [value for value in bindings.values()
+                   if from_handle == "dispatch:" + str(value["dispatch_id"])]
+        if len(matches) == 1:
+            binding = matches[0]
     if binding is None or binding["run_id"] != run_id:
         raise WorkerLifecycleError(f"batch[{index}] 未绑定已知 Dispatch terminal")
     message_type = _known_text(value["type"], f"batch[{index}].type")

@@ -25,6 +25,15 @@ Orca runtime/host/terminal：<native readback>
 4. 仅以原生 receipt/readback 记录 Run、Task、Dispatch、requested/effective launch、terminal、Execution Worktree path/branch/base/HEAD、selector 和 execution host。参数回显不能代替实际 worker readback。
 5. 整批 startup 结果和每条 `worker_done` 先写入共享 registry overlay，再处理项目 fan-in；写回前精确核对 lane Run/Task/attempt 与 native identity。失败、Unknown、identity mismatch 或缺 capability 均 fail closed。launch 与 setup 校验必须分别提供两份不同的可读绝对路径：`worker-start` receipt 作为 requested source，`worker-show` 作为 effective source；helper 解析其中 Run/Task/Dispatch 与 agent/model/effort/setup，不能接受 caller 重复声明代替 native readback。
 
+## Recovery 与 starting 边界
+
+先读 [`../references/orca-recovery.md`](../references/orca-recovery.md)。starting 的首改与最小检查
+之后，用 canonical checkpoint helper 写 repo 外原子 checkpoint；session_id 必须是已证明的
+provider session，Run/Task/Dispatch 绑定放现有 evidence。发送 PREWALK_READY / WORKER_STOPPED
+中间信号后结束当前轮，不发最终 worker_done，不进入 terminal fan-in。
+question/escalation 绑定本 lane、Task/Dispatch、checkpoint 与 work item；ask timeout 按原 message ID
+resume，不新建问题。取消、retry、response lost、restart 均先核验原生 readback；Unknown 保留现场。
+
 ## FIFO settlement
 
 使用 version-matched orchestration guide 的 `check --wait` 读取一个原生 Delivery 中的完整 FIFO messages batch。完整 batch 可包含多个 worker；每条 message 保留 message ID、Run、sender terminal、subject、body、type 和 payload，并通过 `worker-list` bindings 绑定各自 Task/Dispatch/terminal，`worker_done` 还须精确匹配其 payload 身份。未持久化 Delivery、完整 message IDs、按 Task/Dispatch 去重的待 fan-in、terminal ownership 和下一步决策前，不执行该 Delivery 的 ack；完整 settlement 还须解析 ack receipt 与 ack 后 `worker-list` JSON，不得跳过未 ack 消息或以 PTY observation 代替 fleet verdict。
