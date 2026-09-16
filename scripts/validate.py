@@ -927,6 +927,14 @@ def check_orca_contract() -> None:
             "record_native_coordinates",
             "record_readback",
             "不 fallback 到 Herdr 或 Codex App",
+            "ORCA_ROLE_DISPATCH_PACKET.md",
+            "orca-dispatch.md",
+            "worker_lifecycle.py",
+            "worker-start",
+            "Execution Worktree",
+            "FIFO",
+            "worker-list",
+            "project_lane_transition",
         ),
     )
     require(
@@ -978,6 +986,82 @@ def check_orca_contract() -> None:
             "保留旧证据，不覆盖",
         ),
     )
+    packet = ORCA / "assets" / "ORCA_ROLE_DISPATCH_PACKET.md"
+    require(
+        packet,
+        (
+            "# Orca 本地 worker dispatch packet",
+            "Mode：<staged|direct|none>",
+            "Owner：<name>; <absolute SKILL.md path>; <runtime invocation label>",
+            "worker-start",
+            "FIFO settlement",
+            "worker_done",
+            "worker-release",
+            "worktree rm",
+        ),
+    )
+    reference = ORCA / "references" / "orca-dispatch.md"
+    require(
+        reference,
+        (
+            "# Orca dispatch 与本地 worker 合同",
+            "task-create",
+            "worker-start",
+            "worker-start` receipt",
+            "`worker-show` readback",
+            "Execution Worktree",
+            "`deliveryId`",
+            "sender terminal",
+            "check --run <run_id> --wait",
+            "check --ack <delivery_id>",
+            "worker-list --run <run_id>",
+            "project lane integrated/closed",
+        ),
+    )
+    lifecycle = ORCA / "scripts" / "worker_lifecycle.py"
+    require(
+        lifecycle,
+        (
+            "validate_startup",
+            "validate_settlement",
+            "bind_startup",
+            "record_settlement",
+            "worker-start",
+            "worker_done",
+            "worker-list",
+            "requested_source",
+            "effective_source",
+            "integration_worktree",
+            "bindings",
+            "attempt_index",
+            "retryOfDispatchId",
+            "previous_attempt",
+            "requested_source",
+            "effective_source",
+            "persistence_reference",
+            "delivery_request_id",
+            "ack_source",
+            "post_ack_worker_list",
+            "message_id",
+            "fan_in_keys",
+            "ack_id",
+            "project_lane_transition",
+            '"authority": False',
+        ),
+    )
+    if not is_executable(lifecycle):
+        record("Orca worker lifecycle helper must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(lifecycle), "self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"Orca worker lifecycle self-test failed: {result.stdout}{result.stderr}"
+            )
     if not is_executable(overlay):
         record("Orca registry overlay helper must exist and remain executable")
     else:

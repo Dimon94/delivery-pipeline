@@ -11,6 +11,8 @@ disable-model-invocation: true
 既有共享 registry 的 overlay caller 创建或恢复 map Run / lane Task。Dispatch 与 Execution
 Worktree 尚未交付时返回 `dispatch unavailable`，不调用其他入口代办。
 
+本票只允许在 native `worker-start`、`worker-list` 和 overlay readback 均可核验时继续；机械核验返回的 `project_lane_transition` 永远不直接推进 project lane integrated/closed。
+
 ## 复用边界
 
 从本文件的 realpath 解析 canonical siblings，不从调用者 cwd 猜路径，也不完整执行
@@ -23,6 +25,8 @@ Worktree 尚未交付时返回 `dispatch unavailable`，不调用其他入口代
   `~/.config/delivery-pipeline/model-roles.json`，复用 setup 的 `model_config.py`
   `resolve`/`freeze` 与 version 4 schema/model evidence。不创建 Orca override、第二份配置
   或 dispatcher。Herdr 的 `startup_request` / `continuation_request` 不用于 Orca。
+- worker packet：`assets/ORCA_ROLE_DISPATCH_PACKET.md`；本票本地 dispatch/Execution Worktree/FIFO settlement 合同：`references/orca-dispatch.md`。
+- 本地 worker 的机械 readback 核验：`scripts/worker_lifecycle.py`；它逐字段解析 caller 提供的 `worker-start` receipt、独立 `worker-show` launch readback、原生 FIFO Delivery/ack JSON 和 ack 前后 `worker-list`，并核验 registry readback/fleet verdict；不发送 worker、不执行 ack，也不拥有第二套 registry。
 
 ## 每次进入操作前
 
