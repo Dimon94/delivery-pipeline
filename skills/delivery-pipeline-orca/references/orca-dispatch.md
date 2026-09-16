@@ -53,3 +53,22 @@ startup 任一失败也必须先完整 readback 后交接；Unknown 保留现场
 Execution Worktree 只能从冻结的 Integration HEAD 建立。成功后需分别回读 Source Worktree 前后快照、Map Integration Worktree path/branch/HEAD，以及 Execution Worktree path/branch/base/HEAD/selector/host；Source Worktree 保持原 branch、HEAD 与 dirty 状态不变，三者不得混作同一坐标。
 
 项目 integration/testing/review 和 output-mode gate 完成后，按顺序执行 native `worker-release`、archive/ownership readback、`worktree rm`。任一 dirty、未集成、Unknown 或 cleanup failure 都保留 worktree 与恢复坐标并标记 `close_pending`；Orca release 不等于项目 lane closeout。
+
+## 项目侧 fan-in / cleanup readback
+
+`scripts/project_lifecycle.py` 是本壳唯一的项目侧（project-side）机械门禁。它接收 `worker_lifecycle.py` 的 settlement
+readback（Run/Task/Dispatch、`worker_done`、`worker-list` fleet verdict、FIFO ack），并要求项目侧
+review/Git/Integration evidence 后才返回可供既有 gate 消费的结果；返回始终是 `authority: false`、
+`project_lane_transition: unchanged`，不把 `worker_done` 或 settled 直接变成 `integrated`、`consumed`
+或 `closed`。
+
+output mode 按共享合同处理：`commit` 必须绑定 Execution Base review、串行 cherry-pick 与 focused checks
+的通过 readback；`artifact`、`checks`、`verdict` 必须 clean 且不携带 cherry-pick，成功目标为
+`consumed`。Integration conflict 或 focused checks 失败保留现场，不回滚已经 integrated/consumed 的
+结果。
+
+cleanup request 的顺序必须精确为：项目 cleanup gate → `worker-release` → archive/output readback →
+`worktree rm` → Git branch readback。任何 dirty、未集成、active writer、archive 不全、branch 残留、
+身份冲突或 Unknown 都只返回可恢复的 `close_pending`；retry 只沿已完成步骤前缀继续，成功后仍须由
+coordinator 在清理 readback 后单独写项目 resolution 与 `closed`，并完成 git branch readback。重复 closed cleanup 只返回
+`deduplicated`，不重做 mutation。

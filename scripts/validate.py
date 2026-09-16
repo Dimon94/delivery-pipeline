@@ -1016,6 +1016,14 @@ def check_orca_contract() -> None:
             "check --ack <delivery_id>",
             "worker-list --run <run_id>",
             "project lane integrated/closed",
+            "project_lifecycle.py",
+            "project-side",
+            "project_lane_transition: unchanged",
+            "Integration conflict",
+            "close_pending",
+            "archive/output readback",
+            "git branch readback",
+            "deduplicated",
         ),
     )
     lifecycle = ORCA / "scripts" / "worker_lifecycle.py"
@@ -1061,6 +1069,39 @@ def check_orca_contract() -> None:
         if result.returncode != 0:
             record(
                 f"Orca worker lifecycle self-test failed: {result.stdout}{result.stderr}"
+            )
+    project_lifecycle = ORCA / "scripts" / "project_lifecycle.py"
+    require(
+        project_lifecycle,
+        (
+            "validate_project_fan_in",
+            "validate_cleanup",
+            "project-fan-in",
+            "worker-release",
+            "archive-readback",
+            "worktree-rm",
+            "git-branch-readback",
+            "integration_conflict",
+            "integration_checks_failed",
+            "close_pending",
+            "deduplicated",
+            "project_lane_transition",
+            "authority",
+            "不执行 Git",
+        ),
+    )
+    if not is_executable(project_lifecycle):
+        record("Orca project lifecycle helper must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(project_lifecycle), "self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"Orca project lifecycle self-test failed: {result.stdout}{result.stderr}"
             )
     if not is_executable(overlay):
         record("Orca registry overlay helper must exist and remain executable")

@@ -27,6 +27,7 @@ Worktree 尚未交付时返回 `dispatch unavailable`，不调用其他入口代
   或 dispatcher。Herdr 的 `startup_request` / `continuation_request` 不用于 Orca。
 - worker packet：`assets/ORCA_ROLE_DISPATCH_PACKET.md`；本票本地 dispatch/Execution Worktree/FIFO settlement 合同：`references/orca-dispatch.md`。
 - 本地 worker 的机械 readback 核验：`scripts/worker_lifecycle.py`；它逐字段解析 caller 提供的 `worker-start` receipt、独立 `worker-show` launch readback、原生 FIFO Delivery/ack JSON 和 ack 前后 `worker-list`，并核验 registry readback/fleet verdict；不发送 worker、不执行 ack，也不拥有第二套 registry。
+- 项目侧 fan-in/cleanup 的机械 readback 核验：`scripts/project_lifecycle.py`；它只把已 settlement 的 Orca Run/Task/Dispatch、`worker-list` fleet verdict 与 FIFO ack 送入共享 output-mode/Integration/cleanup gate，不推进 project lane state，也不执行 cherry-pick、`worker-release`、archive 或 `worktree rm`。
 
 ## 每次进入操作前
 
@@ -129,6 +130,20 @@ readback。helper 不直接访问 tracker，也不缓存 row。
   `recover_attempt` 恢复；本票不创建 Dispatch。
 - mutation 响应或 native identity 丢失时先只读枚举；仍不能唯一消歧就保留 intent 并明确
   `blocked`，不得再次 create、猜 ID 或声称恢复成功。
+
+## 项目侧 fan-in 与 cleanup
+
+`worker_done`、settled 或 reclaimable 只触发项目证据检查。coordinator 必须把 `project_lifecycle.py`
+的 readback 交给既有共享 gate：`commit` 在 Execution Base review 通过后串行 cherry-pick 与 focused
+checks，`artifact`/`checks`/`verdict` 只验证对应 evidence 并写 `consumed`，不 cherry-pick；任何成功
+结果都保持 `authority: false` 与 `project_lane_transition: unchanged`，由既有 lane state machine 写入
+`integrated`/`consumed`。
+
+cleanup readback 的固定顺序是：项目 cleanup gate → Orca `worker-release` → archive/output readback →
+Orca `worktree rm` → Git branch readback。dirty、未集成、未归档、active writer、身份冲突或 Unknown
+返回 `close_pending` 并保留 Execution Worktree；release 证据与 project lane close 证据分离。helper
+只验证 caller 提供的绝对 evidence/readback，不拥有第二套 Integration、testing、review 或 cleanup
+调度器；cleanup retry 沿已完成步骤前缀幂等重试，重复 closed readback 返回 `deduplicated`。
 
 ## 结果与权限
 
