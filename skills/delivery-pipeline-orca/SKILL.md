@@ -141,6 +141,16 @@ readback。helper 不直接访问 tracker，也不缓存 row。
 checkpoint/continuation，同 provider session 的真实 transport 未证明就 blocked，不降级 direct。
 真实 staged/retry/restart/pending 验收为 `not-run/Unknown` 时，#124 / Phase 1 不得关闭。
 
+## Browser/automation operation gate（Phase 2A）
+
+delivery 相关 browser/automation operation 进入
+[`references/orca-browser-automation.md`](references/orca-browser-automation.md)，先运行
+`scripts/browser_gate.py check <absolute-request.json>`。执行前读取版本匹配 schema 与目标
+host readback；只读 browser 不增设确认，外部写入/发消息/发布与 automation 创建/触发/暂停
+核对既有明确授权。timeout、host loss、结果 Unknown 与 capability 缺失均 fail-closed，
+只阻塞当前 Phase 2 operation，不回改 Phase 1 本地证据。真实 browser/automation 成功证据
+缺失时保持 `not-run/Unknown` 与 blocked，不以静态检查冒充 automation proof。
+
 ## 项目侧 fan-in 与 cleanup
 
 `worker_done`、settled 或 reclaimable 只触发项目证据检查。coordinator 必须把 `project_lifecycle.py`

@@ -1105,21 +1105,64 @@ def check_orca_contract() -> None:
             )
     recovery = ORCA / "scripts" / "recovery.py"
     recovery_check = ORCA / "scripts" / "recovery_check.py"
-    require(ORCA / "SKILL.md", ("references/orca-recovery.md", "scripts/recovery.py check"))
-    require(ORCA / "references" / "orca-recovery.md", (
-        "request-show", "retry-same-task", "not-run/Unknown", "worker-start --terminal",
-        "continuation.record_event", "不发最终 `worker_done`",
-    ))
+    require(
+        ORCA / "SKILL.md", ("references/orca-recovery.md", "scripts/recovery.py check")
+    )
+    require(
+        ORCA / "references" / "orca-recovery.md",
+        (
+            "request-show",
+            "retry-same-task",
+            "not-run/Unknown",
+            "worker-start --terminal",
+            "continuation.record_event",
+            "不发最终 `worker_done`",
+        ),
+    )
     for path in (recovery, recovery_check):
         if not is_executable(path):
-            record(f"Orca recovery helper must exist and remain executable: {path.name}")
+            record(
+                f"Orca recovery helper must exist and remain executable: {path.name}"
+            )
     if recovery_check.exists():
         result = subprocess.run(
-            [sys.executable, str(recovery_check)], text=True, capture_output=True,
+            [sys.executable, str(recovery_check)],
+            text=True,
+            capture_output=True,
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
         if result.returncode != 0:
             record(f"Orca recovery check failed: {result.stdout}{result.stderr}")
+    browser_gate = ORCA / "scripts" / "browser_gate.py"
+    browser_gate_check = ORCA / "scripts" / "browser_gate_check.py"
+    require(
+        ORCA / "SKILL.md",
+        ("references/orca-browser-automation.md", "scripts/browser_gate.py check"),
+    )
+    require(
+        ORCA / "references" / "orca-browser-automation.md",
+        (
+            "readback-first",
+            "phase2-operation-only",
+            "not-run/Unknown",
+            "browser.screencast.v1",
+            "consume-existing-automation",
+        ),
+    )
+    for path in (browser_gate, browser_gate_check):
+        if not is_executable(path):
+            record(
+                f"Orca browser gate helper must exist and remain executable: {path.name}"
+            )
+    if browser_gate_check.exists():
+        result = subprocess.run(
+            [sys.executable, str(browser_gate_check)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(f"Orca browser gate check failed: {result.stdout}{result.stderr}")
     if not is_executable(overlay):
         record("Orca registry overlay helper must exist and remain executable")
     else:
