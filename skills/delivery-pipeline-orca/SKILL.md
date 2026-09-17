@@ -165,6 +165,23 @@ host readback；只读 browser 不增设确认，外部写入/发消息/发布�
 只阻塞当前 Phase 2 operation，不回改 Phase 1 本地证据。真实 browser/automation 成功证据
 缺失时保持 `not-run/Unknown` 与 blocked，不以静态检查冒充 automation proof。
 
+## Remote publication gate（Phase 4）
+
+git push、PR/MR 创建/更新、merge（merge/squash/rebase）与 remote closeout 进入
+[`references/orca-remote-publication.md`](references/orca-remote-publication.md)，先运行
+`scripts/remote_publication.py check <absolute-request.json>`。push/PR-MR/merge/closeout 的
+authority 与 approval gate 明确分离，`authorization.operation_authority` 必须唯一指向本
+operation 的授权来源；无授权时只报告唯一剩余 gate，不由 capability 或 spec 标签自动授予
+push/merge 权限。所有写入 operation 以稳定 idempotency key 绑定 map/work item/lane，retry
+一律 readback-first：先读 remote ref/PR/MR 状态，non-fast-forward 禁止盲 force-push，同 head
+已有 OPEN PR 禁止重复创建，MERGED 且 response lost 恢复返回 `deduplicated`、绝不重复 merge。
+merge/closeout 前必须读回 Integration、testing、review、artifact、tracker 与 cleanup 的
+project-side fan-in 证据；remote closeout 先证 local/remote parity 与 MERGED，再核对 worker
+release、archive/output、worktree cleanup 与 registry `close_pending`/`closed` 合同，
+dirty/Unknown 保留现场。权限/网络失败、timeout 与 response Unknown 均 fail-closed，只阻塞当前
+Phase 4 operation，不回改 Phase 1-3 证据；真实 provider 验收为 `not-run/Unknown` 时本票不关闭。
+本票交付不代表整张 map 完成；完整 Orca 目标须九票全部 assigned 验收通过。
+
 ## 项目侧 fan-in 与 cleanup
 
 `worker_done`、settled 或 reclaimable 只触发项目证据检查。coordinator 必须把 `project_lifecycle.py`

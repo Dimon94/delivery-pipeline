@@ -1198,6 +1198,42 @@ def check_orca_contract() -> None:
             record(
                 f"Orca provider mutation gate check failed: {result.stdout}{result.stderr}"
             )
+    publication_gate = ORCA / "scripts" / "remote_publication.py"
+    publication_gate_check = ORCA / "scripts" / "remote_publication_check.py"
+    require(
+        ORCA / "SKILL.md",
+        (
+            "references/orca-remote-publication.md",
+            "scripts/remote_publication.py check",
+        ),
+    )
+    require(
+        ORCA / "references" / "orca-remote-publication.md",
+        (
+            "readback-first",
+            "phase4-publication-only",
+            "not-run/Unknown",
+            "consume-existing-pr",
+            "deduplicated",
+            "close_pending",
+        ),
+    )
+    for path in (publication_gate, publication_gate_check):
+        if not is_executable(path):
+            record(
+                f"Orca remote publication gate helper must exist and remain executable: {path.name}"
+            )
+    if publication_gate_check.exists():
+        result = subprocess.run(
+            [sys.executable, str(publication_gate_check)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"Orca remote publication gate check failed: {result.stdout}{result.stderr}"
+            )
     if not is_executable(overlay):
         record("Orca registry overlay helper must exist and remain executable")
     else:
