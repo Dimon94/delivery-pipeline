@@ -141,6 +141,20 @@ readback。helper 不直接访问 tracker，也不缓存 row。
 checkpoint/continuation，同 provider session 的真实 transport 未证明就 blocked，不降级 direct。
 真实 staged/retry/restart/pending 验收为 `not-run/Unknown` 时，#124 / Phase 1 不得关闭。
 
+## Provider mutation gate（Phase 2B）
+
+delivery 相关 GitHub/Linear work item、artifact publish/read/archive/delete 与既有
+PR/MR ready-for-review 状态 mutation 进入
+[`references/orca-provider-mutation.md`](references/orca-provider-mutation.md)，先运行
+`scripts/provider_mutation.py check <absolute-request.json>`。执行前核对 provider 命令
+闭集、版本匹配 CLI reference、登录身份与既有明确授权；mutation 以稳定 idempotency
+key 绑定 map/work item/lane，retry 必须 readback-first，response 丢失不盲重发。
+没有 retry-request 的原生 provider 以已存在对象/稳定身份/readback 恢复，超时后先
+inspect。权限/网络失败、Unknown response 与重复 request 均 fail-closed，只阻塞当前
+Phase 2 operation，不回改 Phase 1 本地交付证据；provider 状态变化永不替代
+project-side ticket、Integration、testing 或 review gate。没有真实 provider 证据的
+operation 保持 `not-run/Unknown` 与 blocked，不以静态检查冒充 provider proof。
+
 ## Browser/automation operation gate（Phase 2A）
 
 delivery 相关 browser/automation operation 进入

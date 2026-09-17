@@ -1163,6 +1163,41 @@ def check_orca_contract() -> None:
         )
         if result.returncode != 0:
             record(f"Orca browser gate check failed: {result.stdout}{result.stderr}")
+    provider_gate = ORCA / "scripts" / "provider_mutation.py"
+    provider_gate_check = ORCA / "scripts" / "provider_mutation_check.py"
+    require(
+        ORCA / "SKILL.md",
+        (
+            "references/orca-provider-mutation.md",
+            "scripts/provider_mutation.py check",
+        ),
+    )
+    require(
+        ORCA / "references" / "orca-provider-mutation.md",
+        (
+            "readback-first",
+            "phase2-operation-only",
+            "not-run/Unknown",
+            "consume-existing-mutation",
+            "deduplicated",
+        ),
+    )
+    for path in (provider_gate, provider_gate_check):
+        if not is_executable(path):
+            record(
+                f"Orca provider mutation gate helper must exist and remain executable: {path.name}"
+            )
+    if provider_gate_check.exists():
+        result = subprocess.run(
+            [sys.executable, str(provider_gate_check)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"Orca provider mutation gate check failed: {result.stdout}{result.stderr}"
+            )
     if not is_executable(overlay):
         record("Orca registry overlay helper must exist and remain executable")
     else:
