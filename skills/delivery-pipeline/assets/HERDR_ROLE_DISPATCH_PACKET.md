@@ -61,6 +61,14 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   - `verdict`：按 Review evidence preflight 一次物化 Git/path/staged 证据，再执行 review owner；
     所有只读子 reviewer 共用 bundle并报告 verdict/findings，保持 clean。
 - 保留 tracker fan-in、cherry-pick、Integration 和 remote actions 给 coordinator。
+- 双轴 review（code-review 的 Standards/Spec）由 worker 自跑，是 `commit`/`verdict` 交付的前置；
+  不得留给 coordinator gate。
+- API 报错处置：400/5xx/网络类自动重试继续；402 额度类（rate_limit/credit）重试无意义，
+  停止作业，final report 写 blocked 与错误原文，照常输出 LANE_DONE 唤醒 coordinator。
+- 上下文纪律（设备/截图/构建 lane 必守）：截图与二进制只落盘不读回；adb/logcat/构建日志用
+  tail/grep 截断，单条 shell 输出 ≤200 行；构建用后台+轮询。
+- 真机/模拟器 lane：每次 `adb shell input` 前断言目标包在前台（uiautomator dump 后 grep 包名，
+  不符即停手报告 STOLEN）；设备被跨 lane 抢占时不得继续注入。
 - 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
 - 当前 Agent/Model/Effort 与 packet 不符（通常是用户在本 pane 改了模型）时不阻塞，继续执行，
   照常交付并在 final report 记录 runtime 实际值与 evidence。
@@ -86,6 +94,9 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   <runtime-observation-json>`；这些命令只读或写 checkpoint，不写 registry。
 - `staged` 计划在阶段 adapter 未具备时必须保持 blocked；不得把它静默改成 `direct`。`direct` 与
   `legacy` 才能生成既有三 CLI 启动请求。
+
+- `commit` lane 提交前 Checks 基线：`pnpm install --frozen-lockfile`（JS repo 必过，防止依赖漂移
+  污染下游 lane）；涉及 assets/** 变更时加跑该 app 的 asset-inventory 检查。
 
 完成标准：
 - Work item acceptance 已满足，或已有精确 blocker。
