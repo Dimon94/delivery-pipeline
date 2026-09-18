@@ -1,0 +1,14 @@
+{
+  "test": "idle-wake-94",
+  "coordinator": "01a07afe-a3f8-7af2-ba77-9d4fe82007f3",
+  "worker": "01a07afe-a3b6-7b13-94e6-5209e30c903e",
+  "host": "local",
+  "source": "/Users/dimon/.codex/worktrees/b4da/delivery-pipeline/.scratch/app-prewalk-probe/worker.py",
+  "sha256": "ae88f2f5ba141d320703716abc75513f522e9ea303a107e17a7b52b486124963",
+  "state": "complete",
+  "consumed": [
+    "a",
+    "b"
+  ],
+  "next_sent": true
+}

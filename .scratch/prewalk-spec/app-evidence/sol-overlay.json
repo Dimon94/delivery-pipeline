@@ -1,0 +1,23 @@
+{
+  "development_mode": "astra-sol",
+  "mode_source": "ticket",
+  "execution_phase": "switching",
+  "checkpoint": "/tmp/delivery-prewalk-app-94/sol-checkpoint.json",
+  "requested_model": "gpt-5.6-sol",
+  "requested_effort": "high",
+  "model": "Unknown",
+  "effort": "Unknown",
+  "model_evidence": "Unknown",
+  "lane_id": "probe-astra-sol",
+  "thread_id": "01a07afe-a3b6-7b13-94e6-5209e30c903e",
+  "host_id": "local",
+  "state": "running",
+  "worktree": "/Users/dimon/.codex/worktrees/b4da/delivery-pipeline",
+  "previous_model_evidence": {
+    "requested_model": "gpt-6-astra",
+    "requested_effort": "low",
+    "model": "Unknown",
+    "effort": "Unknown",
+    "model_evidence": "Unknown"
+  }
+}

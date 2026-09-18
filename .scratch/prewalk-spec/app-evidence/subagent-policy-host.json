@@ -1,0 +1,40 @@
+[
+  {
+    "id": "01a07b1d-57a8-7e01-ba36-bc7a1ea7a451",
+    "parent": "01a07afe-a3f8-7af2-ba77-9d4fe82007f3",
+    "source": "/Users/dimon/.codex/sessions/2026/09/07/rollout-2026-09-07T17-05-15-01a07b1d-57a8-7e01-ba36-bc7a1ea7a451.jsonl",
+    "contexts": [
+      {
+        "turn_id": "01a07b1d-5826-7563-b208-4a500ca66973",
+        "model": "gpt-5.6-luna",
+        "effort": "high",
+        "cwd": "/Users/dimon/.codex/worktrees/2866/delivery-pipeline"
+      },
+      {
+        "turn_id": "01a07b1d-ff99-74f2-936c-e2a08c185e27",
+        "model": "gpt-5.6-luna",
+        "effort": "high",
+        "cwd": "/Users/dimon/.codex/worktrees/2866/delivery-pipeline"
+      }
+    ]
+  },
+  {
+    "id": "01a07b1e-be10-7c71-9113-50a343aeaf56",
+    "parent": "01a07afe-a3f8-7af2-ba77-9d4fe82007f3",
+    "source": "/Users/dimon/.codex/sessions/2026/09/07/rollout-2026-09-07T17-06-47-01a07b1e-be10-7c71-9113-50a343aeaf56.jsonl",
+    "contexts": [
+      {
+        "turn_id": "01a07b1e-be87-7553-98ec-bcc62ebf0225",
+        "model": "gpt-6-astra",
+        "effort": "low",
+        "cwd": "/Users/dimon/.codex/worktrees/2866/delivery-pipeline"
+      },
+      {
+        "turn_id": "01a07b1f-84b8-7c33-9fc6-29a1439297d6",
+        "model": "gpt-6-astra",
+        "effort": "low",
+        "cwd": "/Users/dimon/.codex/worktrees/2866/delivery-pipeline"
+      }
+    ]
+  }
+]

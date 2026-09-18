@@ -1,0 +1,104 @@
+[
+  {
+    "label": "direct-sol",
+    "requested_model": "gpt-5.6-sol",
+    "effort": "high",
+    "seconds": 82.64,
+    "exit": 0,
+    "thread_id": "01a07ac5-8648-7a52-82b8-2042ab64cc76",
+    "usage": {
+      "input_tokens": 97121,
+      "cached_input_tokens": 77440,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3106,
+      "reasoning_output_tokens": 742
+    },
+    "final": "我会先读取 `worker.py` 的现状与已有接口约定，然后只修改该文件，并用标准库做最小行为验证（包括输入不变、重复事件、非法转换与完整流程）。\n现有文件只有占位函数。我将把转换表直接编码，并在任何校验通过前不构造可见变更；返回值会深拷贝输入状态，避免 `seen` 或其他可变字段与输入共享引用。\n首次验证发现环境没有 `python` 命令（实现本身尚未执行）；我改用系统提供的 `python3` 运行同一组最小断言，并继续禁用字节码文件生成。\n已完成 [worker.py](/private/var/folders/06/rykcjn2x0z36tpy2zvd3dnm00000gn/T/prewalk-prototype-yp7tz7mi/worker.py)：\n\n- 实现全部状态转换及校验\n- 重复事件幂等返回\n- 不修改 `state` 或 `event`\n- 非法事件抛出 `ValueError`\n- 仅使用 Python 标准库\n- 最小验证已通过，包括完整流程、重复事件及失败原子性\n\n未修改其他文件，未执行 Git 或网络操作。",
+    "token_recalled": false,
+    "runtime_model": "gpt-5.6-sol",
+    "runtime_service_tier": "Unknown",
+    "checks": {
+      "passed": 8,
+      "total": 8,
+      "failures": []
+    },
+    "lines": 52,
+    "runtime_effort": "high",
+    "model_evidence": "本地 session turn_context；不代表后端服务证明"
+  },
+  {
+    "label": "astra-start",
+    "requested_model": "gpt-6-astra",
+    "effort": "low",
+    "seconds": 48.34,
+    "exit": 0,
+    "thread_id": "01a07ac6-c851-7b93-88a7-0a4659275cdb",
+    "usage": {
+      "input_tokens": 57945,
+      "cached_input_tokens": 37760,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 640,
+      "reasoning_output_tokens": 11
+    },
+    "final": "我会先读取 worker.py，列出 TODO；本轮只实现 start 和输入不变性，运行最小检查后停止。\n现有 apply 仅抛出 NotImplementedError。TODO：本轮实现 idle → starting、追加 seen，并验证不修改输入；接续轮补齐重复 id、其余转换及合法性验证。未实现的转换暂时保留 NotImplementedError。\nPREWALK_READY\n\n仅修改 worker.py，实现 start 转换与 seen 追加。最小检查通过：成功及非法 start 均不修改输入。\n\n剩余 TODO：\n\n- 重复 id 返回等值 state。\n- 实现 ready、dispatch、unknown、ack、finish、approve、integrate。\n- 补齐 checkpoint 和非法事件验证。\n- 验证全部转换、去重及失败时输入不变性。",
+    "token_recalled": false,
+    "runtime_model": "gpt-6-astra",
+    "runtime_service_tier": "Unknown",
+    "runtime_effort": "low",
+    "model_evidence": "本地 session turn_context；不代表后端服务证明"
+  },
+  {
+    "label": "prewalk-sol",
+    "requested_model": "gpt-5.6-sol",
+    "effort": "high",
+    "seconds": 95.25,
+    "exit": 0,
+    "thread_id": "01a07ac7-8511-7130-9f84-a8c105816217",
+    "usage": {
+      "input_tokens": 152758,
+      "cached_input_tokens": 130560,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3206,
+      "reasoning_output_tokens": 841
+    },
+    "final": "我会沿现有实现补齐 TODO：先核对 worker.py 当前内容，再实现去重、完整状态转换和校验，最后用内联 Python 覆盖主流程、非法事件与输入不变性。\n完整转换已补齐。实现先处理重复 id，再构造新 state；所有成功事件生成新的 seen 列表，校验失败发生在返回前且不会触碰输入。现在运行一组紧凑验证。\n交接口令：`702c2aff64a0086f`\n\n已完成 [worker.py](/private/var/folders/06/rykcjn2x0z36tpy2zvd3dnm00000gn/T/prewalk-prototype-yp7tz7mi/worker.py) 的全部转换。\n\n验证结果：`PASS`——完整流程、unknown、重复 id、非法事件及输入不变性均通过。",
+    "token_recalled": true,
+    "runtime_model": "gpt-5.6-sol",
+    "runtime_service_tier": "Unknown",
+    "checks": {
+      "passed": 8,
+      "total": 8,
+      "failures": []
+    },
+    "lines": 42,
+    "runtime_effort": "high",
+    "model_evidence": "本地 session turn_context；不代表后端服务证明"
+  },
+  {
+    "label": "prewalk-luna",
+    "requested_model": "gpt-5.6-luna",
+    "effort": "high",
+    "seconds": 75.89,
+    "exit": 0,
+    "thread_id": "01a07ac9-0107-7480-9fc1-fd713627d649",
+    "usage": {
+      "input_tokens": 74844,
+      "cached_input_tokens": 56576,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3133,
+      "reasoning_output_tokens": 1552
+    },
+    "final": "我会在现有首处实现上补齐全部状态转换、重复 id 去重和失败不变性，然后只对 worker.py 做最小序列验证。交接口令已从当前会话上下文记得，无需读取任何日志或文件。\n完整实现已写入 worker.py。现在验证一条完整合法流程、重复 id、unknown 分支、checkpoint 条件，以及非法事件抛错时输入保持不变。\n已完成 [worker.py](/private/var/folders/06/rykcjn2x0z36tpy2zvd3dnm00000gn/T/prewalk-prototype-yp7tz7mi/worker.py)。\n\n验证通过：完整合法流程、重复 id、unknown、checkpoint 校验及非法事件输入不变性均正常。\n\n交接口令：`702c2aff64a0086f`",
+    "token_recalled": true,
+    "runtime_model": "gpt-5.6-luna",
+    "runtime_service_tier": "Unknown",
+    "checks": {
+      "passed": 8,
+      "total": 8,
+      "failures": []
+    },
+    "lines": 38,
+    "runtime_effort": "high",
+    "model_evidence": "本地 session turn_context；不代表后端服务证明"
+  }
+]

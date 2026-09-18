@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prewalk 接续原型</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#17251f;background:#f6f8f6;margin:0}main{max-width:1050px;margin:auto;padding:36px 22px}h1{margin:0}h2{font-size:21px;margin-top:32px}.tag{color:#126447;font-weight:650}section{background:white;border:1px solid #d9e2dc;border-radius:12px;padding:22px;margin:18px 0}button,select{font:inherit;padding:8px 13px;border:1px solid #a8bbb0;border-radius:7px;background:white;color:#173c2e;margin:4px;cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #269f71;outline-offset:2px}button[aria-selected=true]{background:#176b4b;color:white}button:disabled{opacity:.45;cursor:default}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}dt{font-size:13px;color:#53675b}dd{margin:0;overflow-wrap:anywhere;font-weight:600}.notice{border-left:4px solid #217952;padding-left:14px}.log{max-height:170px;overflow:auto;font-size:14px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid #e0e6e2;padding:9px}.scroll{overflow:auto}.muted{color:#57675e}#feedback{min-height:30px}code{background:#edf3ef;padding:2px 5px}</style>
+<main><span class="tag">PROTOTYPE · 一次性逻辑原型</span><h1>Prewalk：接着做，还是重新交接？</h1><p>问题：Astra 起步后切换执行模型，怎样保留调查轨迹，并避免重复启动、旧检查点和过早集成？此页面模拟状态规则；下方 CLI 实验单独记录真实结果。模型质量与 App 支持情况不能由模拟证明。</p>
+<section><label for="mode">交接方式</label><select id="mode"><option value="prewalk">同会话 Prewalk</option><option value="document">新会话文档交接</option><option value="direct">Sol 直接执行</option></select><button id="reset">重置</button><p id="meaning" class="muted"></p><dl id="state" class="grid"></dl><p id="feedback" role="status" aria-live="polite"></p></section>
+<h2>自由操作</h2><p class="muted">可以故意跳步，观察为什么被拒绝。这里所有模型值都是模拟的请求值。</p><div id="actions"></div>
+<section><h2 style="margin-top:0">引导场景</h2><div id="tabs" role="tablist" aria-label="引导场景"></div><p id="description"></p><div id="steps"></div></section>
+<section><h2 style="margin-top:0">操作记录</h2><ol id="log" class="log"></ol></section>
+<h2>真实 CLI 小样本对比</h2><p>同一份纯函数任务；单次运行、固定顺序；Prewalk 两组从同一 Astra 起步会话 fork，恢复同一份首处代码。所有请求均为标准速度，未测试 fast。fork 接续不等于 App 同 task 原位换模型。</p><div class="scroll"><table><thead><tr><th>路径</th><th>总耗时</th><th>检查</th><th>历史口令</th><th>代码行数</th><th>模型证据</th></tr></thead><tbody id="results"><tr><td>Sol high 直接执行</td><td>82.64 秒</td><td>8 / 8</td><td>不适用</td><td>52</td><td>gpt-5.6-sol / high（宿主记录）</td></tr><tr><td>Astra low → Sol high</td><td>143.59 秒</td><td>8 / 8</td><td>已回忆</td><td>42</td><td>gpt-5.6-sol / high（宿主记录）</td></tr><tr><td>Astra low → Luna high</td><td>124.23 秒</td><td>8 / 8</td><td>已回忆</td><td>38</td><td>gpt-5.6-luna / high（宿主记录）</td></tr></tbody></table></div><p id="verdict" class="notice">本次三组均通过 8 项检查，两个接续模型都回忆出历史口令。计入 Astra 起步 48.34 秒后，Prewalk 没有节省总耗时。只证明本次 CLI fork 可接续，不能据此选择生产默认模型。</p><details><summary>实验边界与数据口径</summary><p>Prewalk 总耗时计入共享 Astra 起步耗时。检查是同一组 8 项行为断言；通过不代表完整正确性。历史口令只出现在起步 prompt，用于检查接续可见性，不代表所有历史逐 token 保留。模型与服务档位若无宿主证据，保持 Unknown。输出行数不代表过度设计。原始 prompts、JSONL、生成代码与结果在本 HTML 同目录。</p></details>
+</main>
+<script>
+// 独立纯状态逻辑；没有 DOM 依赖。
+function initial(mode='prewalk'){return {mode,phase:'idle',checkpoint:null,pending:null,writer:null,history:false,document:false,seen:[],message:'尚未启动'}}
+function transition(s,event){const n={...s,seen:[...s.seen]};if(s.seen.includes(event.id))return {...n,message:'重复事件已忽略；不会启动第二个执行者'};const k=event.kind;let ok=false;
+if(k==='start'&&s.phase==='idle'){n.phase=s.mode==='direct'?'executing':'starting';n.writer=s.mode==='direct'?'Sol / high':'Astra / low';ok=true}
+if(k==='ready'&&s.phase==='starting'){n.phase='ready';n.checkpoint='checkpoint-1';n.writer=null;n.document=true;ok=true}
+if(k==='dispatch'&&s.phase==='ready'&&event.checkpoint===s.checkpoint){n.phase='switching';n.pending=event.id;ok=true}
+if(k==='unknown'&&s.phase==='switching'){ok=true}
+if(k==='ack'&&s.phase==='switching'){n.phase='executing';n.pending=null;n.writer='Sol / high';n.history=s.mode==='prewalk';ok=true}
+if(k==='finish'&&s.phase==='executing'){n.phase='review';n.writer=null;ok=true}
+if(k==='approve'&&s.phase==='review'){n.phase='reviewed';ok=true}
+if(k==='integrate'&&s.phase==='reviewed'){n.phase='integrated';ok=true}
+if(!ok)return {...n,message:'拒绝：当前阶段或检查点不匹配；原状态保留'};
+n.seen.push(event.id);n.message=k==='unknown'?'发送结果未知：先核对原任务，不能直接再发一次':'已执行：'+k;return n}
+</script>
+<script>
+let state=initial(), log=[], active=0, position=0;
+const labels={start:'启动任务',ready:'首处实现完成并暂停',dispatch:'请求接续',stale:'用旧检查点接续',unknown:'发送结果未知',ack:'读回接续已启动',finish:'执行与测试完成',approve:'双轴审查通过',integrate:'集成交付'};
+const scenarios=[{name:'正常接续',description:'Astra 暂停后才切换；只有审查完成才能集成。',steps:['start','ready','dispatch','ack','finish','approve','integrate']},{name:'发送结果未知',description:'请求可能已被接受。重复请求不能直接产生第二个执行者；读回确认后再继续。',steps:['start','ready','dispatch','unknown','dispatch','ack']},{name:'旧检查点',description:'检查点不符时保持等待，使用正确坐标才接续。',steps:['start','ready','stale','dispatch','ack']},{name:'提前集成',description:'首处修改与执行完成都不代表审查通过。',steps:['start','ready','integrate','dispatch','ack','finish','integrate','approve','integrate']}];
+const phaseNames={idle:'未启动',starting:'Astra 起步',ready:'检查点就绪',switching:'切换待确认',executing:'执行中',review:'待双轴审查',reviewed:'审查通过',integrated:'已集成'};
+function act(kind){const event={kind:kind==='stale'?'dispatch':kind,id:kind,checkpoint:kind==='stale'?'old':'checkpoint-1'};state=transition(state,event);log.push(labels[kind]+' → '+state.message);render()}
+function reset(){state=initial(document.querySelector('#mode').value);log=[];position=0;render()}
+function render(){document.querySelector('#meaning').textContent={prewalk:'模拟假设：同一执行任务保留已读取的历史；需要真实宿主验证。',document:'新执行会话拿到文档与代码状态，不自动得到起步会话的工具轨迹。',direct:'由 Sol 从头调查与实现，不经过起步模型交接。'}[state.mode];
+const fields=[['当前阶段',phaseNames[state.phase]],['已确认写入者',state.writer||'无'],['检查点',state.checkpoint||'无'],['待确认请求',state.pending||'无'],['起步历史可见（模拟）',state.history?'是':'否'],['交接文档',state.document?'已有':'无'],['已处理事件',state.seen.join(' → ')||'无']];document.querySelector('#state').innerHTML=fields.map(([a,b])=>'<div><dt>'+a+'</dt><dd>'+b+'</dd></div>').join('');document.querySelector('#feedback').textContent=state.message;document.querySelector('#log').replaceChildren(...log.map(t=>{const li=document.createElement('li');li.textContent=t;return li}));document.querySelector('#description').textContent=scenarios[active].description;
+document.querySelector('#tabs').replaceChildren(...scenarios.map((x,i)=>{const b=document.createElement('button');b.textContent=x.name;b.setAttribute('role','tab');b.setAttribute('aria-selected',i===active);b.onclick=()=>{active=i;document.querySelector('#mode').value='prewalk';reset()};return b}));
+document.querySelector('#steps').replaceChildren(...scenarios[active].steps.map((x,i)=>{const b=document.createElement('button');b.textContent=(i+1)+'. '+labels[x];b.disabled=i!==position;b.onclick=()=>{position++;act(x)};return b}))}
+document.querySelector('#actions').replaceChildren(...Object.keys(labels).map(k=>{const b=document.createElement('button');b.textContent=labels[k];b.onclick=()=>act(k);return b}));document.querySelector('#mode').onchange=reset;document.querySelector('#reset').onclick=reset;render();
+</script>
+<!-- RESULTS_INSERT -->
+</html>

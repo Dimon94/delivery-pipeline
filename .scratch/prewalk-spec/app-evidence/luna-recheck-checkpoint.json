@@ -1,0 +1,32 @@
+{
+  "lane_id": "probe-astra-luna-recheck",
+  "thread_id": "01a07af9-d9ac-74c0-88ac-36d20f37c8cb",
+  "host_id": "local",
+  "base_commit": "7ed832b566c06f2051e6d6db51b8848b72391aba",
+  "first_edit": [
+    ".scratch/app-prewalk-probe/worker.py"
+  ],
+  "snapshot": {
+    "worktree": "/Users/dimon/.codex/worktrees/bacf/delivery-pipeline",
+    "head": "7ed832b566c06f2051e6d6db51b8848b72391aba",
+    "branch": "HEAD",
+    "common_dir": "/Users/dimon/01-Personal/10-Projects/delivery-pipeline/.git",
+    "index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dirty": {
+      ".scratch/app-prewalk-probe/worker.py": {
+        "mode": 33188,
+        "sha256": "f438af12b66c97790da32756794f23ef41b41ccbec82a4b91857864f94c43693"
+      }
+    }
+  },
+  "todo": [
+    "实现 reset 及完整验证"
+  ],
+  "checks": [
+    "existing checks pass"
+  ],
+  "evidence": [
+    "wait_threads first recheck turn completed"
+  ],
+  "decision": "验证修正身份prompt后的原任务接续"
+}

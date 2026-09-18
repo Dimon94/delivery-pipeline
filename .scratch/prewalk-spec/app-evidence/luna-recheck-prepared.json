@@ -1,0 +1,34 @@
+{
+  "action": "persist-before-send",
+  "overlay": {
+    "development_mode": "astra-luna",
+    "mode_source": "default",
+    "execution_phase": "switching",
+    "checkpoint": "/tmp/delivery-prewalk-app-94/luna-recheck-checkpoint.json",
+    "requested_model": "gpt-5.6-luna",
+    "requested_effort": "high",
+    "model": "Unknown",
+    "effort": "Unknown",
+    "model_evidence": "Unknown",
+    "lane_id": "probe-astra-luna-recheck",
+    "thread_id": "01a07af9-d9ac-74c0-88ac-36d20f37c8cb",
+    "host_id": "local",
+    "state": "running",
+    "worktree": "/Users/dimon/.codex/worktrees/bacf/delivery-pipeline",
+    "base_commit": "7ed832b566c06f2051e6d6db51b8848b72391aba",
+    "previous_model_evidence": {
+      "requested_model": "gpt-6-astra",
+      "requested_effort": "low",
+      "model": "Unknown",
+      "effort": "Unknown",
+      "model_evidence": "Unknown"
+    }
+  },
+  "request": {
+    "threadId": "01a07af9-d9ac-74c0-88ac-36d20f37c8cb",
+    "hostId": "local",
+    "model": "gpt-5.6-luna",
+    "thinking": "high",
+    "prompt": "你是本任务 Execution Worktree 内的实现 worker；直接继续实现，不承担协调器监控。起步轮限制已结束。沿本任务历史及原 packet/owner/权限接续；读取检查点 /tmp/delivery-prewalk-app-94/luna-recheck-checkpoint.json，完成剩余实现、测试与原 owner 的交付步骤。 此隔离探针仅完成 reset；只编辑原 worker.py，不提交推送、不委派、不调用任何 thread 工具、不读其他任务或会话日志。最终报告从本任务上一轮历史记得的最新口令（不从文件找）、cwd 与验证结果。"
+  }
+}
