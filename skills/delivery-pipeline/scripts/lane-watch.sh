@@ -4,11 +4,11 @@
 # prompt Coordinator Pane 唤醒 fan-in；pane 异常消失或超时也会唤醒。
 # 不用 `herdr agent wait --until done`:CLI agent 完成回合回到 idle 不会触发
 # `done` 事件,listener 会永久阻塞。
-# Usage: lane-watch.sh <worker_pane_id> <coordinator_pane_id> <lane_id> <lane_label>
+# Usage: lane-watch.sh <worker_pane_id> <coordinator_pane_id> <lane_id> <lane_label> [timeout_hours=2]
 set -u
-PANE="$1"; COORD="$2"; LANE_ID="$3"; LABEL="$4"
+PANE="$1"; COORD="$2"; LANE_ID="$3"; LABEL="$4"; TIMEOUT_H="${5:-2}"
 export HERDR_ENV=1
-DEADLINE=$(( $(date +%s) + 7200 ))
+DEADLINE=$(( $(date +%s) + TIMEOUT_H*3600 ))
 SEEN_PREWALK=''
 PENDING_PREWALK=''
 
@@ -50,5 +50,5 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   sleep 20
 done
 # timeout: wake coordinator to check manually
-herdr agent prompt "$COORD" "WAKE: $LABEL watcher 超时(2h 未见 LANE_DONE $LANE_ID)。请人工检查 pane $PANE 与 registry 中 lane $LANE_ID 的状态。" >/dev/null 2>&1
+herdr agent prompt "$COORD" "WAKE: $LABEL watcher 超时(${TIMEOUT_H}h 未见 LANE_DONE $LANE_ID)。请人工检查 pane $PANE 与 registry 中 lane $LANE_ID 的状态。" >/dev/null 2>&1
 exit 1
