@@ -55,6 +55,9 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
    runtime、permission mode、pane/worktree 计划坐标与 base commit，再精确 readback。
 3. 从同一 Integration HEAD 创建各 lane Execution Worktree，branch prefix 与 agent kind 一致。
 4. 填写 `assets/HERDR_ROLE_DISPATCH_PACKET.md`；按 `model-role-routing.md` 启动 kind-matched CLI。
+   Packet 投递默认走 repo 外文件路径（`~/.config/delivery-pipeline/packets/<lane_id>.md`），
+   `herdr agent prompt` 只发「读取 dispatch packet 执行：<绝对路径>」；超长内嵌文本会被
+   pane 折叠成 `[paste #N +M lines]` 占位符，worker 拿不到内容空转。
 5. 按 `pane-lifecycle-rules.md` 完成落点验证、投递、记账和聚合 Working 确认；单条失败隔离为
    `setup_blocked`，不影响 siblings。
 6. 整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff；单 lane working 不提前 yield。
