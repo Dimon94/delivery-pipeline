@@ -19,7 +19,9 @@ checks与 verdict 是执行真相源。
    Review fixed point 等于 lane base commit、bundle 七文件 readback存在；无 commit、review evidence
    或 dirty未说明时阻塞。
 2. 在 Map Integration Worktree按 dependency order执行 `git cherry-pick "$TERMINAL_COMMIT"`。
-3. 冲突时 `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
+3. 冲突时先判定能否语义合并（跨 lane 双实现按 spec/合同取舍）；解冲突后、`--continue` 前跑
+   `git diff --check` 并 `grep -rn '<<<<<<<' <touched-files>`，确认零冲突标记残留；无法合并才
+   `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
    `resolving-merge-conflicts` owner。
 4. cherry-pick 后运行 focused checks；失败写 `integration_checks_failed`并保留现场；通过写
    `integrated`。
