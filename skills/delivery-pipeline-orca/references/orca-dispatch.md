@@ -6,7 +6,19 @@
 
 1. coordinator 从已通过的 implementation gate 读取 lane、owner 三字段、output mode、冻结 mode、Integration HEAD、权限和 review fixed point。
 2. 沿 #121 的共享 overlay 先写 `task-create` intent；创建真实 Task 后写回 Task/Run readback。随后写 Dispatch intent，再执行原生 `orchestration worker-start`。
-3. `worker-start` 必须绑定 `--task`、`--worktree new-child`、冻结 Integration HEAD 的显式 base、明确 worker name/selector、共享 policy 的 agent 与 setup policy。Source Worktree 不切 branch。
+3. `worker-start` 必须绑定 `--task`、冻结 Integration HEAD 的显式 base、明确 worker name/selector、共享 policy 的 agent 与 setup policy。Source Worktree 不切 branch。launch transport 按 agent 能力二选一（见下节）。
+
+## Launch transport
+
+model/effort 的传递有两条原生链路，按目标 agent 的 launch-preference 能力选择；二者不得混用：
+
+- **`launch-preferences`**（Claude/Codex/Cursor）：`worker-start --worktree new-child --base-branch <Integration HEAD> --agent <id> --model <model> --effort <effort>`。receipt 的 `launch.requested` 与 worker-show 的 `startOptions.launch.effective` 均携带非空 agent/model/effort，必须分别与声明一致。
+- **`agent-argv`**（pi 及任何被 `worker-start` 原生拒绝 launch-time model selection 的 agent，native 错误 `Agent <id> does not support launch-time model selection`）：`--terminal` 与 worktree creation flags 不兼容，顺序改为——
+  1. `orca worktree create --name <worker> --base-branch <Integration HEAD>`（不带 `--agent`，setup policy 按共享 policy）；此时 Orca 物化一个兜底 shell tab；
+  2. `terminal list` 确认该 tab 是 unused shell（唯一终端、无命令运行；repo default-terminal 配置可能物化其他 tab，非 unused shell 时改用 `terminal create --command` 另起终端），然后 `terminal send --enter` 直接复用它，把共享 model_config 的冻结 argv 打进去（pi 为 `pi --approve --model <model> --thinking <effort>`，与 Herdr 主干同一 argv，不引入第二套映射）；send 是 queued 语义，shell 未就绪也不丢输入（已实测），poll `terminal read` 等 agent 状态行出现；
+  3. `orca orchestration worker-start --task <task_id> --terminal <handle> --worktree <新 worktree>`。
+
+  该路径 receipt/readback 的 `launch.requested`/`effective` 字段按设计全部为 `null`（Orca 未做 launch-time model selection），**不是缺口**；model/effort 的 effective 证据是 worker 终端的原生读回（`terminal read` 状态行，pi 形如 `glm-5.3-flash[low]` / `thinking low`）。声明的 requested=冻结计划、effective=终端读回，两者必须逐字段一致；`terminal_source` 必须绑定 Dispatch 的 terminal handle 且文本包含 effective model id 与 effort。
 4. 原生 receipt/readback 缺任一 Run/Task/Dispatch、requested/effective launch、terminal、Execution Worktree path/branch/base/HEAD、selector 或 execution host 时，保持 blocked，不猜坐标、不重建资源。
 5. 将完整 startup success/failure 与上述坐标沿 `registry_overlay.py` 写入同一 lane row；写前必须核对 lane Run/Task，首个与 retry attempt index 来自已持久身份并与 native `retryOfDispatchId` 相符。写后精确 readback，再把控制权交给 worker。worker_done 只作为唤醒，不是项目完成证据。
 
@@ -28,12 +40,14 @@ response lost 先 request-show，重启沿原 registry 身份；该门禁不替�
   "source": {"path": "<absolute user worktree>", "branch": "<unchanged branch>", "head": "<unchanged HEAD>", "base": "<source base or explicit Unknown>", "selector": "<native source selector>", "host": "<native source host>", "dirty_fingerprint": "<unchanged>"},
   "integration_worktree": {"path": "<absolute map worktree>", "branch": "<map branch>", "head": "<Integration HEAD>", "base": "<Integration HEAD>", "selector": "<native integration selector>", "host": "<native integration host>", "dirty_fingerprint": "<integration readback>"},
   "execution_worktree": {"path": "<absolute child>", "branch": "<isolated branch>", "head": "<Integration HEAD>", "base": "<Integration HEAD>", "selector": "<native execution selector>", "host": "<native execution host>", "dirty_fingerprint": "<execution readback>"},
-  "launch": {"requested": {"agent": "<shared policy>", "model": "<shared model>"}, "effective": {"agent": "<native readback>", "model": "<native readback>"}},
+  "launch": {"transport": "launch-preferences | agent-argv", "requested": {"agent": "<shared policy>", "model": "<shared model>", "effort": "<shared effort>"}, "effective": {"agent": "<native readback>", "model": "<native readback>", "effort": "<native readback>"}, "terminal_source": "<agent-argv 专用：worker 终端 readback 绝对路径>"},
   "setup": {"requested": "<policy>", "effective": "<native readback>", "requested_source": "<worker-start receipt>", "effective_source": "<worker-show readback>"}
 }
 ```
 
 `requested` 必须解析自 `worker-start` receipt，`effective` 必须解析自另一份 `worker-show` readback；launch 与 setup 两组 requested/effective 都必须分别核对独立 native 字段，两者提供不同的可读绝对证据路径，helper 同时核对 Run/Task/Dispatch、native mutation request ID 与 retry previous attempt chain。参数回显或 caller 重复声明不能充当实际 model/effort/setup 证据。identity mismatch、Unknown、missing native capability 或 execution host 不匹配均 fail closed。
+
+`launch-preferences` 下 helper 额外核对 receipt/worker-show 的 native launch 字段与声明逐字段一致；`agent-argv` 下 native launch 字段必须全部为 null（证明 Orca 未做 launch-time model selection），并额外要求 `terminal_source`：原生 `terminal read` readback，其 handle 绑定 Dispatch terminal、文本包含 effective model id 与 effort（pi 状态行 `[effort]` 或 `thinking <effort>`）。这是 ADR-0009 证据纪律在 pi launch 上的具体化，不是放宽。
 
 ## FIFO wait/ack 与 settlement
 

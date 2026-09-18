@@ -201,14 +201,42 @@ def _previous_attempt(
     }
 
 
+def _null_launch_fields(value: Any, field: str) -> None:
+    launch = _mapping(value, field, {"agent", "model", "effort"})
+    if any(launch[name] is not None for name in ("agent", "model", "effort")):
+        raise WorkerLifecycleError(
+            f"{field} 必须全部为 null（agent-argv transport 不经 worker-start 传 model）"
+        )
+
+
+def _terminal_source(
+    value: Any, identity: dict[str, Any], effective: dict[str, str]
+) -> str:
+    source, readback = _read_json_object(value, "launch.terminal_source")
+    handle = _at(readback, ("result", "terminal", "handle"), "launch.terminal_source")
+    if handle != identity["terminal_handle"]:
+        raise WorkerLifecycleError("launch.terminal_source 与 Dispatch terminal 不匹配")
+    text = json.dumps(readback, ensure_ascii=False)
+    model_id = effective["model"].rsplit("/", 1)[-1]
+    if model_id not in text:
+        raise WorkerLifecycleError("launch.terminal_source 未包含 effective model")
+    if f"[{effective['effort']}]" not in text and f"thinking {effective['effort']}" not in text:
+        raise WorkerLifecycleError("launch.terminal_source 未包含 effective effort")
+    return source
+
+
 def _launch(
     value: Any, identity: dict[str, Any], previous_attempt: Any
 ) -> tuple[dict[str, Any], str]:
-    result = _mapping(
-        value,
-        "launch",
-        {"requested", "effective", "requested_source", "effective_source"},
-    )
+    if not isinstance(value, dict):
+        raise WorkerLifecycleError("launch 必须是 object")
+    transport = _known_text(value.get("transport"), "launch.transport")
+    fields = {"transport", "requested", "effective", "requested_source", "effective_source"}
+    if transport == "agent-argv":
+        fields.add("terminal_source")
+    elif transport != "launch-preferences":
+        raise WorkerLifecycleError(f"launch.transport 未知: {transport}")
+    result = _mapping(value, "launch", fields)
     requested = _launch_fields(result["requested"], "launch.requested")
     effective = _launch_fields(result["effective"], "launch.effective")
     requested_source, receipt = _read_json_object(
@@ -248,11 +276,14 @@ def _launch(
         "launch.effective_source",
     )
     _previous_attempt(previous_attempt, identity, retry_of)
-    native_requested = _launch_fields(
+    _null_check = (
+        _null_launch_fields if transport == "agent-argv" else _launch_fields
+    )
+    native_requested = _null_check(
         _at(receipt, ("result", "launch", "requested"), "launch.requested_source"),
         "native launch.requested",
     )
-    native_effective = _launch_fields(
+    native_effective = _null_check(
         _at(
             readback,
             ("result", "worker", "startOptions", "launch", "effective"),
@@ -260,10 +291,11 @@ def _launch(
         ),
         "native launch.effective",
     )
-    if requested != native_requested:
-        raise WorkerLifecycleError("launch.requested 与 native receipt 不一致")
-    if effective != native_effective:
-        raise WorkerLifecycleError("launch.effective 与独立 native readback 不一致")
+    if transport == "launch-preferences":
+        if requested != native_requested:
+            raise WorkerLifecycleError("launch.requested 与 native receipt 不一致")
+        if effective != native_effective:
+            raise WorkerLifecycleError("launch.effective 与独立 native readback 不一致")
     if requested["agent"] != effective["agent"]:
         raise WorkerLifecycleError("requested/effective agent 不一致；禁止静默映射")
     for field in ("model", "effort"):
@@ -279,11 +311,18 @@ def _launch(
         ),
         "native worker-start mutation.requestId",
     )
+    terminal_source = None
+    if transport == "agent-argv":
+        terminal_source = _terminal_source(
+            result["terminal_source"], identity, effective
+        )
     return {
+        "transport": transport,
         "requested": requested,
         "effective": effective,
         "requested_source": requested_source,
         "effective_source": effective_source,
+        "terminal_source": terminal_source,
     }, mutation_request_id
 
 
@@ -1137,6 +1176,7 @@ def _self_test() -> None:
             "integration_worktree": integration,
             "execution_worktree": execution,
             "launch": {
+                "transport": "launch-preferences",
                 "requested": requested_launch,
                 "effective": requested_launch,
                 "requested_source": str(worker_start),
@@ -1218,6 +1258,124 @@ def _self_test() -> None:
         )
         assert previous is not None
         assert previous["dispatch_id"] == "dispatch-0"
+
+        # agent-argv transport：worker-start 不为 pi 传 model，receipt/readback
+        # 的 launch 字段全 null，model/effort 证据来自 worker 终端原生读回。
+        null_launch = {"agent": None, "model": None, "effort": None}
+        argv_start = root / "argv-worker-start.json"
+        argv_start.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "runId": "run-1",
+                        "taskId": "task-1",
+                        "dispatchId": "dispatch-1",
+                        "launch": {"requested": null_launch},
+                        "setup": {"requested": "skip"},
+                        "mutation": {"requestId": "mutation-start-2"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        argv_show = root / "argv-worker-show.json"
+        argv_show.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "dispatch": {
+                            "id": "dispatch-1",
+                            "runId": "run-1",
+                            "taskId": "task-1",
+                            "retryOfDispatchId": None,
+                        },
+                        "worker": {
+                            "startOptions": {
+                                "launch": {"effective": null_launch},
+                                "setup": "skip",
+                            }
+                        },
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        terminal_read = root / "terminal-read.json"
+        terminal_read.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "terminal": {
+                            "handle": "term-1",
+                            "status": "running",
+                            "tail": ["main | model-1[xhigh] | thinking xhigh"],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        argv_request = copy.deepcopy(startup_request)
+        argv_request["launch"] = {
+            "transport": "agent-argv",
+            "requested": requested_launch,
+            "effective": requested_launch,
+            "requested_source": str(argv_start),
+            "effective_source": str(argv_show),
+            "terminal_source": str(terminal_read),
+        }
+        argv_startup = validate_startup(argv_request)
+        assert argv_startup["status"] == "ready"
+        assert argv_startup["launch"]["transport"] == "agent-argv"
+
+        # 反例：agent-argv 但 native receipt 携带非 null launch（未经 terminal 路径）
+        bad_start = root / "argv-bad-start.json"
+        bad_start.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "runId": "run-1",
+                        "taskId": "task-1",
+                        "dispatchId": "dispatch-1",
+                        "launch": {"requested": requested_launch},
+                        "mutation": {"requestId": "mutation-start-3"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        bad_request = copy.deepcopy(argv_request)
+        bad_request["launch"] = {**argv_request["launch"], "requested_source": str(bad_start)}
+        try:
+            validate_startup(bad_request)
+        except WorkerLifecycleError:
+            pass
+        else:
+            raise AssertionError("agent-argv accepted non-null native launch")
+
+        # 反例：terminal_source 读回不含 effective model
+        bad_terminal = root / "terminal-read-bad.json"
+        bad_terminal.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "terminal": {
+                            "handle": "term-1",
+                            "tail": ["main | other-2[low] | thinking low"],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        bad_request = copy.deepcopy(argv_request)
+        bad_request["launch"] = {**argv_request["launch"], "terminal_source": str(bad_terminal)}
+        try:
+            validate_startup(bad_request)
+        except WorkerLifecycleError:
+            pass
+        else:
+            raise AssertionError("agent-argv accepted terminal without effective model")
         try:
             _previous_attempt(
                 {

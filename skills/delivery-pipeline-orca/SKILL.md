@@ -47,8 +47,12 @@ Worktree 尚未交付时返回 `dispatch unavailable`，不调用其他入口代
    自定义安装命令，不创建 lockfile、静态 capability/version matrix。
 5. 按共享 schema 读取当前 work/两轴 review 与 implementation mode 的冻结计划，分别保存
    agent/model/effort/mode 请求和原生证据。shared agent 不可证明可用时不映射其他 agent；
-   model/effort 必须由当前 binary 与目标 runtime 的证据支持。staged 还须证明 native
-   同 session 能力，不降级 direct；参数回显不充当实际 model/effort。
+   model/effort 必须由当前 binary 与目标 runtime 的证据支持。传递链路按 agent 能力二选一：
+   launch-preference 支持（Claude/Codex/Cursor）走 `worker-start --model/--effort`；pi 等被原生
+   拒绝 launch-time model selection 的 agent 走 agent-argv——`terminal create --command` 携带共享
+   model_config 的冻结 argv（pi 为 `--approve --model --thinking`），effective 证据是 worker 终端
+   原生读回（状态行 `model[effort]`），详见 `references/orca-dispatch.md` 的 Launch transport。
+   staged 还须证明 native 同 session 能力，不降级 direct；参数回显不充当实际 model/effort。
 6. 只验证当前操作的 capability；readback 缺失、Unknown、不一致或 runtime 不可达，
    均停止依赖该证据的操作，保留已持久 registry、Git 与 artifact 的只读恢复能力。
 
