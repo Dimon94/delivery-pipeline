@@ -12,12 +12,13 @@ def main():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         frames = [
-            '说明 PREWALK_READY lane /tmp/a.json\nPREWALK_READY lane-other /tmp/a.json\n'
-            'PREWALK_READY lane relative.json\nPREWALK_READY lane\n'
-            '`PREWALK_READY lane /tmp/a.json`',
-            'PREWALK_READY lane /tmp/a.json',
+            ' 说明 PREWALK_READY lane /tmp/a.json\n PREWALK_READY lane-other /tmp/a.json\n'
+            ' PREWALK_READY lane relative.json\n PREWALK_READY lane\n'
+            ' `PREWALK_READY lane /tmp/a.json`',
+            ' PREWALK_READY lane /tmp/a.json',
             'worker idle',
-            'PREWALK_READY lane /tmp/b checkpoint.json',
+            '\t  PREWALK_READY lane /tmp/a.json',
+            '  PREWALK_READY lane /tmp/b checkpoint.json',
             'PREWALK_READY lane /tmp/b checkpoint.json',
             'worker idle',
             'LANE_DONE lane',

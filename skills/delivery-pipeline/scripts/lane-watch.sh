@@ -17,6 +17,8 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   OUT=$(herdr pane read "$PANE" --source visible 2>/dev/null || true)
   # 按完整行和字面 lane ID 匹配；路径保留空格，artifact 内容由 coordinator 核验。
   while IFS= read -r LINE; do
+    # 去掉 TUI 行首缩进；保留 marker/path 内容，供精确匹配与去重。
+    LINE="${LINE#"${LINE%%[![:space:]]*}"}"
     case "$LINE" in
       "PREWALK_READY $LANE_ID /"*)
         if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
@@ -35,7 +37,8 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
 "
     fi
   done <<< "$PENDING_PREWALK"
-  if printf '%s' "$OUT" | grep -qF "LANE_DONE $LANE_ID"; then
+  # 行首锚定匹配单行标记，防止 worker 计划/回显文本中的子串误报（曾致 false-positive WAKE）
+  if printf '%s\n' "$OUT" | grep -qE "^[[:space:]]*LANE_DONE ${LANE_ID}([[:space:]]|$)"; then
     herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出出现 LANE_DONE $LANE_ID 标记)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane(每条新 lane 复用 scripts/lane-watch.sh 挂 watcher)。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
     exit 0
   fi
