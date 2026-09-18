@@ -3,12 +3,14 @@
   "name": "delivery-pipeline",
   "entrypoints": {
     "cli": "skills/delivery-pipeline/SKILL.md",
+    "herdr": "skills/delivery-pipeline-herdr/SKILL.md",
     "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
     "orca": "skills/delivery-pipeline-orca/SKILL.md",
     "setup": "skills/delivery-pipeline-setup/SKILL.md"
   },
   "install": {
     "sharedSkillDirectory": "skills/delivery-pipeline",
+    "herdrSkillDirectory": "skills/delivery-pipeline-herdr",
     "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
     "orcaSkillDirectory": "skills/delivery-pipeline-orca",
     "setupSkillDirectory": "skills/delivery-pipeline-setup"

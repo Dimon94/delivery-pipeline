@@ -1,13 +1,16 @@
 ---
 name: delivery-pipeline
-description: 通过 CLI/Herdr 启动或恢复从想法、map、spec 到集成验收与远程收尾的交付编排。
+description: 交付编排核心链路；CLI/Herdr 交付调用 delivery-pipeline-herdr。
 disable-model-invocation: true
 ---
 
-# Delivery Pipeline
+# Delivery Pipeline（核心链路）
 
-唯一 canonical CLI/Herdr 编排主干，供 pi、Codex CLI 与 Claude CLI 共用。
-当前调用会话就是 coordinator；本 skill 拥有调度与 Integration，产物质量归各 owner。
+本 skill 是 canonical 核心链路：gate 顺序、lane registry、配置 schema、owner 解析与
+Integration 不变量的唯一住所，由三个平级 transport 壳读取（`delivery-pipeline-herdr`、
+`delivery-pipeline-codex-app`、`delivery-pipeline-orca`）。依赖方向只允许壳 → 本链路。
+直接调用本 skill 时按目标 transport 改用对应壳：CLI/Herdr 交付调用 `delivery-pipeline-herdr`。
+当前调用会话就是 coordinator；调度归所属壳，产物质量归各 owner，Integration 不变量归本链路。
 
 ## 启动或恢复
 
@@ -18,10 +21,11 @@ disable-model-invocation: true
    与 `references/lane-registry.md`，先枚举 active writers。恢复既有 lane 不依赖当前 worker 配置；
    按 stored runtime 与持久证据继续 fan-in/cleanup。创建或恢复 worktree 时加载
    `references/integration-worktree-management.md`；复用已登记的 Map Integration Worktree/branch，
-   不存在时才创建。所有 Git 操作显式指向隔离 worktree，不切换 Coordinator Pane 当前目录的 branch。
-3. **确认 Coordinator Runtime。** 记录 `coordinator_runtime: pi-cli | codex-cli | claude-cli` 与
-   `dispatch_runtime: herdr`。新建 lane 前加载 `references/dispatch-runtime-routing.md`，验证当前
-   Herdr session/workspace/tab/pane；只有用户显式要求新 Workspace 才创建。
+   不存在时才创建。所有 Git 操作显式指向隔离 worktree，不切换 coordinator 当前目录的 branch。
+3. **确认 Coordinator Runtime 与 transport。** 记录 `coordinator_runtime`；新建 lane 前
+   由所属壳核验 dispatch transport（CLI 会话经 `delivery-pipeline-herdr`，其余 transport
+   各有对应壳）。同一 map 不静默混合新
+   lane transport；existing lane 始终按 registry runtime 恢复。
 
 完成标准：输入、当前 gate、Map Integration Worktree 与全部 active writers 已有可恢复坐标；
 缺失或矛盾证据记 Unknown，保留现场并报告受阻动作。
@@ -33,11 +37,13 @@ Gate 顺序、owner 与通过证据统一在 `references/gate-state-machine.md`�
 | 分支 | 必读合同 | 完成后 |
 | --- | --- | --- |
 | discovery | `references/wayfinder-frontier-loop.md` | 重算 ready frontier 或进入 spec |
-| 新建 lane | `references/model-role-routing.md`、`references/owner-skill-resolution.md`、`references/frontier-lanes.md`、`references/dispatch-runtime-routing.md`、`references/pane-lifecycle-rules.md` | 整批 Dispatch Handoff |
-| terminal/user completion signal 或显式 monitor | `references/child-monitoring.md`、`references/execution-worktree-integration.md`、`references/frontier-lanes.md` | 验证交付，按 Cleanup 六步收口到 `closed`，自动推进下一 ready frontier |
+| 新建 lane | `references/model-role-routing.md`、`references/owner-skill-resolution.md`、`references/frontier-lanes.md`，以及所属壳的 dispatch、packet 与 worker 生命周期合同 | 整批 Dispatch Handoff |
+| terminal/user completion signal 或显式 monitor | 所属壳的 monitoring 合同、`references/execution-worktree-integration.md`、`references/frontier-lanes.md` | 验证交付，按 Cleanup 六步收口到 `closed`，自动推进下一 ready frontier |
 | testing/review 后收尾 | `references/test-decision-and-rebase.md` | 复用适用的测试选择，按授权收尾或报告剩余 gate |
 
-Terminal fan-in 以 `references/execution-worktree-integration.md` §Cleanup 六步走到 `closed` 为完成标准；cleanup 失败写 `close_pending` 并保留坐标。未走 Cleanup 不算收口，不关 pane 不算完成。
+Terminal fan-in 以 `references/execution-worktree-integration.md` §Cleanup 六步走到 `closed`
+为完成标准；cleanup 失败写 `close_pending` 并保留坐标。未走 Cleanup 不算收口，未关闭 worker
+transport 不算完成。
 
 同一 coordinator task 不因下一 lane 重读未变化的合同。
 
@@ -52,30 +58,29 @@ Terminal fan-in。
 
 Pi/Codex/Claude staged lane 在上述 registry persist/readback 后，调用 setup 的
 `model_config.py resume --request <payload.json>` 取得原生接续计划；payload 见
-`references/model-role-routing.md`。该 caller 只做既有 adapter 核验与计划翻译，不替代 registry、send lease 或 runtime readback。Herdr gate
-不可用时保留 blocked 现场。
+`references/model-role-routing.md`。该 caller 只做既有 adapter 核验与计划翻译，不替代 registry、
+send lease 或 runtime readback。所属 transport 的 gate 不可用时保留 blocked 现场。
 
 ## 新建 lane 的配置与 Packet
 
-按 `references/model-config-schema.md` 验证 version 4 配置
-`~/.config/delivery-pipeline/model-roles.json`：从 setup skill realpath 运行
-`scripts/model_config.py validate <config>`，再验证本机实时 evidence。旧 version 2/3 文件先运行
-`scripts/model_config.py migrate <config>` 机械迁移；缺失或非法时完整读取
-`../delivery-pipeline-setup/SKILL.md` 并在当前会话执行初始化；通过后才创建新 lane，不静默回落。
-已有 lane 的恢复按 registry；replacement 的条件与验证见 dispatch runtime 合同。
+按 `references/model-config-schema.md` 验证所属 runtime 的 version 4 配置实例：从 setup
+skill realpath 运行 `scripts/model_config.py validate <config>`，再验证本机实时 evidence。
+旧 version 2/3 文件先运行 `scripts/model_config.py migrate <config>` 机械迁移；缺失或非法时
+完整读取 `../delivery-pipeline-setup/SKILL.md` 并在当前会话执行初始化；通过后才创建新 lane，
+不静默回落。已有 lane 的恢复按 registry；replacement 的条件与验证见所属壳的 dispatch 合同。
 
 新 implementation lane 按本票 → map → 配置 `default_mode` 解析命名 execution mode 与阶段参数，并将
 mode 名、source、starting/execution/direct model 与 effort 冻结到 packet 和 lane registry。只有
 `output_mode: commit` 的 implementation lane 消费 modes 计划，其他 output mode 直接用 work 项。
 staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
 
-从 work 项配置解析 `agent`、`model`、`effort`，使用 `assets/HERDR_ROLE_DISPATCH_PACKET.md`。
+从 work 项配置解析 `agent`、`model`、`effort`，使用所属壳的 dispatch packet 模板。
 commit/review lane 创建 packet 时加载 `references/code-review-evidence-preflight.md`：
 `commit` 写 `Review fixed point: <Execution Base commit>`；`verdict` 写 map registry 的 base commit。
 两者都传 preflight 绝对路径；worker 在派生子审查前生成 Review Evidence Bundle。
 
 完成标准：配置与 owner 已验证，registry 先于 worker，packet 的 work item、role/output mode、
-隔离坐标和必要 review evidence 输入完整；启动与 bounded retry 按 pane lifecycle 合同执行。
+隔离坐标和必要 review evidence 输入完整；启动与 bounded retry 按所属壳的 worker 生命周期合同执行。
 
 ## 权限与交付边界
 

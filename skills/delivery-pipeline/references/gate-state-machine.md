@@ -112,7 +112,7 @@ coordinator 必须核对内容、范围与确认有效性；Unknown、任务 com
 
 ## Role-aware Fan-in / Integration
 
-terminal/user completion signal 只负责唤醒。读取 `child-monitoring.md` 与
+terminal/user completion signal 只负责唤醒。读取所属壳的 monitoring 合同与
 `execution-worktree-integration.md`，按 output mode 验证持久交付：仅 commit 进入 cherry-pick；
 artifact/checks/verdict 验证成功写 `consumed`。完成 cleanup 后自动重算 ready frontier。
 Testing 或 review 失败时保留现场，报告精确失败，不进入后续 gate。

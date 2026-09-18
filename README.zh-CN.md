@@ -9,8 +9,9 @@ idea/map -> discovery -> spec -> implementation tickets
   -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-`skills/delivery-pipeline` 是唯一 canonical CLI/Herdr 主干，同一份物理 skill 供 pi、Codex CLI、
-Claude CLI 使用。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
+`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被三个平级 transport
+壳读取。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
+CLI/Herdr 交付入口为 `delivery-pipeline-herdr`，其 packet 与 references 全部共置在该壳内。
 Codex App native task/worktree 保持显式特殊 transport，入口为 `delivery-pipeline-codex-app`，其
 packet 与 references 全部共置在该壳内。`delivery-pipeline-orca` 是严格绑定 Orca 的独立入口：
 读取当前 binary 的 version-matched guide；runtime、discovery、worker policy、identity 或当前
@@ -61,8 +62,8 @@ agent 决定 lane kind：
 ./scripts/install.sh --target all
 ```
 
-安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup 与
-`delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
+安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup、
+`delivery-pipeline-herdr` 与 `delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
 `delivery-pipeline-codex-app`。默认安装 pre-commit validator；
 `--no-hooks` 可跳过。
 

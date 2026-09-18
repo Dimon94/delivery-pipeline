@@ -7,8 +7,7 @@ Discovery gate 使用同一 role-configured lane contract，不再绕过配置�
 1. 从 map children 与 dependency edges 计算 ready frontier；读取每张 decision ticket 的 owner、
    HITL/AFK 属性、claim 与 latest lane registry。
 2. AFK research/evidence/automatic task 绑定 `planning` role；grilling/prototype/HITL 绑定
-   `design` role。按 `model-role-routing.md` 解析 agent/model/effort，填写
-   `HERDR_ROLE_DISPATCH_PACKET.md`。
+   `design` role。按 `model-role-routing.md` 解析 agent/model/effort，填写所属壳的 dispatch packet。
 3. 同一 maximal safe batch 的独立 tickets 并发派发；每张 ticket 独立 pane/worktree/registry。
    HITL startup 后写 `awaiting_human`；AFK lane 写 `running`。整批 Dispatch Handoff 后 yield。
 4. terminal/user completion signal 唤醒时，以 tracker、artifact、Git 与 registry fan-in：写

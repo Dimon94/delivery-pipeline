@@ -25,38 +25,34 @@ Dispatch blocker。
 | whole-change tests | `testing` | `checks` |
 | code review | review 矩阵（见下） | `verdict` |
 
-review lane 无独立 work 项：CLI 用配置 `review.<scope>.standards` 的 `{agent, model, effort}`
-启动 pane，packet 携带该 scope 的两轴矩阵配置给 resolved code-review owner。
+review lane 无独立 work 项：用配置 `review.<scope>.standards` 的 `{agent, model, effort}`
+启动 worker，packet 携带该 scope 的两轴矩阵配置给 resolved code-review owner。
 
 task type 只选择配置项，不暗含 agent。agent/model/effort 只从 `model-config-schema.md` 定义的
 version 4 配置读取；implementation lane 的 mode 名/source 也必须随 packet 和 registry 保存。
 
 ## Execution Lanes
 
-- 每个 work item 一个 fresh Herdr lane、一个 Execution Worktree、一个 active writer。
-- 落点拓扑与容量只按 `pane-lifecycle-rules.md` 的「拓扑与命名」执行：coordinator 所在 tab
-  不放 worker lane；worker tab `X` 最多 4 pane，第 5 条 lane 开溢出 tab `X-2`/`X-3`；不采用
-  herdr skill “sibling pane in the current tab” 的默认。
-- pi → `herdr-pi-pane`；codex → `herdr-codex-pane`；claude → `herdr-claude-pane`。
-- 所有 kind 使用 `HERDR_ROLE_DISPATCH_PACKET.md`；packet 持久化 role + output_mode，owner path 是绝对路径。
+- 每个 work item 一个 fresh lane、一个 Execution Worktree、一个 active writer。
+- 落点拓扑、容量、worker kind 映射与 packet 模板只按所属壳的合同执行（CLI/Herdr 为
+  `delivery-pipeline-herdr` 壳）；本文件不枚举 transport 细节。
 - worker 只处理 packet 的 work item，不领取 sibling/dependent item或进入下一 gate。
 - blocked 只暂停对应 item；其余 ready work继续。
 
 ## Dispatch Handoff
 
-每条 lane 的 pane、Execution Worktree、packet、owner/work item、role config 与 registry 已互相验证，
+每条 lane 的 worker transport、Execution Worktree、packet、owner/work item、role config 与 registry 已互相验证，
 worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`，即完成该 lane startup。
-`working` 确认后立即按 `pane-lifecycle-rules.md` 挂 `lane-watch.sh` watcher；未挂 watcher 的 lane
+`working` 确认后立即按所属壳的 terminal-signal 合同建立唤醒通道；未建立的 lane
 不算完成 Dispatch Handoff——terminal 与 `PREWALK_READY` 都不会唤醒 coordinator，只能靠用户手动发现。
 整批成功 lanes 完成 startup、失败项隔离为 `setup_blocked` 后，统一报告全部坐标并立即 yield；
 不等待 routine progress、首个问题或最终结果。
 
 ## Terminal Fan-in
 
-- normal path 只消费 completed/blocked terminal event（由 `pane-lifecycle-rules.md` 的
-  LANE_DONE watcher 合同产生）；HITL 由用户完成信号唤醒。
+- normal path 只消费 completed/blocked terminal event（由所属壳的 terminal 合同产生）；HITL 由用户完成信号唤醒。
 - final report 是 transport cache；Git、tracker 与 artifact 是持久证据。
-- 用户返回后对 pane 做一次 bounded read；final marker 缺字段记 Unknown，不要求 worker 重显。
+- 用户返回后对 worker transport 做一次 bounded read；final marker 缺字段记 Unknown，不要求 worker 重显。
 - coordinator 用 registry、worktree base/head/diff/dirty state、tracker 与 artifacts 验证，按 dependency
   order串行 Integration。
 - Integration 后完成 canonical tracker transitions，自动重算下一 ready frontier，不等待“继续”。

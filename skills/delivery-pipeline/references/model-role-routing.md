@@ -122,8 +122,7 @@ writer/coordinator 已停止、staged starting 阶段和 continuation intent。�
 实际 model/effort 读回分别填充。Herdr/TUI 不可见时，只能使用这个有界原生 resume 接缝并保留
 现场，不能猜最近会话、静默降级或替代 runtime。
 
-配置仅作为新 lane 的前置 gate；既有 lane 的恢复与 replacement 使用
-`dispatch-runtime-routing.md` 的“恢复与切换”。
+配置仅作为新 lane 的前置 gate；既有 lane 的恢复与 replacement 使用所属壳 dispatch 合同的“恢复与切换”。
 
 ## Dispatch 验证
 

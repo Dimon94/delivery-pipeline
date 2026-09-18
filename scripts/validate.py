@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "skills" / "delivery-pipeline"
 APP = ROOT / "skills" / "delivery-pipeline-codex-app"
 ORCA = ROOT / "skills" / "delivery-pipeline-orca"
+HERDR = ROOT / "skills" / "delivery-pipeline-herdr"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
 TICKET_SIZING = ROOT / "skills" / "ticket-sizing"
 
@@ -114,6 +115,7 @@ def check_manifest() -> None:
         record("bundle name mismatch")
     if manifest.get("entrypoints") != {
         "cli": "skills/delivery-pipeline/SKILL.md",
+        "herdr": "skills/delivery-pipeline-herdr/SKILL.md",
         "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
         "orca": "skills/delivery-pipeline-orca/SKILL.md",
         "setup": "skills/delivery-pipeline-setup/SKILL.md",
@@ -121,6 +123,7 @@ def check_manifest() -> None:
         record("v2 entrypoints mismatch")
     if manifest.get("install") != {
         "sharedSkillDirectory": "skills/delivery-pipeline",
+        "herdrSkillDirectory": "skills/delivery-pipeline-herdr",
         "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
         "orcaSkillDirectory": "skills/delivery-pipeline-orca",
         "setupSkillDirectory": "skills/delivery-pipeline-setup",
@@ -133,6 +136,7 @@ def check_manifest() -> None:
 def check_frontmatter() -> None:
     expected = (
         (CORE / "SKILL.md", "delivery-pipeline"),
+        (HERDR / "SKILL.md", "delivery-pipeline-herdr"),
         (APP / "SKILL.md", "delivery-pipeline-codex-app"),
         (ORCA / "SKILL.md", "delivery-pipeline-orca"),
         (SETUP / "SKILL.md", "delivery-pipeline-setup"),
@@ -152,21 +156,16 @@ def check_core_contract() -> None:
     require(
         CORE / "SKILL.md",
         (
-            "唯一 canonical CLI/Herdr 编排主干",
+            "canonical 核心链路",
             "当前调用会话就是 coordinator",
-            "Coordinator Pane",
-            "只有用户显式要求新 Workspace",
-            "不切换 Coordinator Pane 当前目录的 branch",
-            "coordinator_runtime: pi-cli | codex-cli | claude-cli",
-            "dispatch_runtime: herdr",
-            "~/.config/delivery-pipeline/model-roles.json",
+            "不切换 coordinator 当前目录的 branch",
             "scripts/model_config.py validate <config>",
             "version 4",
             "agent`、`model`、`effort`",
             "Dispatch Handoff",
             "Execution Worktree",
             "Integration",
-            "assets/HERDR_ROLE_DISPATCH_PACKET.md",
+            "delivery-pipeline-herdr",
             "references/code-review-evidence-preflight.md",
             "Review fixed point: <Execution Base commit>",
             "Review Evidence Bundle",
@@ -174,7 +173,17 @@ def check_core_contract() -> None:
         ),
     )
     require(
-        CORE / "references" / "dispatch-runtime-routing.md",
+        HERDR / "SKILL.md",
+        (
+            "先完整读取 canonical 主干",
+            "coordinator_runtime: pi-cli | codex-cli | claude-cli",
+            "dispatch_runtime: herdr",
+            "只有用户显式要求新 Workspace 才创建",
+            "assets/HERDR_ROLE_DISPATCH_PACKET.md",
+        ),
+    )
+    require(
+        HERDR / "references" / "dispatch-runtime-routing.md",
         (
             "worker kind 完全由 version 4 work config",
             "pi → `herdr-pi-pane`",
@@ -189,7 +198,7 @@ def check_core_contract() -> None:
         ),
     )
     require(
-        CORE / "references" / "pane-lifecycle-rules.md",
+        HERDR / "references" / "pane-lifecycle-rules.md",
         (
             "每个 worker tab 最多 4 pane",
             "溢出依次 `X-2`、`X-3`",
@@ -209,7 +218,7 @@ def check_core_contract() -> None:
     )
     legacy_workspace_rules = {
         CORE / "SKILL.md": ("Herdr Workspace 只在首次 lane 前懒创建",),
-        CORE / "references" / "dispatch-runtime-routing.md": (
+        HERDR / "references" / "dispatch-runtime-routing.md": (
             "每个 map 一个 Herdr Workspace",
         ),
         CORE / "references" / "integration-worktree-management.md": (
@@ -225,7 +234,7 @@ def check_core_contract() -> None:
                 )
     legacy_topology_rules = {
         ROOT / "CONTEXT.md": ("HITL lanes get a `G-#<ticket>` tab",),
-        CORE / "references" / "pane-lifecycle-rules.md": (
+        HERDR / "references" / "pane-lifecycle-rules.md": (
             "每条新 lane 默认在目标 Workspace 新建 tab",
             "一 lane一 tab",
             "`G-#<ticket>`",
@@ -255,10 +264,9 @@ def check_core_contract() -> None:
             "| backend/other implementation | `backend` | `commit` |",
             "| whole-change tests | `testing` | `checks` |",
             "| code review | review 矩阵（见下） | `verdict` |",
-            "HERDR_ROLE_DISPATCH_PACKET.md",
+            "落点拓扑、容量、worker kind 映射与 packet 模板只按所属壳的合同执行",
             "整批成功 lanes 完成 startup",
-            "落点拓扑与容量只按 `pane-lifecycle-rules.md` 的「拓扑与命名」执行",
-            "`working` 确认后立即按 `pane-lifecycle-rules.md` 挂 `lane-watch.sh` watcher",
+            "按所属壳的 terminal-signal 合同建立唤醒通道",
         ),
     )
     registry = CORE / "references" / "lane-registry.md"
@@ -304,7 +312,7 @@ def check_core_contract() -> None:
     ):
         record("lane-registry output_mode enum mismatch")
     require(
-        CORE / "references" / "child-monitoring.md",
+        HERDR / "references" / "child-monitoring.md",
         (
             "Role-aware Terminal Outcomes",
             "`commit`",
@@ -343,7 +351,7 @@ def check_prompt_branches() -> None:
         ),
     )
     require(
-        CORE / "references" / "dispatch-runtime-routing.md",
+        HERDR / "references" / "dispatch-runtime-routing.md",
         (
             "恢复既有 lane 直接进入“恢复与切换”",
             "replacement 验证 stored agent/model/effort 的实时可用性",
@@ -529,6 +537,7 @@ def check_model_contract() -> None:
             "不提供内置默认",
             "用户明确选择全部必需项",
             "写入并 readback",
+            "~/.config/delivery-pipeline/model-roles.json",
         ),
     )
     config_validator = SETUP / "scripts" / "model_config.py"
@@ -548,7 +557,7 @@ def check_model_contract() -> None:
 
 
 def check_packets() -> None:
-    packet = CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
+    packet = HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
     require(
         packet,
         (
@@ -592,7 +601,7 @@ def check_packets() -> None:
 
 
 def check_lane_wakeup() -> None:
-    packet = CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
+    packet = HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
     require(
         packet,
         (
@@ -601,7 +610,7 @@ def check_lane_wakeup() -> None:
             "同一完整 marker 只唤醒一次",
         ),
     )
-    lifecycle = CORE / "references" / "pane-lifecycle-rules.md"
+    lifecycle = HERDR / "references" / "pane-lifecycle-rules.md"
     require(
         lifecycle,
         (
@@ -619,9 +628,9 @@ def check_lane_wakeup() -> None:
         record(
             "pane-lifecycle-rules.md still relies on the unreliable `herdr agent wait --until done` listener"
         )
-    watcher = CORE / "scripts" / "lane-watch.sh"
+    watcher = HERDR / "scripts" / "lane-watch.sh"
     if not watcher.exists():
-        record("missing lane watcher: skills/delivery-pipeline/scripts/lane-watch.sh")
+        record("missing lane watcher: skills/delivery-pipeline-herdr/scripts/lane-watch.sh")
         return
     watcher_text = watcher.read_text()
     require(
@@ -637,7 +646,7 @@ def check_lane_wakeup() -> None:
             record(f"lane-watch.sh carries session-specific hardcode: {banned}")
     subprocess.run(["bash", "-n", str(watcher)], check=True)
     subprocess.run(
-        [sys.executable, str(CORE / "scripts" / "lane_watch_check.py")], check=True
+        [sys.executable, str(HERDR / "scripts" / "lane_watch_check.py")], check=True
     )
 
 
@@ -1279,6 +1288,18 @@ def check_tree_ownership() -> None:
             record(
                 f"App-owned file leaked into canonical core: {path.relative_to(ROOT)}"
             )
+    for path in (
+        CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
+        CORE / "references" / "pane-lifecycle-rules.md",
+        CORE / "references" / "dispatch-runtime-routing.md",
+        CORE / "references" / "child-monitoring.md",
+        CORE / "scripts" / "lane-watch.sh",
+        CORE / "scripts" / "lane_watch_check.py",
+    ):
+        if path.exists():
+            record(
+                f"Herdr-owned file leaked into canonical core: {path.relative_to(ROOT)}"
+            )
 
 
 def check_installer() -> None:
@@ -1297,6 +1318,10 @@ def check_installer() -> None:
             '"$PI_HOME_DIR/agent/skills/delivery-pipeline-setup"',
             'link_skill "$ROOT/skills/delivery-pipeline-codex-app"',
             '"$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app"',
+            'link_skill "$ROOT/skills/delivery-pipeline-herdr"',
+            '"$CODEX_HOME_DIR/skills/delivery-pipeline-herdr"',
+            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-herdr"',
+            '"$PI_HOME_DIR/agent/skills/delivery-pipeline-herdr"',
             'link_skill "$ROOT/skills/delivery-pipeline-orca"',
             '"$CODEX_HOME_DIR/skills/delivery-pipeline-orca"',
             '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-orca"',
@@ -1315,6 +1340,8 @@ def check_installer() -> None:
         record("Codex App shell must be installed exactly once")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-orca"') != 3:
         record("Orca entrypoint must be installed into exactly three agent homes")
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline-herdr"') != 3:
+        record("Herdr shell must be installed into exactly three CLI homes")
     subprocess.run(["bash", "-n", str(install_path)], check=True)
 
 
@@ -1344,9 +1371,10 @@ def check_context_and_docs() -> None:
     require(
         ROOT / "AGENTS.md",
         (
-            "Canonical CLI/Herdr 主干",
+            "Canonical 核心链路",
             "delivery-pipeline-codex-app",
-            "Canonical 主干保持 runtime-neutral",
+            "delivery-pipeline-herdr",
+            "Canonical 核心链路保持 runtime-neutral",
             "`codex-thread` 只存在于 delivery-pipeline-codex-app 树",
         ),
     )
@@ -1357,6 +1385,7 @@ def check_context_and_docs() -> None:
                 "delivery-pipeline-setup",
                 "delivery-pipeline-codex-app",
                 "delivery-pipeline-orca",
+                "delivery-pipeline-herdr",
                 "model-roles.json",
                 "orca-cli",
                 "orchestration",
@@ -1445,7 +1474,7 @@ def check_context_and_docs() -> None:
 
 
 def check_pruned_policy() -> None:
-    roots = (CORE, APP, ORCA, SETUP, TICKET_SIZING)
+    roots = (CORE, APP, ORCA, HERDR, SETUP, TICKET_SIZING)
     forbidden = (
         re.compile(r"估时"),
         re.compile(r"估档"),
@@ -1572,7 +1601,7 @@ def check_checkpoint_contract() -> None:
         if result.returncode != 0:
             record(f"Codex CLI adapter check failed: {result.stdout}{result.stderr}")
     require(
-        CORE / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
+        HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
         (
             "Checkpoint：<repo-external absolute checkpoint path | none>",
             "PREWALK_READY <lane_id> <checkpoint_path>",

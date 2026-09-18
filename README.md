@@ -9,9 +9,11 @@ idea/map -> discovery -> spec -> implementation tickets
   -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-`skills/delivery-pipeline` is the single canonical CLI/Herdr core, installed unchanged for pi,
-Codex CLI, and Claude CLI. The calling session is the coordinator; worker agent/model/effort comes
-from user configuration. Codex App native tasks/worktrees remain an explicit transport exception,
+`skills/delivery-pipeline` is the single canonical core chain, installed unchanged for pi,
+Codex CLI, and Claude CLI, and read by three peer transport shells. The calling session is the
+coordinator; worker agent/model/effort comes from user configuration. CLI/Herdr delivery enters
+through `delivery-pipeline-herdr` with all Herdr-specific packets and references co-located in
+that shell. Codex App native tasks/worktrees remain an explicit transport exception,
 exposed by `delivery-pipeline-codex-app` with all App-specific packets and references co-located
 inside that shell. `delivery-pipeline-orca` is a separate, Orca-bound entrypoint: it reads the
 active binary's version-matched guides and blocks with `dispatch unavailable` when runtime,
@@ -66,7 +68,7 @@ all four CLIs without blocking installation.
 ```
 
 The installer symlinks the same `skills/delivery-pipeline` directory into Codex, Claude, and pi
-skill homes, installs setup in all three, and exposes `delivery-pipeline-orca` in those same native
+skill homes, installs setup and `delivery-pipeline-herdr` in all three, and exposes `delivery-pipeline-orca` in those same native
 skill discovery directories. Codex additionally receives `delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
 to skip it.
 

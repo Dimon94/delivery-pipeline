@@ -1,7 +1,7 @@
 # Integration Worktree Management
 
 只拥有 Source Worktree、Map Integration Worktree 与手工 Execution Worktree 的创建、验证和恢复。
-CLI lane transport 归 `dispatch-runtime-routing.md`，terminal Integration/cleanup 归
+lane transport 归所属壳的 dispatch 合同，terminal Integration/cleanup 归
 `execution-worktree-integration.md`。
 
 ## Hierarchy
@@ -62,8 +62,8 @@ git -C "$INTEGRATION_ROOT" worktree add -b "$EXECUTION_BRANCH" "$EXECUTION_PATH"
    无法证明则记 `path_conflict` / Unknown。
 3. 创建后验证 path、branch、HEAD、common dir、clean state。
 4. registry 写 role、agent、model、effort、runtime、worktree、branch、base commit，readback 后才在
-   dispatch target Workspace按 `pane-lifecycle-rules.md` 容量管理规则放置 lane pane;不改变
-   Coordinator Pane cwd/branch。
+   dispatch target 按所属壳的容量管理规则放置 worker;不改变
+   coordinator 当前目录的 cwd/branch。
 
 ## Recovery
 

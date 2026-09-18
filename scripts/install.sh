@@ -15,7 +15,7 @@ Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 
 Default target: codex
 
-Installs canonical delivery-pipeline, delivery-pipeline-orca, and delivery-pipeline-setup into each selected CLI home.
+Installs canonical delivery-pipeline, delivery-pipeline-herdr, delivery-pipeline-orca, and delivery-pipeline-setup into each selected CLI home.
 Codex also receives delivery-pipeline-codex-app; Codex and Claude receive ticket-sizing.
 All skills symlink to this checkout. Symlinks establish discovery only; Orca runtime and
 capability evidence still require preflight. The pre-commit validator is installed unless --no-hooks is used.
@@ -77,6 +77,8 @@ install_codex() {
     "$CODEX_HOME_DIR/skills/delivery-pipeline-setup" "Codex delivery-pipeline-setup"
   link_skill "$ROOT/skills/delivery-pipeline-codex-app" \
     "$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app" "Codex App shell"
+  link_skill "$ROOT/skills/delivery-pipeline-herdr" \
+    "$CODEX_HOME_DIR/skills/delivery-pipeline-herdr" "Codex Herdr shell"
   link_skill "$ROOT/skills/delivery-pipeline-orca" \
     "$CODEX_HOME_DIR/skills/delivery-pipeline-orca" "Codex Orca entrypoint"
   link_skill "$ROOT/skills/ticket-sizing" \
@@ -90,6 +92,8 @@ install_claude() {
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-setup" "Claude delivery-pipeline-setup"
   link_skill "$ROOT/skills/delivery-pipeline-orca" \
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-orca" "Claude Orca entrypoint"
+  link_skill "$ROOT/skills/delivery-pipeline-herdr" \
+    "$CLAUDE_HOME_DIR/skills/delivery-pipeline-herdr" "Claude Herdr shell"
   # The retired pane-dispatch compatibility helper is superseded by the canonical core.
   rm -rf "$CLAUDE_HOME_DIR/skills/pane-dispatch"
   link_skill "$ROOT/skills/ticket-sizing" \
@@ -105,6 +109,8 @@ install_pi() {
     "$PI_HOME_DIR/agent/skills/delivery-pipeline-setup" "pi delivery-pipeline-setup"
   link_skill "$ROOT/skills/delivery-pipeline-orca" \
     "$PI_HOME_DIR/agent/skills/delivery-pipeline-orca" "pi Orca entrypoint"
+  link_skill "$ROOT/skills/delivery-pipeline-herdr" \
+    "$PI_HOME_DIR/agent/skills/delivery-pipeline-herdr" "pi Herdr shell"
 }
 
 install_hooks() {
