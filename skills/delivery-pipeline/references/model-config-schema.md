@@ -1,17 +1,12 @@
 # 模型配置 Schema（version 4）
 
-本文件是 worker 模型配置的唯一定义点，CLI/Herdr 主干与 App 壳共用同一份格式。
-两个 transport 的调度逻辑各自实现（见 `dispatch-runtime-routing.md` 与
-`../../delivery-pipeline-codex-app/references/development-mode.md`），配置 schema 只有这一份。
+本文件是 worker 模型配置的唯一定义点，核心链路与各 transport 壳共用同一份格式。
+各 transport 的调度逻辑在其壳内实现，配置 schema 只有这一份。
 
 ## 配置实例
 
-同一份 schema 有两个文件实例：
-
-- **CLI 实例**：`~/.config/delivery-pipeline/model-roles.json`，由 `delivery-pipeline-setup`
-  写入并 readback；CLI/Herdr dispatch 只读。
-- **App 实例**：`skills/delivery-pipeline-codex-app/config/models.json`，由用户编辑；
-  App 壳 helper 只读，不改配置。
+同一份 schema 可有多个文件实例，每个 runtime 一个。实例清单与写入职责由
+`delivery-pipeline-setup` 维护；本文件不枚举实例路径。
 
 skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 key、空值或 `Unknown`
 一律阻塞对应 transport 的新分派；不静默回落。

@@ -12,6 +12,13 @@ mode 预设、review 矩阵、transport 必需集）的唯一来源。再读取
 `../delivery-pipeline/references/model-role-routing.md` 获取 agent adapter 与 evidence 规则。
 本流程在当前会话交互执行，不派发 lane。
 
+配置实例清单（schema 只有一份，见上；实例归各 runtime）：
+
+- **CLI 实例**：`~/.config/delivery-pipeline/model-roles.json`，由本流程写入并 readback；
+  CLI/Herdr dispatch 只读。
+- **App 实例**：`skills/delivery-pipeline-codex-app/config/models.json`，由用户编辑；
+  App 壳 helper 只读，不改配置。
+
 ## 流程
 
 1. **探测并严格验证现状。** 从本 SKILL.md realpath 解析并运行

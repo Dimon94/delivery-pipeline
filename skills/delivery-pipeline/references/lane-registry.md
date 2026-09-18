@@ -55,11 +55,10 @@ test_strategy: test_in_integration | rebase_then_test | skip_extra_test | none
 updated_at: <ISO-8601>
 ```
 
-Orca overlay 的写入由 `skills/delivery-pipeline-orca/scripts/registry_overlay.py` 提供最小翻译与核验：
-先持久化 mutation intent，再补 native request/receipt 与真实坐标；共享 registry owner 必须
-在写入后精确 readback。helper 不持有第二份 registry、dispatcher 或 event journal。
 `orca` 仅为共享 registry 的嵌套 opaque overlay 槽位；其内部字段、操作与恢复合同全部归
-`../../delivery-pipeline-orca/SKILL.md` 及其 helper，本文件不枚举 runtime-specific schema。
+写入方 runtime 的入口 skill 及其 helper 所有，本文件不枚举 runtime-specific schema。
+overlay 写入方必须先持久化 intent、再补真实坐标与 receipt；共享 registry owner 必须在
+写入后精确 readback。写入方 helper 不持有第二份 registry、dispatcher 或 event journal。
 
 Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`；
 两者都显式记录 `dispatch_runtime: orca`，coordinator 为 `coordinator_runtime: orca-terminal`。

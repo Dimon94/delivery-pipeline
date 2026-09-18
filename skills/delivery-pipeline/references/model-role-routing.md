@@ -1,9 +1,8 @@
 # 模型任务路由
 
-本文件定义 CLI/Herdr 主干如何消费配置并启动 worker。配置 schema（version 4、任务类型、
+本文件定义核心链路如何消费配置并启动 worker。配置 schema（version 4、任务类型、
 命名 mode 预设、review 矩阵、transport 必需集）的唯一权威是
-`model-config-schema.md`；App 壳共用同一 schema，其调度细节在
-`../../delivery-pipeline-codex-app/references/development-mode.md`。
+`model-config-schema.md`；各 transport 壳共用同一 schema，调度细节在各壳内。
 
 ## 配置实例与验证
 
