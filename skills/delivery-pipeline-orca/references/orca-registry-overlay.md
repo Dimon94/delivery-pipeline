@@ -13,41 +13,39 @@ python3 scripts/registry_overlay.py apply --payload <json>
 
 ```json
 {
-  "action": "record_dispatch_intent|record_native_coordinates|record_readback|record_final_state|record_cleanup_state",
-  "registry_path": "<abs path>",
-  "lane_id": "<stable lane id>",
-  "map_id": "<map id>",
-  "runtime": "orca",
-  "dispatch_runtime": "orca",
-  "coordinator_runtime": "orca-terminal",
-  "role": "<planning|design|frontend|backend|testing|review|map>",
-  "task_type": "<configured task type>",
-  "output_mode": "<commit|artifact|checks|verdict|none>",
-  "agent": "<pi|codex|claude>",
-  "model": "<configured>",
-  "effort": "<configured>",
-  "worktree": "<abs path|none>",
-  "branch": "<branch|none>",
-  "native": {
-    "source": "<native command or artifact>",
-    "terminal": "<Orca terminal id>",
-    "task": "<task id|none>",
-    "receipt": "<verbatim receipt summary|none>"
-  },
-  "state": "<registry state>",
-  "evidence": "<commands and outputs|none>"
+  "action": "<见下表>",
+  "kind": "map|lane",
+  "row": "<当前 registry row 完整对象>",
+  "arguments": {"<action 对应字段>": "..."}
 }
 ```
 
-action 固定五个；意图与 native 坐标分步记录；每次写后 readback，持久化后才继续。
+request 必须精确包含 `action`/`kind`/`row`/`arguments` 四键；脚本返回改写后的 row，registry
+文件的写回与读回由 caller 完成（`persist_overlay` 提供乐观并发核对）。
+
+| action | kind | arguments |
+| --- | --- | --- |
+| `bind_map_run` | map | `run_id`、`coordinator_host_id`、`coordinator_terminal_handle` |
+| `rebind_map_coordinator` | map | `observed_run_id`、`coordinator_host_id`、`coordinator_terminal_handle`、`writer_active` |
+| `bind_lane_task` | lane | `map_row`（map row 对象）、`task_id` |
+| `bind_attempt` | lane | `dispatch_id`、`terminal_handle`、`worktree_selector`、`execution_host`、`attempt_index` |
+| `record_native_coordinates` | map/lane | `run_id`/`task_id`/`dispatch_id`/`terminal_handle`/`worktree_selector`/`execution_host`/`attempt_index` 的子集 |
+| `record_readback` | map/lane | `coordinates`（可选）、`source`、`observed_at`、`evidence_reference`、`replace`（可选） |
+| `record_mutation` | map/lane | `operation`、`request_id`（可选）、`receipt_reference`（可选）、`replace`（可选） |
+| `record_observation` | map/lane | `source`、`observed_at`、`evidence_reference`、`replace`（可选） |
+| `recover_map` / `recover_lane` / `recover_attempt` | map/lane | 恢复期身份核对字段；只返回 `ready`/`blocked`，不改写 row |
+
 字段以 canonical lane registry schema 为准；runtime-specific 内容只允许嵌套在 `orca`
 opaque overlay 槽位，不改共享顶层 schema。
 
 ## 一致性检查
 
-`registry_overlay.py` 校验：registry 路径可读可写；lane_id/map_id 非空；`runtime: orca`
-与 `dispatch_runtime: orca` 一致；`record_native_coordinates` 的 terminal/task/receipt 字段
-非空并与 preflight 的固定 executable、target_host、terminal identity 一致；
-`record_readback` 的 evidence 可读回；`record_final_state` 的 state 属于
-`integrated|consumed|close_pending|closed|stale|blocked`；`record_cleanup_state` 只允许
-`closed|close_pending` 持久态。不满足即失败，不写 registry。
+`registry_overlay.py` 校验：request 精确四键；action 已知且与 kind 匹配；row 带 canonical
+markers；runtime-specific 身份坐标（Run/Task/Dispatch/terminal/worktree selector/execution host）
+冲突即拒绝覆盖；`record_mutation` 先 intent 后补 request/receipt，同身份幂等、冲突 fail-closed；
+`record_observation` 证据冲突保留旧证据；`bind_attempt` 要求 lane 已绑定 Run/Task；recover 系要求
+registry 与 native 身份一致且旧 writer 已排除。不满足即失败，不写 registry。
+
+本脚本不校验也不推进项目 state（`integrated`/`consumed`/`close_pending`/`closed`）；项目侧
+final/cleanup 的顺序门禁由 `worker_lifecycle.py` 与 `project_lifecycle.py` 承载，coordinator
+必须在门禁通过后才把 state 写入 registry。

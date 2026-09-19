@@ -56,9 +56,13 @@ coordinator 必须核验原生 source provenance 后才授权。逐字段 reques
 python3 scripts/registry_overlay.py apply --payload <json>
 ```
 
-action ∈ `record_dispatch_intent` / `record_native_coordinates` / `record_readback` /
-`record_final_state` / `record_cleanup_state`；顺序 intent → native → readback → final →
-cleanup，缺前置即拒绝，不写 registry。payload schema 与一致性检查见
+action ∈ `bind_map_run` / `rebind_map_coordinator` / `bind_lane_task` / `bind_attempt` /
+`record_native_coordinates` / `record_readback` / `record_mutation` / `record_observation` /
+`recover_map` / `recover_lane` / `recover_attempt`。脚本只改写 row 的 `orca` overlay 槽位并返回新
+row，registry 文件的写回与读回由 caller 完成；身份冲突、active writer、缺前置坐标均 fail-closed。
+本脚本不承载项目 state 推进：`integrated` / `consumed` / `closed` 只能在 `worker_lifecycle.py`
+settlement 与 `project_lifecycle.py` cleanup 门禁通过后写入，绕过门禁直接写 state 没有机械拦截。
+payload schema 与一致性检查见
 `references/orca-registry-overlay.md`。
 
 ## Recovery 与 staged continuation
