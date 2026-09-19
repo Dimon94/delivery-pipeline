@@ -431,11 +431,17 @@ def _prior(value: Any) -> dict[str, Any]:
 
 
 def _release(value: Any) -> dict[str, Any]:
-    result = _mapping(value, "release", {"status", "active_writer", "released", "source"})
+    result = _mapping(
+        value,
+        "release",
+        {"status", "active_writer", "released", "reason", "terminal_closed", "source"},
+    )
     return {
         "status": _readback_text(result["status"], "release.status"),
         "active_writer": _flag(result["active_writer"], "release.active_writer"),
         "released": _flag(result["released"], "release.released"),
+        "reason": _optional_text(result["reason"], "release.reason"),
+        "terminal_closed": _flag(result["terminal_closed"], "release.terminal_closed"),
         "source": _readable_file(result["source"], "release.source"),
     }
 
@@ -532,8 +538,20 @@ def validate_cleanup(request: Any) -> dict[str, Any]:
         return _cleanup_blocked(lane, "project lane 尚未完成对应 integrated/consumed fan-in", "project-cleanup-gate")
     if release["active_writer"] is not False:
         return _cleanup_blocked(lane, "active writer 或其状态 Unknown，禁止 release/rm", "worker-release")
-    if release["released"] is not True or release["status"] not in {"released", "already_released"}:
+    released_ok = release["released"] is True and release["status"] in {"released", "already_released"}
+    retained_ok = release["status"] == "retained" and release["reason"] in {
+        "user_takeover",
+        "no_owned_resource",
+    }
+    if not (released_ok or retained_ok):
         return _cleanup_blocked(lane, "worker-release 未获得正面 readback", "worker-release")
+    if release["terminal_closed"] is not True:
+        return _cleanup_blocked(
+            lane,
+            "worker terminal 未确认关闭：retained(user_takeover/no_owned_resource) 时须由 coordinator "
+            "显式 terminal close --tab 并回填 terminal_closed=True",
+            "worker-release",
+        )
     if (
         archive["status"] not in {"archived", "already_archived"}
         or archive["complete"] is not True
@@ -671,6 +689,8 @@ def _cleanup_request(root: Path, *, lane: dict[str, Any], prior_state: str, comp
             "status": "released",
             "active_writer": False,
             "released": True,
+            "reason": "none",
+            "terminal_closed": True,
             "source": source("release", "released"),
         },
         "archive": {
@@ -797,6 +817,26 @@ def _self_test() -> None:
         closed = validate_cleanup(cleanup)
         assert closed["status"] == "ready" and closed["next_project_state"] == "closed"
         assert closed["release_vs_project_close"]["project_lane"] == "pending coordinator close readback"
+        # retained(user_takeover)：coordinator 显式 terminal close 后放行；未关闭则 close_pending
+        retained_source = _write_json(root / "lane-114-123-release-retained.json", {"value": "retained"})
+        retained = copy.deepcopy(cleanup)
+        retained["release"] = {
+            "status": "retained",
+            "active_writer": False,
+            "released": False,
+            "reason": "user_takeover",
+            "terminal_closed": True,
+            "source": retained_source,
+        }
+        retained_ok = validate_cleanup(retained)
+        assert retained_ok["status"] == "ready" and retained_ok["next_project_state"] == "closed"
+        retained_no_close = copy.deepcopy(retained)
+        retained_no_close["release"]["terminal_closed"] = False
+        blocked_retained = validate_cleanup(retained_no_close)
+        assert blocked_retained["status"] == "close_pending" and blocked_retained["retry_from"] == "worker-release"
+        retained_bad_reason = copy.deepcopy(retained)
+        retained_bad_reason["release"]["reason"] = "unknown"
+        assert validate_cleanup(retained_bad_reason)["status"] == "close_pending"
         duplicate = copy.deepcopy(cleanup)
         duplicate["lane"]["state"] = "closed"
         duplicate["prior"] = {"state": "closed", "completed_steps": list(CLEANUP_STEPS)}

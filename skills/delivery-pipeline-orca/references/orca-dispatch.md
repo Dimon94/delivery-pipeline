@@ -70,7 +70,13 @@ startup 任一失败也必须先完整 readback 后交接；Unknown 保留现场
 
 Execution Worktree 只能从冻结的 Integration HEAD 建立。成功后需分别回读 Source Worktree 前后快照、Map Integration Worktree path/branch/HEAD，以及 Execution Worktree path/branch/base/HEAD/selector/host；Source Worktree 保持原 branch、HEAD 与 dirty 状态不变，三者不得混作同一坐标。
 
-项目 integration/testing/review 和 output-mode gate 完成后，按顺序执行 native `worker-release`、archive/ownership readback、`worktree rm`。`worker-release` 只释放 registry 登记的 Dispatch terminal；release 后按 worktree selector `terminal list` 读回该 worktree 全部 terminal，残留者（含未复用的兜底 shell）逐一 `terminal close --terminal <handle> --tab` 并读回为空，再 `worktree rm`。任一 dirty、未集成、Unknown 或 cleanup failure 都保留 worktree 与恢复坐标并标记 `close_pending`；Orca release 不等于项目 lane closeout。
+项目 integration/testing/review 和 output-mode gate 完成后，按顺序执行 native `worker-release`、archive/ownership readback、`worktree rm`。`worker-release` 只释放 registry 登记的 Dispatch terminal；它永远不会关
+user-taken-over / 无自有 terminal 的 Dispatch（返回 `retained`，这是 runtime 的保留设计，不是失败）——settlement 已核验时
+`retained` 不阻塞 cleanup：记录 release receipt 后由 coordinator 显式 `terminal close --terminal <handle> --tab` 关闭该 worker terminal
+（settlement 核验通过后 coordinator 拥有关闭权），并在 cleanup 请求的 `release.terminal_closed=True` 回填；只有 `release_unknown`、
+身份冲突或 Unknown 才走 `close_pending`。release 后按 worktree selector `terminal list` 读回该 worktree 全部 terminal，残留者（含未复用的兜底 shell）逐一
+`terminal close --terminal <handle> --tab` 并读回为空，再 `worktree rm`。任一 dirty、未集成、Unknown 或 cleanup failure 都保留
+worktree 与恢复坐标并标记 `close_pending`；Orca release 不等于项目 lane closeout。
 
 ## 项目侧 fan-in / cleanup readback
 
@@ -94,7 +100,8 @@ lane `state` 只允许写 `lane-registry.md` 枚举内的值；自造状态（�
 `python3 scripts/lane_cleanup_audit.py --registry-dir <registry 目录>`：红（任何残留或非 canonical state）
 即阻塞，沿 cleanup 顺序处理后重跑至全绿。该审计只读，是 cleanup 是否真实发生的最终判据。
 
-cleanup request 的顺序必须精确为：项目 cleanup gate → `worker-release` → archive/output readback →
+cleanup request 的顺序必须精确为：项目 cleanup gate → `worker-release`（`retained(user_takeover/no_owned_resource)` 时
+紧跟 coordinator 显式 `terminal close --tab` 并回填 `terminal_closed`）→ archive/output readback →
 `worktree rm` → Git branch readback。任何 dirty、未集成、active writer、archive 不全、branch 残留、
 身份冲突或 Unknown 都只返回可恢复的 `close_pending`；retry 只沿已完成步骤前缀继续，成功后仍须由
 coordinator 在清理 readback 后经 `registry_overlay.py` 的 `record_state` 落写项目 resolution 与 `closed`（绕过

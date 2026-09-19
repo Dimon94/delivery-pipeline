@@ -26,7 +26,9 @@ CANONICAL_STATES = {
     "rebase_in_progress", "push_failed", "cleanup_in_progress", "closed",
 }
 # 这些状态下 worktree/branch/terminal 必须已全部清理。
-DONE_STATES = {"terminal", "consumed", "integrated", "closed"}
+# terminal 不在内：fan-in/integration 未完成前 worktree 与 branch 必须保留；
+# close_pending 预期有残留，由 retry 推进，也不算违规。
+DONE_STATES = {"consumed", "integrated", "closed"}
 
 ROW_RE = re.compile(r"^(lane_id|state|worktree|branch|integration_worktree_path|orca):\s*(.*)$")
 

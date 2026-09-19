@@ -1052,6 +1052,19 @@ def check_orca_contract() -> None:
             "lane-registry.md",
         ),
     )
+    if not is_executable(audit_script):
+        record("Orca lane cleanup audit helper must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(audit_script), "--self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"Orca lane cleanup audit self-test failed: {result.stdout}{result.stderr}"
+            )
     lifecycle = ORCA / "scripts" / "worker_lifecycle.py"
     require(
         lifecycle,
