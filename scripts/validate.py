@@ -944,6 +944,7 @@ def check_orca_contract() -> None:
             "FIFO",
             "worker-list",
             "project_lane_transition",
+            "lane_cleanup_audit.py",
         ),
     )
     require(
@@ -1033,6 +1034,20 @@ def check_orca_contract() -> None:
             "archive/output readback",
             "git branch readback",
             "deduplicated",
+            "lane_cleanup_audit.py",
+        ),
+    )
+    audit_script = ORCA / "scripts" / "lane_cleanup_audit.py"
+    require(
+        audit_script,
+        (
+            "CANONICAL_STATES",
+            "DONE_STATES",
+            "def audit",
+            "--registry-dir",
+            "--self-test",
+            "非 canonical state",
+            "lane-registry.md",
         ),
     )
     lifecycle = ORCA / "scripts" / "worker_lifecycle.py"

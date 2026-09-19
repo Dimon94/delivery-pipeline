@@ -38,7 +38,8 @@ checks与 verdict 是执行真相源。
 
 ## Cleanup
 
-`integrated` 或 `consumed` 后统一：
+`integrated` 或 `consumed` 后统一。Herdr pane lane 执行下列步骤；其他 runtime 的 lane 按所属壳的
+fan-in/cleanup 合同完成等价的 transport release，并同样执行 worktree/branch 删除与 readback：
 
 1. 关闭本 lane pane并同步 tab label:从 X tab label 移除该 work item 编号;X tab 空后 label
    还原并保留 tab。

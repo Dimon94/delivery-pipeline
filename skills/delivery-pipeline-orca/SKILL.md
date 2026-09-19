@@ -94,8 +94,10 @@ Lane 状态读取经 `scripts/worker_lifecycle.py`（`worker-start` / `worker-st
 `worker-stop` / `worker-wait` / `worker-list`），不存在时记 Unknown。整批 lanes 完成
 startup 后 FIFO 处理 terminal signal；fan-in 的 Execution Worktree、packet、registry、
 receipt 与 cleanup 六步口径一致，worker 退出/丢失不自动重试，registry 最终 transition 经
-`scripts/project_lifecycle.py` 的 `project_lane_transition`。Orca lane 不继承 CLI/Herdr pane
-lifecycle。逐字段与 readback 细节见 `references/orca-dispatch.md` 的「项目侧 fan-in /
+`scripts/project_lifecycle.py` 的 `project_lane_transition`。每条 lane 的 fan-in 以 `closed` 或
+持久化 `close_pending` 结束：integrated/consumed 后 live worker/pane/worktree/branch 任一残留即
+cleanup 未完成。收尾判据是 `python3 scripts/lane_cleanup_audit.py --registry-dir <registry 目录>`
+全绿；红即阻塞，不宣告完成。Orca lane 不继承 CLI/Herdr pane lifecycle。逐字段与 readback 细节见 `references/orca-dispatch.md` 的「项目侧 fan-in /
 cleanup readback」。
 
 ## 结果与权限

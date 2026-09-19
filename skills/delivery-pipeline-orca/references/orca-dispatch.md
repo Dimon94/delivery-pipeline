@@ -15,7 +15,7 @@ model/effort 的传递有两条原生链路，按目标 agent 的 launch-prefere
 - **`launch-preferences`**（Claude/Codex/Cursor）：`worker-start --worktree new-child --base-branch <Integration HEAD> --agent <id> --model <model> --effort <effort>`。receipt 的 `launch.requested` 与 worker-show 的 `startOptions.launch.effective` 均携带非空 agent/model/effort，必须分别与声明一致。
 - **`agent-argv`**（pi 及任何被 `worker-start` 原生拒绝 launch-time model selection 的 agent，native 错误 `Agent <id> does not support launch-time model selection`）：`--terminal` 与 worktree creation flags 不兼容，顺序改为——
   1. `orca worktree create --name <worker> --base-branch <Integration HEAD>`（不带 `--agent`，setup policy 按共享 policy）；此时 Orca 物化一个兜底 shell tab；
-  2. `terminal list` 确认该 tab 是 unused shell（唯一终端、无命令运行；repo default-terminal 配置可能物化其他 tab，非 unused shell 时改用 `terminal create --command` 另起终端），然后 `terminal send --enter` 直接复用它，把共享 model_config 的冻结 argv 打进去（pi 为 `pi --approve --model <model> --thinking <effort>`，与 Herdr 主干同一 argv，不引入第二套映射）；send 是 queued 语义，shell 未就绪也不丢输入（已实测），poll `terminal read` 等 agent 状态行出现；
+  2. `terminal list` 确认该 tab 是 unused shell（唯一终端、无命令运行；repo default-terminal 配置可能物化其他 tab，非 unused shell 时改用 `terminal create --command` 另起终端），然后 `terminal send --enter` 直接复用它，把共享 model_config 的冻结 argv 打进去（pi 为 `pi --approve --model <model> --thinking <effort>`，与 Herdr 主干同一 argv，不引入第二套映射）；send 是 queued 语义，shell 未就绪也不丢输入（已实测），poll `terminal read` 等 agent 状态行出现；另起终端时必须当场 `terminal close --terminal <兜底 shell handle> --tab` 关闭未复用的兜底 shell——它不进 registry、不被 worker-release 覆盖，留着即成无主空 tab；
   3. `orca orchestration worker-start --task <task_id> --terminal <handle> --worktree <新 worktree>`。
 
   该路径 receipt/readback 的 `launch.requested`/`effective` 字段按设计全部为 `null`（Orca 未做 launch-time model selection），**不是缺口**；model/effort 的 effective 证据是 worker 终端的原生读回（`terminal read` 状态行，pi 形如 `glm-5.3-flash[low]` / `thinking low`）。声明的 requested=冻结计划、effective=终端读回，两者必须逐字段一致；`terminal_source` 必须绑定 Dispatch 的 terminal handle 且文本包含 effective model id 与 effort。
@@ -70,7 +70,7 @@ startup 任一失败也必须先完整 readback 后交接；Unknown 保留现场
 
 Execution Worktree 只能从冻结的 Integration HEAD 建立。成功后需分别回读 Source Worktree 前后快照、Map Integration Worktree path/branch/HEAD，以及 Execution Worktree path/branch/base/HEAD/selector/host；Source Worktree 保持原 branch、HEAD 与 dirty 状态不变，三者不得混作同一坐标。
 
-项目 integration/testing/review 和 output-mode gate 完成后，按顺序执行 native `worker-release`、archive/ownership readback、`worktree rm`。任一 dirty、未集成、Unknown 或 cleanup failure 都保留 worktree 与恢复坐标并标记 `close_pending`；Orca release 不等于项目 lane closeout。
+项目 integration/testing/review 和 output-mode gate 完成后，按顺序执行 native `worker-release`、archive/ownership readback、`worktree rm`。`worker-release` 只释放 registry 登记的 Dispatch terminal；release 后按 worktree selector `terminal list` 读回该 worktree 全部 terminal，残留者（含未复用的兜底 shell）逐一 `terminal close --terminal <handle> --tab` 并读回为空，再 `worktree rm`。任一 dirty、未集成、Unknown 或 cleanup failure 都保留 worktree 与恢复坐标并标记 `close_pending`；Orca release 不等于项目 lane closeout。
 
 ## 项目侧 fan-in / cleanup readback
 
@@ -84,6 +84,15 @@ output mode 按共享合同处理：`commit` 必须绑定 Execution Base review�
 的通过 readback；`artifact`、`checks`、`verdict` 必须 clean 且不携带 cherry-pick，成功目标为
 `consumed`。Integration conflict 或 focused checks 失败保留现场，不回滚已经 integrated/consumed 的
 结果。
+
+integrated/consumed 不是 Orca worker 的停靠状态：同一次 fan-in 内立即发起 cleanup request。关闭 tracker
+child、写 map 完成或派发下一 ready lane 前，必须已完成 cleanup readback（worker、worktree、branch 均不存在），
+或已持久化 `close_pending` 与失败证据；不得静默留下已验收的 live worker。
+
+lane `state` 只允许写 `lane-registry.md` 枚举内的值；自造状态（如 `delivered`）是 schema 违规，会让所有按枚举
+触发的 cleanup 规则失效。写 map 完成、关闭 tracker child 或向用户报告交付前，必跑
+`python3 scripts/lane_cleanup_audit.py --registry-dir <registry 目录>`：红（任何残留或非 canonical state）
+即阻塞，沿 cleanup 顺序处理后重跑至全绿。该审计只读，是 cleanup 是否真实发生的最终判据。
 
 cleanup request 的顺序必须精确为：项目 cleanup gate → `worker-release` → archive/output readback →
 `worktree rm` → Git branch readback。任何 dirty、未集成、active writer、archive 不全、branch 残留、
