@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import os
+from pathlib import Path
 from typing import Any
 
 import checkpoint as CHECKPOINT
@@ -708,6 +710,17 @@ def record_terminal(lane: dict[str, Any], event: dict[str, Any]) -> tuple[dict[s
             or terminal_request != request.get("request_id")
             or terminal_turn != new_turn.get("turn_id")):
         return _mark_blocked(updated, "terminal 身份不匹配当前原 session/request/turn")
+    # fail-closed 交付物核验：worker 自述写了 final-report 不等于文件存在（map#765 lane-1102 实证）。
+    # 只约束 completed outcome（blocked 等不要求交付物）；tracker URL 尾段推出 artifacts 目录名，
+    # 推不出时保持原行为。tests 可用 DELIVERY_PIPELINE_LANES_DIR 重定向 artifacts 根。
+    if event.get("outcome") == "completed":
+        tail = str(updated.get("work_item") or "").rstrip("/").rsplit("/", 1)[-1]
+        if tail.isdigit():
+            lanes_dir = Path(os.environ.get("DELIVERY_PIPELINE_LANES_DIR",
+                                            Path.home() / ".config" / "delivery-pipeline" / "lanes"))
+            report = lanes_dir / "artifacts" / tail / "final-report.md"
+            if not (report.is_file() and report.stat().st_size > 0):
+                return _mark_blocked(updated, f"terminal completed 但 final-report 缺失或为空：{report}")
     previous = updated.get("terminal")
     if previous is not None:
         return (updated, "deduplicated") if previous == event else (updated, "blocked: conflicting terminal event")

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -216,6 +217,12 @@ def check() -> None:
         directory = Path(folder)
         root = directory / "execution"
         root.mkdir()
+        # record_terminal 的 final-report fail-closed 核验按该环境变量定位 artifacts 根。
+        lanes_root = directory / "lanes"
+        os.environ["DELIVERY_PIPELINE_LANES_DIR"] = str(lanes_root)
+        report_dir = lanes_root / "artifacts" / "102"
+        report_dir.mkdir(parents=True)
+        (report_dir / "final-report.md").write_text("probe report\n", encoding="utf-8")
         git(root, "init", "-b", "main")
         git(root, "config", "user.name", "continuation-probe")
         git(root, "config", "user.email", "continuation@example.invalid")
@@ -376,6 +383,14 @@ def check() -> None:
         }
         sent, status = CONTINUATION.record_terminal(sent, terminal)
         assert status == "recorded"
+        missing_report_lane = copy.deepcopy(sent)
+        missing_report_lane["work_item"] = "https://github.com/Dimon94/delivery-pipeline/issues/999"
+        missing_report_lane.pop("terminal", None)
+        missing_report_terminal = dict(terminal, terminal_id="terminal-missing-report")
+        missing_report_lane, status = CONTINUATION.record_terminal(missing_report_lane,
+                                                                   missing_report_terminal)
+        assert status.startswith("blocked") and "final-report" in status
+        assert missing_report_lane.get("terminal") is None
         sent, status = CONTINUATION.record_terminal(sent, terminal)
         assert status == "deduplicated"
         drifted_model, status = CONTINUATION.record_event(sent, "actual_model", {
