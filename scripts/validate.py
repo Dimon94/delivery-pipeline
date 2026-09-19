@@ -945,6 +945,8 @@ def check_orca_contract() -> None:
             "worker-list",
             "project_lane_transition",
             "lane_cleanup_audit.py",
+            "coordinator_terminal_handle",
+            "唤醒责任在发送方",
         ),
     )
     require(
@@ -1026,6 +1028,8 @@ def check_orca_contract() -> None:
             "sender terminal",
             "check --run <run_id> --wait",
             "check --ack <delivery_id>",
+            "唤醒责任在发送方",
+            "coordinator_terminal_handle",
             "worker-list --run <run_id>",
             "project lane integrated/closed",
             "project_lifecycle.py",

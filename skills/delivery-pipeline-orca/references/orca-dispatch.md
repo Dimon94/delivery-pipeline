@@ -57,6 +57,14 @@ response lost 先 request-show，重启沿原 registry 身份；该门禁不替�
 orca orchestration check --run <run_id> --wait --types 'worker_done,escalation,question' --timeout-ms <bounded> --json
 ```
 
+**唤醒责任在发送方**：当前 runtime 不会把到达的 orchestration 消息注入 coordinator 终端，`check --wait`
+只是有界等待、回合结束即失效（iCaCal map 实证：5 条 worker_done 在 inbox 躺了 1-2 小时无人结算，直到
+用户手动戳 coordinator）。因此 worker packet 必须携带 `coordinator_terminal_handle`，且 worker 每次向
+coordinator `orchestration send`（worker_done/escalation/question/reply）后必须紧跟一次
+`orca terminal send --terminal <coordinator_terminal_handle> --enter --text '<lane_id> <信号类型>，请结算'`。
+nudge 只负责唤醒，事实仍以 orchestration 消息与 registry 为准；nudge 发送失败不撤回已入 inbox 的消息，
+worker 须在汇报中注明失败。多个 worker 的重复 nudge 在 coordinator 侧天然去重（一次回合处理完整 inbox）。
+
 `check` 的 `deliveryId` 标识整批 Delivery，`messages` 才是其中有序的完整 batch；不能把每条 message 伪建模成一个 Delivery。完整 batch 可以包含多个 worker 的消息，因此 caller 必须提供当前 Run 内由 native `worker-list` 读回的 Task/Dispatch/terminal bindings；每条 message 按 sender terminal 或原生 `dispatch:<id>` 唯一绑定对应 Dispatch，`worker_done` payload 还须精确匹配该 Task/Dispatch。每次返回先按顺序处理完整 batch：
 
 - 通过共享 overlay 的通用 `mutation`/`observation` 字段记录本次 Delivery/完整 message IDs、Task/Dispatch、fan-in、terminal ownership 与下一步决策的 repo 外 readback 引用；完整细节保留在原生 JSON artifact，不扩展第二套 registry schema；
