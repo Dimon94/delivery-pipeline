@@ -97,5 +97,6 @@ lane `state` 只允许写 `lane-registry.md` 枚举内的值；自造状态（�
 cleanup request 的顺序必须精确为：项目 cleanup gate → `worker-release` → archive/output readback →
 `worktree rm` → Git branch readback。任何 dirty、未集成、active writer、archive 不全、branch 残留、
 身份冲突或 Unknown 都只返回可恢复的 `close_pending`；retry 只沿已完成步骤前缀继续，成功后仍须由
-coordinator 在清理 readback 后单独写项目 resolution 与 `closed`，并完成 git branch readback。重复 closed cleanup 只返回
+coordinator 在清理 readback 后经 `registry_overlay.py` 的 `record_state` 落写项目 resolution 与 `closed`（绕过
+record_state 手写 state 视为违规），并完成 git branch readback。重复 closed cleanup 只返回
 `deduplicated`，不重做 mutation。

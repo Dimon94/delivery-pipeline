@@ -987,6 +987,8 @@ def check_orca_contract() -> None:
             "record_observation",
             "record_native_coordinates",
             "record_readback",
+            "record_state",
+            "STATE_PRIORS",
             "recover_map",
             "recover_lane",
             "recover_attempt",

@@ -58,10 +58,10 @@ python3 scripts/registry_overlay.py apply --payload <json>
 
 action ∈ `bind_map_run` / `rebind_map_coordinator` / `bind_lane_task` / `bind_attempt` /
 `record_native_coordinates` / `record_readback` / `record_mutation` / `record_observation` /
-`recover_map` / `recover_lane` / `recover_attempt`。脚本只改写 row 的 `orca` overlay 槽位并返回新
+`record_state` / `recover_map` / `recover_lane` / `recover_attempt`。项目 state 只允许经 `record_state` 写入：
+canonical 枚举（拒绝自造状态）、推进顺序与门禁前置证据由脚本硬校验，绕过它手写 state 视为违规。
+除此之外脚本只改写 row 的 `orca` overlay 槽位并返回新
 row，registry 文件的写回与读回由 caller 完成；身份冲突、active writer、缺前置坐标均 fail-closed。
-本脚本不承载项目 state 推进：`integrated` / `consumed` / `closed` 只能在 `worker_lifecycle.py`
-settlement 与 `project_lifecycle.py` cleanup 门禁通过后写入，绕过门禁直接写 state 没有机械拦截。
 payload schema 与一致性检查见
 `references/orca-registry-overlay.md`。
 

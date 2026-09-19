@@ -10,6 +10,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lane_cleanup_audit import CANONICAL_STATES  # noqa: E402  枚举唯一来源 lane-registry.md
+
 OVERLAY_FIELDS = (
     "run_id",
     "task_id",
@@ -415,6 +418,46 @@ def record_observation(
     return result
 
 
+# state 推进的机械顺序门禁：terminal → integrated/consumed → cleanup → closed。
+# 只列硬校验覆盖的 hop；created/running/blocked 等其余 state 经同一入口但不断言顺序。
+STATE_PRIORS = {
+    "terminal": {"running", "awaiting_human"},
+    "integrated": {"terminal"},
+    "consumed": {"terminal"},
+    "cleanup_in_progress": {"integrated", "consumed", "close_pending"},
+    "close_pending": {"integrated", "consumed", "cleanup_in_progress"},
+    "closed": {"integrated", "consumed", "cleanup_in_progress", "close_pending"},
+}
+
+
+def record_state(row: Any, *, state: str, evidence: str, repair: bool = False) -> dict[str, Any]:
+    """项目 state 的唯一写入入口；绕过本 action 手写 state 视为违规。
+
+    校验：state ∈ canonical 枚举（delivered 等自造状态在此被拒）；推进顺序不缺 hop；
+    integrated/consumed 要求 orca.observation（settlement readback）已记录；
+    close_pending/closed 的 evidence 必须指向 cleanup 各步 readback（release/terminal 扫描/
+    worktree rm/branch readback）。helper 只验证枚举、顺序与必填，内容核对仍归 coordinator。
+    repair=True 仅用于修复历史手写/自造状态：跳过顺序断言，枚举与 evidence 校验不放松。
+    """
+    result = _copy_row(row)
+    state = _known_text(state, "state")
+    _known_text(evidence, "evidence")
+    if state not in CANONICAL_STATES:
+        raise OverlayError(f"非 canonical state `{state}`；枚举唯一来源 lane-registry.md")
+    previous = result.get("state")
+    if previous == state:
+        return result
+    priors = STATE_PRIORS.get(state)
+    if priors is not None and not repair and previous not in priors:
+        raise OverlayError(f"state 顺序违规：{previous} → {state}，缺前置 hop")
+    if state in {"integrated", "consumed"}:
+        observation = result["orca"].get("observation")
+        if not isinstance(observation, dict) or not observation.get("evidence_reference"):
+            raise OverlayError("integrated/consumed 需要 settlement observation 已记录")
+    result["state"] = state
+    return result
+
+
 def recover_map(
     row: Any,
     *,
@@ -552,6 +595,7 @@ ACTIONS: dict[str, Callable[..., dict[str, Any]]] = {
     "record_mutation": record_mutation,
     "record_native_coordinates": record_native_coordinates,
     "record_readback": record_readback,
+    "record_state": record_state,
     "bind_map_run": bind_map_run,
     "rebind_map_coordinator": rebind_map_coordinator,
     "bind_lane_task": bind_lane_task,
@@ -752,6 +796,50 @@ def _self_test() -> None:
         pass
     else:
         raise AssertionError("wrong transport markers must fail closed")
+
+    # record_state：枚举 + 顺序 + 门禁前置证据
+    running_lane = {**bound_lane, "state": "running"}
+    try:
+        record_state(running_lane, state="delivered", evidence="worker_done")
+    except OverlayError:
+        pass
+    else:
+        raise AssertionError("non-canonical state must be rejected")
+    try:
+        record_state(running_lane, state="closed", evidence="skip cleanup")
+    except OverlayError:
+        pass
+    else:
+        raise AssertionError("closed without prior hops must be rejected")
+    terminal_lane = record_state(running_lane, state="terminal", evidence="worker_done readback")
+    expect(terminal_lane["state"] == "terminal", "terminal hop must apply")
+    no_settlement = {**terminal_lane, "orca": empty_overlay()}
+    try:
+        record_state(no_settlement, state="integrated", evidence="cherry-pick ok")
+    except OverlayError:
+        pass
+    else:
+        raise AssertionError("integrated requires settlement observation")
+    integrated_lane = record_state(terminal_lane, state="integrated", evidence="cherry-pick ok")
+    closed_lane = record_state(
+        integrated_lane, state="closed",
+        evidence="release+terminal 扫描+worktree rm+branch readback 均通过")
+    expect(closed_lane["state"] == "closed", "closed hop must apply after integrated")
+    expect(
+        record_state(closed_lane, state="closed", evidence="retry") == closed_lane,
+        "same-state rewrite must be idempotent",
+    )
+    repaired = record_state(
+        {**bound_lane, "state": "delivered"}, state="terminal",
+        evidence="legacy delivered 实为 worker_done 待 fan-in", repair=True)
+    expect(repaired["state"] == "terminal", "repair must fix legacy non-canonical state")
+    try:
+        record_state({**bound_lane, "state": "delivered"}, state="terminal",
+                     evidence="no repair flag")
+    except OverlayError:
+        pass
+    else:
+        raise AssertionError("repair hop without repair=True must be rejected")
     bad_map = copy.deepcopy(bound_map)
     bad_map["orca"]["task_id"] = "task-leaked-to-map"
     try:
