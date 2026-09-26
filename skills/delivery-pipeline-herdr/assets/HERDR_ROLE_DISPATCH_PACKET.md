@@ -65,8 +65,11 @@ Review evidence preflight：<absolute delivery-pipeline/references/code-review-e
   不得留给 coordinator gate。
 - API 报错处置：400/5xx/网络类自动重试继续；402 额度类（rate_limit/credit）重试无意义，
   停止作业，final report 写 blocked 与错误原文，照常输出 LANE_DONE 唤醒 coordinator。
-- 上下文纪律（设备/截图/构建 lane 必守）：截图与二进制只落盘不读回；adb/logcat/构建日志用
-  tail/grep 截断，单条 shell 输出 ≤200 行；构建用后台+轮询。
+- 上下文纪律（设备/截图/构建 lane 必守，map#765 E2 四 lane 三代会话死亡换来的硬规）：截图与二进制
+  **只落盘、永不进上下文**——禁止用 read/查看工具打开任何 PNG/JPG/录屏/dump 文件（单次 2.4M 上下文
+  硬限必爆，无恢复）；逐页截图 lane 每 3–4 页一 commit（防爆时丢进度）；inventory/台账类大 JSON
+  用 python/jq 定位修改，禁止整读整写；视觉像素对照不归 worker，登记坐标移交人检票。
+  adb/logcat/构建日志用 tail/grep 截断，单条 shell 输出 ≤200 行；构建用后台+轮询。
 - 真机/模拟器 lane：每次 `adb shell input` 前断言目标包在前台（uiautomator dump 后 grep 包名，
   不符即停手报告 STOLEN）；设备被跨 lane 抢占时不得继续注入。
 - 当前 Output mode 与 packet 不符时停止写入并在 Blocker 中报告。
