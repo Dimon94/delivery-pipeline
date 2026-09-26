@@ -13,6 +13,40 @@ SEEN_PREWALK=''
 PENDING_PREWALK=''
 
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  # jsonl 主通道（map#765 实证：屏扫只取可视区，LANE_DONE 滚出后 100% 错过；session jsonl 是 ground truth）
+  JSONL=$(herdr pane get "$PANE" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result",{}).get("pane",{}).get("agent_session",{}).get("value",""))' 2>/dev/null || true)
+  # map#1262 实证修复：jsonl 通道必须只数 assistant 输出的真实 marker；packet 投递回显的
+  # toolResult 含 LANE_DONE 字样（指令原文）曾致两次 false-positive WAKE。
+  # map#1262 codex lane 实证：rollout jsonl 是 response_item/message/output_text 结构，
+  # pi 格式解析全漏（4 条 lane PREWALK/LANE_DONE 未捕获）；这里同时支持两种格式，
+  # 输出匹配到的完整 marker 行（每行一条），由 shell 统一走去重与唤醒。
+  MARKERS=$(
+  if [ -n "$JSONL" ] && [ -f "$JSONL" ]; then python3 -c '
+import json,sys
+lane=sys.argv[2]
+for line in open(sys.argv[1]):
+    try: d=json.loads(line)
+    except Exception: continue
+    texts=[]
+    if d.get("type")=="message" and d.get("message",{}).get("role")=="assistant":
+        for p in d["message"].get("content",[]):
+            if isinstance(p,dict) and p.get("text"): texts.append(p["text"])
+    elif d.get("type")=="response_item":
+        it=d.get("payload",{})
+        if it.get("type")=="message" and it.get("role")=="assistant":
+            for c in it.get("content",[]):
+                if isinstance(c,dict) and c.get("type")=="output_text" and c.get("text"):
+                    texts.append(c["text"])
+    for t in texts:
+        for ln in t.splitlines():
+            ln=ln.strip()
+            if ln=="LANE_DONE "+lane or ln.startswith("PREWALK_READY "+lane+" /"):
+                print(ln)
+' "$JSONL" "$LANE_ID" 2>/dev/null; fi)
+  if printf '%s\n' "$MARKERS" | grep -qxF "LANE_DONE $LANE_ID"; then
+    herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(session jsonl 实证 LANE_DONE $LANE_ID)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
+    exit 0
+  fi
   # --source visible 只取当前屏幕，避免匹配到已滚动走的历史回显（packet 指令文本本身含 LANE_DONE 字样，曾致两次误报）
   OUT=$(herdr pane read "$PANE" --source visible 2>/dev/null || true)
   # 按完整行和字面 lane ID 匹配；路径保留空格，artifact 内容由 coordinator 核验。
@@ -29,6 +63,18 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
         ;;
     esac
   done <<< "$OUT"
+  # jsonl 通道检出的 PREWALK（含 codex rollout）同样走去重队列
+  while IFS= read -r LINE; do
+    case "$LINE" in
+      "PREWALK_READY $LANE_ID /"*)
+        if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
+           ! printf '%s\n' "$PENDING_PREWALK" | grep -qxF -- "$LINE"; then
+          PENDING_PREWALK="${PENDING_PREWALK}${LINE}
+"
+        fi
+        ;;
+    esac
+  done <<< "$MARKERS"
   while IFS= read -r LINE; do
     [ -n "$LINE" ] || continue
     if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
