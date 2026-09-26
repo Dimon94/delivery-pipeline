@@ -5,8 +5,31 @@
 ## 操作顺序
 
 1. coordinator 从已通过的 implementation gate 读取 lane、owner 三字段、output mode、冻结 mode、Integration HEAD、权限和 review fixed point。
-2. 沿 #121 的共享 overlay 先写 `task-create` intent；创建真实 Task 后写回 Task/Run readback。随后写 Dispatch intent，再执行原生 `orchestration worker-start`。
+2. 沿 #121 的共享 overlay 先写 `task-create` intent；创建真实 Task 后写回 Task/Run readback。随后写 Dispatch intent，再执行原生 `orchestration worker-start`。无依赖 fan-out 允许 `worker-start --spec` 一次调用合并 Task 创建与 Dispatch 启动：overlay 落一次合并 intent，`--spec` receipt 返回后一次写回 Task/Run/Dispatch readback（bind_lane_task + bind_attempt）；有依赖的 planned fan-out 仍走 `task-create --deps` + `worker-start --task`。
 3. `worker-start` 必须绑定 `--task`、冻结 Integration HEAD 的显式 base、明确 worker name/selector、共享 policy 的 agent 与 setup policy。Source Worktree 不切 branch。launch transport 按 agent 能力二选一（见下节）。
+
+以上步骤描述一条 lane；多 lane 批的段级编排见「批级并发序列」。
+
+## 批级并发序列
+
+并发只跨 lane；lane 内仍按上方「操作顺序」逐步执行，每步的 readback 与隔离纪律不变。
+
+1. **批级前置（唯一串行段）**：implementation gate 读取（步骤 1，全批共享一次）与共享
+   overlay 的全部写入（task-create intent、Task/Run readback 写回、Dispatch intent、
+   settlement record）。overlay 单写者：同一时刻只进行一个 overlay 写入与 readback 往返。
+2. **并发段 A（native 只读 readback）**：各 lane 的 receipt 解析、worker-show、terminal
+   read 等只读 readback 跨 lane 并发执行。
+3. **并发段 B（native mutation）**：各 lane 的 worker-start / worktree create / terminal
+   操作跨 lane 并发。version-matched orchestration guide 的 canonical loop 即「先启完整
+   wave 再等待」，该 guide 段落是并发 mutation 的 capability 证据（ADR-0009 纪律）；
+   固定的 guide 不含 wave 范式时保持串行 mutation。并发启动后仍逐 lane 完成双 source
+   readback，任一对不上即按单 lane 失败隔离处理。
+4. **单 lane 失败隔离**：任一 lane 在并发段失败只写该 lane 的 `blocked` 证据并沿
+   `orca-recovery.md` 处理；其余 lane 继续，不回滚整批。
+
+依赖与波次：planned fan-out 用 `task-create --deps` 只编码真实依赖；每波 fan-in 后以 native
+`task-list --ready --brief --json` 作为 ready frontier 的外置记忆决定下一波，coordinator 不凭
+会话记忆重算。
 
 ## Launch transport
 
@@ -15,7 +38,7 @@ model/effort 的传递有两条原生链路，按目标 agent 的 launch-prefere
 - **`launch-preferences`**（Claude/Codex/Cursor）：`worker-start --worktree new-child --base-branch <Integration HEAD> --agent <id> --model <model> --effort <effort>`。receipt 的 `launch.requested` 与 worker-show 的 `startOptions.launch.effective` 均携带非空 agent/model/effort，必须分别与声明一致。
 - **`agent-argv`**（pi 及任何被 `worker-start` 原生拒绝 launch-time model selection 的 agent，native 错误 `Agent <id> does not support launch-time model selection`）：`--terminal` 与 worktree creation flags 不兼容，顺序改为——
   1. `orca worktree create --name <worker> --base-branch <Integration HEAD>`（不带 `--agent`，setup policy 按共享 policy）；此时 Orca 物化一个兜底 shell tab；
-  2. `terminal list` 确认该 tab 是 unused shell（唯一终端、无命令运行；repo default-terminal 配置可能物化其他 tab，非 unused shell 时改用 `terminal create --command` 另起终端），然后 `terminal send --enter` 直接复用它，把共享 model_config 的冻结 argv 打进去（pi 为 `pi --approve --model <model> --thinking <effort>`，与 Herdr 主干同一 argv，不引入第二套映射）；send 是 queued 语义，shell 未就绪也不丢输入（已实测），poll `terminal read` 等 agent 状态行出现；另起终端时必须当场 `terminal close --terminal <兜底 shell handle> --tab` 关闭未复用的兜底 shell——它不进 registry、不被 worker-release 覆盖，留着即成无主空 tab；
+  2. `terminal list` 确认该 tab 是 unused shell（唯一终端、无命令运行；repo default-terminal 配置可能物化其他 tab，非 unused shell 时改用 `terminal create --command` 另起终端），然后 `terminal send --enter` 直接复用它，把共享 model_config 的冻结 argv 打进去（pi 为 `pi --approve --model <model> --thinking <effort>`，与 Herdr 主干同一 argv，不引入第二套映射）；send 附 `--wait-submit` 取 durable request ID 提交证明（queued 语义不变，shell 未就绪也不丢输入，已实测），随后 `terminal wait --for tui-idle` 等 agent TUI 就绪，代替 poll `terminal read`；另起终端时必须当场 `terminal close --terminal <兜底 shell handle> --tab` 关闭未复用的兜底 shell——它不进 registry、不被 worker-release 覆盖，留着即成无主空 tab；
   3. `orca orchestration worker-start --task <task_id> --terminal <handle> --worktree <新 worktree>`。
 
   该路径 receipt/readback 的 `launch.requested`/`effective` 字段按设计全部为 `null`（Orca 未做 launch-time model selection），**不是缺口**；model/effort 的 effective 证据是 worker 终端的原生读回（`terminal read` 状态行，pi 形如 `glm-5.3-flash[low]` / `thinking low`）。声明的 requested=冻结计划、effective=终端读回，两者必须逐字段一致；`terminal_source` 必须绑定 Dispatch 的 terminal handle 且文本包含 effective model id 与 effort。
@@ -65,9 +88,18 @@ coordinator `orchestration send`（worker_done/escalation/question/reply）后�
 nudge 只负责唤醒，事实仍以 orchestration 消息与 registry 为准；nudge 发送失败不撤回已入 inbox 的消息，
 worker 须在汇报中注明失败。多个 worker 的重复 nudge 在 coordinator 侧天然去重（一次回合处理完整 inbox）。
 
+空 wait（`check --wait` 超时返回空 batch）是 checkpoint 不是失败。连续 3 次空 wait 后用 native
+`worker-list --include-remote --json` 枚举，按每行 `projection.attention` 与 `projection.nextAction`
+字面 argv 行动；`nextAction` 为 `none` 时读 `liveness.reason` 并继续 `check --wait`。liveness
+判定分层：`worker-list` 的 `projection.liveness` 是 fleet verdict，`worker-show` 的
+`observation.status` 只是 PTY liveness；`exited` 等正面退出证据才允许沿 `orca-recovery.md` 走
+stop/abandon/retry，`unverifiable` 一律视为缺席、保留现场。单 lane 的处理不阻塞其余 lane 的
+wait/ack。
+
 `check` 的 `deliveryId` 标识整批 Delivery，`messages` 才是其中有序的完整 batch；不能把每条 message 伪建模成一个 Delivery。完整 batch 可以包含多个 worker 的消息，因此 caller 必须提供当前 Run 内由 native `worker-list` 读回的 Task/Dispatch/terminal bindings；每条 message 按 sender terminal 或原生 `dispatch:<id>` 唯一绑定对应 Dispatch，`worker_done` payload 还须精确匹配该 Task/Dispatch。每次返回先按顺序处理完整 batch：
 
 - 通过共享 overlay 的通用 `mutation`/`observation` 字段记录本次 Delivery/完整 message IDs、Task/Dispatch、fan-in、terminal ownership 与下一步决策的 repo 外 readback 引用；完整细节保留在原生 JSON artifact，不扩展第二套 registry schema；
+- question message 的 readback 口径是持久化 + overlay 标记 `awaiting_human` + 移交人工；人工答复在 FIFO 之外到达，等待答复不阻塞同批其他 message 的 readback 与整批 ack；
 - 精确 readback 写入成功后，才 `check --ack <delivery_id>`；未 ack 消息不可跳过、不可伪消费；
 - ack 后解析 ack receipt 的 `acknowledged` 与 native mutation request ID，再用 `worker-list --run <run_id> --json` 的独立 JSON readback 核验 worker/dispatch/terminal/resource 状态；PTY observation 只能补充，不能覆盖 fleet verdict；
 - 明确下一步 `reuse`、`retain` 或 `release`。settled/reclaimable 不直接写成 project lane integrated/closed；该结果仅保留在 settlement readback，等待项目 fan-in。
