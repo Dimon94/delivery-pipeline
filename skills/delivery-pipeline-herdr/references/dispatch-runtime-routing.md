@@ -58,6 +58,11 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
    Packet 投递默认走 repo 外文件路径（`~/.config/delivery-pipeline/packets/<lane_id>.md`），
    `herdr agent prompt` 只发「读取 dispatch packet 执行：<绝对路径>」；超长内嵌文本会被
    pane 折叠成 `[paste #N +M lines]` 占位符，worker 拿不到内容空转。
+   **模型注入默认走环境变量，不用 `/model` 会话内命令**：`herdr tab create --env PI_MODEL=<provider/id>
+   --env PI_REASONING_LEVEL=<effort>`（pi 在启动时读入并在 session jsonl 落 model_change 实证）。
+   `/model` 交互选择器会截获逐字注入的文本（开头 `/model ` 触发选择器、后续字符进过滤框导致
+   mangling，map#765 lane-782 实证）；仅在 env 不可用时才退到 `/model` 注入，且注入后必须以
+   session jsonl 的 model_change 记录实证，不以屏幕回显为准。
 5. 按 `pane-lifecycle-rules.md` 完成落点验证、投递、记账和聚合 Working 确认；单条失败隔离为
    `setup_blocked`，不影响 siblings。
 6. 整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff；单 lane working 不提前 yield。
