@@ -22,32 +22,20 @@ back to Herdr or Codex App.
 
 ## Worker Configuration
 
-Before the first CLI dispatch, run `delivery-pipeline-setup`. It probes:
-
-- pi: `pi --list-models`
-- Codex CLI: `codex debug models`
-- Claude CLI: model mappings and effort from `~/.claude/settings.json` `env`
-
-The user explicitly chooses `agent + model + effort` for each required task type and the review matrix:
+Before the first CLI dispatch, run `delivery-pipeline-setup`. It probes each installed CLI for available models and effort sources, then has you explicitly choose `agent + model + effort` for each required task type and the review matrix:
 
 ```text
 planning  design  frontend  backend  testing  review(implementation/whole-change × standards/spec)
 ```
 
-The version 4 configuration is stored at `~/.config/delivery-pipeline/model-roles.json`; its schema is shared
-with the Codex App shell's `config/models.json` and defined once in
-`skills/delivery-pipeline/references/model-config-schema.md`. Named `modes` presets carry the staged/direct
-starting, execution, and direct model/effort pairs per agent. New implementation lanes freeze a
-ticket → map → `default_mode` mode-name selection; existing lanes recover from their registry and are not
-migrated. Older config versions migrate mechanically via `model_config.py migrate`. Skills contain no
-default models. Missing, unknown, incomplete, or invalid configuration blocks dispatch and re-enters
-setup. The coordinator is not configured: whichever agent/model invoked the skill remains coordinator.
-
-Agent selects lane kind:
-
-- pi → `herdr-pi-pane`
-- codex → `herdr-codex-pane`
-- claude → `herdr-claude-pane`
+Configuration lives at `~/.config/delivery-pipeline/model-roles.json` (version 4); the schema is
+defined once in `skills/delivery-pipeline/references/model-config-schema.md` and shared with the Codex App
+shell's `config/models.json`. Named `modes` presets carry staged/direct model/effort pairs per agent; new
+implementation lanes freeze their mode selection and existing lanes recover from their registry. Skills
+contain no default models: missing, unknown, or invalid configuration blocks dispatch and re-enters setup.
+The coordinator is not configured — whichever agent/model invoked the skill remains coordinator. Per-agent
+lane kinds and runtime mapping are owned by
+`skills/delivery-pipeline-herdr/references/dispatch-runtime-routing.md`.
 
 ## Dependencies
 
@@ -55,11 +43,8 @@ Agent selects lane kind:
 - Herdr CLI as the canonical core's terminal multiplexer.
 - Orca CLI for the independent `delivery-pipeline-orca` entrypoint; its current-runtime
   `orca-cli` and `orchestration` guides must be readable.
-- Owner skills: `wayfinder`, `grilling`, `domain-modeling`, `prototype`, `research`, `to-spec`,
-  `to-tickets`, `implement`, `code-review`, and `resolving-merge-conflicts`.
-
-The machine-readable list is `skill-bundle.json` (`requires`). The installer diagnoses owners and
-all four CLIs without blocking installation.
+- Owner skills: the machine-readable list is `skill-bundle.json` (`requires`); the installer diagnoses
+  owners and all four CLIs without blocking installation.
 
 ## Install
 
@@ -87,7 +72,7 @@ Use delivery-pipeline-setup to initialize or reconfigure worker routing.
 
 Then invoke the canonical `delivery-pipeline` with any map/spec/ticket issue. It reconstructs the
 chain from tracker relationships and dispatches planning/design/frontend/backend/testing/review
-lanes according to version 2-compatible or version 3 configuration. New Herdr lanes stay in the
+lanes according to the frozen configuration. New Herdr lanes stay in the
 coordinator's current workspace by default; a new workspace is created only when the user explicitly
 requests one.
 
@@ -109,17 +94,11 @@ The App shell uses native tasks and App-managed Execution Worktrees and does not
 role configuration. To use Herdr from a Codex App session, exit the App shell and invoke canonical
 `delivery-pipeline`.
 
-Edit [config/models.json](skills/delivery-pipeline-codex-app/config/models.json) for all App model selections.
-Prewalk defaults to `astra-sol`; available modes and phase parameters come from that file. The helper reads
-it from the skill realpath, including symlink installations. New lanes freeze their plans; configuration
-changes do not alter running lanes. No project `.codex/config.toml` copy is needed.
-
-```sh
-python3 skills/delivery-pipeline-codex-app/scripts/prewalk.py models <<<'{}'
-```
-
-Use `model` with `{"work":"planning"}` for a single selection. See the [App development
-contract](skills/delivery-pipeline-codex-app/references/development-mode.md) for overrides and recovery.
+All App model selections live in
+[config/models.json](skills/delivery-pipeline-codex-app/config/models.json), read from the skill realpath
+(including symlink installations); no project `.codex/config.toml` copy is needed. New lanes freeze their
+plans; configuration changes do not alter running lanes. Work entry, overrides, and recovery: [App
+development contract](skills/delivery-pipeline-codex-app/references/development-mode.md).
 
 #### Codex App development flow
 
@@ -134,16 +113,15 @@ terminal fan-in, separate whole-change testing, scope-aware dual-axis review, an
 Use $delivery-pipeline-orca with <any-map-spec-or-ticket-issue>.
 ```
 
-The Orca entrypoint reuses the same version 4 CLI worker configuration and owner contracts. Before
-an operation it fixes one Orca executable, reads that binary's version and `orca-cli`/`orchestration`
-guides with the exact native command provenance, then verifies runtime ready/reachable/connected,
-the status-bound target host, current terminal identity, exact `skills installed --json` discovery, and
-only the requested command/runtime capabilities. Shared agent/model/effort and same-session fields are caller-declared evidence pointers: the helper checks
-shape, binding, and readable absolute source paths, while the coordinator must read the native
-source before authorizing. A structural success is `preflight-ready` with `authority: false`.
-Missing or Unknown evidence is a visible blocked result; the entrypoint does not map agents,
-downgrade staged mode, create a second config/installer/dispatcher, or fall back to Herdr/Codex App.
-Installation and static validation do not prove a live Orca operation.
+The Orca entrypoint reuses the same version 4 CLI worker configuration and owner contracts. Each
+operation fixes one Orca executable, reads that binary's version-matched `orca-cli`/`orchestration` guides,
+and verifies runtime, target host, terminal identity, exact `skills installed --json` discovery, and the
+operation's capabilities. Shared agent/model/effort fields are caller-declared evidence pointers; helpers
+are pure validators: structural success is `preflight-ready` with `authority: false`, and the
+coordinator authorizes only after reading the native source. Missing or Unknown evidence returns a visible
+`blocked` / `dispatch unavailable`; the entrypoint never falls back to Herdr/Codex App, and installation
+plus static validation do not prove a live Orca operation. The dispatch, batch-concurrency, and FIFO
+settlement contract lives in `skills/delivery-pipeline-orca/references/orca-dispatch.md`.
 
 ## Invariants
 

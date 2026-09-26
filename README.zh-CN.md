@@ -19,31 +19,20 @@ operation capability 缺证据时明确返回 `dispatch unavailable`，不 fallb
 
 ## Worker 配置
 
-首次 CLI Dispatch 前运行 `delivery-pipeline-setup`。它探测：
-
-- pi：`pi --list-models`
-- Codex CLI：`codex debug models`
-- Claude CLI：`~/.claude/settings.json` 的 `env` 模型映射与 effort
-
-然后要求用户为每个必需任务类型与 review 矩阵明确选择 `agent + model + effort`：
+首次 CLI Dispatch 前运行 `delivery-pipeline-setup`。它探测各已装 CLI 的可用模型与 effort 来源，然后要求用户为每个必需任务类型与 review 矩阵明确选择 `agent + model + effort`：
 
 ```text
 planning  design  frontend  backend  testing  review(implementation/whole-change × standards/spec)
 ```
 
-配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 4；与 Codex App 壳的
-`config/models.json` 共用 `skills/delivery-pipeline/references/model-config-schema.md` 定义的同一份 schema）。
-命名 `modes` 预设按 agent 保存 staged/direct 的 starting、execution、direct model/effort；
-新 implementation lane 按本票 → map → 配置 `default_mode` 冻结 mode 名选择，已有 lane 沿 registry 恢复不迁移；
-旧版本配置由 `model_config.py migrate` 机械迁移。
-Skill 不包含默认模型；配置缺失、未知 version、缺任务类型或字段非法都会阻塞派发并重新进入 setup。
+配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 4）；schema 在
+`skills/delivery-pipeline/references/model-config-schema.md` 单一定义，与 Codex App 壳的
+`config/models.json` 共用。命名 `modes` 预设按 agent 保存 staged/direct 的 model/effort 对；
+新 implementation lane 冻结 mode 名选择，已有 lane 沿 registry 恢复。
+Skill 不包含默认模型；配置缺失、未知 version 或字段非法都会阻塞派发并重新进入 setup。
 Coordinator 不在配置中，当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
-
-agent 决定 lane kind：
-
-- pi → `herdr-pi-pane`
-- codex → `herdr-codex-pane`
-- claude → `herdr-claude-pane`
+各 agent 的 lane kind 与 runtime 映射归
+`skills/delivery-pipeline-herdr/references/dispatch-runtime-routing.md`。
 
 ## 依赖
 
@@ -51,10 +40,8 @@ agent 决定 lane kind：
 - Herdr CLI：canonical CLI 主干的 terminal multiplexer。
 - Orca CLI：独立 `delivery-pipeline-orca` 入口；必须能从当前 runtime 读取 version-matched
   `orca-cli` 与 `orchestration` guide。
-- Owner skills：`wayfinder`、`grilling`、`domain-modeling`、`prototype`、`research`、`to-spec`、
-  `to-tickets`、`implement`、`code-review`、`resolving-merge-conflicts`。
-
-机器可读清单在 `skill-bundle.json` 的 `requires`；安装器末尾会诊断 owner skills 和四个 CLI。
+- Owner skills：机器可读清单在 `skill-bundle.json` 的 `requires`；安装器末尾诊断 owner skills
+  与四个 CLI，不阻塞安装。
 
 ## 安装
 
@@ -100,16 +87,8 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 App 壳使用 native task + App-managed Execution Worktree，任务类型全部绑定 `agent: codex-app` 的独立配置实例。若希望
 Codex App 会话改走 Herdr，退出 App 壳并调用 canonical `delivery-pipeline`。
 
-App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/config/models.json) 修改。
-Prewalk 默认模式为 `astra-sol`；可选模式、阶段模型和档位以配置为准。配置随 skill realpath 读取，
-不需要向业务仓库复制 `.codex/config.toml`。新 lane 冻结计划；配置修改不改变已运行的 lane。
-
-查询全部配置（JSON stdin；`model` 命令可用 `{"work":"planning"}` 查询单项）：
-
-```sh
-python3 skills/delivery-pipeline-codex-app/scripts/prewalk.py models <<<'{}'
-```
-
+App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/config/models.json) 修改，
+配置随 skill realpath 读取（含软链安装），不需要向业务仓库复制 `.codex/config.toml`。新 lane 冻结计划；配置修改不改变已运行的 lane。
 工作入口、覆盖参数与恢复边界见 [App 开发模式](skills/delivery-pipeline-codex-app/references/development-mode.md)。
 
 #### Codex App 开发流程
@@ -125,15 +104,14 @@ python3 skills/delivery-pipeline-codex-app/scripts/prewalk.py models <<<'{}'
 使用 $delivery-pipeline-orca 继续 <任意 map/spec/ticket issue>。
 ```
 
-Orca 入口复用同一 version 4 CLI worker 配置与 owner 合同。每次 operation 前只固定一个
-Orca executable，读取该 binary 的 version 与 `orca-cli`/`orchestration` guide 并记录精确原生
-命令来源，然后核对 runtime ready/reachable/connected、与 status 绑定的目标 host、当前 terminal
-identity、`skills installed --json` 精确发现，以及本次要求的 command/runtime capabilities。shared
-agent/model/effort 与 same-session 字段只是 caller-declared evidence 指针：helper 校验结构、绑定和
-可读绝对 source path；coordinator 必须读回原生 source 后才可授权。结构成功只返回 `preflight-ready` 与
-`authority: false`。证据缺失或 Unknown 即明确 blocked；不映射 agent、不把 staged 降级为
-direct、不新增配置/安装器/dispatcher，也不 fallback 到 Herdr/Codex App。安装与静态
-validator 通过不证明 Orca 真机 operation 可运行。
+Orca 入口复用同一 version 4 CLI worker 配置与 owner 合同。每次 operation 前只固定一个 Orca
+executable，读取该 binary 的 version-matched `orca-cli`/`orchestration` guide，核对 runtime、目标
+host、terminal identity、`skills installed --json` 精确发现与本次 operation 的 capabilities。shared
+agent/model/effort 字段是 caller-declared evidence 指针；helper 是纯核验器：结构成功只
+返回 `preflight-ready` 与 `authority: false`，coordinator 读回原生 source 后才授权。证据缺失或
+Unknown 即明确 `blocked` / `dispatch unavailable`，不 fallback 到 Herdr/Codex App；安装与静态
+validator 通过不证明 Orca 真机 operation 可运行。dispatch、批级并发与 FIFO settlement 合同见
+`skills/delivery-pipeline-orca/references/orca-dispatch.md`。
 
 ## 不变量
 
