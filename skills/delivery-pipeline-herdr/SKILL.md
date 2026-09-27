@@ -15,7 +15,7 @@ Claude CLI 使用。先完整读取 canonical 主干；本文件覆盖 dispatch 
 1. 当前调用会话就是 coordinator，记录 `coordinator_runtime: pi-cli | codex-cli | claude-cli`、
    `dispatch_runtime: herdr`。新建 lane 前加载 `references/dispatch-runtime-routing.md`，
    验证当前 Herdr session/workspace/tab/pane；只有用户显式要求新 Workspace 才创建。
-2. 所有新 worker 通过 Herdr Pane 承载，worker kind 由 version 4 work config 的 `agent`
+2. 所有新 worker 通过 Herdr Pane 承载，worker kind 由 version 5 work config 的 `agent`
    决定：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
    启动参数与 kind-specific permission 按 `references/dispatch-runtime-routing.md` 与
    `references/pane-lifecycle-rules.md`。

@@ -18,7 +18,7 @@ disable-model-invocation: true
    核对新任务的模型请求，完成其中“每次调用的执行核验”；worker 从 packet
    读取同一合同，内部委派必须经过 subagent 入口的模型、权限与并发核验。
 2. 本壳使用 `config/models.json` 这个 App 配置实例：它与 CLI 实例共用
-   `../delivery-pipeline/references/model-config-schema.md` 的 version 4 schema，所有任务类型绑定
+   `../delivery-pipeline/references/model-config-schema.md` 的 version 5 schema，所有任务类型绑定
    `agent: codex-app`。不加载 Herdr 的 pane lifecycle 合同；新 lane 入口用本壳的 dispatch
    reference。本壳记录明确的 model/effort 请求与独立运行 readback，缺失证据记 Unknown。
 3. canonical 任务类型与 output mode 保持不变。planning、design、frontend、backend 使用

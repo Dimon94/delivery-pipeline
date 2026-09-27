@@ -1,6 +1,7 @@
 # ADR-0008: Unified Task-type Model Config Schema (version 4)
 
-**Status:** Accepted
+**Status:** Accepted（CLI 默认路径的模型权威与决策 6 由 ADR-0010 修订为 version 5；
+App transport 与显式 mode 覆盖不变）
 **Date:** 2026-09-11
 **Decider:** User (Dimon)
 

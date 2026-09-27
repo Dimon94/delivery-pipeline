@@ -29,7 +29,7 @@ review lane 无独立 work 项：用配置 `review.<scope>.standards` 的 `{agen
 启动 worker，packet 携带该 scope 的两轴矩阵配置给 resolved code-review owner。
 
 task type 只选择配置项，不暗含 agent。agent/model/effort 只从 `model-config-schema.md` 定义的
-version 4 配置读取；implementation lane 的 mode 名/source 也必须随 packet 和 registry 保存。
+version 5 配置读取；implementation lane 的 mode 名/source 也必须随 packet 和 registry 保存。
 
 ## Execution Lanes
 

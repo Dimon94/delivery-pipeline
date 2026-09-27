@@ -1,7 +1,7 @@
 # Codex App 开发模式
 
 coordinator 启动时与每个 worker 执行前读取。本文件拥有 App 工作分工、内部辅助和技术咨询；
-配置格式遵循 canonical `../../delivery-pipeline/references/model-config-schema.md` 的 version 4
+配置格式遵循 canonical `../../delivery-pipeline/references/model-config-schema.md` 的 version 5
 schema（本仓的 `config/models.json` 是它的 App 实例，所有任务类型绑定 `agent: codex-app`）；
 正式双轴审查仍由 resolved `code-review` owner 执行。
 
@@ -15,7 +15,7 @@ App 壳从配置解析两轴模型作为显式参数传给 owner，不选择或�
 
 ## 工作分工
 
-模型与 effort 的唯一默认来源是本 skill realpath 下的 `config/models.json`（version 4 App 实例），用户明确选择优先。
+模型与 effort 的唯一默认来源是本 skill realpath 下的 `config/models.json`（version 5 App 实例），用户明确选择优先。
 启动与新分派用 `scripts/prewalk.py models` 校验并回读该文件；JSON stdin 可指定绝对
 `config_path` 使用另一份完整配置，并把返回绝对路径传入 packet/registry 和每次 helper 调用。
 不合并隐式全局/项目配置，不读取 CLI 实例的 model-roles.json；缺文件、缺键、非法值时阻塞新分派。

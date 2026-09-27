@@ -69,33 +69,52 @@ def _pair_errors(prefix: str, value: object) -> list[str]:
     return errors
 
 
-def _entry_errors(prefix: str, value: object, agents: set[str]) -> list[str]:
-    if not isinstance(value, dict) or set(value) != {"agent", "model", "effort"}:
-        return [f"{prefix} must define exactly agent, model and effort"]
+def _entry_errors(
+    prefix: str, value: object, agents: set[str], *, allow_execution: bool = False
+) -> list[str]:
+    required = {"agent", "model", "effort"}
+    allowed = required | ({"execution"} if allow_execution else set())
+    if (
+        not isinstance(value, dict)
+        or not required <= set(value)
+        or not set(value) <= allowed
+    ):
+        shape = "agent, model, effort" + (
+            " plus optional execution" if allow_execution else ""
+        )
+        return [f"{prefix} must define exactly {shape}"]
     errors = _pair_errors(prefix, {k: value[k] for k in ("model", "effort")})
     if value.get("agent") not in agents:
         errors.append(f"{prefix}.agent must be one of {sorted(agents)}")
+    if "execution" in value:
+        errors.extend(_pair_errors(f"{prefix}.execution", value["execution"]))
     return errors
 
 
 def validate_document(document: object, transport: str = "cli") -> list[str]:
-    """只检查 version 4 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
+    """只检查 version 5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
     if transport not in ("cli", "app"):
         return ["transport must be cli or app"]
     agents = CLI_AGENTS if transport == "cli" else {"codex-app"}
     errors: list[str] = []
     if not isinstance(document, dict):
         return ["top-level value must be an object"]
-    top_level = {"version", "default_mode", "work", "modes", "review"}
-    allowed = top_level | ({"legacy_execution"} if transport == "app" else set())
+    top_level = {"version", "work", "modes", "review"}
+    if transport == "app":
+        top_level = top_level | {"default_mode"}
+        allowed = top_level | {"legacy_execution"}
+    else:
+        allowed = top_level
     if not set(document) <= allowed or not top_level <= set(document):
         errors.append(
             f"top-level keys must be exactly {sorted(top_level)}"
             + (" plus optional legacy_execution" if transport == "app" else "")
         )
-    if document.get("version") != 4:
+    if transport == "cli" and "default_mode" in document:
+        errors.append("default_mode is App-only; CLI 默认计划来自 work 项")
+    if document.get("version") != 5:
         errors.append(
-            "version must equal 4; older configs need model_config.py migrate"
+            "version must equal 5; older configs need model_config.py migrate"
         )
     work = document.get("work")
     if not isinstance(work, dict):
@@ -109,10 +128,19 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                 f"{transport} config must define task types {sorted(required)}"
             )
         for task in sorted(set(work) & TASK_TYPES):
-            errors.extend(_entry_errors(f"work.{task}", work[task], agents))
+            errors.extend(
+                _entry_errors(
+                    f"work.{task}",
+                    work[task],
+                    agents,
+                    allow_execution=task in IMPLEMENTATION_TASKS,
+                )
+            )
     modes = document.get("modes")
-    if not isinstance(modes, dict) or not modes:
-        errors.append("modes must be a non-empty object")
+    if not isinstance(modes, dict):
+        errors.append("modes must be an object")
+    elif transport == "app" and not modes:
+        errors.append("app modes must be a non-empty object")
     else:
         for name, mode in sorted(modes.items()):
             prefix = f"modes.{name}"
@@ -145,29 +173,14 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                             f"{prefix}.agents.{agent}.{stage}", plan.get(stage)
                         )
                     )
-    default_mode = document.get("default_mode")
-    if (
-        not isinstance(default_mode, str)
-        or not isinstance(modes, dict)
-        or default_mode not in modes
-    ):
-        errors.append("default_mode must name an existing mode")
-    elif transport == "cli" and isinstance(work, dict):
-        covered = (
-            modes[default_mode].get("agents", {})
-            if isinstance(modes[default_mode], dict)
-            else {}
-        )
-        for task in sorted(IMPLEMENTATION_TASKS & set(work)):
-            entry = work[task]
-            if (
-                isinstance(entry, dict)
-                and entry.get("agent") in CLI_AGENTS
-                and entry["agent"] not in covered
-            ):
-                errors.append(
-                    f"default_mode must cover the agent of work.{task}: {entry['agent']}"
-                )
+    if transport == "app":
+        default_mode = document.get("default_mode")
+        if (
+            not isinstance(default_mode, str)
+            or not isinstance(modes, dict)
+            or default_mode not in modes
+        ):
+            errors.append("default_mode must name an existing mode")
     review = document.get("review")
     if not isinstance(review, dict) or set(review) != set(REVIEW_SCOPES):
         errors.append(f"review must define exactly {list(REVIEW_SCOPES)}")
@@ -305,90 +318,125 @@ def _validate_legacy_app(document: object) -> list[str]:
     return errors
 
 
+def _migrate_v4_cli(document: dict) -> tuple[dict, str]:
+    """CLI v4 → v5：work 项收回 starting 权威，execution 不同才携带。"""
+    modes = document.get("modes")
+    default_mode = document.get("default_mode")
+    if not isinstance(modes, dict) or not isinstance(modes.get(default_mode), dict):
+        raise ValueError(
+            "v4 default_mode must name an existing mode; rerun delivery-pipeline-setup"
+        )
+    mode = modes[default_mode]
+    kind = mode.get("kind")
+    plans = mode.get("agents")
+    plans = plans if isinstance(plans, dict) else {}
+    work: dict[str, dict] = {}
+    for task, raw in document.get("work", {}).items():
+        entry = dict(raw) if isinstance(raw, dict) else raw
+        if task in IMPLEMENTATION_TASKS and isinstance(entry, dict):
+            plan = plans.get(entry.get("agent"))
+            if not isinstance(plan, dict):
+                raise ValueError(
+                    f"v4 default_mode 缺少 work.{task} 的 agent 计划；rerun "
+                    "delivery-pipeline-setup"
+                )
+            pair = {"model": entry.get("model"), "effort": entry.get("effort")}
+            if kind == "staged":
+                if plan.get("starting") != pair:
+                    raise ValueError(
+                        f"v4 work.{task} 与 default_mode starting 冲突；rerun "
+                        "delivery-pipeline-setup"
+                    )
+                if plan.get("execution") != pair:
+                    entry["execution"] = dict(plan["execution"])
+            elif plan.get("direct") != pair:
+                raise ValueError(
+                    f"v4 work.{task} 与 default_mode direct 冲突；rerun "
+                    "delivery-pipeline-setup"
+                )
+        work[task] = entry
+    migrated = {
+        "version": 5,
+        "work": work,
+        "modes": modes,
+        "review": document.get("review"),
+    }
+    errors = validate_document(migrated, "cli")
+    if errors:
+        raise ValueError("migration produced invalid config: " + "; ".join(errors))
+    return migrated, "cli"
+
+
 def migrate_document(document: dict) -> tuple[dict, str]:
-    """机械迁移旧配置到 version 4；返回 (新配置, transport)。不改已有 lane。"""
-    if isinstance(document, dict) and document.get("version") == 4:
-        raise ValueError("config is already version 4")
-    if isinstance(document, dict) and document.get("version") in (2, 3):
+    """机械迁移旧配置到 version 5；返回 (新配置, transport)。不改已有 lane。"""
+    if not isinstance(document, dict):
+        raise ValueError(
+            "unrecognized config version; migrate supports CLI v2/v3/v4 and App v1/v4"
+        )
+    version = document.get("version")
+    if version == 5:
+        raise ValueError("config is already version 5")
+    if version == 4:
+        # v4 实例没有显式 transport 标记；按 App 独有特征识别，失败时按 CLI 处理。
+        is_app = "legacy_execution" in document or (
+            isinstance(document.get("work"), dict)
+            and any(
+                isinstance(entry, dict) and entry.get("agent") == "codex-app"
+                for entry in document["work"].values()
+            )
+        )
+        if is_app:
+            migrated = {**document, "version": 5}
+            errors = validate_document(migrated, "app")
+            if errors:
+                raise ValueError(
+                    "migration produced invalid config: " + "; ".join(errors)
+                )
+            return migrated, "app"
+        return _migrate_v4_cli(document)
+    if version in (2, 3):
         errors = _validate_legacy_cli(document)
         if errors:
             raise ValueError("; ".join(errors))
         roles = document["roles"]
-        work = {task: dict(roles[task]) for task in sorted(LEGACY_ROLES - {"review"})}
         review_triple = dict(roles["review"])
         review = {
             scope: {axis: dict(review_triple) for axis in REVIEW_AXES}
             for scope in REVIEW_SCOPES
         }
-        if document["version"] == 2:
-            agents_plans: dict[str, dict] = {}
-            for task in sorted(IMPLEMENTATION_TASKS):
-                entry = roles[task]
+        work: dict[str, dict] = {}
+        for task in sorted(LEGACY_ROLES - {"review"}):
+            entry = dict(roles[task])
+            if version == 3 and task in IMPLEMENTATION_TASKS:
+                plan = document["execution"][entry["agent"]]
                 pair = {"model": entry["model"], "effort": entry["effort"]}
-                existing = agents_plans.get(entry["agent"])
-                if existing is not None and existing != pair:
+                if plan["default_mode"] == "staged":
+                    if plan["starting"] != pair:
+                        raise ValueError(
+                            f"legacy roles.{task} 与 staged starting 冲突；rerun "
+                            "delivery-pipeline-setup"
+                        )
+                    if plan["execution"] != pair:
+                        entry["execution"] = dict(plan["execution"])
+                elif plan["direct"] != pair:
                     raise ValueError(
-                        f"roles on agent {entry['agent']} disagree on model/effort; "
-                        "cannot build a shared direct mode, rerun delivery-pipeline-setup"
+                        f"legacy roles.{task} 与 direct 计划冲突；rerun "
+                        "delivery-pipeline-setup"
                     )
-                agents_plans[entry["agent"]] = pair
-            modes = {
-                "migrated-direct": {
-                    "kind": "direct",
-                    "agents": {
-                        agent: {stage: dict(pair) for stage in STAGES}
-                        for agent, pair in agents_plans.items()
-                    },
-                }
-            }
-            default_mode = "migrated-direct"
-        else:
-            execution = document["execution"]
-            modes = {
-                "migrated-direct": {
-                    "kind": "direct",
-                    "agents": {
-                        agent: {stage: dict(plan["direct"]) for stage in STAGES}
-                        for agent, plan in execution.items()
-                    },
-                }
-            }
-            staged = {
-                agent: plan
-                for agent, plan in execution.items()
-                if plan["default_mode"] == "staged"
-            }
-            if staged:
-                modes["migrated-staged"] = {
-                    "kind": "staged",
-                    "agents": {
-                        agent: {stage: dict(plan[stage]) for stage in STAGES}
-                        for agent, plan in staged.items()
-                    },
-                }
-            if staged and len(staged) < len(execution):
-                raise ValueError(
-                    "legacy default_mode differs across agents; rerun "
-                    "delivery-pipeline-setup and choose one default mode explicitly"
-                )
-            default_mode = "migrated-staged" if staged else "migrated-direct"
-        migrated = {
-            "version": 4,
-            "default_mode": default_mode,
-            "work": work,
-            "modes": modes,
-            "review": review,
-        }
+            work[task] = entry
+        migrated = {"version": 5, "work": work, "modes": {}, "review": review}
         errors = validate_document(migrated, "cli")
         if errors:
-            raise ValueError("migration produced invalid config: " + "; ".join(errors))
+            raise ValueError(
+                "migration produced invalid config: " + "; ".join(errors)
+            )
         return migrated, "cli"
-    if isinstance(document, dict) and document.get("version") == 1:
+    if version == 1:
         errors = _validate_legacy_app(document)
         if errors:
             raise ValueError("; ".join(errors))
         migrated = {
-            "version": 4,
+            "version": 5,
             "default_mode": document["default_mode"],
             "work": {
                 task: {"agent": "codex-app", **value}
@@ -412,10 +460,12 @@ def migrate_document(document: dict) -> tuple[dict, str]:
         }
         errors = validate_document(migrated, "app")
         if errors:
-            raise ValueError("migration produced invalid config: " + "; ".join(errors))
+            raise ValueError(
+                "migration produced invalid config: " + "; ".join(errors)
+            )
         return migrated, "app"
     raise ValueError(
-        "unrecognized config version; migrate supports CLI v2/v3 and App v1"
+        "unrecognized config version; migrate supports CLI v2/v3/v4 and App v1/v4"
     )
 
 
@@ -438,7 +488,7 @@ def migrate_path(path: Path) -> dict:
     return {
         "migrated": str(path),
         "transport": transport,
-        "default_mode": migrated["default_mode"],
+        "default_mode": migrated.get("default_mode"),
     }
 
 
@@ -497,7 +547,13 @@ def resolve_plan(
     if task not in document["work"]:
         raise ValueError(f"task type not defined in config: {task}")
     entry = document["work"][task]
-    plan = {"version": 4, "task": task, **entry}
+    plan = {
+        "version": 5,
+        "task": task,
+        "agent": entry["agent"],
+        "model": entry["model"],
+        "effort": entry["effort"],
+    }
     if task not in IMPLEMENTATION_TASKS or output_mode != "commit":
         if evidence is None:
             capability = "unknown"
@@ -526,36 +582,61 @@ def resolve_plan(
         else "user-config"
     )
     if requested is None:
-        requested = document["default_mode"]
-    mode = document["modes"].get(requested)
-    if mode is None:
-        raise ValueError(
-            f"{source} execution mode is not a configured mode name: {requested}"
-        )
-    agent_plan = mode["agents"].get(entry["agent"])
-    if agent_plan is None:
-        raise ValueError(f"mode {requested} has no agents plan for {entry['agent']}")
-    kind = mode["kind"]
-    if kind == "staged":
-        resolved = {
-            **plan,
-            "model": agent_plan["starting"]["model"],
-            "effort": agent_plan["starting"]["effort"],
-            "mode": "staged",
-            "mode_name": requested,
-            "phase": "starting",
-            "source": source,
-            **{stage: dict(agent_plan[stage]) for stage in STAGES},
-        }
+        # 默认路径：work 项即 starting；可选 execution 决定是否 staged 续接。
+        execution = entry.get("execution")
+        if execution is None:
+            resolved = {
+                **plan,
+                "mode": "direct",
+                "mode_name": None,
+                "phase": "direct",
+                "source": source,
+            }
+        else:
+            pair = {"model": entry["model"], "effort": entry["effort"]}
+            resolved = {
+                **plan,
+                "mode": "staged",
+                "mode_name": None,
+                "phase": "starting",
+                "source": source,
+                "starting": dict(pair),
+                "execution": dict(execution),
+                "direct": dict(pair),
+            }
     else:
-        resolved = {
-            **plan,
-            "mode": "direct",
-            "mode_name": requested,
-            "phase": "direct",
-            "source": source,
-            **agent_plan["direct"],
-        }
+        # 票/map 显式点名：命名 mode 的 per-agent 三段计划整体覆盖。
+        mode = document["modes"].get(requested)
+        if mode is None:
+            raise ValueError(
+                f"{source} execution mode is not a configured mode name: {requested}"
+            )
+        agent_plan = mode["agents"].get(entry["agent"])
+        if agent_plan is None:
+            raise ValueError(
+                f"mode {requested} has no agents plan for {entry['agent']}"
+            )
+        kind = mode["kind"]
+        if kind == "staged":
+            resolved = {
+                **plan,
+                "model": agent_plan["starting"]["model"],
+                "effort": agent_plan["starting"]["effort"],
+                "mode": "staged",
+                "mode_name": requested,
+                "phase": "starting",
+                "source": source,
+                **{stage: dict(agent_plan[stage]) for stage in STAGES},
+            }
+        else:
+            resolved = {
+                **plan,
+                "mode": "direct",
+                "mode_name": requested,
+                "phase": "direct",
+                "source": source,
+                **agent_plan["direct"],
+            }
     if evidence is None:
         return {**resolved, "capability": "unknown"}
     errors = plan_capability_errors(resolved, evidence)
@@ -758,9 +839,10 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
 def valid_fixture() -> dict:
     pair = {"model": "provider/model", "effort": "high"}
     work = {task: {"agent": "pi", **pair} for task in sorted(CLI_REQUIRED_WORK)}
+    # backend 设了与 starting 不同的 execution → 默认 staged；其余任务类型直跑。
+    work["backend"]["execution"] = {"model": "provider/model", "effort": "medium"}
     return {
-        "version": 4,
-        "default_mode": "standard",
+        "version": 5,
         "work": work,
         "modes": {
             "standard": {
@@ -788,7 +870,7 @@ def valid_fixture() -> dict:
 def valid_app_fixture() -> dict:
     pair = {"agent": "codex-app", "model": "provider/model", "effort": "high"}
     return {
-        "version": 4,
+        "version": 5,
         "default_mode": "standard",
         "work": {task: dict(pair) for task in sorted(APP_REQUIRED_WORK)},
         "modes": {
@@ -820,21 +902,55 @@ def self_test() -> list[str]:
     failures: list[str] = []
     fixture = valid_fixture()
     if validate_document(fixture):
-        failures.append("valid v4 CLI fixture was rejected")
+        failures.append("valid v5 CLI fixture was rejected")
     if validate_document(valid_app_fixture(), "app"):
-        failures.append("valid v4 App fixture was rejected")
+        failures.append("valid v5 App fixture was rejected")
     if not validate_document(valid_app_fixture()):
         failures.append("App fixture was accepted as CLI config")
+    case = valid_fixture()
+    case["default_mode"] = "standard"
+    if not validate_document(case):
+        failures.append("CLI config with default_mode was accepted")
+    case = valid_fixture()
+    case["work"]["planning"]["execution"] = {"model": "provider/model", "effort": "high"}
+    if not validate_document(case):
+        failures.append("execution on a non-implementation task type was accepted")
+    case = valid_app_fixture()
+    case["modes"] = {}
+    if not validate_document(case, "app"):
+        failures.append("App config with empty modes was accepted")
 
     evidence = {
         agent: {"binary": True, "models": {"provider/model": ["low", "high", "medium"]}}
         for agent in sorted(CLI_AGENTS)
     }
-    if (
-        resolve_plan(fixture, "backend", output_mode="commit")["source"]
-        != "user-config"
-    ):
+    default_staged = resolve_plan(fixture, "backend", output_mode="commit")
+    if default_staged["source"] != "user-config":
         failures.append("user execution mode was not selected")
+    if (
+        default_staged["mode"] != "staged"
+        or default_staged["mode_name"] is not None
+        or default_staged["starting"]
+        != {"model": "provider/model", "effort": "high"}
+        or default_staged["execution"]
+        != {"model": "provider/model", "effort": "medium"}
+        or default_staged["direct"] != {"model": "provider/model", "effort": "high"}
+        or (default_staged["model"], default_staged["effort"])
+        != ("provider/model", "high")
+    ):
+        failures.append("default staged plan did not come from the work entry")
+    default_direct = resolve_plan(fixture, "frontend", output_mode="commit")
+    if (
+        default_direct["mode"] != "direct"
+        or default_direct["mode_name"] is not None
+        or (default_direct["model"], default_direct["effort"])
+        != ("provider/model", "high")
+    ):
+        failures.append("work entry without execution did not run direct")
+    case = json.loads(json.dumps(fixture))
+    case["work"]["frontend"]["model"] = "other/model"
+    if resolve_plan(case, "frontend", output_mode="commit")["model"] != "other/model":
+        failures.append("same-agent task types did not keep independent starting")
     if resolve_plan(fixture, "backend")["mode"] != "none":
         failures.append("missing output mode enabled implementation phases")
     if (
@@ -880,7 +996,7 @@ def self_test() -> list[str]:
         "pi": case["modes"]["standard"]["agents"]["pi"]
     }
     try:
-        resolve_plan(case, "backend", output_mode="commit")
+        resolve_plan(case, "backend", ticket_mode="standard", output_mode="commit")
     except ValueError:
         pass
     else:
@@ -968,15 +1084,17 @@ def self_test() -> list[str]:
     staged = resolve_plan(fixture, "backend", evidence=evidence, output_mode="commit")
     frozen = freeze_overlay(staged)
     verify_overlay(staged, json.loads(json.dumps(frozen)))
-    if frozen["execution_mode_name"] != "standard":
-        failures.append("frozen overlay lost the mode name")
+    if frozen["execution_mode_name"] is not None:
+        failures.append("default staged overlay gained a mode name")
+    expected_stages = {
+        "starting": {"model": "provider/model", "effort": "high"},
+        "execution": {"model": "provider/model", "effort": "medium"},
+        "direct": {"model": "provider/model", "effort": "high"},
+    }
     for stage in STAGES:
         for field in ("model", "effort"):
             key = f"{stage}_{field}"
-            if (
-                frozen[key]
-                != fixture["modes"]["standard"]["agents"]["pi"][stage][field]
-            ):
+            if frozen[key] != expected_stages[stage][field]:
                 failures.append(f"staged overlay lost {key}")
             for changed in (None, "mismatch", "missing"):
                 edited = {**frozen, key: changed}
@@ -1149,7 +1267,10 @@ def self_test() -> list[str]:
     cases["legacy-in-cli"] = case
     case = valid_fixture()
     case["default_mode"] = "missing"
-    cases["unknown-default-mode"] = case
+    cases["default-mode-in-cli"] = case
+    case = valid_app_fixture()
+    case["default_mode"] = "missing"
+    cases["unknown-default-mode-app"] = case
     case = valid_fixture()
     del case["review"]["implementation"]["spec"]
     cases["missing-review-axis"] = case
@@ -1164,11 +1285,15 @@ def self_test() -> list[str]:
     cases["cli-agent-in-app"] = case
 
     for name, document in cases.items():
-        transport = "app" if name == "cli-agent-in-app" else "cli"
+        transport = (
+            "app"
+            if name in ("cli-agent-in-app", "unknown-default-mode-app")
+            else "cli"
+        )
         if not validate_document(document, transport):
             failures.append(f"invalid fixture accepted: {name}")
 
-    # 迁移：CLI v2/v3 与 App v1 → v4，结果必须通过对应 transport 验证。
+    # 迁移：CLI v2/v3/v4 与 App v1/v4 → v5，结果必须通过对应 transport 验证。
     legacy_v2 = {
         "version": 2,
         "roles": {
@@ -1180,9 +1305,11 @@ def self_test() -> list[str]:
     if (
         transport != "cli"
         or validate_document(migrated)
-        or migrated["default_mode"] != "migrated-direct"
+        or migrated["version"] != 5
+        or "default_mode" in migrated
+        or migrated["modes"] != {}
     ):
-        failures.append("v2 migration did not produce a valid direct-mode v4 config")
+        failures.append("v2 migration did not produce a valid v5 config")
     if migrated["review"]["whole-change"]["spec"]["model"] != "provider/model":
         failures.append("v2 migration lost the review role triple")
     legacy_v3 = json.loads(json.dumps(legacy_v2))
@@ -1198,31 +1325,67 @@ def self_test() -> list[str]:
     }
     migrated, _ = migrate_document(json.loads(json.dumps(legacy_v3)))
     if (
-        migrated["default_mode"] != "migrated-staged"
-        or migrated["modes"]["migrated-staged"]["kind"] != "staged"
-        or set(migrated["modes"]["migrated-staged"]["agents"]) != CLI_AGENTS
+        migrated["version"] != 5
+        or "default_mode" in migrated
+        or validate_document(migrated)
+        or "execution" in migrated["work"]["backend"]
     ):
-        failures.append("v3 migration did not produce the staged mode preset")
+        failures.append("v3 migration did not produce a valid v5 config")
     mixed = json.loads(json.dumps(legacy_v3))
     mixed["execution"]["codex"]["default_mode"] = "direct"
-    try:
-        migrate_document(mixed)
-    except ValueError:
-        pass
-    else:
-        failures.append("mixed legacy default_mode was silently migrated")
-    conflict_v2 = json.loads(json.dumps(legacy_v2))
-    conflict_v2["roles"]["frontend"] = {
-        "agent": "pi",
+    migrated, _ = migrate_document(mixed)
+    if validate_document(migrated):
+        failures.append("mixed legacy default_mode did not migrate per entry")
+    conflict_v3 = json.loads(json.dumps(legacy_v3))
+    conflict_v3["execution"]["pi"]["starting"] = {
         "model": "other/model",
         "effort": "low",
     }
     try:
-        migrate_document(conflict_v2)
+        migrate_document(conflict_v3)
     except ValueError:
         pass
     else:
-        failures.append("conflicting same-agent role triples were silently migrated")
+        failures.append("legacy role/starting conflict was silently migrated")
+    divergent_v2 = json.loads(json.dumps(legacy_v2))
+    divergent_v2["roles"]["frontend"] = {
+        "agent": "pi",
+        "model": "other/model",
+        "effort": "low",
+    }
+    migrated, _ = migrate_document(divergent_v2)
+    if migrated["work"]["frontend"]["model"] != "other/model":
+        failures.append("v5 migration did not keep per-task starting models")
+    legacy_v4 = valid_fixture()
+    legacy_v4["version"] = 4
+    legacy_v4["default_mode"] = "standard"
+    del legacy_v4["work"]["backend"]["execution"]
+    migrated, transport = migrate_document(json.loads(json.dumps(legacy_v4)))
+    if (
+        transport != "cli"
+        or migrated["version"] != 5
+        or "default_mode" in migrated
+        or validate_document(migrated)
+        or migrated["work"]["backend"].get("execution")
+        != {"model": "provider/model", "effort": "medium"}
+        or "execution" in migrated["work"]["planning"]
+        or "standard" not in migrated["modes"]
+    ):
+        failures.append("v4 CLI migration did not preserve effective plans")
+    conflict_v4 = json.loads(json.dumps(legacy_v4))
+    conflict_v4["work"]["backend"]["model"] = "other/model"
+    try:
+        migrate_document(conflict_v4)
+    except ValueError:
+        pass
+    else:
+        failures.append("v4 work/mode starting conflict was silently migrated")
+    same_pair_v4 = json.loads(json.dumps(legacy_v4))
+    for agent_plan in same_pair_v4["modes"]["standard"]["agents"].values():
+        agent_plan["execution"] = dict(agent_plan["starting"])
+    migrated, _ = migrate_document(same_pair_v4)
+    if "execution" in migrated["work"]["backend"]:
+        failures.append("same starting/execution pair was not migrated to direct")
     legacy_app = {
         "version": 1,
         "default_mode": "astra-sol",
@@ -1253,7 +1416,7 @@ def self_test() -> list[str]:
     }
     migrated, transport = migrate_document(legacy_app)
     if transport != "app" or validate_document(migrated, "app"):
-        failures.append("App v1 migration did not produce a valid v4 config")
+        failures.append("App v1 migration did not produce a valid v5 config")
     if (
         migrated["modes"]["astra-sol"]["agents"]["codex-app"]["execution"]["model"]
         != "provider/model"
@@ -1261,18 +1424,23 @@ def self_test() -> list[str]:
         failures.append("App v1 migration lost a phase plan")
     if migrated["work"]["coordinator"]["agent"] != "codex-app":
         failures.append("App v1 migration did not bind the codex-app agent")
+    legacy_app_v4 = valid_app_fixture()
+    legacy_app_v4["version"] = 4
+    migrated, transport = migrate_document(legacy_app_v4)
+    if transport != "app" or migrated["version"] != 5:
+        failures.append("App v4 migration did not bump the version")
     try:
         migrate_document(valid_fixture())
     except ValueError:
         pass
     else:
-        failures.append("v4 config was accepted for migration")
+        failures.append("v5 config was accepted for migration")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "model-roles.json"
         path.write_text(json.dumps(legacy_v3), encoding="utf-8")
         result = migrate_path(path)
         readback = json.loads(path.read_text(encoding="utf-8"))
-        if result["default_mode"] != "migrated-staged" or validate_document(readback):
+        if result["default_mode"] is not None or validate_document(readback):
             failures.append("migrate_path readback did not round-trip")
     return failures
 

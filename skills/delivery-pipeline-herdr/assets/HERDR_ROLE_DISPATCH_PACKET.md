@@ -1,7 +1,7 @@
 # Herdr Configured Role Dispatch Packet
 
-所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 4 配置解析任务类型、agent、model、
-effort并在启动前写入 registry。implementation lane 还要冻结命名 mode 与 source。配置的 model/effort 只是派发时的初始化值：用户可在 lane 运行中手动切换，
+所有 CLI/Herdr worker 共用本 packet。Coordinator 从 version 5 配置解析任务类型、agent、model、
+effort并在启动前写入 registry。implementation lane 还要冻结阶段计划（默认来自 work 项；显式点名时来自命名 mode）与 source。配置的 model/effort 只是派发时的初始化值：用户可在 lane 运行中手动切换，
 worker 被动接受，照常交付并在 final report 如实记录 runtime 实际值与 evidence；worker 不自行切换
 agent/model/effort。
 

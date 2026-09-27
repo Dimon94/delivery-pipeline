@@ -35,7 +35,7 @@ def pair(value):
 
 
 def entry(value):
-    """version 4 work/review 项：剥除 agent 后返回 model/effort 对。"""
+    """version 5 work/review 项：剥除 agent 后返回 model/effort 对。"""
     if not isinstance(value, dict) or "agent" not in value:
         raise ValueError("任务类型配置必须包含 agent")
     return pair({k: value.get(k) for k in ("model", "effort")})

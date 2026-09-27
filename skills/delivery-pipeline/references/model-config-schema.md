@@ -1,4 +1,4 @@
-# 模型配置 Schema（version 4）
+# 模型配置 Schema（version 5）
 
 本文件是 worker 模型配置的唯一定义点，核心链路与各 transport 壳共用同一份格式。
 各 transport 的调度逻辑在其壳内实现，配置 schema 只有这一份。
@@ -15,10 +15,15 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 
 ```json
 {
-  "version": 4,
-  "default_mode": "<modes 中的名字>",
+  "version": 5,
   "work": {
-    "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" }
+    "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" },
+    "backend": {
+      "agent": "<agent>",
+      "model": "<native-model-id>",
+      "effort": "<native-effort>",
+      "execution": { "model": "<native-model-id>", "effort": "<native-effort>" }
+    }
   },
   "modes": {
     "<name>": {
@@ -45,8 +50,8 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 }
 ```
 
-顶层 key 精确为 `version`、`default_mode`、`work`、`modes`、`review`，外加仅 App 实例允许的
-可选 `legacy_execution`（见下文）。`version` 必须等于 4。
+CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实例额外必需
+`default_mode`，并允许可选 `legacy_execution`（见下文）。`version` 必须等于 5。
 
 ## work：任务类型
 
@@ -58,44 +63,53 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 | `research` | 独立调查、搜索 |
 | `prototype` | design 原型 / HITL |
 | `planning` | 地图沟通、规划、spec、issue 拆分；CLI 的 AFK discovery/research、spec、tickets gate lane 也读此项 |
-| `design` / `frontend` / `backend` | implementation；`output_mode: commit` 时走 `modes` 分阶段计划，其余 output mode 直接用本项 |
+| `design` / `frontend` / `backend` | implementation；`output_mode: commit` 时的 starting 模型，可选 `execution` 决定 staged 续接 |
 | `testing` | whole-change tests |
 | `integration` | 逐票 Integration 辅助 |
 | `assistance` | 内部辅助（检索、研究、有界实现） |
 | `second-opinion` | 咨询子代理 |
 | `ticket-sizing` | 拆分评估 |
 
-每个 work 项精确为 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。
-`agent` 属于 `pi|codex|claude|codex-app`；agent 值决定 transport：前三个经 Herdr 起对应
-CLI pane，`codex-app` 经 App task。配置文件可以只定义已知 key 的子集；每个 transport
-声明自己的必需集（见下文），缺必需项阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。
+每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
+`pi|codex|claude|codex-app`；agent 值决定 transport：前三个经 Herdr 起对应 CLI pane，
+`codex-app` 经 App task。仅 implementation 任务类型（`design`/`frontend`/`backend`）
+允许附加可选 `execution: {model, effort}`；其他任务类型写 `execution` 一律拒绝。
+配置文件可以只定义已知 key 的子集；每个 transport 声明自己的必需集（见下文），缺必需项
+阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。
 
-## modes：命名执行预设
+## implementation lane 的默认计划（CLI）
+
+`design`/`frontend`/`backend` 且 `output_mode: commit` 的 lane，默认计划直接来自本任务
+类型的 work 项，不再经过任何 mode：
+
+- work 项的 `{model, effort}` 是 **starting**：lane 用它起步。
+- work 项设了 `execution` → **staged**：starting 完成第一处修改并保存 checkpoint 后停止，
+  核验现场后在同一 session 用 `execution` 续接。
+- work 项未设 `execution` → **direct**：starting 单轮一路跑完，无 checkpoint 暂停。
+
+非 implementation lane 与 `artifact`/`checks`/`verdict` output mode 也直接用 work 项的
+`{agent, model, effort}`（`execution` 在这些路径非法且不被消费）。
+
+## modes：命名覆盖预设
 
 一个 mode 是有名字的起步续接套餐：`kind` 为 `staged` 或 `direct`，`agents` 按 agent 给出
 `starting` / `execution` / `direct` 三组 `{model, effort}`。三组都必须填写，缺项、空值或
 `Unknown` 拒绝。
 
 - `kind: staged`：用 `starting` 起步，完成第一处修改并保存 checkpoint 后停止；核验现场后在
-  同一 session 用 `execution` 续接。`direct` 组仍必填，供 ticket/map 显式选择直跑外的
-  冻结一致性校验。
+  同一 session 用 `execution` 续接。`direct` 组仍必填，供冻结一致性校验。
 - `kind: direct`：用 `direct` 单轮跑完，无起步续接。
 
-mode 名是两个 transport 共享的词汇；`agents` 层解决同一策略在不同 CLI 上的模型名翻译。
-ticket、map 与配置默认引用的都是 mode 名。CLI 实例的 `agents` key 属于
-`pi|codex|claude`；App 实例的 `agents` key 精确为 `codex-app`。
+CLI 实例的 `modes` 可以为空对象；它只在 ticket 或 map **显式点名** mode 名时被消费，
+选中时该 lane 的 starting/execution/direct 整体由 mode 的 per-agent 计划提供（覆盖 work 项
+默认）。CLI 实例的 `agents` key 属于 `pi|codex|claude`。
 
-## default_mode 与解析顺序
+App 实例的 `modes` 必须非空，`agents` key 精确为 `codex-app`；App 的 implementation lane
+没有对应 work 项，阶段计划只能来自 mode，解析顺序为 本票 → map → 配置 `default_mode`。
+`default_mode` 必须命中 `modes` 的 key；它是 App-only 顶层 key，CLI 实例出现即拒绝。
 
-`default_mode` 必须命中 `modes` 的 key。implementation lane（`design` / `frontend` /
-`backend` 且 `output_mode: commit`）的 mode 解析顺序为 本票 → map → 配置 `default_mode`；
-解析出的 mode 必须含该 lane agent 的 `agents` 项，否则阻塞。CLI 实例额外要求
-`default_mode` 的 `agents` 覆盖 `design`、`frontend`、`backend` 三项各自的 agent。
-非 implementation lane 与 `artifact`/`checks`/`verdict` output mode 不消费 modes，
-直接用 work 项的 `{agent, model, effort}`。
-
-旧配置或旧票据遗留的 `staged`/`direct` 字面值不是合法 mode 名；遇到时阻塞并要求用户
-显式选择 mode 名，不做别名映射。
+旧票据遗留的 `staged`/`direct` 字面值不是合法 mode 名；遇到时阻塞并要求用户显式选择
+mode 名，不做别名映射。
 
 ## review：双轴矩阵
 
@@ -114,24 +128,29 @@ App 实例允许可选的 `legacy_execution`，key 精确为 `astra-luna` 与 `a
 
 - **CLI 实例**：`work` 必需 `planning`、`design`、`frontend`、`backend`、`testing` 与完整
   `review` 矩阵；允许定义其余已知任务类型（当前调度不消费，为后续留口）；entry 与 review
-  轴的 agent 属于 `pi|codex|claude`；禁止 `legacy_execution`。
+  轴的 agent 属于 `pi|codex|claude`；禁止 `default_mode` 与 `legacy_execution`。
 - **App 实例**：`work` 精确为 `coordinator`、`research`、`prototype`、`planning`、`testing`、
   `integration`、`assistance`、`second-opinion`、`ticket-sizing` 九项；所有 entry 与 review
-  轴的 agent 必须等于 `codex-app`；`modes` 的 `agents` key 精确为 `codex-app`。
+  轴的 agent 必须等于 `codex-app`；必需 `default_mode`；`modes` 非空且 `agents` key 精确为
+  `codex-app`。
 
 ## 迁移
 
 `delivery-pipeline-setup/scripts/model_config.py migrate` 机械迁移旧配置并 readback：
 
-- CLI v2：五个 role triple 落入同名 work 项；`review` role triple 填入四格矩阵；生成
-  kind 为 `direct` 的 `migrated-direct` mode（implementation 三项的 agent 各自的 direct
-  计划取自其 triple；同 agent 不同 triple 冲突时报错，重跑 setup）；`default_mode` 为
-  `migrated-direct`。
-- CLI v3：work 与 review 同 v2 规则；每 agent 的 starting/execution/direct 计划包进
-  `migrated-staged`（`default_mode` 为 staged 的 agent）与 `migrated-direct`（全部 agent 的
-  direct 计划）两个 mode；全部 agent 的 `default_mode` 一致时全局 `default_mode` 取对应
-  mode 名，不一致时迁移报错并要求用户经 setup 显式选择。
+- CLI v4：每个 implementation work 项对照 `default_mode` 的 per-agent 计划——`kind: staged`
+  时 `starting` 与 work 项不一致、或 `kind: direct` 时 `direct` 与 work 项不一致，均报错并
+  要求重跑 setup（fail-closed）；一致时 `execution` 与 starting 不同才携带为 work 项的
+  `execution`（相同则不携带，按 version 5 语义成为直跑）。删除 `default_mode` 顶层 key，
+  `modes` 原样保留作显式覆盖词汇。
+- CLI v3：work 与 review 同 v4 规则的前身（roles → work，review role → 四格矩阵）；每
+  agent 的 staged 计划按同一规则并入 implementation work 项（starting 冲突或 direct 计划
+  冲突时报错重跑 setup）；`modes` 迁移为空对象。v3 的同 agent 角色冲突与混合 default_mode
+  在 version 5 下不再是冲突：per-task 权威消除了共享。
+- CLI v2：五个 role triple 落入同名 work 项（无 `execution`，即全部直跑）；`review` role
+  triple 填入四格矩阵；`modes` 为空对象。
+- App v4：仅版本号升为 5，其余原样（App 规则在 version 5 不变）。
 - App v1：work/review 各项补 `agent: "codex-app"`；每个 mode 的 `phase_plan` 包入
-  `agents: {"codex-app": ...}`；`default_mode` 与 `legacy_execution` 原样保留。
+  `agents: {"codex-app": ...}`；`default_mode` 与 `legacy_execution` 原样保留；版本号升为 5。
 
 迁移只改配置格式；已有 lane 沿 registry 恢复的老规则不变，不受配置版本影响。

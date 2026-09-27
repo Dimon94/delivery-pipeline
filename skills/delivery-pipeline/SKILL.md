@@ -63,15 +63,18 @@ send lease 或 runtime readback。所属 transport 的 gate 不可用时保留 b
 
 ## 新建 lane 的配置与 Packet
 
-按 `references/model-config-schema.md` 验证所属 runtime 的 version 4 配置实例：从 setup
+按 `references/model-config-schema.md` 验证所属 runtime 的 version 5 配置实例：从 setup
 skill realpath 运行 `scripts/model_config.py validate <config>`，再验证本机实时 evidence。
-旧 version 2/3 文件先运行 `scripts/model_config.py migrate <config>` 机械迁移；缺失或非法时
+旧 version 2/3/4 文件先运行 `scripts/model_config.py migrate <config>` 机械迁移；缺失或非法时
 完整读取 `../delivery-pipeline-setup/SKILL.md` 并在当前会话执行初始化；通过后才创建新 lane，
 不静默回落。已有 lane 的恢复按 registry；replacement 的条件与验证见所属壳的 dispatch 合同。
 
-新 implementation lane 按本票 → map → 配置 `default_mode` 解析命名 execution mode 与阶段参数，并将
-mode 名、source、starting/execution/direct model 与 effort 冻结到 packet 和 lane registry。只有
-`output_mode: commit` 的 implementation lane 消费 modes 计划，其他 output mode 直接用 work 项。
+新 implementation lane 默认从本任务类型的 work 项解析阶段参数：`{model, effort}` 为
+starting；设了可选 `execution` 则 staged（起步 → checkpoint → execution 续接），未设则
+direct 单轮直跑。ticket/map 显式点名 `modes` 中的命名预设时，该 lane 三段计划整体由 mode
+覆盖。将 mode 名（默认路径为 none）、source、starting/execution/direct model 与 effort
+冻结到 packet 和 lane registry。只有
+`output_mode: commit` 的 implementation lane 有阶段计划，其他 output mode 直接用 work 项。
 staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
 
 从 work 项配置解析 `agent`、`model`、`effort`，使用所属壳的 dispatch packet 模板。

@@ -2,7 +2,7 @@
 
 创建、恢复或替换任何 worker lane 前读取。本文件是 canonical CLI 主干的 transport adapter；
 Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通过 Herdr，worker kind
-完全由 version 4 work config 的 `agent` 决定。
+完全由 version 5 work config 的 `agent` 决定。
 
 恢复既有 lane 直接进入“恢复与切换”，不运行新 lane 的配置 gate。
 
@@ -13,7 +13,7 @@ Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通�
 2. 固定 `dispatch_runtime: herdr`。验证 `command -v herdr`、visible Herdr session 与
    `herdr agent start --help` 支持 `pi`、`codex`、`claude` kind。
 3. 加载 `model-config-schema.md` 与 `model-role-routing.md`，从 work 项读取 agent/model/effort；implementation lane 还要
-   按本票 → map → 配置 `default_mode` 冻结命名 mode 与阶段参数。三字段、计划或 evidence 验证失败时阻塞并
+   冻结阶段参数：默认取本任务类型 work 项（设了 `execution` 则 staged，未设则 direct 直跑）；ticket/map 显式点名命名 mode 时整体覆盖。三字段、计划或 evidence 验证失败时阻塞并
    运行 setup，不替换成 coordinator 自身 agent。
 4. agent 映射 runtime：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude →
    `herdr-claude-pane`。同一任务类型可由用户重跑 setup 后改变 agent，existing lane 仍按 registry 恢复。
@@ -80,7 +80,7 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
   Execution Worktree 和 execution model/effort 后生成 `codex resume <SESSION_ID>` 参数；禁止
   `--last`、最近会话猜测和跨 runtime request。adapter 不写 registry、不发送 prompt，Herdr 继续拥有
   pane 生命周期与可见 TUI。
-- version 4 work 项与 kind 为 `direct` 的命名 mode 都沿既有一次启动流程；kind 为 `staged` 的计划必须调用对应阶段
+- version 5 work 项与 kind 为 `direct` 的命名 mode 都沿既有一次启动流程；staged 计划（work 项设了 `execution`，或显式点名 kind 为 `staged` 的 mode）必须调用对应阶段
   adapter 并在发送前保留其计划与 evidence；adapter 缺失或核验失败即保持 blocked，不能退回
   `direct`。Pi/Codex/Claude 的 staged 起步与接续统一使用 `model_config.py start` 与
   `model_config.py resume --request <payload.json>`，复用既有 native adapter；payload 合同见

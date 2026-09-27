@@ -160,7 +160,7 @@ def check_core_contract() -> None:
             "当前调用会话就是 coordinator",
             "不切换 coordinator 当前目录的 branch",
             "scripts/model_config.py validate <config>",
-            "version 4",
+            "version 5",
             "agent`、`model`、`effort`",
             "Dispatch Handoff",
             "Execution Worktree",
@@ -185,7 +185,7 @@ def check_core_contract() -> None:
     require(
         HERDR / "references" / "dispatch-runtime-routing.md",
         (
-            "worker kind 完全由 version 4 work config",
+            "worker kind 完全由 version 5 work config",
             "pi → `herdr-pi-pane`",
             "codex → `herdr-codex-pane`",
             "claude → `herdr-claude-pane`",
@@ -453,7 +453,7 @@ def check_model_contract() -> None:
     require(
         schema_doc,
         (
-            "version 4",
+            "version 5",
             "任务类型",
             "codex-app",
             "default_mode",
@@ -473,19 +473,19 @@ def check_model_contract() -> None:
         ),
     )
     schema = extract_schema_example(schema_doc)
-    if schema.get("version") != 4:
-        record("model config schema version must be 4")
-    if not {"default_mode", "work", "modes", "review"} <= set(schema):
-        record("model config schema example must define default_mode/work/modes/review")
+    if schema.get("version") != 5:
+        record("model config schema version must be 5")
+    if not {"work", "modes", "review"} <= set(schema):
+        record("model config schema example must define work/modes/review")
     routing = CORE / "references" / "model-role-routing.md"
     require(
         routing,
         (
             "model-config-schema.md",
-            "version 4",
+            "version 5",
             "migrate",
             "default_mode",
-            "本票 → map → 配置 `default_mode`",
+            "默认计划来自本任务类型的 work 项",
             "不得把起步模型的请求回显当成执行模型已运行",
             "agent`、`model`、`effort`",
             "frontier-lanes.md",
@@ -521,10 +521,10 @@ def check_model_contract() -> None:
     require(
         SETUP / "SKILL.md",
         (
-            "version 4",
+            "version 5",
             "default_mode",
             "starting/execution/direct",
-            "本票 → map → 配置 `default_mode`",
+            "显式点名 mode 时整体覆盖",
             "不能静默生成 direct 启动请求",
             "不派发 lane",
             "../delivery-pipeline/references/model-config-schema.md",
@@ -835,7 +835,7 @@ def check_app_shell() -> None:
             "coordinator_runtime: codex-app",
             "dispatch_runtime: codex-app",
             "config/models.json",
-            "version 4",
+            "version 5",
             "canonical 任务类型与 output mode 保持不变",
             "planning → `output_mode: artifact`",
             "design/frontend/backend implementation → `output_mode: commit`",

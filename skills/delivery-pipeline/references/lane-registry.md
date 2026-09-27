@@ -19,7 +19,7 @@ model: <configured-model-or-none>
 effort: <configured-effort-or-none>
 model_evidence: pi-list-models | codex-catalog | claude-env | none
 execution_mode: legacy | staged | direct | none   # legacy 仅 version 4 前 lane；新 lane 用 staged | direct | none
-execution_mode_name: <modes 中的命名预设-or-none>   # version 4 新 lane 记录 mode 名
+execution_mode_name: <modes 中的命名预设-or-none>   # version 5 新 lane 记录 mode 名；默认路径为 none
 execution_source: role-config | ticket | map | user-config | work | none   # role-config 仅旧 lane；非实现任务用 work
 starting_model: <frozen-model-or-none>
 starting_effort: <frozen-effort-or-none>

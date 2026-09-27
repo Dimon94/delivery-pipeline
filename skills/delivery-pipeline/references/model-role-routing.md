@@ -1,13 +1,13 @@
 # 模型任务路由
 
-本文件定义核心链路如何消费配置并启动 worker。配置 schema（version 4、任务类型、
-命名 mode 预设、review 矩阵、transport 必需集）的唯一权威是
+本文件定义核心链路如何消费配置并启动 worker。配置 schema（version 5、任务类型、
+命名 mode 覆盖预设、review 矩阵、transport 必需集）的唯一权威是
 `model-config-schema.md`；各 transport 壳共用同一 schema，调度细节在各壳内。
 
 ## 配置实例与验证
 
-CLI 实例路径：`~/.config/delivery-pipeline/model-roles.json`，version 4，由
-`delivery-pipeline-setup` 写入并 readback。旧 version 2/3 配置不再被直接消费：dispatch 遇到
+CLI 实例路径：`~/.config/delivery-pipeline/model-roles.json`，version 5，由
+`delivery-pipeline-setup` 写入并 readback。旧 version 2/3/4 配置不再被直接消费：dispatch 遇到
 旧版本时阻塞并运行 `scripts/model_config.py migrate`（机械迁移）或重跑 setup。结构验证：
 
 ```bash
@@ -15,8 +15,8 @@ scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json
 ```
 
 CLI 实例必需 `work` 中的 `planning`、`design`、`frontend`、`backend`、`testing` 与完整
-review 矩阵；entry 与 review 轴的 agent 属于 `pi|codex|claude`。`default_mode` 的 `agents`
-必须覆盖三个 implementation 任务类型各自的 agent。除结构外，所有 startup（含非实现任务
+review 矩阵；entry 与 review 轴的 agent 属于 `pi|codex|claude`；CLI 实例禁止
+`default_mode`。除结构外，所有 startup（含非实现任务
 的一次启动）都要求当前 capability evidence：binary 存在、model/effort 命中实时探测；
 没有 evidence 的计划只能解析，不能生成启动请求。
 
@@ -28,8 +28,11 @@ agent/model，`work.coordinator` 若定义仅作推荐观测。
 
 非 implementation lane 与 `artifact`/`checks`/`verdict` output mode 直接使用 work 项的
 `{agent, model, effort}`。implementation lane（`design`/`frontend`/`backend` 且
-`output_mode: commit`）按 本票 → map → 配置 `default_mode` 解析 mode 名，mode 必须是
-`modes` 中的命名预设且含该 lane agent 的 `agents` 计划；解析出的 mode、source、agent 与
+`output_mode: commit`）默认计划来自本任务类型的 work 项：`{model, effort}` 是 starting；
+设了可选 `execution` 则 staged（起步 → checkpoint → execution 续接），未设则 direct 单轮
+直跑，无 checkpoint 暂停。ticket 或 map 显式点名 `modes` 中的命名预设时，该 lane 的
+starting/execution/direct 整体由 mode 的 per-agent 计划覆盖；mode 必须含该 lane agent 的
+`agents` 计划。解析出的 mode 名（默认路径为 none）、source、agent 与
 starting/execution/direct model/effort 冻结到 packet 和既有 lane registry，再启动 worker。
 旧票据遗留的 `staged`/`direct` 字面值不是合法 mode 名，遇到即阻塞并要求用户显式选择。
 已有 lane 只按 registry 恢复，不重新解析新配置。

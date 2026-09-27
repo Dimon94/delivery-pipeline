@@ -317,6 +317,7 @@ def _test_config() -> dict[str, Any]:
         task: {"agent": "pi", **pair}
         for task in ("planning", "design", "frontend", "backend", "testing")
     }
+    work["backend"]["execution"] = {"model": "provider/model", "effort": "medium"}
     stages = {
         stage: {"model": "provider/model", "effort": effort}
         for stage, effort in (
@@ -326,8 +327,7 @@ def _test_config() -> dict[str, Any]:
         )
     }
     return {
-        "version": 4,
-        "default_mode": "standard",
+        "version": 5,
         "work": work,
         "modes": {
             "standard": {
