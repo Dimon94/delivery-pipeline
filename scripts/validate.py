@@ -50,6 +50,7 @@ STATES = {
     "push_failed",
     "cleanup_in_progress",
     "closed",
+    "superseded",
 }
 ERRORS: list[str] = []
 

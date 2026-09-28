@@ -47,6 +47,8 @@ loss 不自动 stop、abandon、retry 或 release。
 不能重用 `new-child`/`current` 创建另一现场。
 原生失败计数 `dispatch.failureCount` 达三次或 Unknown 时保留 circuit-break，不创建新 Run、
 第二 Task、无关 Dispatch 或 project counter 绕过。native `worker-start` 仍是 circuit-break owner。
+这是 transport 层的 dispatch 熔断；验收层（checks/verdict/prereq check 不过）的诊断-复验回路
+归核心链路 `gate-state-machine.md` 的 Acceptance Circuit（ADR-0012），两者计数互不影响。
 
 核验后先沿同一 overlay 记录新 attempt intent，再按原合同 `worker-start --task <same Task>
 --retry-of <old Dispatch>`，显式带 placement、agent、host 与冻结 launch/setup 参数；不使用

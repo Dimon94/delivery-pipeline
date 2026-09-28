@@ -27,6 +27,7 @@
 ## 阻断与依赖
 
 阻断语义以 issue body 里的 `Blocked by: #x #y` 文字为准。判断是否解除阻断,读被引用 issue 的状态是否 closed。
+作废语义以 `Superseded by: #x` 文字为准（ADR-0011）：上游前提被证据推翻时整段下游作废，必须附原因 comment。
 
 ## Wayfinding 编排
 

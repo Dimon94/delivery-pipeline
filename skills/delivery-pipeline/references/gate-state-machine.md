@@ -139,3 +139,35 @@ terminal outcome 或用户 gate。只有原 runtime 的 `WORKER_STOPPED`、明�
 WORKER_STOPPED 通过后仍须按 `continuation.py` 固定顺序恢复：registry → 原 session/旧 writer →
 Git/checkpoint → 用户覆盖 → applicable gate（绑定当前 checkpoint 版本）→ persist/readback → send。接续请求、工具接受、新轮、
 实际 model/effort 和 terminal/fan-in 各自留证；Unknown、冲突或重入不增加请求，也不提前推进业务 gate。
+
+## Acceptance Circuit（ADR-0012）
+
+验收层失败（checks/verdict/prereq check 不过）的失败回路，与 transport 层 dispatch circuit-break
+分层：前者数「诊断 → 修 → 同证据复验」轮次，后者数派发失败，计数互不影响，都不许用新
+Run/Task 绕过。诊断用 `toc-thinking-processes.md` 的 Abductive ECE（先写 kill probe）。
+
+1. 每轮先产出诊断 artifact，归因一类：实现 / 环境 / 判据 / 前置（ADR-0011 prereq check）。
+   无诊断 artifact 不得发起下一轮，不原地重跑。
+2. 复验使用与首次失败同一套机器证据，不换更宽松的判据。
+3. 三轮不过即停，三轮诊断 bundle 一起交 coordinator：实现问题回实现；判据错改判据；
+   证据指向上游前提才动图（ADR-0011 supersede / ADR-0013 补票）；coordinator 裁不了才上浮用户。
+
+## Supersede（ADR-0011）
+
+上游前提被证据推翻时，coordinator 将受影响下游子图整体置 `superseded`：lane registry 写该终态，
+tracker 写 `Superseded by: #x` 链接（与 `Blocked by` 同约定层），必须附原因 comment（哪条证据推翻
+哪个前提）。superseded lane 保留 worktree 与坐标、不 fan-in、不计入失败、不原地复活；
+同类工作按 ADR-0013 或正常 tickets gate 起新票。
+
+## 证据触发的运行中补票（ADR-0013）
+
+tickets gate 之外唯一的运行中增票/改依赖通道，触发条件穷尽：
+
+- ADR-0011 prereq check 失败；
+- ADR-0012 acceptance circuit 三轮耗尽且诊断指向上游；
+- spec 禁止项命中。
+
+补票仍经 to-tickets owner 创建，标 P0，body 引用触发证据坐标；依赖重连只发生在受影响子图内。
+用户确认从逐票事前批准降为下一次 Dispatch Handoff 报告时批量追认；追认前可派发，拒绝则按
+supersede 处理并保留现场。本通道不扩大 scope、不授予 remote authority、不覆盖 unrelated issue，
+全部创建与重连写 registry 与 tracker。

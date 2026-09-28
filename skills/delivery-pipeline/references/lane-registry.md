@@ -13,7 +13,7 @@ role: planning | design | frontend | backend | testing | review | map   # 持久
 output_mode: commit | artifact | checks | verdict | none
 lane_id: <stable-id>
 runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator | orca
-state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed
+state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed | superseded
 agent: pi | codex | claude | none
 model: <configured-model-or-none>
 effort: <configured-effort-or-none>
@@ -28,6 +28,8 @@ execution_effort: <frozen-effort-or-none>
 direct_model: <frozen-model-or-none>
 direct_effort: <frozen-effort-or-none>
 execution_phase: starting | switching | executing | direct | none
+prereq_check: <command-or-probe + expected evidence-or-none>   # ADR-0011；ticket 声明前提能力时必填
+prereq_check_result: <persisted run evidence-or-none>
 checkpoint: <repo-external absolute path-or-none>
 checkpoint_version: <supported version-or-none>
 checkpoint_sha256: <whole-checkpoint sha256-or-none>
@@ -75,6 +77,8 @@ terminal(artifact/checks/verdict) -> consumed | blocked
 integrated/consumed -> cleanup_in_progress -> closed
 cleanup_in_progress -> close_pending -> closed
 any active state -> path_conflict | stale
+any active state -> superseded   # ADR-0011：上游前提被证据推翻时由 coordinator 整体置终态；
+                                  # 保留 worktree 与坐标，不 fan-in、不计入失败、不原地复活
 ```
 
 `awaiting_human` 表示 packet accepted且 agent working，用户正在 Herdr参与。整批 user-visible lanes

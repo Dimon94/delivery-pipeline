@@ -24,6 +24,8 @@ CANONICAL_STATES = {
     "blocked", "setup_blocked", "integration_conflict", "integration_checks_failed",
     "path_conflict", "stale", "close_pending", "test_decision_paused",
     "rebase_in_progress", "push_failed", "cleanup_in_progress", "closed",
+    # ADR-0011：superseded 保留 worktree 与坐标，故不进 DONE_STATES，残留审计跳过。
+    "superseded",
 }
 # 这些状态下 worktree/branch/terminal 必须已全部清理。
 # terminal 不在内：fan-in/integration 未完成前 worktree 与 branch 必须保留；

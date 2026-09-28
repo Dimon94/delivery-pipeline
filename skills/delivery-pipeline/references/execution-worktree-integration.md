@@ -36,6 +36,9 @@ checks与 verdict 是执行真相源。
 三类都不要求 commit、不 cherry-pick。worktree必须 clean；若 owner确实需要 repo 变更，packet应改成
 `commit` mode并重派，不能把 dirty state当 artifact。成功写 `consumed`。
 
+三类失败以及 commit mode 的 focused checks 失败都进入 acceptance circuit：先诊断后复验，
+三轮上限与上浮按 `gate-state-machine.md` 的 Acceptance Circuit（ADR-0012）执行，不原地重跑。
+
 ## Cleanup
 
 `integrated` 或 `consumed` 后统一。Herdr pane lane 执行下列步骤；其他 runtime 的 lane 按所属壳的

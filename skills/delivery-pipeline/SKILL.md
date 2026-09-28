@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 # Delivery Pipeline（核心链路）
 
-本 skill 是 canonical 核心链路：gate 顺序、lane registry、配置 schema、owner 解析与
-Integration 不变量的唯一住所，由三个平级 transport 壳读取（`delivery-pipeline-herdr`、
+本 skill 是 canonical 核心链路：gate 顺序、lane registry、配置 schema、owner 解析、prereq check
+与 acceptance circuit 语义（ADR-0011/0012）与 Integration 不变量的唯一住所，由三个平级 transport 壳读取（`delivery-pipeline-herdr`、
 `delivery-pipeline-codex-app`、`delivery-pipeline-orca`）。依赖方向只允许壳 → 本链路。
 直接调用本 skill 时按目标 transport 改用对应壳：CLI/Herdr 交付调用 `delivery-pipeline-herdr`。
 当前调用会话就是 coordinator；调度归所属壳，产物质量归各 owner，Integration 不变量归本链路。
