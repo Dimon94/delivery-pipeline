@@ -1,3 +1,8 @@
 .DS_Store
 *.log
 __pycache__/
+
+# lane-graph 私有 GitLab 访问配置（含内部 host/凭据引用，永不入库；
+# 推荐默认位置 ~/.config/lane-graph/gitlab.json 本就在仓外）
+lane-graph.gitlab.json
+lane-graph-config.json

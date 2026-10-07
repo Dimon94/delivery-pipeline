@@ -46,7 +46,9 @@ worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`�
 `working` 确认后立即按所属壳的 terminal-signal 合同建立唤醒通道；未建立的 lane
 不算完成 Dispatch Handoff——terminal 与 `PREWALK_READY` 都不会唤醒 coordinator，只能靠用户手动发现。
 整批成功 lanes 完成 startup、失败项隔离为 `setup_blocked` 后，统一报告全部坐标并立即 yield；
-不等待 routine progress、首个问题或最终结果。
+不等待 routine progress、首个问题或最终结果。报告时重跑一次
+`skills/delivery-pipeline/scripts/lane_graph.py --registry-root <本机 registry root>`，
+让全局 lane 静态页反映新批次（首次运行即自动新建该页）。
 
 ## Terminal Fan-in
 
@@ -56,6 +58,8 @@ worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`�
 - coordinator 用 registry、worktree base/head/diff/dirty state、tracker 与 artifacts 验证，按 dependency
   order串行 Integration。
 - Integration 后完成 canonical tracker transitions，自动重算下一 ready frontier，不等待“继续”。
+- fan-in/cleanup 收口后重跑 `lane_graph.py` 刷新静态页；脚本只读 registry 与 tracker，失败记
+  Unknown 不阻塞收口。
 - watchdog 只处理 startup failure、terminal signal 丢失或工具 timeout；不固定轮询。
 
 ## Authority

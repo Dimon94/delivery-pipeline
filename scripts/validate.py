@@ -1665,6 +1665,36 @@ def check_checkpoint_contract() -> None:
     )
 
 
+def check_lane_graph() -> None:
+    script = CORE / "scripts" / "lane_graph.py"
+    require(
+        script,
+        (
+            "--registry-root",
+            "--self-test",
+            "--no-tracker",
+            "--edges-json",
+            "Blocked by",
+            "lane-graph.html",
+            "superseded",
+            "渲染是派生物，不是状态",
+        ),
+    )
+    if not is_executable(script):
+        record("lane graph renderer must exist and remain executable")
+    else:
+        result = subprocess.run(
+            [sys.executable, str(script), "--self-test"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if result.returncode != 0:
+            record(
+                f"lane graph self-test failed: {result.stdout}{result.stderr}"
+            )
+
+
 def check_claude_adapter_contract() -> None:
     helper = CORE / "scripts" / "claude_adapter.py"
     probe = CORE / "scripts" / "claude_adapter_check.py"
@@ -1795,6 +1825,7 @@ def main() -> None:
     check_pruned_policy()
     check_metadata_and_helpers()
     check_checkpoint_contract()
+    check_lane_graph()
     check_claude_adapter_contract()
 
     if ERRORS:
