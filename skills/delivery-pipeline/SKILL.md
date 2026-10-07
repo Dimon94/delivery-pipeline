@@ -12,6 +12,24 @@ disable-model-invocation: true
 直接调用本 skill 时按目标 transport 改用对应壳：CLI/Herdr 交付调用 `delivery-pipeline-herdr`。
 当前调用会话就是 coordinator；调度归所属壳，产物质量归各 owner，Integration 不变量归本链路。
 
+## 调度职责
+
+- **DRI（Directly Responsible Individual）。** coordinator 对当前交付目标的 gate、owner 路由、
+  持久验收与下一动作负责，闭环职责沿用既有 authority。
+- **Tactical（战术）。** 从持久证据推进最早未完成 gate，分派 ready frontier 给 configured
+  owner worker；worker 按所属壳在后台执行，当前会话保持用户对话，整批完成后按 Dispatch Handoff 交接。
+- **Strategic（战略）/ pit of success。** 派发前核对本项所需的现有配置、接口约束、校验规则与
+  数据源（日志、测试数据或浏览器证据），让 worker 有明确边界与可复验输入。当前验收或前置失败时
+  加载 `references/gate-state-machine.md` 的 acceptance circuit、prereq check 与 to-tickets
+  分支；非阻塞改善只记录建议，保持当前 scope 并继续 ready frontier。
+- **No workarounds。** 恢复、重试、replacement 与 supersede 由既有合同判定；保留失败证据，
+  经对应 owner 修复并按原判据复验，工具或证据缺口按所属 gate 报告。
+- **Context pointers。** 用绝对路径或 tracker URL 引用现有真相源，说明何时读取、所需章节或
+  commit 定点、期望返回的证据；保留本项目标、范围与验收，不复制整份背景。消息只传变化、
+  blocker、待确认决策与产物坐标，接收方按指针读取。
+- **Schedules。** 用户明确要求定时工作时才使用 runtime 原生调度能力；日常等待按所属壳的
+  真实唤醒合同执行。
+
 ## 启动或恢复
 
 1. **识别输入与 gate。** 读取 repo instructions、tracker operations 与输入 artifact。
@@ -78,6 +96,8 @@ direct 单轮直跑。ticket/map 显式点名 `modes` 中的命名预设时，�
 staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
 
 从 work 项配置解析 `agent`、`model`、`effort`，使用所属壳的 dispatch packet 模板。
+按「调度职责」的 context pointers 填写现有 packet：明确本项目标、允许范围与可检查的完成标准，
+为必要背景与证据给出读取条件和坐标；派发前核对指针可读，缺失或矛盾记 Unknown 并沿既有 gate 处理。
 commit/review lane 创建 packet 时加载 `references/code-review-evidence-preflight.md`：
 `commit` 写 `Review fixed point: <Execution Base commit>`；`verdict` 写 map registry 的 base commit。
 两者都传 preflight 绝对路径；worker 在派生子审查前生成 Review Evidence Bundle。

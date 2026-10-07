@@ -9,6 +9,8 @@ disable-model-invocation: true
 本 skill 是 `../delivery-pipeline/SKILL.md` 核心链路的 transport 壳，供 pi、Codex CLI 与
 Claude CLI 使用。先完整读取 canonical 主干；本文件覆盖 dispatch transport、pane/monitoring
 生命周期与 Herdr packet，其他 gate、owner、worktree、Integration、权限和收尾不变量不变。
+委派、阻塞与恢复时执行 canonical「调度职责」；以 context pointers 填写本壳 packet，
+后台 pane 与终态唤醒沿本壳生命周期合同。
 
 ## 覆盖
 

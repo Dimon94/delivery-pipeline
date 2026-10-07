@@ -1,6 +1,6 @@
 ---
 name: delivery-pipeline-orca
-description: 在 Orca runtime 中检查交付编排入口、原生 discovery 与当前操作能力；证据不足时明确阻塞，不切换其他 transport。
+description: 在 Orca 中按原生运行证据编排交付。
 disable-model-invocation: true
 ---
 
@@ -12,6 +12,8 @@ disable-model-invocation: true
 
 ## 复用边界
 
+- 调度职责：委派、阻塞与恢复时读取 `../delivery-pipeline/SKILL.md` 的「调度职责」；
+  仅复用该节的责任与证据原则，startup 仍走本入口的 native preflight。
 - 执行真相源：owner 三字段（name、绝对 SKILL.md path、runtime-specific invocation label）。
 - canonical gate 与实施前置证据：`../delivery-pipeline/references/gate-state-machine.md`。
 - owner 解析：`../delivery-pipeline/references/owner-skill-resolution.md`。

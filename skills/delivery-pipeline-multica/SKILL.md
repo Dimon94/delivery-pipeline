@@ -1,6 +1,6 @@
 ---
 name: delivery-pipeline-multica
-description: Multica 本机交付编排合同核心；frontier 计算、依赖声明、单写者纪律、四类保留事项、HITL 等待与恢复。CLI/Herdr/其他 transport 交付仍用 delivery-pipeline 及其壳，本 skill 只覆盖 Multica 会话内编排。
+description: 在 Multica 会话内编排交付、等待人类决策并恢复工作。
 disable-model-invocation: true
 ---
 
@@ -10,6 +10,17 @@ disable-model-invocation: true
 **唯一住所**：frontier 计算、依赖声明、每 Issue 单活跃写入 run、四类永远留给人类的事项、
 HITL 等待与恢复。宿主（Multica 后端 + Daemon）只提供通用原语；不另起调度服务、不建核心
 状态机、不激活 `issue_dependency` 表、不做插件事件桥（决策 02/03/07 已定量否决，勿重开）。
+
+## 调度职责
+
+- **DRI（直接责任人）**：coordinator 负责 frontier、派发、验收与恢复；Issue 工作交给宿主
+  worker，当前会话保持用户对话，依宿主终态回流推进。
+- **双轨（Tactical / Strategic）**：每次派发先核对当前 Issue 的下一动作与必需环境前提，
+  识别能减少后续同类失败的最小修复。所需的检查、日志、测试数据或浏览器证据缺失时记 Unknown，
+  按本 skill 的验收/失败合同处理；非阻塞改善只记录建议，继续其余 frontier。修复限于本票
+  已有范围，涉及四类保留事项走 HITL。
+- **Context pointers**：worker 往返以 Issue/产物/Git 坐标、读取条件、验收判据与变化摘要为主；
+  大段日志和研究正文留在可读回来源。事实归下方权责表的所有者，registry 仍是可重建缓存。
 
 load-on-demand：
 

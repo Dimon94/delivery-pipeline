@@ -9,6 +9,8 @@ disable-model-invocation: true
 本 skill 是 `../delivery-pipeline/SKILL.md` 的薄 delta。先完整读取 canonical 主干；本文件
 覆盖 transport、配置 gate 与 delegated-task execution，其他 gate、owner、worktree、Integration、
 权限和收尾不变量不变。
+委派、阻塞与恢复时执行 canonical「调度职责」；以 context pointers 组织外层 packet 与内部
+subagent prompt，后台任务回传与验收沿本壳合同。
 
 ## 覆盖
 
@@ -45,7 +47,7 @@ disable-model-invocation: true
    `references/codex-app-dispatch.md` 的“独立 Review 放行”和 `scripts/prewalk.py review`。
    新 Prewalk checkpoint 由 `scripts/prewalk.py checkpoint` 复用 canonical helper 原子写入并读回；
    legacy checkpoint 仅恢复已持久 lane。
-5. 当前 App 明确选择 Herdr 时退出本壳，改用 canonical `delivery-pipeline`；同一 map 不静默
+5. 当前 App 明确选择 Herdr 时退出本壳，改用 `delivery-pipeline-herdr`；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 
 完成标准：每个 delegated gate 都有明确 App task transport与 output mode；App task、App-managed

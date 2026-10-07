@@ -40,7 +40,8 @@ implementation work 项可选 `execution`、命名 mode 覆盖预设、review �
      `ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL`、
      `ANTHROPIC_MODEL`、`CLAUDE_CODE_SUBAGENT_MODEL`、对应 `*_MODEL_NAME` 与
      `CLAUDE_CODE_EFFORT_LEVEL`；effort候选同时受 Claude CLI `--effort` 枚举约束。
-   binary、文件或字段不存在时记 Unknown，不臆造候选。
+   每份 evidence 记录来源命令/文件与探测结果；binary、文件或字段不存在时记 Unknown，
+   指明缺失项与下一核验动作，沿真实来源补齐后再选择该项候选。
 3. **逐项选择。** 按 `planning`、`design`、`frontend`、`backend`、`testing` 顺序，每个任务
    类型先选 agent，再从该 agent 的真实 evidence 选择 model 与 effort；随后选择 review 矩阵四格
    （`implementation`/`whole-change` × `standards`/`spec`）。展示任务管辖工作、候选来源与当前
