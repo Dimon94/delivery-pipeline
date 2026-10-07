@@ -1,0 +1,14 @@
+{"Dimon94/delivery-pipeline": {
+  "201": {"deps": [], "title": "类型枚举落地", "state": "closed", "labels": ["backend"],
+          "body": "## 目标\n新增类型枚举并全局替换魔法字符串。\n\n## 验收\n- [x] 枚举定义合入\n- [x] focused checks 通过"},
+  "202": {"deps": ["201"], "title": "功能本体与面板", "state": "open", "labels": ["frontend"],
+          "body": "## 目标\n实现功能本体与其设置面板。\n\nBlocked by: #201"},
+  "203": {"deps": ["202"], "title": "注册入口列表", "state": "open", "labels": ["backend", "p0"],
+          "body": "把新功能注册进入口列表。\n\nBlocked by: #202"},
+  "204": {"deps": ["203"], "title": "whole-change 终验", "state": "open", "labels": ["testing"],
+          "body": "整体验收。\n\nBlocked by: #203"}},
+ "acme/mobile-app": {
+  "51": {"deps": [], "title": "Runner 支持新类型", "state": "closed", "labels": ["runner"],
+         "body": "GitLab 上的 issue 示例：Runner 侧实现。"},
+  "52": {"deps": ["51"], "title": "端上验收（被作废）", "state": "closed", "labels": [],
+         "body": "前提被推翻，整张票 superseded。\n\nSuperseded by: #53"}}}
