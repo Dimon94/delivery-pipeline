@@ -43,7 +43,9 @@ for line in open(sys.argv[1]):
             if ln=="LANE_DONE "+lane or ln.startswith("PREWALK_READY "+lane+" /"):
                 print(ln)
 ' "$JSONL" "$LANE_ID" 2>/dev/null; fi)
-  if printf '%s\n' "$MARKERS" | grep -qxF "LANE_DONE $LANE_ID"; then
+  DONE_FIRED="/tmp/lane-watch-fired-${LANE_ID}-done"
+  if printf '%s\n' "$MARKERS" | grep -qxF "LANE_DONE $LANE_ID" && [ ! -f "$DONE_FIRED" ]; then
+    touch "$DONE_FIRED"
     herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(session jsonl 实证 LANE_DONE $LANE_ID)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
     exit 0
   fi
@@ -77,8 +79,13 @@ for line in open(sys.argv[1]):
   done <<< "$MARKERS"
   while IFS= read -r LINE; do
     [ -n "$LINE" ] || continue
-    if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
+    # 持久去重（2026-09-27）：watcher 超时重挂后重扫 jsonl 会重报历史 PREWALK；
+    # 以 lane+标记行哈希建档，跨进程只报一次。LANE_DONE 不在此列（进程见到即退出）。
+    LINE_KEY=$(printf '%s' "$LINE" | shasum | cut -c1-16)
+    FIRED="/tmp/lane-watch-fired-${LANE_ID}-${LINE_KEY}"
+    if [ ! -f "$FIRED" ] && ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
        herdr agent prompt "$COORD" "WAKE: $LABEL 的 pane $PANE 输出阶段标记：${LINE}。请仅核验 checkpoint 与原 runtime 停止证据；此信号不证明已停止或完成，不授权接续、fan-in、Integration 或 cleanup。watcher 继续监听 LANE_DONE。" >/dev/null 2>&1; then
+      touch "$FIRED"
       SEEN_PREWALK="${SEEN_PREWALK}${LINE}
 "
     fi
