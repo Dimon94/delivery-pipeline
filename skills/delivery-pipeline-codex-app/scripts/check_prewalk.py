@@ -42,8 +42,8 @@ def call(command, data, success=True, extra_env=None) -> Any:
 
 def check():
     configured = call("models", {})
-    assert configured["config"]["default_mode"] == "astra-sol"
-    assert call("model", {"work": "planning"})["target"]["model"] == "gpt-6-astra"
+    assert configured["config"]["default_mode"] == "sol-sol"
+    assert call("model", {"work": "planning"})["target"]["model"] == configured["config"]["work"]["planning"]["model"]
     review = {
         "worktree": "unused",
         "base_commit": "unused",
@@ -59,13 +59,13 @@ def check():
     assert "缺少独立两轴结论" in call("review", review, False)
     coordinator = call(
         "coordinator",
-        {"model": "gpt-5.6-sol", "effort": "high", "source": "turn_context"},
+        {"model": "gpt-6-sol", "effort": "high", "source": "turn_context"},
     )
     assert coordinator["action"] == "verified"
     for model, effort, source in (
-        ("gpt-5.6-sol", "low", "turn_context"),
+        ("gpt-6-sol", "low", "turn_context"),
         ("gpt-6-astra", "high", "turn_context"),
-        ("gpt-5.6-sol", "high", ""),
+        ("gpt-6-sol", "high", ""),
     ):
         observed = call(
             "coordinator", {"model": model, "effort": effort, "source": source}
@@ -82,7 +82,7 @@ def check():
         },
     )
     assert sizing["request"] == {
-        "model": "gpt-5.6-sol",
+        "model": configured["config"]["work"]["ticket-sizing"]["model"],
         "reasoning_effort": "high",
         "fork_turns": "none",
     }
@@ -109,7 +109,7 @@ def check():
         },
     )
     assert support["request"] == {
-        "model": "gpt-5.6-luna",
+        "model": configured["config"]["work"]["assistance"]["model"],
         "reasoning_effort": "max",
         "fork_turns": "none",
     }
@@ -123,7 +123,7 @@ def check():
             "read_only": False,
         },
     )
-    assert opinion["request"]["model"] == "gpt-6-astra" and opinion["read_only"] is True
+    assert opinion["request"]["model"] == configured["config"]["work"]["second-opinion"]["model"] and opinion["read_only"] is True
     for work in ("testing", "integration"):
         delegated = call(
             "subagent",
@@ -135,7 +135,7 @@ def check():
             },
         )
         assert delegated["request"] == {
-            "model": "gpt-5.6-luna",
+            "model": configured["config"]["work"][work]["model"],
             "reasoning_effort": "max",
             "fork_turns": "none",
         }
@@ -423,8 +423,10 @@ def check():
     del missing_sizing["gate_evidence"]["ticket"]["sizing"]
     call("resolve", missing_sizing, False)
     default = call("resolve", base)
-    assert default["overlay"]["development_mode"] == "astra-sol"
-    assert default["request"] == {"model": "gpt-6-astra", "thinking": "low"}
+    assert default["overlay"]["development_mode"] == "sol-sol"
+    assert default["request"] == {"model": configured["config"]["modes"]["sol-sol"]["agents"]["codex-app"]["starting"]["model"], "thinking": "xhigh"}
+    assert default["overlay"]["execution_target"]["model"] == configured["config"]["modes"]["sol-sol"]["agents"]["codex-app"]["execution"]["model"]
+    assert default["overlay"]["execution_target"]["effort"] == "high"
     default = call("resolve", {**base, "ticket_mode": "sol-luna"})
     assert (
         call("resolve", {**base, "map_mode": "sol-sol"})["overlay"]["mode_source"]
@@ -435,7 +437,7 @@ def check():
     direct = call(
         "resolve", {**base, "ticket_mode": "sol-direct", "map_mode": "sol-luna"}
     )
-    assert direct["request"] == {"model": "gpt-5.6-sol", "thinking": "high"}
+    assert direct["request"] == {"model": configured["config"]["modes"]["sol-direct"]["agents"]["codex-app"]["direct"]["model"], "thinking": "high"}
     assert direct["overlay"]["execution_phase"] == "executing"
     assert (
         call("resolve", {**base, "existing_lane": {"model": "old"}})["request"] is None
@@ -617,19 +619,15 @@ def check():
             "development_mode": "staged",
             "mode_source": "user-config",
             "execution_target": lane["execution_target"],
-            "phase_plan": {
-                "starting": {"model": "gpt-5.6-sol", "effort": "high"},
-                "execution": {"model": "gpt-5.6-luna", "effort": "max"},
-                "direct": {"model": "gpt-5.6-sol", "effort": "high"},
-            },
-            "requested_model": "gpt-5.6-sol",
+            "phase_plan": lane["phase_plan"],
+            "requested_model": lane["requested_model"],
             "requested_effort": "high",
             "tool_acceptance": {
                 "accepted": True,
                 "status": "accepted",
                 "source": "host readback",
             },
-            "actual_model": "gpt-5.6-sol",
+            "actual_model": lane["requested_model"],
             "actual_effort": "high",
             "actual_readback_source": "host turn context",
             "actual_readback_at": "2026-09-08T00:00:00Z",
@@ -697,12 +695,12 @@ def check():
         prepared = call("prepare", data)
         assert prepared["action"] == "persist-before-send"
         assert prepared["request"]["threadId"] == "same-task"
-        assert prepared["request"]["model"] == "gpt-5.6-luna"
+        assert prepared["request"]["model"] == lane["execution_target"]["model"]
         assert prepared["request"]["thinking"] == "max"
         assert prepared["overlay"]["requested_effort"] == "max"
         assert prepared["overlay"]["model"] == "Unknown"
         assert prepared["overlay"]["execution_target"] == {
-            "model": "gpt-5.6-luna",
+            "model": lane["execution_target"]["model"],
             "effort": "max",
             "source": lane["execution_target"]["source"],
             "scope": "execution",
@@ -715,17 +713,17 @@ def check():
         assert "resolved owner 和 review_scope" in prepared["request"]["prompt"]
         assert "不得报告 completed" in prepared["request"]["prompt"]
         # 默认 astra-sol 的 checkpoint -> prepare；配置消失也不能改动已冻结目标。
-        astra_lane = {**lane, **call("resolve", base)["overlay"]}
+        astra_lane = {**lane, **call("resolve", {**base, "ticket_mode": "astra-sol"})["overlay"]}
         astra_path = Path(folder) / "astra-checkpoint.json"
         astra_payload = {
             **payload,
             "phase_plan": astra_lane["phase_plan"],
             "execution_target": astra_lane["execution_target"],
             "checkpoint_path": str(astra_path),
-            "requested_model": "gpt-6-astra",
-            "requested_effort": "low",
-            "actual_model": "gpt-6-astra",
-            "actual_effort": "low",
+            "requested_model": astra_lane["requested_model"],
+            "requested_effort": "high",
+            "actual_model": astra_lane["requested_model"],
+            "actual_effort": "high",
         }
         astra_checkpoint = call(
             "checkpoint",
@@ -745,7 +743,7 @@ def check():
                 "config_path": str(Path(folder) / "missing.json"),
             },
         )
-        assert astra_prepared["request"]["model"] == "gpt-5.6-sol"
+        assert astra_prepared["request"]["model"] == astra_lane["execution_target"]["model"]
         assert astra_prepared["request"]["thinking"] == "high"
         assert astra_prepared["request"]["threadId"] == lane["thread_id"]
         corrupt = {
@@ -770,7 +768,7 @@ def check():
         effort_payload["checkpoint_path"] = str(effort_path)
         effort_payload["phase_plan"]["execution"]["effort"] = "high"
         effort_payload["execution_target"] = {
-            "model": "gpt-5.6-luna",
+            "model": lane["execution_target"]["model"],
             "effort": "high",
             "source": "user task override",
             "scope": "execution",
@@ -796,10 +794,10 @@ def check():
                 },
             },
         )
-        assert effort_override["request"]["model"] == "gpt-5.6-luna"
+        assert effort_override["request"]["model"] == lane["execution_target"]["model"]
         assert effort_override["request"]["thinking"] == "high"
         assert effort_override["overlay"]["execution_target"] == {
-            "model": "gpt-5.6-luna",
+            "model": lane["execution_target"]["model"],
             "effort": "high",
             "source": "user task override",
             "scope": "execution",
@@ -856,9 +854,9 @@ def check():
         model_path = Path(folder) / "model-override-checkpoint.json"
         model_payload = copy.deepcopy(payload)
         model_payload["checkpoint_path"] = str(model_path)
-        model_payload["phase_plan"]["execution"]["model"] = "gpt-5.6-sol"
+        model_payload["phase_plan"]["execution"]["model"] = "gpt-6-sol"
         model_payload["execution_target"] = {
-            "model": "gpt-5.6-sol",
+            "model": "gpt-6-sol",
             "effort": "max",
             "source": "user task override",
             "scope": "execution",
@@ -878,13 +876,13 @@ def check():
                 "checkpoint": model_checkpoint,
                 "checkpoint_path": str(model_path),
                 "execution_override": {
-                    "model": "gpt-5.6-sol",
+                    "model": "gpt-6-sol",
                     "source": "user task override",
                     "scope": "execution",
                 },
             },
         )
-        assert model_override["request"]["model"] == "gpt-5.6-sol"
+        assert model_override["request"]["model"] == "gpt-6-sol"
         assert model_override["request"]["thinking"] == "max"
         assert "resolved execution target" in call(
             "prepare",
@@ -897,9 +895,9 @@ def check():
         )
         for invalid_override in (
             {"effort": "high", "source": "user task override", "scope": "starting"},
-            {"model": "gpt-5.6-sol", "source": "Unknown", "scope": "execution"},
+            {"model": "gpt-6-sol", "source": "Unknown", "scope": "execution"},
             {
-                "model": "gpt-5.6-sol",
+                "model": "gpt-6-sol",
                 "source": "user task override",
                 "scope": "execution",
                 "unexpected": "value",
@@ -939,13 +937,15 @@ def check():
         sol_path = Path(folder) / "sol-checkpoint.json"
         sol_payload = copy.deepcopy(payload)
         sol_payload["checkpoint_path"] = str(sol_path)
-        sol_payload["phase_plan"]["execution"] = {
-            "model": "gpt-5.6-sol",
-            "effort": "high",
-        }
-        sol_payload["execution_target"] = call(
+        sol_plan = call(
             "resolve", {**base, "ticket_mode": "sol-sol"}
-        )["overlay"]["execution_target"]
+        )["overlay"]
+        sol_payload["phase_plan"] = sol_plan["phase_plan"]
+        sol_payload["execution_target"] = sol_plan["execution_target"]
+        sol_payload["requested_model"] = sol_plan["requested_model"]
+        sol_payload["actual_model"] = sol_plan["requested_model"]
+        sol_payload["requested_effort"] = "xhigh"
+        sol_payload["actual_effort"] = "xhigh"
         sol_checkpoint = call(
             "checkpoint",
             {
@@ -960,13 +960,13 @@ def check():
                 **data,
                 "lane": {
                     **lane,
-                    **call("resolve", {**base, "ticket_mode": "sol-sol"})["overlay"],
+                    **sol_plan,
                 },
                 "checkpoint": sol_checkpoint,
                 "checkpoint_path": str(sol_path),
             },
         )
-        assert sol["request"]["model"] == "gpt-5.6-sol"
+        assert sol["request"]["model"] == sol_plan["execution_target"]["model"]
         assert sol["request"]["thinking"] == "high"
         pending = call(
             "prepare",
