@@ -115,7 +115,7 @@ coordinator 必须核对内容、范围与确认有效性；Unknown、任务 com
 terminal/user completion signal 只负责唤醒。读取所属壳的 monitoring 合同与
 `execution-worktree-integration.md`，按 output mode 验证持久交付：仅 commit 进入 cherry-pick；
 artifact/checks/verdict 验证成功写 `consumed`。完成 cleanup 后自动重算 ready frontier。
-Testing 或 review 失败时保留现场，报告精确失败，不进入后续 gate。
+Testing 或 review 失败时保留现场与精确失败，进入验收失败修复；原验收通过后再进入后续 gate。
 
 通过 testing/review 后读取 `test-decision-and-rebase.md`，执行测试选择、rebase 与授权收尾。
 无 remote authority 时以可恢复的本地 Integration 坐标交回，不宣称远程完成。
@@ -140,17 +140,19 @@ WORKER_STOPPED 通过后仍须按 `continuation.py` 固定顺序恢复：registr
 Git/checkpoint → 用户覆盖 → applicable gate（绑定当前 checkpoint 版本）→ persist/readback → send。接续请求、工具接受、新轮、
 实际 model/effort 和 terminal/fan-in 各自留证；Unknown、冲突或重入不增加请求，也不提前推进业务 gate。
 
-## Acceptance Circuit（ADR-0012）
+## 验收失败修复（ADR-0012）
 
-验收层失败（checks/verdict/prereq check 不过）的失败回路，与 transport 层 dispatch circuit-break
-分层：前者数「诊断 → 修 → 同证据复验」轮次，后者数派发失败，计数互不影响，都不许用新
-Run/Task 绕过。诊断用 `toc-thinking-processes.md` 的 Abductive ECE（先写 kill probe）。
+验收层失败（checks/verdict/prereq check 不过）由核心链路负责诊断、修复与复验；transport 层
+dispatch circuit-break 只数派发失败，验收失败不占用其计数。诊断用 `toc-thinking-processes.md`
+的 Abductive ECE（先写 kill probe）。
 
 1. 每轮先产出诊断 artifact，归因一类：实现 / 环境 / 判据 / 前置（ADR-0011 prereq check）。
    无诊断 artifact 不得发起下一轮，不原地重跑。
 2. 复验使用与首次失败同一套机器证据，不换更宽松的判据。
-3. 三轮不过即停，三轮诊断 bundle 一起交 coordinator：实现问题回实现；判据错改判据；
-   证据指向上游前提才动图（ADR-0011 supersede / ADR-0013 补票）；coordinator 裁不了才上浮用户。
+3. 实现问题由 implementation owner 持续修复，直到原验收通过；不设修复轮次上限，
+   不因历史失败次数暂停。环境或判据问题交对应 owner 修复；证据指向上游前提才动图
+   （ADR-0011 supersede / ADR-0013 补票）。
+4. 只有当前授权内无法解除的权限、外部依赖或用户决策阻塞才上浮用户，附失败证据与恢复条件。
 
 ## Supersede（ADR-0011）
 
@@ -164,7 +166,7 @@ tracker 写 `Superseded by: #x` 链接（与 `Blocked by` 同约定层），必�
 tickets gate 之外唯一的运行中增票/改依赖通道，触发条件穷尽：
 
 - ADR-0011 prereq check 失败；
-- ADR-0012 acceptance circuit 三轮耗尽且诊断指向上游；
+- ADR-0012 验收修复诊断证明当前 spec 的上游前提缺失或错误；
 - spec 禁止项命中。
 
 补票仍经 to-tickets owner 创建，标 P0，body 引用触发证据坐标；依赖重连只发生在受影响子图内。

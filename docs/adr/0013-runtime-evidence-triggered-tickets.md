@@ -4,6 +4,8 @@
 **Date:** 2026-09-28
 **Decider:** User (Dimon)
 
+> 2026-10-09 随 ADR-0012 修订：验收补票由上游前提的诊断证据触发，不以失败轮次为前置。
+
 ## Context
 
 现行 tickets gate 要求拆票全量完成且用户逐批批准后才 dispatch（gate-state-machine 的
@@ -20,8 +22,8 @@ orchestrator 在 dispatch/execute/collect 阶段无权新增 implementation tick
 ## Decision
 
 1. **触发条件（穷尽）。** 只有三类机器证据可触发运行中补票：ADR-0011 prereq check
-   失败、ADR-0012 acceptance circuit 三轮耗尽且诊断指向上游、spec 禁止项命中。无证据
-   的「顺手补一张」不许走本通道。
+   失败、ADR-0012 验收修复诊断证明当前 spec 的上游前提缺失或错误、spec 禁止项命中。
+   无证据的「顺手补一张」不许走本通道。
 2. **通道形态。** 补票仍经 to-tickets owner 创建（不绕过既有 owner 结构），标 P0，
    body 必须引用触发证据坐标；依赖重连只许发生在受影响子图内，不许借机调整无关边。
 3. **确认降级为批量追认。** 本通道的票用户确认从「逐票事前批准」降为「下一次
