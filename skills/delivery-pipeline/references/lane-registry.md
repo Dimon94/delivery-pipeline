@@ -3,6 +3,83 @@
 每个 dispatched work item 用 tracker checkpoint保存可恢复坐标；聊天摘要与 pane label不是 registry。
 Canonical 本文件只定义共享 base schema 与 transport markers；特殊 transport overlay 与其所有者共置。
 
+## 轻量交接
+
+派发、终态回传、恢复只用下面三个固定模板。每项写一句或证据指针；输入有多个来源时逐条列出。
+壳只追加 transport 坐标，其他信息放入现有 registry/工件并引用，不扩展交接字段。
+无事项写“无”，无法确认写 Unknown。机器字段与指纹保持原合同，旧 lane 沿原证据恢复。
+
+- 仅展开当前分支，输入省略不适用项；Unknown、失败、权限与未决事项显式保留。
+- 指针包含绝对路径或 tracker URL、读取条件、定点或字段；派发前验证可读，动作前读目标。
+  可变来源保留快照/时间；缺失、过期或冲突按原 gate 阻塞。唯一约束和本次差异写在范围/验收，
+  Spec、ticket、repo instructions、冻结计划和日志正文留在各自来源。
+- helper 校验完整输入，模型只接收判定与必要字段。大 JSON/日志用 python/jq/rg 定位读取；
+  写入 readback 仍逐项比较 expected/actual。错误原文、命令、来源与历史失败留在原工件。
+- 文件级哈希、component/checkpoint SHA256 和 ignored 指纹清单只留在机器工件；
+  base/head/交付 commit 的 Git SHA 保留为版本坐标。发布/完整性验收需要的 digest 沿原合同。
+
+### 派发模板
+
+```text
+Lane ID：<stable-id>
+Work item：<URL 或 gate 坐标；含本项目标>
+执行：<role/output_mode；当前 phase；请求 agent/model/effort>
+Owner：<name>; <absolute SKILL.md path>; <runtime invocation label>
+Registry：<absolute path；当前 lane>
+现场：<Execution Worktree；branch；base commit>
+范围：<允许路径、权限与本次边界>
+验收：<验收来源/章节；本次补充或差异>
+输入：<必要来源及读取条件；实施前置证据/冻结计划/审查参数按当前分支引用>
+Worker 合同：<absolute 所属壳 packet path，读取 Worker 执行节>
+```
+
+### 终态模板
+
+```text
+FINAL_REPORT_BEGIN
+Lane ID：<原 lane_id>
+状态：completed | blocked
+交付：<commit SHA 或 artifact/checks/verdict 坐标>
+证据：<完整命令/结果、模型实际 readback、独立审查结论的来源/字段>
+现场：<HEAD；实际 dirty 状态；dirty/untracked 精确路径>
+确认：<本次用户决定与来源、未决事项；无新增确认写无>
+阻断：<原因与失败工件；无阻断写无>
+下一步：<coordinator 应执行的动作>
+FINAL_REPORT_END
+```
+
+`completed` 是 outcome，不是 registry state。通知与最终回复使用同一短报告，coordinator 从
+原证据验收，指针不构成 PASS。Review 的证据须可恢复 scope、owner、fixed point、HEAD、bundle
+目录和七文件校验结果；clean commit 的 touched paths 从 `git diff <base> <commit> --name-status`
+恢复。省去未变化的坐标和配置；额外工件仍给精确路径。
+
+### 恢复模板
+
+```text
+Map/Spec：<URL 或输入坐标>
+Registry：<absolute path；当前 lane_id>
+Gate/状态：<最早未完成 gate；持久状态>
+现场：<原 runtime/session；worktree/branch；base/HEAD；active writer 判定>
+证据：<最近通过/失败/确认/检查点的来源；待核验项写 Unknown>
+下一步：<一个动作；所需权限或决定>
+```
+
+### Worker 共同行为
+
+1. 从 registry 核对本 lane 的 role/output_mode、冻结计划和隔离坐标；用 Git 核验实际 cwd、
+   common dir、branch、base/HEAD 与 dirty state。cwd 必须为属于 Source repo 的 Execution Worktree，
+   排除 Source/Integration，HEAD 包含 base。只处理本项，tracker fan-in、Integration、
+   下一 gate 和远程动作由 coordinator 处理。
+2. 完整读取 Owner SKILL.md 与当前分支必要引用，记录 frontmatter name + resolved path。
+   `commit` 写入前按 `gate-state-machine.md` 核对 to-spec、to-tickets、ticket-sizing 与用户确认；
+   缺失则 blocked。请求值和实际模型 readback 分开留证，缺证据写 Unknown。
+3. 按 output_mode 交付：commit 保存本项候选；artifact 给产物坐标；checks 给完整命令/结果；
+   verdict 给原始独立结论。后三者保持 clean。需要 Review 时先读
+   `code-review-evidence-preflight.md`，使用输入中的 scope/fixed point 与同一不可变 bundle；
+   审查权限、阶段停止与终态通知按所属壳合同执行。
+
+完成标准：固定模板可定位当前分支的输入与原始验收证据，权限、失败和恢复坐标完整。
+
 ## Base Schema
 
 以 `<!-- wayfinder-lane-registry:v2 -->` 开头：

@@ -168,7 +168,7 @@ def check_core_contract() -> None:
             "Integration",
             "delivery-pipeline-herdr",
             "references/code-review-evidence-preflight.md",
-            "Review fixed point: <Execution Base commit>",
+            "fixed point（commit 为 Execution base，verdict 为 map registry base）",
             "Review Evidence Bundle",
             "不静默回落",
         ),
@@ -562,21 +562,13 @@ def check_packets() -> None:
     require(
         packet,
         (
-            "Role：<planning | design | frontend | backend | testing | review>",
-            "Output mode：<commit | artifact | checks | verdict>",
-            "Agent：<pi | codex | claude>",
-            "Model：<configured native model id>",
-            "Effort：<configured native effort>",
-            "Owner skill name",
-            "Owner skill SKILL.md：<absolute resolved path>",
-            "Owner skill invocation label",
-            "Review fixed point：<execution-base-commit | map-registry-base-commit | none>",
-            "Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>",
-            "先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path",
+            "lane-registry.md",
+            "version 5",
+            "implementation mode/source 与阶段计划",
+            "双轴 review 由 worker",
+            "implementation fixed point",
+            "whole-change 为 map registry base",
             "preflight bundle 完成前不派生 Standards/Spec 子审查",
-            "Review evidence：<fixed-point/head/bundle-readback | none>",
-            "FINAL_REPORT_BEGIN",
-            "FINAL_REPORT_END",
         ),
     )
     require(
@@ -601,14 +593,73 @@ def check_packets() -> None:
     )
 
 
+def check_handoff_contract() -> None:
+    registry = CORE / "references" / "lane-registry.md"
+    content = registry.read_text()
+    for title, expected in (
+        ("派发模板", ("Lane ID", "Work item", "执行", "Owner", "Registry", "现场", "范围", "验收", "输入", "Worker 合同")),
+        ("终态模板", ("Lane ID", "状态", "交付", "证据", "现场", "确认", "阻断", "下一步")),
+        ("恢复模板", ("Map/Spec", "Registry", "Gate/状态", "现场", "证据", "下一步")),
+    ):
+        section = re.search(r"^### " + title + r"\n(.*?)(?=^### |^## |\Z)", content, re.M | re.S)
+        block = re.search(r"```text\n(.*?)\n```", section[1], re.S) if section else None
+        actual = tuple(line.split("：", 1)[0] for line in block[1].splitlines() if "：" in line) if block else ()
+        if actual != expected:
+            record(f"fixed handoff fields mismatch: {title}: {actual}")
+    require(registry, (
+        "FINAL_REPORT_BEGIN", "FINAL_REPORT_END", "Owner SKILL.md",
+        "frontmatter name + resolved path", "to-spec、to-tickets、ticket-sizing 与用户确认",
+        "请求值和实际模型 readback 分开留证", "三个固定模板", "不扩展交接字段",
+        "cwd 必须为属于 Source repo 的 Execution Worktree", "HEAD 包含 base",
+        "Review 的证据须可恢复 scope、owner、fixed point、HEAD、bundle",
+    ))
+    require(
+        CORE / "references" / "lane-registry.md",
+        (
+            "## 轻量交接",
+            "机器字段与指纹保持原合同",
+            "Unknown、失败、权限与未决事项显式保留",
+            "指针包含绝对路径或 tracker URL、读取条件、定点或字段",
+            "helper 校验完整输入，模型只接收判定与必要字段",
+            "写入 readback 仍逐项比较 expected/actual",
+            "文件级哈希、component/checkpoint SHA256 和 ignored 指纹清单只留在机器工件",
+            "base/head/交付 commit 的 Git SHA 保留为版本坐标",
+        ),
+    )
+    for shell, filename, expected in (
+        (HERDR, "HERDR_ROLE_DISPATCH_PACKET.md", ("Coordinator pane", "Worker pane")),
+        (APP, "APP_ROLE_DISPATCH_PACKET.md", ("Coordinator task", "Coordinator host", "Terminal 回传合同")),
+        (ORCA, "ORCA_ROLE_DISPATCH_PACKET.md", ("Orca runtime/host/terminal", "Coordinator terminal")),
+    ):
+        path = shell / "assets" / filename
+        require(
+            path,
+            (
+                "仅展开当前分支",
+                "省略不适用项",
+                "轻量交接",
+                "## Worker 执行",
+                "../../delivery-pipeline/references/lane-registry.md",
+            ),
+        )
+        blocks = re.findall(r"```text\n(.*?)\n```", path.read_text(), re.S)
+        actual = tuple(line.split("：", 1)[0] for line in blocks[0].splitlines()) if len(blocks) == 1 else ()
+        if actual != expected:
+            record(f"fixed transport fields mismatch: {filename}: {actual}")
+        check_skill_links(path)
+    require(
+        CORE / "references" / "code-review-evidence-preflight.md",
+        ("先读 fixed-point.txt、changed-paths.txt、worktree-state.txt", "按当前轴读取"),
+    )
+
+
 def check_lane_wakeup() -> None:
     packet = HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
     require(
         packet,
         (
-            "Lane ID：",
             "LANE_DONE <lane_id>",
-            "同一完整 marker 只唤醒一次",
+            "公共终态模板",
         ),
     )
     lifecycle = HERDR / "references" / "pane-lifecycle-rules.md"
@@ -664,7 +715,8 @@ def check_app_shell() -> None:
     require(
         APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
         (
-            "Review scope：<implementation | whole-change | none>",
+            "review_scope: implementation",
+            "review_scope: whole-change",
             "不写 completed",
             "不能把 blocked 当作无需处理",
         ),
@@ -696,8 +748,8 @@ def check_app_shell() -> None:
     require(
         APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
         (
-            "执行 helper：",
-            "absolute resolved",
+            "config_path",
+            "../scripts/prewalk.py",
             "每次调用的执行核验",
         ),
     )
@@ -769,12 +821,9 @@ def check_app_shell() -> None:
     require(
         APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
         (
-            "Development mode：",
-            "Mode source：",
-            "Execution phase：",
-            "Checkpoint：",
-            "Lane registry：",
-            "Checkpoint format/hash：",
+            "公共模板的 Registry",
+            "phase_plan/phase_targets/execution_target",
+            "恢复沿原冻结计划和 checkpoint",
             "PREWALK_READY 后停止",
         ),
     )
@@ -794,9 +843,8 @@ def check_app_shell() -> None:
     require(
         APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
         (
-            "开发模式合同：",
-            "Requested model：",
-            "Requested effort：",
+            "传当前请求值",
+            "../references/development-mode.md",
             "review_scope: implementation",
             "review_scope: whole-change",
         ),
@@ -895,17 +943,11 @@ def check_app_shell() -> None:
             "最终回复前",
             "completed 与 blocked",
             "FINAL_REPORT 已回传",
-            "Role：<planning | design | frontend | backend | testing | review>",
-            "Output mode：<commit | artifact | checks | verdict>",
-            "Owner skill name",
-            "Owner skill SKILL.md：<absolute resolved path>",
-            "Review fixed point：<execution-base-commit | map-registry-base-commit | none>",
-            "Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>",
+            "公共终态模板",
+            "../../delivery-pipeline/references/lane-registry.md",
+            "owner 三字段",
+            "preflight 绝对路径",
             "preflight bundle 完成前不派生 Standards/Spec 子审查",
-            "Review evidence：<fixed-point/head/bundle-readback | none>",
-            "报告 outcome，不是 registry state",
-            "FINAL_REPORT_BEGIN",
-            "FINAL_REPORT_END",
         ),
     )
     for path in (APP / "SKILL.md", APP / "references" / "codex-app-dispatch.md"):
@@ -1006,13 +1048,9 @@ def check_orca_contract() -> None:
         packet,
         (
             "# Orca 本地 worker dispatch packet",
-            "Mode：<staged|direct|none>",
-            "Owner：<name>; <absolute SKILL.md path>; <runtime invocation label>",
-            "worker-start",
-            "FIFO settlement",
+            "冻结配置与完整 overlay 留在原 registry",
+            "../references/orca-dispatch.md",
             "worker_done",
-            "worker-release",
-            "worktree rm",
         ),
     )
     reference = ORCA / "references" / "orca-dispatch.md"
@@ -1638,7 +1676,7 @@ def check_checkpoint_contract() -> None:
     require(
         HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
         (
-            "Checkpoint：<repo-external absolute checkpoint path | none>",
+            "Prewalk Checkpoint / Continuation Overlay",
             "PREWALK_READY <lane_id> <checkpoint_path>",
             "WORKER_STOPPED <lane_id> <checkpoint_path>",
             "不发送接续请求",
@@ -1816,6 +1854,7 @@ def main() -> None:
     check_runtime_neutrality()
     check_model_contract()
     check_packets()
+    check_handoff_contract()
     check_lane_wakeup()
     check_app_shell()
     check_orca_contract()

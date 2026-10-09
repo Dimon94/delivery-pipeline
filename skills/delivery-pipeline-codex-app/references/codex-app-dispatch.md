@@ -67,7 +67,9 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 
 1. implementation 新 lane 先回读 canonical gate-state-machine 的实施前置证据，再按开发模式合同
    调用 `scripts/prewalk.py resolve`；非零退出不得创建任务，把通过后的模式与
-   完整返回 overlay（含配置路径、阶段计划和来源）与当前阶段请求写入 packet/overlay；recover 只恢复、不新建。解析并持久化 Source owner projectId 与 coordinator task/host；project/path 未变化时复用。
+   完整返回 overlay（含配置路径、阶段计划和来源）持久化到既有 registry 或工件，packet 传其
+   绝对路径/字段与当前阶段请求；recover 只恢复、不新建。解析并持久化 Source owner projectId
+   与 coordinator task/host；project/path 未变化时复用。
    packet 填入真实 coordinator 坐标、repo 外 lane registry 绝对路径与本文件绝对路径作为 Terminal 回传合同；新建与接管 packet
    都保留该入口。完成回传属于本 lane 的调度授权。
    非 implementation artifact 根据工作内容调用 `prewalk.py model`（planning/research/prototype），保存 target/config_path 与模型请求；恢复沿原记录。
@@ -107,7 +109,9 @@ wait_threads（每次最多 60000 ms，沿用 cursor），读到停止后重新�
 
 worker 对 completed 与 blocked 都执行，所有 output mode 共用：
 
-1. 完成持久交付证据，组装完整 `FINAL_REPORT_BEGIN` / `FINAL_REPORT_END` 报告。
+1. 完成持久交付证据，按 canonical `../../delivery-pipeline/references/lane-registry.md` §轻量交接
+   组装完整 `FINAL_REPORT_BEGIN` / `FINAL_REPORT_END` 报告；完整指当前分支必需信息与可读证据，
+   不复制 packet、检查日志或已知坐标。
 2. 最终回复前调用 `send_message_to_thread`，`threadId` / `hostId` 使用 packet 的 Coordinator
    task / Coordinator host，`prompt` 携带完整报告并要求 coordinator 按 registry 验证后执行
    role-aware fan-in。子任务的最终回复本身不构成已发送通知的证据。

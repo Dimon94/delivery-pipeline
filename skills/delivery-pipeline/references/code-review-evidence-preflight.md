@@ -45,13 +45,15 @@ Git diff、历史与 staged state 由父 worker 先物化为文件，再把绝�
 无需再次执行 Git。bundle 只作上下文 transport，不写入 repo；生成后不再改写，并保留到
 coordinator 完成对应 lane fan-in。
 
-完成标准：七个文件一次生成、绝对路径已写入每个子 reviewer prompt，生成后 fixed point、HEAD 与
+完成标准：七个文件一次生成、bundle 绝对目录已写入每个子 reviewer prompt，生成后 fixed point、HEAD 与
 worktree snapshot 未变化。
 
 ## 子审查 Fan-out
 
-- 每个子 reviewer prompt 先列出七个 bundle 绝对路径，再列 standards/spec source；先读 bundle，
-  后读当前源码补充上下文。
+- 每个子 reviewer prompt 传 bundle 绝对目录、fixed point/HEAD、当前轴和 standards/spec source；
+  七个文件名沿上表恢复。先读 fixed-point.txt、changed-paths.txt、worktree-state.txt，再按当前轴读取
+  diff.patch 的相关 hunk、commits.txt、fixed-point-added-paths.txt 与 commands.txt；完整审查范围
+  保持不变，各轴仍须覆盖其职责内的全部变更，再读源码补充上下文。
 - 子任务显式标记 review-only；交付物是 findings/verdict，不承担 Git 命令、测试命令或 staged-state 自证。
 - runtime 若自动附加 child acceptance/evidence gate，父 worker 选择其 review-only/no-acceptance
   形式；`noStagedFiles` 等 shell-derived 字段以 `worktree-state.txt` 为父级证据，不向子 reviewer 索取。
@@ -59,6 +61,6 @@ worktree snapshot 未变化。
   supervisor 往返。
 
 父 worker 在 final report 的 `Review evidence` 中记录调用分支、fixed point、HEAD、bundle 目录与
-七个文件的 readback。
+七文件存在/可读/必需项非空的校验结果；完整 readback 留在原证据，不逐文件复述路径与正文。
 
 完成标准：Standards 与 Spec 子审查从同一 bundle 开始，均可只用 read/search 完成，并返回可聚合结果。

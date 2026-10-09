@@ -20,14 +20,7 @@ Coordinator只解析 realpath、frontmatter name 与 direct reference paths，�
 
 ## Dispatch Contract
 
-每个 packet 包含：
-
-```text
-Owner skill name：<name>
-Owner skill SKILL.md：<absolute resolved path>
-Owner skill invocation label：<runtime-specific label; metadata only>
-```
-
-label 按 worker runtime 记录：Codex 常用 `$name`，Claude 常用 plugin/skill label，pi 常用
-`/skill:name`；label 不参与文件查找。Worker 在动作前完整读取 passed SKILL.md及所需 direct
+按 `lane-registry.md` 的固定派发模板填写 Owner 三字段：name、绝对 SKILL.md path、
+runtime-specific invocation label。label 只作元数据，不参与文件查找。
+Worker 在动作前完整读取 passed SKILL.md及所需 direct
 references并回报 frontmatter name + resolved path。不匹配时 lane blocked；不得触发 fallback workflow。

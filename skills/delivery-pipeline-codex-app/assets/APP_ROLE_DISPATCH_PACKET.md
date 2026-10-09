@@ -1,102 +1,32 @@
 # Codex App Role Dispatch Packet
 
-Codex App 壳的所有 delegated roles 共用本 packet。App 拥有执行配置，请求值与运行证据分开；
-role 与 output mode 仍由 canonical gate contract 决定。
+派发与 FINAL_REPORT 使用 `../../delivery-pipeline/references/lane-registry.md` §轻量交接的
+固定模板。仅展开当前分支，输入省略不适用项；本壳只追加三个回传字段：
 
 ```text
-Coordinator task：
-Coordinator host：<coordinator hostId>
-Lane registry：<absolute existing repo-external lane registry path>
-Terminal 回传合同：<absolute delivery-pipeline-codex-app/references/codex-app-dispatch.md，读取 Terminal 回传节>
-Role：<planning | design | frontend | backend | testing | review>
-Output mode：<commit | artifact | checks | verdict>
-Agent：codex-app
-Development mode：<配置 modes 中的 key | none；恢复沿持久值>
-模型配置：<absolute resolved config/models.json；每次 helper 传 config_path>
-Frozen phase plan/targets：<resolve overlay 的 phase_plan/phase_targets/execution_target，非实施填 none>
-Review models：<subagent review_models + source/scope | none>
-Mode source：<ticket 用户选择 | map 持久选择 | default | existing lane>
-Execution phase：<starting | switching | executing | none>
-Checkpoint：<absolute checkpoint artifact path | none>
-Checkpoint format/hash：<canonical-v1 + checkpoint_sha256 | legacy-app-v0 + Unknown，仅恢复>
-Requested model：<development-mode work selection>
-Requested effort：<development-mode work selection>
-开发模式合同：<absolute resolved delivery-pipeline-codex-app/references/development-mode.md>
-执行 helper：<absolute resolved delivery-pipeline-codex-app/scripts/prewalk.py>
-Source owner projectId：
-Owner skill name：<owner frontmatter name>
-Owner skill SKILL.md：<absolute resolved path>
-Owner skill invocation label：<runtime-specific label; metadata only>
-Work item：<id/title/url | gate coordinate>
-Parent spec：<id/url | none>
-实施前置合同：<absolute canonical gate-state-machine.md>
-实施前置证据：<absolute repo-external gate evidence JSON path | none for non-commit>
-Wayfinder map：<id/url | none>
-Repo：
-Integration worktree：<integration-worktree-path | none for initial map creation>
-Integration branch：<feature/map-<map-issue> | none for initial map creation>
-Execution worktree：<由 Codex App 创建，startup 后 readback 实际路径>
-Execution branch：codex/issue-<ticket-number-or-coordinate>
-Base commit：<integration-branch-HEAD-at-creation>
-Review fixed point：<execution-base-commit | map-registry-base-commit | none>
-Review scope：<implementation | whole-change | none>
-Review evidence preflight：<absolute delivery-pipeline/references/code-review-evidence-preflight.md | none>
-允许编辑：
--
-禁止范围：
--
-
-执行：
-- `commit` 写入前读取实施前置合同与证据，核对本票的 to-spec、to-tickets、ticket-sizing 产物和用户确认；缺失则 blocked 回传。
-- 你是当前 task/worktree 的实现或验收 worker；Coordinator task 是回传目标，不是你的身份。
-  直接执行本票，不承担 coordinator 的任务监控。
-- 先按模型配置绝对路径查询 helper，再读取开发模式合同：完成“每次调用的执行核验”。内部辅助、second opinion 和
-  Review 前调用执行 helper 的 subagent 入口；子代理权限不超过本 Work item。
-- 确认 cwd 位于 App-managed Execution Worktree，common dir 属于 Repo，HEAD 包含 Base commit。
-- 先完整读取 Owner skill SKILL.md，回报 frontmatter name 与 resolved path，再按其 contract
-  处理 Work item。invocation label 只是元数据。
-- 正式 Review 由 coordinator 调用 resolved code-review owner；packet 只传 owner triple、
-  Review scope 与 Review evidence preflight，将配置解析的 Review models 作为模型参数传给 owner。`commit` mode 传
-  `review_scope: implementation`，fixed point 等于 Execution Base commit；`verdict` mode 传
-  `review_scope: whole-change`，fixed point 等于 map registry base commit。preflight bundle 完成前不派生
-  Standards/Spec 子审查。
-- 只处理本 Work item，不领取 sibling/dependent item，也不进入下一 gate。
-- `commit`：先按 Development mode 与 Execution phase 执行开发模式合同；starting 时通过
-  `scripts/prewalk.py checkpoint` 生成 canonical checkpoint，PREWALK_READY 后停止，只有 executing
-  继续。实现变更并创建单一候选 local commit；不启动、取消或替代正式 Review。缺 coordinator
-  直接回读的独立两轴 verdict 时按 blocked 回传“实现已保存、审查待完成”，不写 completed。
-- `artifact`：完成 tracker/artifact坐标；无必要 repo 变更时保持 clean。
-- `checks`：运行 whole-change checks并报告精确命令/结果；保持 clean。
-- `verdict`：只按 coordinator 传入的 resolved owner 与 whole-change scope 运行 review owner；
-  按 Review evidence preflight 一次物化证据，所有只读子 reviewer 共用 bundle并报告原始
-  verdict/findings；保持 clean，最终放行仍由 coordinator 直接回读。
-- 保留 tracker fan-in、cherry-pick、Integration 与 remote actions 给 coordinator。
-- 正式 reviewer 由 coordinator 管理；worker 不得取消审查或用自评替代独立 verdict。
-  不得调用 interrupt_agent 中断正式 reviewer、催促其直接通过、删减审查范围规避 finding，
-  或以测试通过/“已修复”自行豁免验收。需要取消或重派时向 coordinator 说明原因；等待不是通过。
-  可以保存候选 commit，但独立审查缺失、中断或待复核时回传 blocked，注明“实现已保存、审查待完成”，
-  不写 completed；由 coordinator 按 Terminal 合同接收并补审，不能把 blocked 当作无需处理。
-- completed 与 blocked 都在最终回复前执行 Terminal 回传合同，将下面的完整报告发送给
-  Coordinator task；工具成功后才声明 FINAL_REPORT 已回传，失败则报告回传受阻与恢复坐标。
-
-FINAL_REPORT_BEGIN
-Work item：
-Role：
-Output mode：
-状态：completed | blocked
-Task/worktree/branch：
-Commit：<hash subject | none>
-Model evidence：<host model/effort readback + source/time | Unknown>
-用户确认：<decision + confirmation source + unresolved questions | none>
-Artifacts/checks/verdict：
-Review evidence：<fixed-point/head/bundle-readback | none>
-Review owner/scope：<resolved owner triple + review_scope | none>
-Dirty state：
-Touched files：
-Blocker：
-FINAL_REPORT_END
+Coordinator task：<原生 threadId>
+Coordinator host：<原生 hostId>
+Terminal 回传合同：<absolute codex-app-dispatch.md，读取 Terminal 回传节>
 ```
 
-`状态` 是报告 outcome，不是 registry state。coordinator 核验 `completed` 后按
-`terminal → integrated/consumed → closed|close_pending` 推进，禁止持久化 `state: completed`。
-`blocked` 仍是 coordinator 必须处理的恢复状态，不能把 blocked 当作无需处理。
+coordinator 先持久化完整 App overlay；公共模板的 Registry 指向本 lane，输入引用其
+config_path、phase_plan/phase_targets/execution_target 和实施前置证据，传当前请求值。
+Review 分支的输入包含 scope、fixed point、owner 三字段、两轴配置与 preflight 绝对路径。
+初始 Execution Worktree 由 App 创建，startup 后补真实坐标，写入前完成隔离核验。
+
+## Worker 执行
+
+1. 执行公共模板的 Worker 共同行为。每次调用的执行核验按
+   `../references/development-mode.md`；用 registry 的 config_path 调用 `../scripts/prewalk.py`，
+   内部辅助、second opinion 与 Review 参数走 subagent 入口，权限不超过本项。
+2. starting 按开发模式合同生成 checkpoint，PREWALK_READY 后停止，保留现场；executing 才
+   继续实现。恢复沿原冻结计划和 checkpoint，不重新选择配置。
+3. 正式 Review 由 coordinator 调用 resolved code-review owner：commit 用
+   `review_scope: implementation`、Execution base；verdict 用 `review_scope: whole-change`、
+   map registry base。执行 `../../delivery-pipeline/references/code-review-evidence-preflight.md`，
+   preflight bundle 完成前不派生 Standards/Spec 子审查。
+4. 实施 worker 只保存候选和修复证据；正式 reviewer 的取消、重派和放行归 coordinator。
+   缺失、中断或待复核的独立 verdict 回传 blocked“实现已保存、审查待完成”，不写 completed；
+   coordinator 按 Terminal 合同接手，不能把 blocked 当作无需处理。
+5. completed 与 blocked 都在最终回复前按 Terminal 回传合同发送公共终态模板。
+   工具成功后才声明 FINAL_REPORT 已回传；失败或 Unknown 保留报告、目标与恢复坐标。
