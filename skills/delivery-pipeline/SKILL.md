@@ -11,6 +11,7 @@ disable-model-invocation: true
 `delivery-pipeline-codex-app`、`delivery-pipeline-orca`）。依赖方向只允许壳 → 本链路。
 直接调用本 skill 时按目标 transport 改用对应壳：CLI/Herdr 交付调用 `delivery-pipeline-herdr`。
 当前调用会话就是 coordinator；调度归所属壳，产物质量归各 owner，Integration 不变量归本链路。
+worker 从所属壳 packet 的执行/加载章节进入，完整读 owner 与当前分支输入。
 
 ## 调度职责
 
@@ -36,7 +37,8 @@ disable-model-invocation: true
    输入可以是松散想法、Wayfinder map、spec 或 implementation ticket；裸编号须能从当前
    repo tracker 唯一解析。加载 `references/gate-state-machine.md`，按持久证据选择最早未完成 gate。
 2. **恢复坐标。** 新 coordinator 或恢复 map 时加载 `references/fresh-session-boundaries.md`
-   与 `references/lane-registry.md`，先枚举 active writers。恢复既有 lane 不依赖当前 worker 配置；
+   的 Coordinator Recovery 与 Recovery、`references/lane-registry.md` 的恢复模板与 Recovery，
+   先读原 map registry 的短记录并枚举 active writers。恢复既有 lane 不依赖当前 worker 配置；
    按 stored runtime 与持久证据继续 fan-in/cleanup。创建或恢复 worktree 时加载
    `references/integration-worktree-management.md`；复用已登记的 Map Integration Worktree/branch，
    不存在时才创建。所有 Git 操作显式指向隔离 worktree，不切换 coordinator 当前目录的 branch。
@@ -64,6 +66,8 @@ Terminal fan-in 以 `references/execution-worktree-integration.md` §Cleanup 六
 transport 不算完成。
 
 同一 coordinator task 不因下一 lane 重读未变化的合同。
+gate/批级交接时按 `references/fresh-session-boundaries.md` §Coordinator Recovery 更新既有 map
+registry 的六项短记录；压缩后重新核验必需章节，历史已读标记不能替代当前输入。
 
 `starting` implementation lane 还必须先完成首处有意义修改与最小检查，再由
 `scripts/checkpoint.py` 将 Execution Worktree 的 Git/dirty/index snapshot 写入 repo 外 checkpoint；

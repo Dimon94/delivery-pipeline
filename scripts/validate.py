@@ -653,6 +653,62 @@ def check_handoff_contract() -> None:
     )
 
 
+def read_contract_section(path: Path, title: str) -> str:
+    """按标题读取完整章节，子节随父节加载；供合同检查与容量回放共用。"""
+    text = path.read_text()
+    headings = list(re.finditer(r"^(#{1,6}) (.+)$", text, re.M))
+    matches = [h for h in headings if h[2] == title]
+    if len(matches) != 1:
+        raise ValueError(f"章节不唯一或缺失: {path.name} §{title}")
+    start = matches[0]
+    end = next((h.start() for h in headings if h.start() > start.start() and len(h[1]) <= len(start[1])), len(text))
+    return text[start.start():end]
+
+
+def check_context_loading() -> None:
+    packet = APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md"
+    try:
+        table = read_contract_section(packet, "按分支加载")
+        branches = {}
+        for line in table.splitlines():
+            cells = line.split("|")
+            if len(cells) != 4:
+                continue
+            key = cells[1].strip()
+            refs = re.findall(r"`([^`]+\.md)` §([^；|\n]+)", cells[2])
+            if refs:
+                branches[key] = "\n".join(read_contract_section((packet.parent / p).resolve(), h.strip()) for p, h in refs)
+        if set(branches) != {"全部", "commit", "staged", "planning", "内部委派", "正式 Review"}:
+            raise ValueError("App 加载表缺少角色或阶段")
+        direct = branches["全部"] + branches["commit"] + read_contract_section(packet, "Worker 执行")
+        for required in ("Owner SKILL.md", "HEAD 包含 base", "to-spec", "ticket-sizing", "send_message_to_thread", "Unknown", "phase: executing"):
+            if required not in direct:
+                raise ValueError(f"direct 缺少必要合同: {required}")
+        for unrelated in ("### Prewalk 接续", "legacy_checkpoint: true", "## 创建", "## 恢复、Archive 与 Cleanup"):
+            if unrelated in direct:
+                raise ValueError(f"direct 多加载分支: {unrelated}")
+        for required in ("PREWALK_READY", "同一个 threadId/hostId", "不能盲目重发", "canonical build/write/read"):
+            if required not in branches["staged"]:
+                raise ValueError(f"staged 缺少恢复合同: {required}")
+        for required in ("Standards/Spec", "Review Evidence Bundle", "blocking_findings", "不验证宿主来源真实性"):
+            if required not in branches["正式 Review"]:
+                raise ValueError(f"Review 缺少审查证据: {required}")
+        if "外层 task terminal 后" in branches["正式 Review"]:
+            raise ValueError("Review 多加载 coordinator output-mode fan-in")
+        if "用户确认" not in branches["planning"] or "宿主更低上限仍优先" not in branches["内部委派"]:
+            raise ValueError("planning/内部委派的必要边界缺失")
+    except (OSError, ValueError) as error:
+        record(str(error))
+    require(CORE / "references" / "fresh-session-boundaries.md", (
+        "## Coordinator Recovery", "全部 active writers", "独有业务约束", "原始审查", "不能代替",
+        "原 task/session", "2k", "新事实", "先持久化", "原证据", "逐项 readback",
+    ))
+    if "worker 完整读这些当前入口" in (APP / "references" / "development-mode.md").read_text():
+        record("App worker 仍被要求整读所有调度入口")
+    for shell, name in ((HERDR, "HERDR_ROLE_DISPATCH_PACKET.md"), (ORCA, "ORCA_ROLE_DISPATCH_PACKET.md")):
+        require(shell / "assets" / name, ("Worker 共同行为与终态模板", "完整 owner", "实施前置检查"))
+
+
 def check_lane_wakeup() -> None:
     packet = HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
     require(
@@ -1855,6 +1911,7 @@ def main() -> None:
     check_model_contract()
     check_packets()
     check_handoff_contract()
+    check_context_loading()
     check_lane_wakeup()
     check_app_shell()
     check_orca_contract()

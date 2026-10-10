@@ -1,9 +1,12 @@
 # Codex App 开发模式
 
-coordinator 启动时与每个 worker 执行前读取。本文件拥有 App 工作分工、内部辅助和技术咨询；
+本文件拥有 App 工作分工、内部辅助和技术咨询。coordinator 按本次操作读取；worker 从
+`../assets/APP_ROLE_DISPATCH_PACKET.md` §按分支加载选择章节，包含所选章节的子节。
 配置格式遵循 canonical `../../delivery-pipeline/references/model-config-schema.md` 的 version 5
 schema（本仓的 `config/models.json` 是它的 App 实例，所有任务类型绑定 `agent: codex-app`）；
 正式双轴审查仍由 resolved `code-review` owner 执行。
+
+## Review 职责
 
 正式 Review 的生命周期与放行由 coordinator 管理，优先于下文及旧 owner 的 worker 内嵌
 Review 步骤。implementation worker 可保存候选 commit，缺最终结论则 blocked 回传并注明待审；
@@ -63,29 +66,40 @@ model、effort 与来源，调用 `scripts/prewalk.py coordinator` 记录观测�
 
 ## 每次调用的执行核验
 
+### 执行入口
+
 1. coordinator 解析本 skill realpath；packet 使用该 realpath 下的开发模式、helper 与
-   transport 绝对路径。worker 完整读这些当前入口，不能读 Execution Worktree 内旧版本或
+   transport 绝对路径。worker 按 packet 的分支表读取当前章节，完整读取 resolved Owner SKILL.md；
+   不能读 Execution Worktree 内旧版本或
    `.scratch` 实验报告来代替合同。缺失文件阻塞新分派，已有 lane 保留恢复坐标。
 2. 核对 Source 和 Execution Worktree 的有效配置与宿主工具 schema。宿主项目配置未加载或来自其他
    repo 时，仍通过本 skill 模型配置及下方 subagent 入口显式传模型/effort并执行会话并发检查；不声称项目
    `.codex/config.toml` 会随软链传播，不改其他 repo 或全局配置来隐藏差异。宿主禁用 agents
    或拒绝所需模型时报告对应能力受阻；不把替代模型当作合同通过。
-3. 内部辅助、咨询、Testing、Integration 和正式 Review 前，父会话先读当前宿主子代理列表，调用
+完成标准：当前入口、冻结计划、模型请求与回传坐标齐备；需要内部委派时再完成下节核验。
+
+### 内部委派
+
+内部辅助、咨询、Testing、Integration 和正式 Review 前，父会话先读当前宿主子代理列表，调用
    `scripts/prewalk.py subagent`：输入 work（assistance / second-opinion / review / ticket-sizing / testing / integration）、
    active_count（当前父会话未结束的子代理数）、source（观测来源与时间）、read_only
    （父任务是否只读）。同一父会话串行做核验与分派，宿主更低上限仍优先。
    wait 表示等待并回读；spawn 才可使用返回参数，prompt 必须带父范围、允许编辑路径和
    read_only 约束。只读由宿主权限和任务边界共同执行，返回字段本身不是权限沙箱。
-4. review 预留 owner 要求的两轴容量，invoke-owner 后完整读取 resolved code-review；把
+并发 3 是每个父会话的分派上限，不是全 map 上限；脚本不提供跨父会话锁，也不代替宿主
+配置回读。运行证据缺失仍记 Unknown，历史探针通过不代替本次启动核验。
+完成标准：模型请求、父权限与并发观测齐备，才按返回动作委派。
+
+### 正式 Review
+
+先完成内部委派核验，review 预留 owner 要求的两轴容量，invoke-owner 后完整读取 resolved code-review；把
    implementation 或 whole-change scope 与 Review Evidence Bundle 传入，同时传入配置解析的 review_models、
    config_path 与 helper 绝对路径；每个 reviewer 的内部辅助也走该配置的 subagent 入口。
    owner 负责执行审查。owner 或 scope 不匹配时明确报告，不能使用安装目录里的旧副本。
    地图 artifact 的用户确认与 Terminal 回传沿下方
    和 transport 合同核验；任务 completed 不能代替用户确认。
 
-完成标准：当前入口、模型请求、父权限、并发观测、owner与回传坐标齐备后才调用工具。
-并发 3 是每个父会话的分派上限，不是全 map 上限；脚本不提供跨父会话锁，也不代替宿主
-配置回读。运行证据缺失仍记 Unknown，历史探针通过不代替本次启动核验。
+完成标准：owner、scope、原始证据与回传坐标齐备，按独立 Review 放行合同验收。
 
 ## 票级开发模式
 
@@ -178,10 +192,8 @@ canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 t
    不算 Review；coordinator 按 resolved code-review owner 与 review_scope 启动正式 Standards/Spec
    独立审查。blocking finding 修复后按 owner 复核；App 壳不增加或替换模型 gate。
 
-kind: direct 创建时使用 resolve 返回的 direct 请求，phase: executing，checkpoint: none，
-跳过起步与换模型步骤；其测试、Review 与集成标准相同。Prewalk phase 是 App overlay 的
-子阶段，不新增 canonical gate 或第二个 lane owner。执行者需要重判方案时使用下方
-second opinion；模式升级由用户明确选择，沿同一 task 保存变更原因和现场证据。
+Prewalk phase 是 App overlay 的子阶段，不新增 canonical gate 或第二个 lane owner。
+执行者需要重判方案时读取 §Second opinion；模式升级由用户明确选择，沿同一 task 保存变更原因和现场证据。
 
 当前证据边界：历史探针验证过轮次间同任务接续、直接执行和 coordinator 回传唤醒。
 本次配置驱动分派尚未做 App 端到端模型 readback；helper 检查不证明宿主模型实际切换。

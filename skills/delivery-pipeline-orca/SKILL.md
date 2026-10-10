@@ -69,6 +69,8 @@ payload schema 与一致性检查见
 
 ## Recovery 与 staged continuation
 
+coordinator 按 `../delivery-pipeline/references/fresh-session-boundaries.md` §Coordinator Recovery
+维护原 map registry 的短记录；恢复先读该记录，再执行本节原生核验。
 先读 `references/orca-recovery.md`，再运行 `scripts/recovery.py check <payload>`。
 重试同 Task 串行，FIFO；只有正面 failed/stopped 才考虑同 Task retry；Unknown 保留现场。
 staged 复用 canonical continuation/checkpoint helper（见「复用边界」）。

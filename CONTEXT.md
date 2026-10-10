@@ -49,6 +49,12 @@ One bounded tracker snapshot, the minimum dependency-ordered write layers, and o
 **Dispatch Handoff**
 Dispatch Handoff is batch-scoped. It is the control-plane terminal after every item in the selected maximal safe batch is accounted for: each successful user-visible lane has verified coordinates and isolation, accepted its packet, entered `working`, and persisted the runtime state; each failed setup is durably isolated as `setup_blocked`. The coordinator reports the batch coordinates and ends its turn only after the whole batch, then resumes on a user completion signal, a real terminal event, or an explicit monitor request; repository file overlap is an Integration risk handled by isolated Execution Worktrees and serial fan-in, not a dispatch blocker.
 
+**Coordinator Recovery**
+
+一个 map 的最新恢复记录，连接当前 gate、全部 active writers、未决约束与原始证据。
+它是可重建的导航快照，不是新的状态权威或授权；恢复后的动作仍由 tracker、Git、lane registry
+与运行证据判定。它与宿主自动生成的聊天压缩摘要不同。
+
 **Lane Terminal Signal**
 The worker-emitted single-line `LANE_DONE <lane_id>` marker required by the dispatch packet at both completed and blocked terminal states. The coordinator-side lane watcher (`skills/delivery-pipeline-herdr/scripts/lane-watch.sh`) polls the worker pane output for the marker and prompts the Coordinator Pane; pane-vanished and two-hour timeout also wake the coordinator. `herdr agent wait --until done` is not a valid terminal signal: CLI agents settle back to idle without emitting a `done` event, so a `done` listener blocks forever. HITL lanes still wake on the user completion signal; the watcher is only a terminal backstop.
 

@@ -14,6 +14,9 @@ fixed point、两轴配置与 preflight 路径。用户在 pane 换模时记录�
 
 ## Worker 执行
 
+从本节进入；公共合同只读 lane-registry 的 Worker 共同行为与终态模板，完整 owner 另读。
+commit 加载 gate-state-machine 的实施前置检查；staged、Review 和设备分支在适用时再读。
+
 1. 执行公共模板的 Worker 共同行为；只在已核验的 Execution Worktree 写入。
    JS commit 提交前运行 `pnpm install --frozen-lockfile`；assets 变更加对应 app 的 asset-inventory。
 2. commit/verdict 的双轴 review 由 worker 按 resolved code-review owner 执行；调用前读取

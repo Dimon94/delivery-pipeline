@@ -57,21 +57,26 @@ FINAL_REPORT_END
 
 ```text
 Map/Spec：<URL 或输入坐标>
-Registry：<absolute path；当前 lane_id>
+Registry：<map registry 与全部 active lane 的可枚举坐标>
 Gate/状态：<最早未完成 gate；持久状态>
-现场：<原 runtime/session；worktree/branch；base/HEAD；active writer 判定>
-证据：<最近通过/失败/确认/检查点的来源；待核验项写 Unknown>
+现场：<原 coordinator runtime/session；Integration worktree/branch/base/HEAD/dirty；全部 active writers 及观测来源/时间>
+证据：<当前有效的用户决定、独有业务约束、通过/失败/审查/检查点来源；阻断与待核验项写 Unknown>
 下一步：<一个动作；所需权限或决定>
 ```
 
+本记录的持久化、更新与恢复核验由 `fresh-session-boundaries.md` §Coordinator Recovery 定义。
+
 ### Worker 共同行为
+
+入口从所属壳 packet 的 Worker 执行/加载章节开始；按当前 role/output_mode/phase 读取必需章节，
+包含其子节。coordinator 的建图、分派与收尾入口不作为 worker 的默认输入。
 
 1. 从 registry 核对本 lane 的 role/output_mode、冻结计划和隔离坐标；用 Git 核验实际 cwd、
    common dir、branch、base/HEAD 与 dirty state。cwd 必须为属于 Source repo 的 Execution Worktree，
    排除 Source/Integration，HEAD 包含 base。只处理本项，tracker fan-in、Integration、
    下一 gate 和远程动作由 coordinator 处理。
-2. 完整读取 Owner SKILL.md 与当前分支必要引用，记录 frontmatter name + resolved path。
-   `commit` 写入前按 `gate-state-machine.md` 核对 to-spec、to-tickets、ticket-sizing 与用户确认；
+2. 完整读取 Owner SKILL.md 与当前分支必要引用，记录 frontmatter name + resolved path 与 runtime invocation label。
+   `commit` 写入前按 `gate-state-machine.md` §实施前置检查核对 to-spec、to-tickets、ticket-sizing 与用户确认；
    缺失则 blocked。请求值和实际模型 readback 分开留证，缺证据写 Unknown。
 3. 按 output_mode 交付：commit 保存本项候选；artifact 给产物坐标；checks 给完整命令/结果；
    verdict 给原始独立结论。后三者保持 clean。需要 Review 时先读

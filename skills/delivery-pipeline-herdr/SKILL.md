@@ -32,6 +32,14 @@ Claude CLI 使用。先完整读取 canonical 主干；本文件覆盖 dispatch 
 完成标准：每个 delegated gate 都有明确 Herdr transport 与 output mode；Herdr pane、Execution
 Worktree、registry 与 Integration branch 一致，其余完成标准沿用 canonical 主干。
 
+## Coordinator 恢复
+
+沿 canonical `../delivery-pipeline/references/fresh-session-boundaries.md` §Coordinator Recovery
+在原 map registry 保存六项短记录；恢复再核验真实 pane、Git、active writers 与当前 gate 证据。
+Pi coordinator 需要可控压缩且本机版本支持 `/compact [instructions]` 时，先完成该记录的
+持久 readback，再将记录正文、未决约束和原证据指针交给 `/compact`；压缩后核对摘要。
+自动压缩和其他宿主的能力以实际接口为准；本壳不安装全局压缩 hook，staged worker 仍沿原会话接续。
+
 ## References
 
 - `references/dispatch-runtime-routing.md`：新 lane 选择顺序、Herdr session/workspace 解析、

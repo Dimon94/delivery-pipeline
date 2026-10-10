@@ -151,6 +151,8 @@ blocking_findings（未解决阻断项数）、review_scope、base_commit、head
 需取消时由 coordinator 记录原因并恢复或重派；已有合适 reviewer 可复用，无需重复建任务。
 whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接回读核验，无有效结果则补审。
 
+### Output-mode 验收
+
 外层 task terminal 后 `read_thread` 一次；内部 Testing、Review、Integration 则读取 subagent
 回传与持久证据。随后按 output mode 验证：
 

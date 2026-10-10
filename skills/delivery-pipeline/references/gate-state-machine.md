@@ -129,7 +129,8 @@ Testing 或 review 失败时保留现场与精确失败，进入验收失败修�
 输入 issue；map/spec 坐标；当前 gate；completed/running/blocked/ready 数量；下一动作
 ```
 
-摘要只用于报告；新会话从 tracker relationships、lane registries、Git 和 PR/MR 重建。
+摘要只用于报告；在同次持久化中按 `fresh-session-boundaries.md` §Coordinator Recovery 更新六项
+恢复记录。新会话从 tracker relationships、lane registries、Git 和 PR/MR 重建。
 
 implementation 的 `starting` / `switching` / `executing` 是 lane 内阶段，不新增业务 gate。
 `PREWALK_READY` 只表示 repo 外 checkpoint 已写入并等待 coordinator 持久读回；它不能代替停止、
