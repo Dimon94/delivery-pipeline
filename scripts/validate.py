@@ -703,6 +703,7 @@ def check_context_loading() -> None:
         "## Coordinator Recovery", "全部 active writers", "独有业务约束", "原始审查", "不能代替",
         "原 task/session", "2k", "新事实", "先持久化", "原证据", "逐项 readback",
     ))
+    require(CORE / "references" / "gate-state-machine.md", ("lane_graph.py --registry-root", "--format text"))
     if "worker 完整读这些当前入口" in (APP / "references" / "development-mode.md").read_text():
         record("App worker 仍被要求整读所有调度入口")
     for shell, name in ((HERDR, "HERDR_ROLE_DISPATCH_PACKET.md"), (ORCA, "ORCA_ROLE_DISPATCH_PACKET.md")):
@@ -1772,6 +1773,8 @@ def check_lane_graph() -> None:
             "lane-graph.html",
             "superseded",
             "渲染是派生物，不是状态",
+            "--format",
+            "--map",
         ),
     )
     if not is_executable(script):

@@ -10,9 +10,12 @@
 输出单一自包含 HTML（无外部资源，file:// 可开，收藏一个 URL 即可；重新生成覆盖同一路径即刷新）。
 渲染是派生物，不是状态。
 
+`--format text` 把同一份数据打印为逐 lane 一行的 frontier 表（stdout，不写 HTML），
+供 coordinator 恢复或重算 frontier 时代替逐票 tracker readback；`--map` 只保留指定地图。
+
 用法：
   lane_graph.py --registry-root DIR [DIR...] [--out PATH] [--no-tracker] [--edges-json FILE]
-                [--gitlab-config PATH]
+                [--gitlab-config PATH] [--format html|text] [--map KEY ...]
   lane_graph.py --self-test
 """
 from __future__ import annotations
@@ -46,7 +49,7 @@ GROUP_LABEL = {"done": "已完成", "active": "进行中", "review": "待 fan-in
 
 GH_ISSUE_RE = re.compile(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)")
 GITLAB_ISSUE_RE = re.compile(r"https?://([^/]+)/(.+?)/-/(?:issues|work_items)/(\d+)")
-MAP_BRANCH_RE = re.compile(r"feature/map-(\d+)")
+MAP_BRANCH_RE = re.compile(r"(?:^|/)map-(\d+)(?:\b|-)")
 BLOCKED_BY_RE = re.compile(r"Blocked by:\s*((?:#?\d+[\s,]*)+)")
 KEY_RE = re.compile(r"^([a-z_]+):\s*(.*)$")
 
@@ -160,17 +163,17 @@ def fetch_github_issues(repo: str) -> dict[str, dict] | None:
 
 
 def fetch_gitlab_issues(key: str, detail_numbers: set[str] | None = None,
-                        cfg: dict | None = None) -> dict[str, dict] | None:
+                        cfg: dict | None = None, lean: bool = False) -> dict[str, dict] | None:
     """key = host:group/proj。凭证链：环境变量 GITLAB_TOKEN/GITLAB_PRIVATE_TOKEN →
     私有 config 声明的 keychain 服务记录 → glab → 匿名 API；host 直连 + config 声明的
     本地隧道双路由（CA 由 config ca_file 指定，默认 -k）。失败 None（Unknown）。
-    评论按 lane 实际出现的 issue 逐个补拉，不拉全仓。"""
+    评论按 lane 实际出现的 issue 逐个补拉，不拉全仓。lean 只逐个拉 detail_numbers 本体、不拉评论。"""
     cfg = cfg or {}
     host, path = key.split(":", 1)
     enc = urllib.parse.quote(path, safe="")
     base = f"projects/{enc}/issues"
     endpoint = f"{base}?state=all&per_page=100"
-    out = _gitlab_list(endpoint, host, cfg)
+    out = [] if lean else _gitlab_list(endpoint, host, cfg)
     if out is None:
         return None
     info = {str(i["iid"]): _info(str(i["iid"]), i.get("title"), i.get("description"),
@@ -185,7 +188,7 @@ def fetch_gitlab_issues(key: str, detail_numbers: set[str] | None = None,
             info[num] = _info(str(one["iid"]), one.get("title"), one.get("description"),
                               one.get("state"), one.get("labels"), one.get("web_url"),
                               one.get("updated_at"))
-    for num in detail_numbers or set():
+    for num in set() if lean else detail_numbers or set():
         if num not in info:
             continue
         notes = _gitlab_list(f"{base}/{num}/notes", host, cfg)
@@ -286,10 +289,10 @@ def _gitlab_list(endpoint: str, host: str, cfg: dict, single: bool = False):
 
 
 def fetch_issues(kind: str, key: str, detail_numbers: set[str],
-                 cfg: dict | None = None) -> dict[str, dict] | None:
+                 cfg: dict | None = None, lean: bool = False) -> dict[str, dict] | None:
     if kind == "gh":
         return fetch_github_issues(key)
-    return fetch_gitlab_issues(key, detail_numbers, cfg)
+    return fetch_gitlab_issues(key, detail_numbers, cfg, lean)
 
 
 def normalize_override(raw: dict) -> dict[str, dict[str, dict]]:
@@ -334,7 +337,9 @@ def topo_layers(lanes: list[dict], edges: dict[str, list[str]]) -> tuple[list[li
 
 
 def build(roots: list[Path], edges_override: dict[str, dict[str, dict]] | None,
-          no_tracker: bool, cfg: dict | None = None) -> dict:
+          no_tracker: bool, cfg: dict | None = None, only_maps: list[str] | None = None) -> dict:
+    """only_maps 时只为这些地图的 lane 逐个拉 issue 本体（lean），不拉全仓列表与评论。"""
+    want = {k.lstrip("#") for k in only_maps or []}
     projects: dict[str, dict] = {}
     files = {p for root in roots for g in REGISTRY_GLOBS for p in root.rglob(g)}
     rows = [row for p in sorted(files) for row in parse_registry_file(p)]
@@ -396,17 +401,21 @@ def build(roots: list[Path], edges_override: dict[str, dict[str, dict]] | None,
     lane_issues: dict[str, set[str]] = defaultdict(set)
     for proj in projects.values():
         for mp in proj["maps"].values():
+            if want and str(mp["key"]) not in want:
+                continue
             for lane in mp["lanes"]:
                 if lane.get("issue"):
                     lane_issues[proj["name"]].add(lane["issue"])
     issues_by_project: dict[str, dict[str, dict] | None] = {}
     for key, kind in seen.items():
-        if edges_override and key in edges_override:
+        if want and key not in lane_issues:
+            issues_by_project[key] = None
+        elif edges_override and key in edges_override:
             issues_by_project[key] = edges_override[key]
         elif no_tracker:
             issues_by_project[key] = None
         else:
-            issues_by_project[key] = fetch_issues(kind, key, lane_issues.get(key, set()), cfg)
+            issues_by_project[key] = fetch_issues(kind, key, lane_issues.get(key, set()), cfg, bool(want))
 
     out_projects = []
     for proj in sorted(projects.values(), key=lambda p: p["name"]):
@@ -671,6 +680,33 @@ def render_html(data: dict) -> str:
     return HTML_TEMPLATE.replace("__DATA__", payload)
 
 
+def filter_maps(data: dict, keys: list[str] | None) -> dict:
+    if not keys:
+        return data
+    want = {k.lstrip("#") for k in keys}
+    projects = [{**p, "maps": [m for m in p["maps"] if str(m["key"]) in want]} for p in data["projects"]]
+    return {**data, "projects": [p for p in projects if p["maps"]]}
+
+
+def render_text(data: dict) -> str:
+    """逐 lane 一行：issue、lane、role、registry state、tracker state、deps、标题。"""
+    out = [f"# lane frontier {data['generated_at']}"]
+    for proj in data["projects"]:
+        for mp in proj["maps"]:
+            counts = " ".join(f"{k}={v}" for k, v in sorted(mp["counts"].items()))
+            out.append(f"\n## {proj['name']} {mp['title']} state={mp.get('state') or 'Unknown'} {counts}")
+            edges = mp.get("edges")
+            latest = {l["lane_id"]: l for l in mp["lanes"]}  # 同一 lane 的追加块取文件内最后一个
+            for lane in sorted(latest.values(), key=lambda l: (l["group"] == "done", str(l.get("issue")))):
+                info = lane.get("info") or {}
+                deps = "Unknown" if edges is None else ",".join(edges.get(lane.get("issue"), [])) or "-"
+                title = (info.get("title") or "").replace("\n", " ")[:60]
+                out.append("\t".join(str(x) for x in (
+                    lane.get("issue") or "-", lane["lane_id"], lane["role"], lane["state"],
+                    info.get("state") or "Unknown", f"deps={deps}", lane.get("updated_at") or "-", title)))
+    return "\n".join(out) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--registry-root", nargs="+", help="一个或多个 registry 根目录（递归扫描）")
@@ -679,6 +715,8 @@ def main() -> int:
     ap.add_argument("--edges-json", help="测试/离线注入 {repo: {issue: [dep...]}}")
     ap.add_argument("--gitlab-config",
                     help="私有 GitLab 访问配置（JSON，不入库，默认 ~/.config/lane-graph/gitlab.json）")
+    ap.add_argument("--format", choices=("html", "text"), default="html")
+    ap.add_argument("--map", nargs="+", help="只保留这些地图 key，如 1725")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -695,7 +733,10 @@ def main() -> int:
         except Exception:
             cfg = {}
     edges_override = normalize_override(json.loads(Path(args.edges_json).read_text())) if args.edges_json else None
-    data = build(roots, edges_override, args.no_tracker, cfg)
+    data = filter_maps(build(roots, edges_override, args.no_tracker, cfg, args.map), args.map)
+    if args.format == "text":
+        sys.stdout.write(render_text(data))
+        return 0
     out = Path(args.out) if args.out else roots[0] / "lane-graph.html"
     tmp = out.with_suffix(".tmp")
     tmp.write_text(render_html(data), encoding="utf-8")
@@ -744,7 +785,7 @@ updated_at: 2026-09-28T10:00:00
         (root / "proj-b" / "lane-registry.md").write_text(tpl.format(
             work_item="https://gitlab.example.local/team/product/studio/-/work_items/669",
             role="backend", lane_id="map-631-issue-669", state="closed",
-            branch="feature/map-631"), encoding="utf-8")
+            branch="chore/map-631-compat"), encoding="utf-8")
         # 本地 .scratch work_item（无 tracker，正文/Blocked by 直接读文件）
         issues_dir = root / "proj-c" / ".scratch" / "mymap" / "issues"
         issues_dir.mkdir(parents=True)
@@ -773,7 +814,7 @@ updated_at: 2026-09-28T10:00:00
         by_name = {p["name"]: p for p in data["projects"]}
         proj = by_name["acme/app"]
         glab = by_name["gitlab.example.local:team/product/studio"]
-        assert glab["maps"][0]["lanes"][0]["issue"] == "669"
+        assert glab["maps"][0]["key"] == "631" and glab["maps"][0]["lanes"][0]["issue"] == "669"
         lc = by_name["proj-c"]
         assert lc["maps"][0]["key"] == "mymap"
         bar = next(l for l in lc["maps"][0]["lanes"] if l["issue"] == "02-bar")
@@ -788,6 +829,9 @@ updated_at: 2026-09-28T10:00:00
         assert mp["counts"] == {"done": 1, "active": 1, "void": 1}, mp["counts"]
         lane103 = next(l for l in mp["lanes"] if l["issue"] == "103")
         assert lane103["info"]["body"] == "正文-kill-probe", lane103
+        text = render_text(filter_maps(data, ["100"]))
+        assert "map #100" in text and "mymap" not in text, text
+        assert "103\tlane-103\tbackend\tsuperseded\tclosed\tdeps=102" in text, text
         html = render_html(data)
         for needle in ("acme/app", "map #100", '"issue": "101"', "superseded", "lane-102",
                        "正文-kill-probe", "恢复实现", "复审确认通过", "Bar 任务", "mymap"):
@@ -819,7 +863,7 @@ updated_at: 2026-09-28T10:00:00
         out = root / "lane-graph.html"
         out.write_text(html, encoding="utf-8")
         assert "Blocked by" in html
-    print("lane_graph self-test: pass (parse, group, topo layers, counts, issue info, html)")
+    print("lane_graph self-test: pass (parse, group, topo layers, counts, issue info, text, html)")
     return 0
 
 

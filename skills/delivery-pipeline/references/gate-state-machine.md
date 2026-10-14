@@ -5,6 +5,10 @@ tracker relationships、Git、lane registry 和 PR/MR 是状态，聊天不是�
 
 ## 从任意 Issue 重建
 
+先运行 `python3 scripts/lane_graph.py --registry-root <lanes 目录> --format text --map <map 编号>`
+取得该 map 全部 lane 的 issue/state/tracker 状态/依赖一览（每 lane 一行），只对其中未闭合或状态
+矛盾的 issue 做以下逐票读取。
+
 1. 读取给定 issue 的 labels、body、comments、native parent/children、blocking links。
 2. 识别 artifact：
    - Wayfinder map：含 map label 或 Destination / Decisions-so-far / Not yet specified。
