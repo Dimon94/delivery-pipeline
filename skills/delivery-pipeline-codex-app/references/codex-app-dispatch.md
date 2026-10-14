@@ -74,13 +74,14 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
    都保留该入口。完成回传属于本 lane 的调度授权。
    非 implementation artifact 根据工作内容调用 `prewalk.py model`（planning/research/prototype），保存 target/config_path 与模型请求；恢复沿原记录。
 2. 按 `task-coordinate-title.md` 生成 role-aware title；同批 lanes 并行调用 `create_thread`，显式
-   设置 title、project、Integration branch `startingState` 及 requested_model → `model`、
+   设置 title、project、Integration branch `startingState`（独立票模式为刚 fetch 的远端默认分支 SHA，
+   见 canonical `integration-worktree-management.md` §独立票模式）及 requested_model → `model`、
    requested_effort → `thinking`。先确认用户已明确要求新任务；仅维护 skill 不满足该条件。
    首次无 map 的临时 base 按开发模式合同处理。App 拥有 Execution Worktree。
 3. 只返回 `clientThreadId` 时用 `list_threads` 按 title/project/lane 找 ready task；不能把
    clientThreadId 当 threadId。
 4. 聚合 readback：task 属于 owner project、worktree common dir属于 Source repo、base commit
-   等于 dispatch 时 Integration HEAD、cwd 不在 Source/Integration Worktree。首次建图则核对
+   等于 dispatch 时 Integration HEAD（独立票模式为登记的远端默认分支 SHA）、cwd 不在 Source/Integration Worktree。首次建图则核对
    临时 registry 的 Source base，map/Integration 为 none；仅消费 artifact，后续沿正式 Integration。
    模型请求被拒绝时写 setup_blocked 并保留错误；不静默换模型。模型 readback 按开发模式合同
    独立记录，Unknown 不冒充请求已落实。
@@ -138,7 +139,7 @@ coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，�
 缺独立结论时按 blocked 回传“实现已保存、审查待完成”。修复回原 worker，完成后冻结新 head
 并复核；旧 head 的 PASS 不覆盖新代码。
 
-cherry-pick、integrated、关闭实施票之前，coordinator 必须直接读取 reviewer 宿主记录，调用
+cherry-pick、integrated、关闭实施票（独立票模式为记 `release_stage: candidate` 与申请合并）之前，coordinator 必须直接读取 reviewer 宿主记录，调用
 `scripts/prewalk.py review`。输入 worktree、worker_id、base_commit、head_commit、resolved owner
 triple、review_scope 与 reviews；reviews 必须包含 standards/spec 两轴，每轴包含 reviewer_id、
 source（宿主任务/轮次与时间）、status、verdict、verdict_text（原始最终结论）、
@@ -177,7 +178,8 @@ whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接
 - active lane 用 project_id/host_id/thread_id恢复；task 消失但持久 evidence存在时沿 evidence fan-in。
 - integrated/consumed 不是 Codex task 的停靠状态：在同一次 fan-in 内立即调用
   `set_thread_archived({threadId, hostId, archived: true})`，再用 `list_archived_threads` readback。
-  成功写 closed；archive失败写 close_pending并保留坐标。关闭 tracker 或派发下一 ready lane 前，
+  成功写 closed；archive失败写 close_pending并保留坐标。独立票模式下 archive 只释放 transport，
+  lane 停在 `terminal`，关票与删树等 `release_stage: deployed` 读回。关闭 tracker 或派发下一 ready lane 前，
   必须已完成该 archive readback，或已持久化 close_pending 与失败证据；不得静默留下已验收的
   live task。
 - commit lane focused checks失败时 task保持未归档；artifact/checks/verdict lane证据失败同样保留 task。

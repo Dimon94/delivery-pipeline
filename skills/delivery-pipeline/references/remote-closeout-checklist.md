@@ -1,6 +1,7 @@
 # Remote Closeout Checklist
 
-仅获得 remote publication authority 后加载；本地 Integration 不依赖本文件。
+仅获得 remote publication authority 后加载；本地 Integration 不依赖本文件。独立票模式不使用本清单，
+逐票收口见 `integration-worktree-management.md` §独立票模式。
 
 - [ ] execution graph 为空；所有 configured lanes terminal/integrated/closed。
 - [ ] testing role whole-change checks通过，证据可读回。

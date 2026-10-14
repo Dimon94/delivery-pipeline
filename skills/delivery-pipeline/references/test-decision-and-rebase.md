@@ -1,6 +1,7 @@
 # Test Decision、Rebase 与 Closeout
 
-Execution graph 清空、configured testing/review lanes完成后读取。
+Execution graph 清空、configured testing/review lanes完成后读取。独立票模式不读取本文件，
+见 `integration-worktree-management.md` §独立票模式。
 
 ## Preconditions
 
@@ -40,8 +41,9 @@ requirements与测试证据。解决后重新运行 testing/review所需的最�
 ## Remote Gate
 
 没有 remote publication authority 时停在 clean、已验证的 Integration branch并报告唯一剩余
-动作。获得 authority 后加载 `remote-closeout-checklist.md`，按用户选择 push main 或打开 summary
-PR/MR，等待 CI/CD 与 provider-native review verdict。
+动作。获得 authority 后加载 `remote-closeout-checklist.md`，打开 summary PR/MR；只有目标仓分支合同
+允许直推默认分支、且用户明确选择时才 push main（main 只经 MR 前进的仓禁止）。等待 CI/CD 与
+provider-native review verdict。
 
 ## Cleanup
 

@@ -50,7 +50,10 @@ GROUP_LABEL = {"done": "已完成", "active": "进行中", "review": "待 fan-in
 GH_ISSUE_RE = re.compile(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)")
 GITLAB_ISSUE_RE = re.compile(r"https?://([^/]+)/(.+?)/-/(?:issues|work_items)/(\d+)")
 MAP_BRANCH_RE = re.compile(r"(?:^|/)map-(\d+)(?:\b|-)")
-BLOCKED_BY_RE = re.compile(r"Blocked by:\s*((?:#?\d+[\s,]*)+)")
+# 机器合同：正文唯一一行 `Blocked by: #a, #b` 或 `Blocked by: None`；容忍 `：` 与 `,，、` 空格分隔。
+BLOCKED_BY_LINE_RE = re.compile(r"^[ \t>*-]*(#{1,6}[ \t]*)?Blocked by[ \t]*([:：]?)(.*)$",
+                                re.MULTILINE | re.IGNORECASE)
+BLOCKED_BY_ITEM_RE = re.compile(r"#?([0-9A-Za-z][\w-]*)")
 KEY_RE = re.compile(r"^([a-z_]+):\s*(.*)$")
 
 
@@ -106,7 +109,6 @@ def read_local_issue(path: Path) -> dict | None:
     m = re.search(r"^# (.+)$", text, re.MULTILINE)
     sm = STATUS_RE.search(text)
     lm = LABEL_RE.search(text)
-    bm = BLOCKED_BY_RE.search(text)
     try:
         updated = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
     except OSError:
@@ -114,8 +116,7 @@ def read_local_issue(path: Path) -> dict | None:
     info = _info(path.stem, m.group(1).strip() if m else None, text,
                  sm.group(1).strip() if sm else None,
                  [x.strip() for x in lm.group(1).split(",") if x.strip()] if lm else [],
-                 f"file://{path}", updated)
-    info["deps"] = [d.strip() for d in bm.group(1).split(",") if d.strip()] if bm else []
+                 f"file://{path}", updated, local=True)
     return info
 
 
@@ -133,13 +134,38 @@ def issue_ref(url: str | None) -> tuple[str, str, str] | None:
     return None
 
 
-def _info(number: str, title, body, state, labels, url, updated_at, comments=None) -> dict:
-    m = BLOCKED_BY_RE.search(body or "")
-    return {"title": title, "body": body or "", "state": state,
+def parse_blocked_by(body: str, local: bool = False) -> tuple[list[str] | None, str | None]:
+    """返回 (deps, error)。无字段或 None → ([], None)；多行、标题列表、残缺写法 → (None, 原因)，
+    渲染为 Unknown，由 coordinator 修票面，不静默取首个或返回空。tracker 只认 #数字，本地允许 stem 简写。"""
+    lines = list(BLOCKED_BY_LINE_RE.finditer(body or ""))
+    if not lines:
+        return [], None
+    if len(lines) > 1:
+        return None, f"多处 Blocked by（{len(lines)}）"
+    heading, colon, rest = lines[0].groups()
+    if heading or not colon:
+        return None, "Blocked by 须为单行 `Blocked by: #a, #b`"
+    rest = rest.strip()
+    if rest.lower() in ("none", "无"):
+        return [], None
+    items = [x for x in re.split(r"[\s,，、]+", rest) if x]
+    pat = r"#?[0-9A-Za-z][\w-]*" if local else r"#\d+"
+    if not items or any(not re.fullmatch(pat, x) for x in items):
+        return None, f"Blocked by 无法完整解析：{rest[:60]}"
+    return [BLOCKED_BY_ITEM_RE.fullmatch(x).group(1) for x in items], None
+
+
+def _info(number: str, title, body, state, labels, url, updated_at, comments=None,
+          local: bool = False) -> dict:
+    deps, err = parse_blocked_by(body or "", local)
+    info = {"title": title, "body": body or "", "state": state,
             "labels": labels or [], "url": url,
             "updated_at": (updated_at or "")[:19],
             "comments": comments or [],
-            "deps": re.findall(r"#?(\d+)", m.group(1)) if m else []}
+            "deps": deps}
+    if err:
+        info["deps_error"] = err
+    return info
 
 
 def fetch_github_issues(repo: str) -> dict[str, dict] | None:
@@ -437,12 +463,16 @@ def build(roots: list[Path], edges_override: dict[str, dict[str, dict]] | None,
                     src = info[lane["issue"]]
                     lane["info"] = {k: src.get(k) for k in
                                     ("title", "body", "state", "labels", "url", "updated_at",
-                                     "comments")}
-            deps_map = {k: norm(v["deps"]) for k, v in info.items()} if info else {}
+                                     "comments", "deps_error")}
+            deps_map = ({k: norm(v["deps"]) for k, v in info.items() if v.get("deps") is not None}
+                        if info else {})
+            deps_unknown = {k: v["deps_error"] for k, v in (info or {}).items() if v.get("deps_error")}
             for lane in mp["lanes"]:
                 li = lane.get("info")
                 if lane.get("issue") and li and li.get("deps"):
                     deps_map[lane["issue"]] = norm(li["deps"])
+                if lane.get("issue") and li and li.get("deps_error"):
+                    deps_unknown[lane["issue"]] = li["deps_error"]
             layers, isolated = topo_layers(mp["lanes"], deps_map)
             counts: dict[str, int] = defaultdict(int)
             for l in mp["lanes"]:
@@ -451,6 +481,7 @@ def build(roots: list[Path], edges_override: dict[str, dict[str, dict]] | None,
             maps.append({**mp, "lanes": mp["lanes"], "layers": layers,
                          "isolated": isolated,
                          "counts": dict(counts), "edges": deps_map if has_edges else None,
+                         "deps_unknown": deps_unknown,
                          "edges_unknown": not has_edges})
         out_projects.append({"name": proj["name"], "maps": maps})
     return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -596,7 +627,8 @@ function renderDetail(){
       <span class="meta"> ${esc(l.role)}</span>
       <div class="meta">${esc(l.lane_id)} · ${esc(l.agent||"")}/${esc(l.model||"")} · ${esc(l.runtime||"")}</div>
       ${l.updated_at?`<div class="meta">${esc(l.updated_at)}</div>`:""}
-      ${deps.length?`<div class="deps">⤷ Blocked by ${deps.map(d=>"#"+d).join(" ")}</div>`:""}
+      ${(m.deps_unknown||{})[l.issue]?`<div class="deps">⤷ Blocked by Unknown：${esc(m.deps_unknown[l.issue])}</div>`
+        :deps.length?`<div class="deps">⤷ Blocked by ${deps.map(d=>"#"+d).join(" ")}</div>`:""}
     </div>`;}).join("");
   // 无关联 lane 不进 DAG，收进地图底部默认收起的格子区
   const iso=(m.isolated||[]);
@@ -699,7 +731,11 @@ def render_text(data: dict) -> str:
             latest = {l["lane_id"]: l for l in mp["lanes"]}  # 同一 lane 的追加块取文件内最后一个
             for lane in sorted(latest.values(), key=lambda l: (l["group"] == "done", str(l.get("issue")))):
                 info = lane.get("info") or {}
-                deps = "Unknown" if edges is None else ",".join(edges.get(lane.get("issue"), [])) or "-"
+                err = (mp.get("deps_unknown") or {}).get(lane.get("issue"))
+                if edges is None or err:
+                    deps = f"Unknown({err})" if err else "Unknown"
+                else:
+                    deps = ",".join(edges.get(lane.get("issue"), [])) or "-"
                 title = (info.get("title") or "").replace("\n", " ")[:60]
                 out.append("\t".join(str(x) for x in (
                     lane.get("issue") or "-", lane["lane_id"], lane["role"], lane["state"],
@@ -746,6 +782,18 @@ def main() -> int:
 
 
 def self_test() -> int:
+    # Blocked by 机器合同：单行、容忍中文冒号与分隔符；多行/标题列表/残缺写法 fail-close 为 Unknown
+    def deps_of(body):
+        i = _info("1", "t", body, "opened", [], "u", "")
+        return i["deps"], i.get("deps_error")
+    assert deps_of("Blocked by: #1561、#1562，#1563, #1564") == (["1561", "1562", "1563", "1564"], None)
+    assert deps_of("Blocked by：#2202") == (["2202"], None)
+    assert deps_of("Blocked by: None") == ([], None)
+    assert deps_of("无依赖字段") == ([], None)
+    for bad in ("## Blocked by\n- #2202", "Blocked by: #1\n正文\nBlocked by: #2",
+                "Blocked by: #1684 和 map-1062 首批 MR"):
+        deps, err = deps_of(bad)
+        assert deps is None and err, (bad, deps, err)
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "proj-a").mkdir()
@@ -793,6 +841,9 @@ updated_at: 2026-09-28T10:00:00
             "# Foo 任务\nStatus: closed\nLabel: wayfinder:coding\n", encoding="utf-8")
         (issues_dir / "02-bar.md").write_text(
             "# Bar 任务\nStatus: running\nBlocked by: 01\n", encoding="utf-8")
+        (issues_dir / "04-qux.md").write_text(
+            "# Qux 任务\nStatus: running\nBlocked by: 01, 02\n", encoding="utf-8")
+        assert read_local_issue(issues_dir / "04-qux.md")["deps"] == ["01", "02"]
         (issues_dir / "03-baz.md").write_text(
             "# Baz 任务\nStatus: running\n", encoding="utf-8")
         (root / "proj-c" / "lane-registry.md").write_text(
@@ -803,6 +854,10 @@ updated_at: 2026-09-28T10:00:00
             tpl.format(work_item=str(issues_dir / "03-baz.md"), role="coding",
                        lane_id="mymap-issue-03", state="running", branch="main"),
             encoding="utf-8")
+        assert "Unknown" in render_text({"generated_at": "t", "projects": [{"name": "p", "maps": [{
+            "title": "m", "counts": {}, "edges": {}, "deps_unknown": {"9": "多处 Blocked by（2）"},
+            "lanes": [{"issue": "9", "lane_id": "l9", "role": "backend", "state": "running",
+                       "group": "active"}]}]}]})
         edges = normalize_override({"acme/app": {
             "102": ["101"],
             "103": {"deps": ["102"], "title": "恢复实现", "body": "正文-kill-probe",

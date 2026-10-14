@@ -228,7 +228,8 @@ coordinator 提供调查证据、已确认决定、未知点、owner 与当前 g
 获明确新任务授权后从该 base 的已验证 ref 创建 App worktree，不包含 Source dirty。
 该首次建图分支尚未进入 map 的 Execution Worktree 图，不执行实现或 cherry-pick。
 map 发布后再建立 canonical Map Integration
-Worktree，回填 map/Integration 坐标；后续 lanes 均从 Integration HEAD 创建。
+Worktree，回填 map/Integration 坐标；后续 lanes 均从 Integration HEAD 创建。独立票模式不建 Integration，
+后续 lanes 从远端默认分支创建，见 canonical `integration-worktree-management.md` §独立票模式。
 
 planning worker 按 owner 合同保留用户确认：决定内容、确认来源、未决问题及可读回的 map/spec/artifact
 坐标，并沿 Terminal 回传合同交给 coordinator。需要用户交互时登记 awaiting_human，保留 task；

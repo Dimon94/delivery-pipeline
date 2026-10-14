@@ -19,6 +19,7 @@ checks与 verdict 是执行真相源。
    Review fixed point 等于 lane base commit、bundle 七文件 readback存在；无 commit、review evidence
    或 dirty未说明时阻塞。
 2. 在 Map Integration Worktree按 dependency order执行 `git cherry-pick "$TERMINAL_COMMIT"`。
+   独立票模式不 cherry-pick，按 `integration-worktree-management.md` §独立票模式走本票 MR 与状态分段。
 3. 冲突时先判定能否语义合并（跨 lane 双实现按 spec/合同取舍）；解冲突后、`--continue` 前跑
    `git diff --check` 并 `grep -rn '<<<<<<<' <touched-files>`，确认零冲突标记残留；无法合并才
    `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
@@ -51,6 +52,7 @@ fan-in/cleanup 合同完成等价的 transport release，并同样执行 worktre
 4. readback pane/worktree registration/branch均不存在。
 5. cleanup失败写 `close_pending`并保留坐标；已完成的 Integration/consumption不回滚。
 6. cleanup readback成功写 `closed`，完成 tracker resolution并自动重算 ready frontier。
+   独立票模式下，第 2–6 步与 tracker resolution 推迟到 `release_stage: deployed` 读回之后；之前只释放 transport。
 
 完成标准：output-mode evidence已验证，状态为 integrated/consumed/closed，transport/worktree/branch
 cleanup一致；失败时现场与精确 blocker被保留。

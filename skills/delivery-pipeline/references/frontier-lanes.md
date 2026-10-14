@@ -7,6 +7,10 @@
 先按 `gate-state-machine.md` 的实施前置检查限定当前 gate 的候选集合。
 `ready frontier` 是该集合中所有 open、未被 dependency 阻塞且未被 claim 的 work items。
 每次派发和 terminal event 都从 tracker/Git 重算；ready 计算只使用 tracker state、dependencies 与 claim。
+dependencies 来自票面唯一一行 `Blocked by: #a, #b` 或 `Blocked by: None`；依赖票尚未创建时写
+`Blocked by: Unknown（原因）`，按 Unknown 处理、不进 frontier。`lane_graph.py` 报其他 Unknown 时先修票面。
+open 且无 blocker 不等于 ready：候选、不再推进项由票面标签或状态排除；closed blocker 只有已验收才算解除，
+取消或迁移须改写下游票的 `Blocked by`。
 
 按 tracker priority、dependency order、issue ID 选 maximal safe batch。无前序依赖的 ready items
 同批并发派发；只有 active writer、无法由 Execution Worktree 隔离的 external mutable resource，

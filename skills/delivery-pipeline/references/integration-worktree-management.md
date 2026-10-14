@@ -14,9 +14,27 @@ Source Worktree (main)
        └─ manual Execution Worktree (herdr-claude-pane)
 ```
 
-所有 Execution Worktree 从 dispatch 时 Integration HEAD 开始；Git mutation显式使用
+Map 集成模式下所有 Execution Worktree 从 dispatch 时 Integration HEAD 开始（独立票模式见下节）；Git mutation显式使用
 `-C <target>`，Coordinator Pane的 cwd与 checked-out branch保持不变；每个 work item只有一个
 active writer。
+
+## 独立票模式（Ticket Release Mode）
+
+map 或用户明确要求逐票上线时启用，写入 map registry `delivery_mode: ticket_release` 并 readback；
+未写明时沿用 Map 集成模式。本节是该模式的唯一规则，其他合同只指向这里。
+
+- **建树。** 每票 dispatch 前 `git fetch` 目标仓远端，从远端默认分支（如 `origin/main`）当时 SHA
+  建本票 Execution Worktree/branch；分支命名、MR 目标与禁止直推遵守目标仓分支合同（如 App Studio
+  `docs/agents/git-branching.md`）。不建、不恢复 Map Integration Worktree，旧 Integration HEAD
+  不作 base。lane registry 记该 SHA 为 `base_commit`，它就是本票 Review fixed point。
+- **交付。** 一票一 MR 到默认分支；不 cherry-pick、不开 summary MR。testing/review/CI 的范围是
+  本票 diff。ready 只看本票真实 `Blocked by`；sibling 的 running/blocked 与 milestone 完成率不阻塞。
+- **状态分段记录，不互相替代。** lane registry 另记 `release_stage`（不新增 lane state）：
+  `candidate`（MR 已开、本票检查与独立 review 通过）→ `merged`（用户对当前 head SHA 授权后合入，
+  读回 merge commit）→ `deployed`（按目标仓发布对象读回运行版本与业务验收；无部署对象写 `N/A`
+  及理由）。lane 停在 `terminal` 直到 `deployed`，再走 cleanup → `closed`、关票、删树删分支。
+  worker transport 可以在 `candidate` 后释放。
+- 保留模型配置、checkpoint、单写者与独立 review 合同；不新增 gate 或框架。
 
 ## Map Integration Worktree
 

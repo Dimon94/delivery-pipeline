@@ -41,7 +41,7 @@ worker 从所属壳 packet 的执行/加载章节进入，完整读 owner 与当
    先读原 map registry 的短记录并枚举 active writers。恢复既有 lane 不依赖当前 worker 配置；
    按 stored runtime 与持久证据继续 fan-in/cleanup。创建或恢复 worktree 时加载
    `references/integration-worktree-management.md`；复用已登记的 Map Integration Worktree/branch，
-   不存在时才创建。所有 Git 操作显式指向隔离 worktree，不切换 coordinator 当前目录的 branch。
+   不存在时才创建（独立票模式不建 Integration，见该文件 §独立票模式）。所有 Git 操作显式指向隔离 worktree，不切换 coordinator 当前目录的 branch。
 3. **确认 Coordinator Runtime 与 transport。** 记录 `coordinator_runtime`；新建 lane 前
    由所属壳核验 dispatch transport（CLI 会话经 `delivery-pipeline-herdr`，其余 transport
    各有对应壳）。同一 map 不静默混合新
@@ -113,7 +113,9 @@ commit/review lane 创建 packet 时加载 `references/code-review-evidence-pref
 ## 权限与交付边界
 
 - 每张 work item 一个 lane、一个 owner、一个 Execution Worktree/branch、一个 active writer；
-  worker 只处理本项，coordinator 不亲自实现。Execution Worktree 从当前 Integration HEAD 创建。
+  worker 只处理本项，coordinator 不亲自实现。Execution Worktree 从当前 Integration HEAD 创建；
+  map registry 为 `delivery_mode: ticket_release` 时改从刚 fetch 的远端默认分支创建，逐票 MR、
+  部署读回后才关票，见 `references/integration-worktree-management.md` §独立票模式。
 - owner 使用 name、绝对 SKILL.md path、runtime-specific invocation label 三字段；绝对路径是
   执行真相源，label 只作说明。
 - 本地 worktree、文件修改与 commit 使用 local execution authority；named-map tracker transitions

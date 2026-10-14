@@ -43,6 +43,10 @@ discovery -> spec -> tickets -> (dispatch -> execute -> collect -> integrate)*
   -> testing -> review -> test-decision -> rebase -> remote-review
 ```
 
+独立票模式（`integration-worktree-management.md` §独立票模式）下每票单独走
+`dispatch -> execute -> collect -> MR -> merged -> deployed -> closed`，跳过 `integrate`、
+whole-map `testing/review`、`test-decision`、`rebase` 与 summary MR。
+
 输入已位于后续 gate 时，用持久证据跳过已经完成的前置 gate。例如：
 
 - 给 map：继续未完成 discovery；完成后进入 spec。
@@ -117,7 +121,7 @@ coordinator 必须核对内容、范围与确认有效性；Unknown、任务 com
 ## Role-aware Fan-in / Integration
 
 terminal/user completion signal 只负责唤醒。读取所属壳的 monitoring 合同与
-`execution-worktree-integration.md`，按 output mode 验证持久交付：仅 commit 进入 cherry-pick；
+`execution-worktree-integration.md`，按 output mode 验证持久交付：仅 commit 进入 cherry-pick（独立票模式改走本票 MR）；
 artifact/checks/verdict 验证成功写 `consumed`。完成 cleanup 后自动重算 ready frontier。
 Testing 或 review 失败时保留现场与精确失败，进入验收失败修复；原验收通过后再进入后续 gate。
 

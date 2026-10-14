@@ -17,6 +17,9 @@ The process of collecting completed execution worktree commits into the map inte
 **Merge to Main**
 The final step where a map integration worktree's branch is rebased onto main and pushed. Only happens after all tickets complete, whole-change checks pass, and user confirms test strategy.
 
+**Ticket Release Mode（独立票模式）**
+Opt-in per map (`delivery_mode: ticket_release` in the map registry) for per-ticket release: each Execution Worktree starts from the freshly fetched remote default branch instead of the Map Integration Worktree, each ticket ships through its own MR, and the ticket closes only after `release_stage` reaches `deployed`. No Integration, cherry-pick, or summary MR. Rules live in `skills/delivery-pipeline/references/integration-worktree-management.md` §独立票模式.
+
 **Test Decision Point**
 完成 whole-change testing/review 后确认用户额外测试策略的 gate。已有仍适用的明确选择可复用；
 缺失、范围或风险变化、适用性 Unknown 时才暂停询问。策略与证据要求见
