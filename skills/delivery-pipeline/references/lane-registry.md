@@ -59,12 +59,14 @@ FINAL_REPORT_END
 Map/Spec：<URL 或输入坐标>
 Registry：<map registry 与全部 active lane 的可枚举坐标>
 Gate/状态：<最早未完成 gate；持久状态>
-现场：<原 coordinator runtime/session；Integration worktree/branch/base/HEAD/dirty；全部 active writers 及观测来源/时间>
+现场：<原 coordinator runtime/session；Integration worktree/branch/base/HEAD/dirty；全部 active writers 及观测来源/时间；artifacts_root <本 map 工件绝对目录>>
 证据：<当前有效的用户决定、独有业务约束、通过/失败/审查/检查点来源；阻断与待核验项写 Unknown>
-下一步：<一个动作；所需权限或决定>
+下一步：<一个动作；所需权限或决定>；合同入口 <file>§<section>
 ```
 
 本记录的持久化、更新与恢复核验由 `fresh-session-boundaries.md` §Coordinator Recovery 定义。
+`artifacts_root` 让恢复直接定位本 map 的 review bundle、checks 与 checkpoint，不扫描全局 artifacts 树；
+`合同入口` 是下一步动作所需的唯一 reference 章节。
 
 ### Worker 共同行为
 

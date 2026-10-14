@@ -67,7 +67,7 @@ transport 不算完成。
 
 同一 coordinator task 不因下一 lane 重读未变化的合同。
 gate/批级交接时按 `references/fresh-session-boundaries.md` §Coordinator Recovery 更新既有 map
-registry 的六项短记录；压缩后重新核验必需章节，历史已读标记不能替代当前输入。
+registry 的六项短记录；压缩后只读恢复记录的合同入口所指章节，历史已读标记不能替代当前输入。
 
 `starting` implementation lane 还必须先完成首处有意义修改与最小检查，再由
 `scripts/checkpoint.py` 将 Execution Worktree 的 Git/dirty/index snapshot 写入 repo 外 checkpoint；

@@ -13,6 +13,8 @@ worker role config。恢复只依赖 repo instructions、tracker、Git、latest 
 在既有 map registry 中维护唯一的 `## Coordinator Recovery` 节，正文使用
 `lane-registry.md` §恢复模板的六项字段。当前记录覆盖更新，原决定和失败历史保留在原证据；
 它是导航快照，不能代替 registry、Git、tracker、宿主 readback 或原始审查。
+写入用 `scripts/recovery_record.py set <registry>`（stdin 六项正文）：它覆盖唯一节、把旧恢复段移入
+同目录 `history-<registry>` 并 readback；读取用 `scripts/recovery_record.py show <registry>`，不整读 registry。
 
 ### 保存
 
@@ -29,12 +31,15 @@ worker role config。恢复只依赖 repo instructions、tracker、Git、latest 
 
 ### 恢复
 
-先读本节六项记录，再枚举全部 active writers，核验 Git/宿主现场与当前 gate 原证据。
-按 `gate-state-machine.md` 的从任意 Issue 重建、Gates、Resume State 选择最早未完成 gate，
-需要实施、审查或验收修复时读取对应章节；权限、未决决定与原始审查完整回读后才动作。
+先用 `scripts/recovery_record.py show <registry>` 读本节六项记录，再枚举全部 active writers，
+核验 Git/宿主现场与当前 gate 原证据。记录有效时只读 下一步 所列合同入口，不按 gate 顺序重读全部
+reference；记录缺失或无效时才按 `gate-state-machine.md` 的从任意 Issue 重建、Gates、Resume State
+选择最早未完成 gate。权限、未决决定与原始审查完整回读后才动作。
+实时状态只从恢复记录、registry、Git 与 tracker 读取；memory 检索只用于跨 map 教训，冷启动最多一次、
+limit 3，结果不作为 gate、lane 或 head 的证据。
 记录缺失、陈旧或互相矛盾时沿原 registry/tracker/Git 重建，Unknown 阻断受影响动作；
 已有 writer 的状态未消歧前不 replacement，旧 head 的审查不能用于新 head。
-冷恢复重新读取当前必需合同；“历史上已读”不证明该内容仍在当前上下文。
+压缩后或冷恢复只重读合同入口所指章节；“历史上已读”不证明该内容仍在当前上下文。
 
 ### 宿主压缩边界
 

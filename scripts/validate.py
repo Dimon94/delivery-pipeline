@@ -702,7 +702,11 @@ def check_context_loading() -> None:
     require(CORE / "references" / "fresh-session-boundaries.md", (
         "## Coordinator Recovery", "全部 active writers", "独有业务约束", "原始审查", "不能代替",
         "原 task/session", "2k", "新事实", "先持久化", "原证据", "逐项 readback",
+        "合同入口", "scripts/recovery_record.py show", "scripts/recovery_record.py set",
+        "实时状态只从", "跨 map 教训",
     ))
+    require(CORE / "SKILL.md", ("只读恢复记录的合同入口",))
+    require(CORE / "references" / "lane-registry.md", ("合同入口 <file>§<section>", "artifacts_root"))
     require(CORE / "references" / "gate-state-machine.md", ("lane_graph.py --registry-root", "--format text"))
     if "worker 完整读这些当前入口" in (APP / "references" / "development-mode.md").read_text():
         record("App worker 仍被要求整读所有调度入口")
@@ -1792,6 +1796,22 @@ def check_lane_graph() -> None:
             )
 
 
+def check_recovery_record() -> None:
+    script = CORE / "scripts" / "recovery_record.py"
+    if not is_executable(script):
+        record("coordinator recovery helper must exist and remain executable: recovery_record.py")
+        return
+    require(script, ("show", "set", "check", "--self-test", "## Coordinator Recovery"))
+    result = subprocess.run(
+        [sys.executable, str(script), "--self-test"],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if result.returncode != 0:
+        record(f"recovery_record self-test failed: {result.stdout}{result.stderr}")
+
+
 def check_claude_adapter_contract() -> None:
     helper = CORE / "scripts" / "claude_adapter.py"
     probe = CORE / "scripts" / "claude_adapter_check.py"
@@ -1925,6 +1945,7 @@ def main() -> None:
     check_metadata_and_helpers()
     check_checkpoint_contract()
     check_lane_graph()
+    check_recovery_record()
     check_claude_adapter_contract()
 
     if ERRORS:
