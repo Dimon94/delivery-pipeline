@@ -649,7 +649,8 @@ def check_handoff_contract() -> None:
         check_skill_links(path)
     require(
         CORE / "references" / "code-review-evidence-preflight.md",
-        ("先读 fixed-point.txt、changed-paths.txt、worktree-state.txt", "按当前轴读取"),
+        ("先读 fixed-point.txt、changed-paths.txt、worktree-state.txt", "按当前轴读取",
+         "diff.patch 起始行号", "spec source 全部以绝对路径"),
     )
 
 

@@ -33,7 +33,8 @@ Git diff、历史与 staged state 由父 worker 先物化为文件，再把绝�
 - `fixed-point.txt`：packet 值、resolved SHA、HEAD SHA、调用分支与精确 diff 关系。
 - `diff.patch`：精确 diff 内容及 hunk 行号；`commit` 分支同时包含 untracked additions。
 - `commits.txt`：fixed point 到 HEAD 的 commit 列表；没有 commit 时明确记录 `none`。
-- `changed-paths.txt`：与 `diff.patch` 同边界的完整 name-status 路径清单，包含 untracked 路径。
+- `changed-paths.txt`：与 `diff.patch` 同边界的完整 name-status 路径清单，包含 untracked 路径；
+  每行附该文件在 diff.patch 起始行号（`<status>\t<path>\t@<line>`），reviewer 直接跳到对应 hunk。
 - `fixed-point-added-paths.txt`：resolved fixed-point commit 新增路径的
   `git diff-tree --root --no-commit-id --diff-filter=A --name-status -r` 输出；无新增时明确记录 `none`。
 - `worktree-state.txt`：带标题的 `git status --short`、`git diff --cached --name-status -- .`，以及
@@ -51,6 +52,7 @@ worktree snapshot 未变化。
 ## 子审查 Fan-out
 
 - 每个子 reviewer prompt 传 bundle 绝对目录、fixed point/HEAD、当前轴和 standards/spec source；
+  spec source 全部以绝对路径或 tracker URL 给出（spec、ticket body、相关 ADR），reviewer 不搜索定位；
   七个文件名沿上表恢复。先读 fixed-point.txt、changed-paths.txt、worktree-state.txt，再按当前轴读取
   diff.patch 的相关 hunk、commits.txt、fixed-point-added-paths.txt 与 commands.txt；完整审查范围
   保持不变，各轴仍须覆盖其职责内的全部变更，再读源码补充上下文。
