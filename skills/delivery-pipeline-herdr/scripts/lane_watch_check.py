@@ -56,7 +56,7 @@ else:
         result = subprocess.run(
             ['bash', str(Path(__file__).with_name('lane-watch.sh')),
              'worker', 'coordinator', 'lane', '测试 lane'],
-            env={**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}'},
+            env={**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}', 'LANE_WATCH_STATE_DIR': str(root)},
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode == 0, (result.returncode, result.stderr)
