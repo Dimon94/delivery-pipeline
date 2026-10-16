@@ -116,12 +116,13 @@ kind: staged 表示起步后同任务接续，kind: direct 表示直接执行；
 ### 机械核验入口
 
 从本 skill realpath 调用 `scripts/prewalk.py`，命令为 models / model / coordinator / resolve / snapshot / checkpoint / prepare /
-review / subagent，JSON 从
+review / subagent / checks / bundle / preflight，JSON 从
 stdin 输入、结果从 stdout 读取；非零退出就保留现场并报告。脚本不调用 App、不写 registry。
 
 - resolve 输入 task（design/frontend/backend）、output_mode，以及可选 ticket_mode / map_mode / existing_lane。新 implementation
   还必须输入 canonical `../../delivery-pipeline/references/gate-state-machine.md` 定义的
-  work_item、可选 map 与 gate_evidence；helper 在选择任何开发模式前验证实施前置证据。ticket_mode、
+  work_item、可选 map 与 gate_evidence，以及 canonical `../../delivery-pipeline/references/code-review-evidence-preflight.md`
+  的派发前规定检查输入；helper 在选择任何开发模式前验证实施前置证据与清单，返回 checks 供 packet 引用。ticket_mode、
   map_mode 与配置 `default_mode` 的值都是 `modes` 中的命名预设。返回
   含冻结 phase_plan/phase_targets/execution_target/config_path 的 overlay 和创建用 model/thinking；existing_lane 直接返回 recover，不套用默认值。
 - snapshot 直接复用 canonical `../../delivery-pipeline/scripts/checkpoint.py`，输入 Git 顶层
@@ -158,8 +159,14 @@ stdin 输入、结果从 stdout 读取；非零退出就保留现场并报告。
   checkpoint path 同时匹配，且 snapshot 明确 `ignored.delivery_input: none` 时可显式传
   legacy_checkpoint: true；helper 只按旧内容原样核验并标记 legacy-app-v0 / Unknown，不生成或
   回填 canonical 指纹。新 checkpoint、canonical checkpoint 或缺既有恢复证据时禁止走 legacy 分支。
-- review 输入 coordinator 直接回读的 resolved owner triple、review_scope、固定 base/head 与两轴
-  宿主结论；helper 不返回任何模型选择，只验证 reviewer 独立性、终态、零阻断项和当前 Git 版本。
+- checks / bundle / preflight 直接复用 canonical `../../delivery-pipeline/scripts/review_evidence.py`，输入与
+  失败语义见 `../../delivery-pipeline/references/code-review-evidence-preflight.md`；不执行规定命令。
+- subagent 的 work: review 在 invoke-owner 前必须传 preflight（上项完整 JSON，scope 对应当前 review_scope）；
+  helper 先核当前候选的规定检查终态和七文件，非零不派两轴。wait 只表示容量不足，恢复后仍须预检。
+  preflight 同时传 target_commit，subagent/review 返回同一 canonical base/head/target 与检查/本轴继承理由；
+  target 非祖先或闭包/装配输入不符时拒绝，不在 App 壳另造判据。
+- review 输入 coordinator 直接回读的 resolved owner triple、review_scope、固定 base/head、两轴
+  宿主结论及同一 preflight；helper 不返回任何模型选择，重新核预检、reviewer 独立性、终态、零阻断项和当前 Git 版本。
 
 完成标准：helper 通过、overlay 持久读回、原 task 请求与回读证据对应。此入口没有新增
 canonical gate；phase 到 executing 的确认及最终 fan-in 仍按下方与 transport 合同执行。

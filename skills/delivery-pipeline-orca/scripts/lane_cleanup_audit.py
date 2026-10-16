@@ -75,6 +75,7 @@ def branch_exists(repo: Path, branch: str) -> bool:
     out = subprocess.run(
         ["git", "-C", str(repo), "branch", "--list", name],
         check=True, capture_output=True, text=True,
+        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
     )
     return bool(out.stdout.strip())
 
@@ -126,15 +127,17 @@ def main() -> int:
 
 
 def _self_test() -> int:
+    # hook 的 Git 定位环境属于 caller，不能传给自建 fixture repo。
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     with tempfile.TemporaryDirectory(prefix="lane-audit-") as folder:
         root = Path(folder)
         repo = root / "repo"
         repo.mkdir()
         subprocess.run(["git", "-C", str(repo), "init", "-b", "main"],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, env=env)
         subprocess.run(["git", "-C", str(repo), "-c", "user.name=audit", "-c",
                         "user.email=audit@example.invalid", "commit", "--allow-empty", "-m", "init"],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, env=env)
         reg = root / "registry"
         reg.mkdir()
         leftover_wt = root / "leftover-wt"
@@ -154,7 +157,19 @@ def _self_test() -> int:
         write_row("bogus", "delivered")
         write_row("active", "running", worktree=str(leftover_wt))
         subprocess.run(["git", "-C", str(repo), "branch", "agent-x"],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, env=env)
+        # 目标 repo 查询不能被 caller 的 Git 定位环境劫持。
+        inherited = {k: v for k, v in os.environ.items() if k.startswith("GIT_")}
+        try:
+            os.environ.update(GIT_DIR=str(root / "caller-not-repo"),
+                              GIT_INDEX_FILE=str(root / "caller-index"))
+            assert branch_exists(repo, "agent-x")
+            assert not branch_exists(repo, "missing-branch")
+        finally:
+            for key in list(os.environ):
+                if key.startswith("GIT_"):
+                    del os.environ[key]
+            os.environ.update(inherited)
         terminals = [{"handle": "term_dead", "worktreePath": str(leftover_wt)}]
         problems = audit(reg, terminals)
         assert any("非 canonical state `delivered`" in p and "bogus" in p for p in problems), problems

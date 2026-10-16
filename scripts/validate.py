@@ -589,6 +589,12 @@ def check_packets() -> None:
             "commands.txt",
             "review-only/no-acceptance",
             "正常路径不产生索取 Git/path 输出的 supervisor 往返",
+            "scripts/review_evidence.py checks",
+            "required_checks",
+            "check_results",
+            "candidate_sha256",
+            "preflight` exit 0",
+            "coverage",
         ),
     )
 
@@ -783,6 +789,7 @@ def check_app_shell() -> None:
             "不能把 blocked 当作无需处理",
         ),
     )
+    require(APP / "scripts" / "prewalk.py", ("review_evidence.py", 'review_preflight(data)', 'REVIEW_EVIDENCE["checks"](data)'))
     if not is_executable(APP / "scripts" / "prewalk.py"):
         record("App prewalk helper must be executable")
     subprocess.run(

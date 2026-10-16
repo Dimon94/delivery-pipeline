@@ -2,7 +2,10 @@
 """分派 CLI 的可观察行为检查；隔离临时 Git repo，无 App 请求。"""
 
 import copy
+import io
 import json
+from contextlib import redirect_stderr
+from unittest.mock import patch
 import os
 import runpy
 import stat
@@ -20,10 +23,7 @@ EXECUTION_TARGET_MARKER = "app.execution_target:"
 
 
 def git_env():
-    env = os.environ.copy()
-    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"):
-        env.pop(name, None)
-    return env
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
 def call(command, data, success=True, extra_env=None) -> Any:
@@ -40,7 +40,452 @@ def call(command, data, success=True, extra_env=None) -> Any:
     return json.loads(result.stdout) if success else result.stderr
 
 
+def check_review_preflight():
+    """回放真实 Git 边界；只测试机械门，不重跑业务检查。"""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder) / "repo"
+        root.mkdir()
+
+        def git(*args):
+            return subprocess.check_output(
+                ["git", "-C", str(root), *args], env=git_env(), stderr=subprocess.PIPE
+            ).decode().strip()
+
+        with patch.dict(os.environ, {
+            "GIT_CONFIG_PARAMETERS": "'core.bare=true'", "GIT_PREFIX": "caller/",
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.worktree",
+            "GIT_CONFIG_VALUE_0": str(root / "caller-worktree"), "FIXTURE_CONTEXT": "keep",
+        }):
+            env = git_env()
+            assert not [key for key in env if key.startswith("GIT_")], sorted(key for key in env if key.startswith("GIT_"))
+            assert env["FIXTURE_CONTEXT"] == "keep"
+            git("init", "-b", "probe")
+        assert git("config", "--get", "core.bare") == "false"
+        git("config", "user.name", "Probe")
+        git("config", "user.email", "probe@example.invalid")
+        (root / "base.txt").write_text("base\n")
+        for name in ("prod/dep.txt", "runtime/config.txt"):
+            (root / name).parent.mkdir()
+            (root / name).write_text("unchanged input\n")
+        git("add", ".")
+        git("commit", "-m", "base")
+        base = git("rev-parse", "HEAD")
+        (root / "body.txt").write_text("body\n")
+        (root / "prior-only.txt").write_text("prior fixture\n")
+        git("add", ".")
+        git("commit", "-m", "prior")
+        prior = git("rev-parse", "HEAD")
+        (root / "prior-only.txt").unlink()
+        (root / "new.txt").write_text("new\n")
+        git("add", "-A")
+        git("commit", "-m", "candidate")
+        head = git("rev-parse", "HEAD")
+        plan = {
+            "worktree": str(root), "head_commit": head,
+            "checks_source": "fixture module AGENTS and CI readback",
+            "required_checks": [
+                {"command": "TZ=UTC go test ./...", "cwd": str(root), "source": "module AGENTS"},
+                {"command": "TZ=Asia/Shanghai go test ./...", "cwd": str(root), "source": "module AGENTS"},
+            ],
+        }
+        data = {
+            **plan, "base_commit": base, "target_commit": base, "review_scope": "whole-change",
+            "bundle_path": str(Path(folder) / "bundle"), "check_results": [],
+        }
+        dispatch = {
+            "work": "review", "active_count": 0, "source": "host list",
+            "read_only": True, "review_scope": "whole-change", "preflight": data,
+        }
+        # 原入口会先派出昂贵两轴；现在缺终态必须在 invoke-owner 前非零。
+        assert "required_checks[0]" in call("subagent", dispatch, False)
+        candidate = call("checks", plan)["candidate_sha256"]
+        results = []
+        for index, requirement in enumerate(plan["required_checks"]):
+            log = Path(folder) / f"check-{index}.log"
+            log.write_text("fixture terminal exit 0 (not business execution)\n")
+            results.append({
+                **requirement, "head_commit": head, "candidate_sha256": candidate,
+                "status": "completed", "exit_code": 0,
+                "stdout_log": str(log), "stderr_log": str(log),
+            })
+        data["check_results"] = results
+        missing_tz = {**data, "check_results": results[:1]}
+        assert "required_checks[1]" in call("preflight", missing_tz, False)
+        wrong_head = copy.deepcopy(data)
+        wrong_head["check_results"][1]["head_commit"] = prior
+        assert "head_commit" in call("preflight", wrong_head, False)
+        for field, value in (("status", "running"), ("exit_code", 1), ("exit_code", False),
+                             ("stdout_log", "/missing.log"), ("stderr_log", "/missing.log")):
+            bad = copy.deepcopy(data)
+            bad["check_results"][1][field] = value
+            error = call("preflight", bad, False)
+            assert field in error
+            if field in ("stdout_log", "stderr_log"):
+                assert all(text in error for text in (
+                    "下一步", "保存当前候选的真实日志", "修正绝对路径", "重新预检"
+                )), error
+        invalid_text = (
+            ("missing", None), ("blank", ""), ("blank", " \t\n"),
+            ("unknown", "Unknown"), ("unknown", " unknown "),
+            ("placeholder", "none"), ("placeholder", "null"),
+            ("nontext", None), ("nontext", False), ("nontext", 42),
+            ("nontext", []), ("nontext", {}),
+        )
+        log_action = "下一步：保存当前候选的真实日志、修正绝对路径后重新预检"
+        for key in ("stdout_log", "stderr_log"):
+            for kind, value in (*invalid_text, ("relative", "check-0.log"),
+                                ("missing-file", str(Path(folder) / "missing.log")),
+                                ("directory", folder), ("nul-path", folder + "/\0")):
+                bad = copy.deepcopy(data)
+                if kind == "missing":
+                    del bad["check_results"][1][key]
+                else:
+                    bad["check_results"][1][key] = value
+                assert call("checks", bad)["action"] == "checks-listed"
+                error = call("preflight", bad, False)
+                assert all(text in error for text in (
+                    "required_checks[1]." + key, log_action,
+                )), (key, kind, error)
+        for kind, value in invalid_text:
+            bad = copy.deepcopy(data)
+            if kind == "missing":
+                del bad["checks_source"]
+            else:
+                bad["checks_source"] = value
+            for command in ("checks", "preflight"):
+                error = call(command, bad, False)
+                assert all(text in error for text in (
+                    "checks_source", "下一步：补齐该字段为有效文本后重新预检",
+                )), (command, kind, error)
+        for requirement, field, action in (
+            (None, "required_checks[1]", "补齐 command/cwd/source"),
+            *(({**plan["required_checks"][1], "cwd": cwd}, "required_checks[1].cwd",
+               "修正为当前 repo 内的绝对目录")
+              for cwd in (folder, "relative", str(root / "missing"), str(root / "base.txt"))),
+            (plan["required_checks"][0], "required_checks[1]", "合并重复条目"),
+        ):
+            bad = copy.deepcopy(plan)
+            bad["required_checks"][1] = requirement
+            error = call("checks", bad, False)
+            assert all(text in error for text in (field, "下一步", action, "重新预检")), error
+        for key in ("command", "cwd", "source"):
+            for kind, value in invalid_text:
+                bad = copy.deepcopy(data)
+                if kind == "missing":
+                    del bad["required_checks"][1][key]
+                else:
+                    bad["required_checks"][1][key] = value
+                for command in ("checks", "preflight"):
+                    error = call(command, bad, False)
+                    assert all(text in error for text in (
+                        "required_checks[1]." + key,
+                        "下一步：补齐该字段为有效文本后重新预检",
+                    )), (command, key, kind, error)
+        made = call("bundle", data)
+        assert made["action"] == "preflight-passed"
+        assert made["base_commit"] == base and made["head_commit"] == head
+        assert made["target_commit"] == base and made["target_reason"]
+        assert len(made["check_decisions"]) == 2
+        assert call("preflight", data)["action"] == "preflight-passed"
+        # 非祖先 target 不得绕过；fixture 只写自己的对象库。
+        tree = git("rev-parse", head + "^{tree}")
+        unrelated = subprocess.check_output(
+            ["git", "-C", str(root), "commit-tree", tree], input=b"unrelated target\n", env=git_env()
+        ).decode().strip()
+        bad_target = {**data, "target_commit": unrelated}
+        error = call("preflight", bad_target, False)
+        assert all(word in error for word in ("target_commit", unrelated, head, "下一步")), error
+        assert "target_commit" in call("preflight", {k: v for k, v in data.items() if k != "target_commit"}, False)
+        missing_diagnostics = {}
+        for command, key, recovery in (
+            ("checks", "worktree", "绝对路径"),
+            ("preflight", "base_commit", "固定版本"),
+            ("preflight", "bundle_path", "绝对路径"),
+        ):
+            bad = copy.deepcopy(data)
+            del bad[key]
+            error = json.loads(call(command, bad, False))
+            assert set(error) == {"error"}, error
+            if not all(text in error["error"] for text in (key, "下一步", "补齐", recovery, "重新预检")):
+                missing_diagnostics[key] = error["error"]
+        assert not missing_diagnostics, missing_diagnostics
+        bundle = Path(data["bundle_path"])
+        names = (bundle / "changed-paths.txt").read_text()
+        assert "A\tbody.txt" in names and "A\tnew.txt" in names
+        assert "prior-only.txt" not in names
+        patch_lines = (bundle / "diff.patch").read_text().splitlines()
+        for row in names.splitlines():
+            status, name, start = row.split("\t")
+            assert start.startswith("@") and patch_lines[int(start[1:]) - 1] == f"diff --git a/{name} b/{name}", row
+        assert (bundle / "fixed-point-added-paths.txt").read_text() == "A\tbase.txt\nA\tprod/dep.txt\nA\truntime/config.txt\n"
+        invoked = call("subagent", dispatch)
+        assert invoked["action"] == "invoke-owner"
+        assert invoked["preflight"]["target_commit"] == base
+        assert "target_commit" in call("subagent", {**dispatch, "target_commit": unrelated}, False)
+        originals = {p.name: p.read_bytes() for p in bundle.iterdir()}
+        for name, broken in (
+            ("changed-paths.txt", b"body.txt\nnew.txt\n"),
+            ("changed-paths.txt", b"A\tbody.txt\nD\tprior-only.txt\n"),
+            ("fixed-point-added-paths.txt", b"A\tbody.txt\nA\tnew.txt\n"),
+            ("fixed-point.txt", originals["fixed-point.txt"].replace(head.encode(), prior.encode())),
+            ("diff.patch", originals["diff.patch"].replace(b"+body", b"+other")),
+        ):
+            (bundle / name).write_bytes(broken)
+            assert name in call("preflight", data, False)
+            assert (bundle / name).read_bytes() == broken  # 门禁保留原 FAIL bytes。
+            (bundle / name).write_bytes(originals[name])
+        for name in originals:
+            (bundle / name).write_bytes(originals[name].removesuffix(b"\n"))
+        assert call("preflight", data)["action"] == "preflight-passed"
+        for name, raw in originals.items():
+            (bundle / name).write_bytes(raw)
+        helper = runpy.run_path(str(HELPER.resolve().parents[2] / "delivery-pipeline/scripts/review_evidence.py"))
+        # 精确注入读取失败，避免 chmod 样本依赖测试用户权限。
+        original_read = Path.read_bytes
+        for key in ("stdout_log", "stderr_log"):
+            bad = copy.deepcopy(data)
+            unreadable = Path(folder) / (key + ".log")
+            unreadable.write_bytes(b"")
+            bad["check_results"][1][key] = str(unreadable)
+            failure = PermissionError("sensitive fixture input must not be echoed")
+
+            def read_log(path):
+                if path == unreadable:
+                    raise failure
+                return original_read(path)
+
+            with patch.object(Path, "read_bytes", read_log):
+                try:
+                    helper["checks"](bad, terminal=True)
+                except ValueError as error:
+                    assert error.__cause__ is failure
+                    assert all(text in str(error) for text in (
+                        "required_checks[1]." + key, log_action, "PermissionError",
+                    )), str(error)
+                else:
+                    raise AssertionError("日志读取失败不能通过")
+                stderr = io.StringIO()
+                with patch.object(sys, "argv", ["review_evidence.py", "preflight"]), \
+                        patch.object(sys, "stdin", io.StringIO(json.dumps(bad))), redirect_stderr(stderr):
+                    try:
+                        helper["main"]()
+                    except SystemExit as error:
+                        assert error.code == 1
+                    else:
+                        raise AssertionError("日志读取失败 CLI 必须非零")
+                error = json.loads(stderr.getvalue())["error"]
+                assert all(text in error for text in ("required_checks[1]." + key, log_action)), error
+                assert str(failure) not in error
+        assert helper["mode_category"]("0664") == helper["mode_category"]("100644")
+        assert helper["mode_category"]("0775") == helper["mode_category"]("100755")
+        assert helper["mode_category"]("100644") != helper["mode_category"]("100755")
+        import hashlib
+        inherited = {
+            "axis": "standards", "source": "prior independent standards terminal",
+            "status": "completed", "verdict": "pass", "base_commit": base,
+            "head_commit": prior, "paths": ["body.txt"],
+            "inputs": {"body.txt": {"content_sha256": hashlib.sha256(b"body\n").hexdigest(), "mode": "0664"}},
+            "reuse_contract": {
+                "source": "fixture owner: body input, prod complete closure, runtime complete assembly; no external inputs",
+                "paths": ["body.txt"], "production_closure": ["prod"], "runtime_assembly": ["runtime"],
+            },
+            "input_snapshot": {
+                name: {"mode": "100644", "blob": git("rev-parse", prior + ":" + name)}
+                for name in ("body.txt", "prod/dep.txt", "runtime/config.txt")
+            },
+        }
+        data["coverage"] = {
+            "standards": {"fresh_paths": ["new.txt"], "inherited": [inherited]},
+            "spec": {"fresh_paths": ["body.txt", "new.txt"], "inherited": []},
+        }
+        data["bundle_path"] = str(Path(folder) / "coverage-bundle")
+        assert call("bundle", data)["action"] == "preflight-passed"
+        malformed_coverage = {}
+        for axis in ("standards", "spec"):
+            control = copy.deepcopy(data)
+            receipt = {**inherited, "axis": axis}
+            empty = {**receipt, "paths": [], "inputs": {}}
+            control["coverage"][axis] = {"fresh_paths": ["new.txt"], "inherited": [empty, receipt]}
+            control["bundle_path"] = str(Path(folder) / (axis + "-coverage-bundle"))
+            assert call("bundle", control)["action"] == "preflight-passed"
+            cases = []
+            for value in (None, [], "invalid", False, 42, {}, {"fresh_paths": []}, {"inherited": []}):
+                bad = copy.deepcopy(control)
+                bad["coverage"][axis] = value
+                cases.append(("coverage." + axis, value, bad))
+            for index in (0, 1):
+                for value in (None, [], "invalid", False, 42):
+                    bad = copy.deepcopy(control)
+                    bad["coverage"][axis]["inherited"][index] = value
+                    cases.append((f"coverage.{axis}.inherited[{index}]", value, bad))
+            for key in ("source", "head_commit"):
+                for kind, value in (invalid_text[0], invalid_text[3]):
+                    bad = copy.deepcopy(control)
+                    if kind == "missing":
+                        del bad["coverage"][axis]["inherited"][1][key]
+                    else:
+                        bad["coverage"][axis]["inherited"][1][key] = value
+                    cases.append((f"coverage.{axis}.inherited[1].{key}", kind, bad))
+            if axis == "spec":
+                for key, value, field in (
+                    ("axis", "standards", "coverage.spec.inherited[1]"),
+                    ("head_commit", "0" * 40, "coverage.spec.inherited[1].head_commit"),
+                    ("inputs", {}, "coverage.spec.inherited[1].inputs"),
+                    ("paths", [{}], "coverage.spec.inherited[1].inputs"),
+                ):
+                    bad = copy.deepcopy(control)
+                    bad["coverage"][axis]["inherited"][1][key] = value
+                    cases.append((field, key, bad))
+                for key, value, field in (
+                    ("content_sha256", None, "coverage.spec.inherited[1].inputs.body.txt"),
+                    ("mode", "invalid", "coverage.spec.inherited[1].inputs.body.txt.mode"),
+                    ("content_sha256", hashlib.sha256(b"body").hexdigest(), "coverage.spec.inherited[1].inputs.body.txt"),
+                    ("mode", "0775", "coverage.spec.inherited[1].inputs.body.txt"),
+                ):
+                    bad = copy.deepcopy(control)
+                    recorded = bad["coverage"][axis]["inherited"][1]["inputs"]["body.txt"]
+                    if value is None:
+                        del recorded[key]
+                    else:
+                        recorded[key] = value
+                    cases.append((field, key + ":" + str(value), bad))
+                bad = copy.deepcopy(control)
+                bad["coverage"][axis]["fresh_paths"] = []
+                cases.append(("coverage.spec", "missing-path", bad))
+                bad = copy.deepcopy(control)
+                bad["coverage"][axis]["fresh_paths"] = [{}]
+                cases.append(("coverage.spec", "unhashable-path", bad))
+                bad = copy.deepcopy(control)
+                del bad["coverage"]["standards"]
+                cases.append(("coverage", "missing-axis", bad))
+            for field, value, bad in cases:
+                raw = call("preflight", bad, False)
+                try:
+                    error = json.loads(raw)
+                except json.JSONDecodeError:
+                    malformed_coverage[field + ":" + repr(value)] = raw
+                    continue
+                if set(error) != {"error"} or not all(text in error["error"] for text in (
+                    field, "下一步", "补齐", "重新预检",
+                )):
+                    malformed_coverage[field + ":" + repr(value)] = error
+        assert not malformed_coverage, malformed_coverage
+        bad_axis = copy.deepcopy(data)
+        bad_axis["coverage"]["standards"]["inherited"][0]["axis"] = "spec"
+        assert "coverage.standards" in call("preflight", bad_axis, False)
+        missing_coverage = copy.deepcopy(data)
+        missing_coverage["coverage"]["spec"]["fresh_paths"] = ["new.txt"]
+        assert "coverage.spec" in call("preflight", missing_coverage, False)
+        bad_body = copy.deepcopy(data)
+        bad_body["coverage"]["standards"]["inherited"][0]["inputs"]["body.txt"]["content_sha256"] = hashlib.sha256(b"body").hexdigest()
+        assert "inputs.body.txt" in call("preflight", bad_body, False)
+        bad_mode = copy.deepcopy(data)
+        bad_mode["coverage"]["standards"]["inherited"][0]["inputs"]["body.txt"]["mode"] = "0775"
+        assert "inputs.body.txt" in call("preflight", bad_mode, False)
+        # 继承沿同一检查/coverage owner；旧结果不能重贴当前 Head。
+        reuse_plan = copy.deepcopy(data)
+        requirement = reuse_plan["required_checks"][1]
+        requirement["reuse_contract"] = copy.deepcopy(inherited["reuse_contract"])
+        old_result = {**results[1], "head_commit": prior,
+                      "candidate_sha256": hashlib.sha256(helper["CHECKPOINT"]["canonical_bytes"]({
+                          "head": prior, "dirty": {}, "index_sha256": hashlib.sha256(b"").hexdigest(),
+                          "working_tree_diff_sha256": hashlib.sha256(b"").hexdigest(),
+                      })).hexdigest(),
+                      "reuse_contract": copy.deepcopy(inherited["reuse_contract"]),
+                      "input_snapshot": copy.deepcopy(inherited["input_snapshot"])}
+        reuse_plan["check_results"][1] = {**requirement, "inherited_from": old_result}
+        mapped = call("preflight", reuse_plan)
+        assert mapped["check_decisions"][1]["decision"] == "inherited"
+        assert mapped["check_decisions"][1]["source_head"] == prior
+        assert mapped["coverage_decisions"]["standards"]["inherited_paths"] == ["body.txt"]
+        assert mapped["coverage_decisions"]["spec"]["fresh_paths"] == ["body.txt", "new.txt"]
+        assert old_result["head_commit"] == prior  # 原版本不改写。
+        for field, value in (("head_commit", "0" * 40), ("status", "running"), ("exit_code", 1),
+                             ("status", "skip"), ("status", "Unknown"), ("candidate_sha256", "wrong"),
+                             ("reuse_contract", {}), ("input_snapshot", {})):
+            bad = copy.deepcopy(reuse_plan)
+            bad["check_results"][1]["inherited_from"][field] = value
+            assert field in call("preflight", bad, False)
+        bad = copy.deepcopy(data)
+        del bad["coverage"]["standards"]["inherited"][0]["reuse_contract"]
+        assert "reuse_contract" in call("preflight", bad, False)
+        # 真实闭包/装配新增、删除、正文与执行位变化，body/test 未变也拒绝。
+        for index, (name, mutation) in enumerate((
+            ("prod/dep.txt", "body"), ("runtime/config.txt", "body"),
+            ("prod/new.txt", "add"), ("prod/dep.txt", "delete"), ("runtime/config.txt", "mode"),
+        )):
+            path = root / name
+            if mutation == "delete":
+                path.unlink()
+            elif mutation == "mode":
+                path.chmod(0o755)
+            else:
+                path.write_text("changed input\n")
+            git("add", "-A")
+            git("commit", "-m", "input changed")
+            changed_head = git("rev-parse", "HEAD")
+            changed = copy.deepcopy(reuse_plan)
+            changed["head_commit"] = changed_head
+            changed["bundle_path"] = str(Path(folder) / f"changed-input-{index}-bundle")
+            changed_candidate = call("checks", changed)["candidate_sha256"]
+            changed["check_results"][0].update(head_commit=changed_head, candidate_sha256=changed_candidate)
+            error = call("bundle", changed, False)
+            assert all(word in error for word in ("input_snapshot", name, "下一步")), error
+            # 去掉检查继承仍应被本轴 coverage 的闭包门拒绝。
+            changed["check_results"][1] = {**results[1], "head_commit": changed_head,
+                                             "candidate_sha256": changed_candidate}
+            for axis in changed["coverage"].values():
+                axis["fresh_paths"].append(name)
+            assert "coverage.standards.inherited[0].input_snapshot" in call("bundle", changed, False)
+            git("checkout", "--detach", head)
+        (root / "body.txt").write_text("dirty body\n")
+        assert "candidate_sha256" in call("preflight", data, False)
+        implementation = {
+            **plan, "base_commit": base, "target_commit": base, "review_scope": "implementation",
+            "bundle_path": str(Path(folder) / "dirty-bundle"),
+            "required_checks": [], "check_results": [], "allowed_dirty_paths": ["body.txt", "untracked.txt"],
+        }
+        git("add", "body.txt")
+        (root / "new.txt").write_text("unstaged\n")
+        (root / "untracked.txt").write_text("untracked\n")
+        assert "allowed_dirty_paths" in call("bundle", implementation, False)
+        implementation["allowed_dirty_paths"].append("new.txt")
+        assert call("bundle", implementation)["action"] == "preflight-passed"
+        dirty_bundle = Path(implementation["bundle_path"])
+        assert "A\tuntracked.txt" in (dirty_bundle / "changed-paths.txt").read_text()
+        assert "NO_STAGED_FILES=false" in (dirty_bundle / "worktree-state.txt").read_text()
+        assert "+untracked" in (dirty_bundle / "diff.patch").read_text()
+        assert "immutable" in call("bundle", implementation, False)
+    print("review preflight: pass (pending TZ, candidate, seven files, prior-only, same-axis coverage, LF, exec bit, dirty boundary)")
+
+
 def check():
+    check_review_preflight()
+    with tempfile.TemporaryDirectory() as fixture_folder:
+        fixture_root = Path(fixture_folder) / "repo"
+        fixture_root.mkdir()
+        def fixture_git(*args):
+            return subprocess.check_output(["git", "-C", str(fixture_root), *args], env=git_env(), stderr=subprocess.PIPE).decode().strip()
+        fixture_git("init", "-b", "probe")
+        fixture_git("config", "user.name", "Probe")
+        fixture_git("config", "user.email", "probe@example.invalid")
+        fixture_git("commit", "--allow-empty", "-m", "base")
+        fixture_base = fixture_git("rev-parse", "HEAD")
+        (fixture_root / "file.txt").write_text("candidate\n")
+        fixture_git("add", ".")
+        fixture_git("commit", "-m", "candidate")
+        fixture_plan = {"worktree": str(fixture_root), "head_commit": fixture_git("rev-parse", "HEAD"),
+                        "checks_source": "fixture repo/module/CI readback: no business checks", "required_checks": []}
+        fixture_preflights = {}
+        for scope in ("implementation", "whole-change"):
+            evidence = {**fixture_plan, "base_commit": fixture_base, "target_commit": fixture_base, "review_scope": scope,
+                        "bundle_path": str(Path(fixture_folder) / scope), "allowed_dirty_paths": [], "check_results": []}
+            call("bundle", evidence)
+            fixture_preflights[scope] = evidence
+        check_configured(fixture_plan, fixture_preflights)
+
+
+def check_configured(fixture_plan, fixture_preflights):
     configured = call("models", {})
     assert configured["config"]["default_mode"] == "sol-sol"
     assert call("model", {"work": "planning"})["target"]["model"] == configured["config"]["work"]["planning"]["model"]
@@ -191,6 +636,7 @@ def check():
             {
                 "work": "review",
                 "review_scope": "implementation",
+                "preflight": fixture_preflights["implementation"],
                 "active_count": 0,
                 "source": "live list",
                 "read_only": True,
@@ -244,7 +690,12 @@ def check():
             },
         },
     }
-    base = {"task": "backend", "output_mode": "commit", **gate}
+    base = {"task": "backend", "output_mode": "commit", **gate, **fixture_plan}
+    missing_checks = dict(base)
+    del missing_checks["required_checks"]
+    assert "required_checks" in call("resolve", missing_checks, False)
+    wrong_candidate = {**base, "head_commit": "old-head"}
+    assert "head_commit" in call("resolve", wrong_candidate, False)
     # 修改配置本身必须改变每条分派路径；无需修改 Python 或 SKILL。
     with tempfile.TemporaryDirectory() as config_folder:
         config_path = Path(config_folder) / "models.json"
@@ -299,6 +750,7 @@ def check():
                     **source,
                     "work": "review",
                     "review_scope": scope,
+                    "preflight": fixture_preflights[scope],
                     "active_count": 0,
                     "source": "live list",
                     "read_only": True,
@@ -1081,12 +1533,23 @@ def check():
                 "base_commit": snap["head"],
                 "head_commit": head,
             }
+        receipt["preflight"] = {
+            "worktree": str(root), "base_commit": snap["head"], "head_commit": head,
+            "review_scope": "implementation", "target_commit": receipt["base_commit"], "allowed_dirty_paths": [],
+            "checks_source": "fixture repo/module/CI: no business commands",
+            "required_checks": [], "check_results": [],
+            "bundle_path": str(Path(folder) / "receipt-bundle"),
+        }
+        call("bundle", receipt["preflight"])
         reviewed = call("review", receipt)
         assert (
             reviewed["review_scope"] == "implementation" and reviewed["owner"] == owner
         )
         whole_receipt = copy.deepcopy(receipt)
         whole_receipt["review_scope"] = "whole-change"
+        whole_receipt["preflight"]["review_scope"] = "whole-change"
+        whole_receipt["preflight"]["bundle_path"] = str(Path(folder) / "whole-receipt-bundle")
+        call("bundle", whole_receipt["preflight"])
         for axis in whole_receipt["reviews"].values():
             axis["review_scope"] = "whole-change"
         whole_change = call("review", whole_receipt)
@@ -1119,4 +1582,7 @@ def check():
 
 
 if __name__ == "__main__":
-    check()
+    if sys.argv[1:] == ["--review-preflight"]:
+        check_review_preflight()
+    else:
+        check()
