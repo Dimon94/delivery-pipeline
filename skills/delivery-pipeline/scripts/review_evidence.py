@@ -8,6 +8,7 @@ import runpy
 import shlex
 import stat
 import sys
+from collections import deque
 from pathlib import Path
 
 CHECKPOINT = runpy.run_path(str(Path(__file__).with_name("checkpoint.py")))
@@ -85,6 +86,32 @@ def reuse_inputs(root, head, receipt, contract):
     return before
 
 
+def _check_log_dependencies(path, root):
+    """按访问顺序检查目录与软链入口，避免外→内→外链依赖被清理的 repo。"""
+    current = Path(path.anchor).resolve(strict=True)
+    pending = deque(path.parts[1:])
+    links = 0
+    while pending:
+        part = pending.popleft()
+        if part == "..":
+            current = current.parent
+            continue
+        current = current / part
+        if current.is_relative_to(root):
+            raise ValueError("日志访问依赖进入 repo 内，必须使用 repo外日志")
+        if stat.S_ISLNK(current.lstat().st_mode):
+            links += 1
+            if links > 40:
+                raise ValueError("日志软链循环或解析超过40次上限")
+            target = Path(os.readlink(current))
+            if target.is_absolute():
+                current = Path(target.anchor).resolve(strict=True)
+                pending.extendleft(reversed(target.parts[1:]))
+            else:
+                current = current.parent
+                pending.extendleft(reversed(target.parts))
+
+
 def checks(data, terminal=False):
     """派发前列齐规定命令；Review 前逐条核对当前输入和终态日志。"""
     state, candidate = current(data)
@@ -152,15 +179,11 @@ def checks(data, terminal=False):
             try:
                 require_text(result.get(key), field + "." + key)
                 path = Path(result[key])
-                if not path.is_absolute() or not path.is_file():
+                if not path.is_absolute():
                     raise ValueError("日志路径必须是绝对文件")
-                # 入口与实际文件都必须在 repo 外，避免 Cleanup 删除软链入口或日志。
-                entry = Path(os.path.abspath(path))
-                repo_entry = Path(os.path.abspath(data["worktree"]))
-                if (entry.is_relative_to(repo_entry) or entry.is_relative_to(root)
-                        or (path.parent.resolve() / path.name).is_relative_to(root)
-                        or path.resolve().is_relative_to(root)):
-                    raise ValueError("日志入口或解析后的实际位置在 repo 内，必须使用 repo外日志")
+                _check_log_dependencies(path, root)
+                if not path.is_file():
+                    raise ValueError("日志路径必须是绝对文件")
                 path.read_bytes()
             except (ValueError, OSError) as error:
                 reason = ": " + str(error) if isinstance(error, ValueError) else ""

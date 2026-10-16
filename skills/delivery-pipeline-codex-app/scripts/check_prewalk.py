@@ -411,21 +411,44 @@ def check_review_preflight():
         external_link = Path(folder) / "internal-link.log"
         exclude = root / ".git/info/exclude"
         original_exclude = exclude.read_bytes()
-        exclude.write_bytes(original_exclude + b"\n/internal.log\n/external-link.log\n")
+        exclude.write_bytes(original_exclude + b"\n/internal.log\n/external-link.log\n/directory-link\n")
         ignored_log.write_text("synthetic ignored terminal\n")
         internal_link.symlink_to(external)
         external_link.symlink_to(root / "body.txt")
+        file_chain = Path(folder) / "chain.log"
+        file_chain.symlink_to(os.path.relpath(internal_link, file_chain.parent))
+        internal_dir = root / "directory-link"
+        internal_dir.symlink_to(os.path.relpath(sibling, root), target_is_directory=True)
+        directory_chain = Path(folder) / "chain-dir"
+        directory_chain.symlink_to(internal_dir, target_is_directory=True)
+        outside_file = Path(folder) / "outside-link.log"
+        outside_file.symlink_to(os.path.relpath(external, outside_file.parent))
+        outside_dir = Path(folder) / "outside-dir"
+        outside_dir.symlink_to(sibling, target_is_directory=True)
+        loop_log = Path(folder) / "loop.log"
+        loop_log.symlink_to(loop_log.name)
+        # 只删除 fake repo 的中间入口：外部保存路径断链，但真实日志仍在。
+        assert file_chain.is_file() and (directory_chain / "terminal.log").is_file()
+        internal_link.unlink()
+        assert not file_chain.exists() and external.is_file()
+        internal_link.symlink_to(external)
+        internal_dir.unlink()
+        assert not (directory_chain / "terminal.log").exists() and external.is_file()
+        internal_dir.symlink_to(os.path.relpath(sibling, root), target_is_directory=True)
         accepted_internal = []
         for branch, control in (("current", data), ("inherited", reuse_plan)):
             for key in ("stdout_log", "stderr_log"):
-                good = copy.deepcopy(control)
-                receipt = good["check_results"][1]
-                receipt = receipt["inherited_from"] if branch == "inherited" else receipt
-                receipt[key] = str(external)
-                assert call("preflight", good)["action"] == "preflight-passed"
+                for path in (external, outside_file, outside_dir / "terminal.log"):
+                    good = copy.deepcopy(control)
+                    receipt = good["check_results"][1]
+                    receipt = receipt["inherited_from"] if branch == "inherited" else receipt
+                    receipt[key] = str(path)
+                    assert call("preflight", good)["action"] == "preflight-passed"
                 for kind, path in (("tracked", root / "body.txt"), ("ignored", ignored_log),
                                    ("external-link-to-internal", external_link),
-                                   ("internal-link-to-external", internal_link)):
+                                   ("internal-link-to-external", internal_link),
+                                   ("file-chain", file_chain),
+                                   ("directory-chain", directory_chain / "terminal.log")):
                     bad = copy.deepcopy(control)
                     receipt = bad["check_results"][1]
                     receipt = receipt["inherited_from"] if branch == "inherited" else receipt
@@ -440,7 +463,18 @@ def check_review_preflight():
                         "更新绝对路径", "重新预检",
                     )), (branch, key, kind, error)
         assert not accepted_internal, ("repo 内日志被错误接受", accepted_internal)
-        for path in (ignored_log, internal_link, external_link):
+        for branch, control in (("current", data), ("inherited", reuse_plan)):
+            for key in ("stdout_log", "stderr_log"):
+                bad = copy.deepcopy(control)
+                receipt = bad["check_results"][1]
+                receipt = receipt["inherited_from"] if branch == "inherited" else receipt
+                receipt[key] = str(loop_log)
+                error = json.loads(call("preflight", bad, False))["error"]
+                assert all(text in error for text in (
+                    "required_checks[1]." + key, "循环", "更新绝对路径", "重新预检",
+                )), error
+        for path in (ignored_log, internal_link, external_link, file_chain, internal_dir,
+                     directory_chain, outside_file, outside_dir, loop_log):
             path.unlink()
         exclude.write_bytes(original_exclude)
         for field, value in (("head_commit", "0" * 40), ("status", "running"), ("exit_code", 1),
