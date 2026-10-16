@@ -400,6 +400,49 @@ def check_review_preflight():
         assert mapped["coverage_decisions"]["standards"]["inherited_paths"] == ["body.txt"]
         assert mapped["coverage_decisions"]["spec"]["fresh_paths"] == ["body.txt", "new.txt"]
         assert old_result["head_commit"] == prior  # 原版本不改写。
+        # repo 外日志才可在 worktree Cleanup 后继续核验；两种终态共用同一边界。
+        sibling = Path(folder) / "repo-logs"
+        sibling.mkdir()
+        external = sibling / "terminal.log"
+        external.write_text("synthetic external terminal\n")
+        assert str(external).startswith(str(root))  # 相似文本前缀不等于 repo 内。
+        ignored_log = root / "internal.log"
+        internal_link = root / "external-link.log"
+        external_link = Path(folder) / "internal-link.log"
+        exclude = root / ".git/info/exclude"
+        original_exclude = exclude.read_bytes()
+        exclude.write_bytes(original_exclude + b"\n/internal.log\n/external-link.log\n")
+        ignored_log.write_text("synthetic ignored terminal\n")
+        internal_link.symlink_to(external)
+        external_link.symlink_to(root / "body.txt")
+        accepted_internal = []
+        for branch, control in (("current", data), ("inherited", reuse_plan)):
+            for key in ("stdout_log", "stderr_log"):
+                good = copy.deepcopy(control)
+                receipt = good["check_results"][1]
+                receipt = receipt["inherited_from"] if branch == "inherited" else receipt
+                receipt[key] = str(external)
+                assert call("preflight", good)["action"] == "preflight-passed"
+                for kind, path in (("tracked", root / "body.txt"), ("ignored", ignored_log),
+                                   ("external-link-to-internal", external_link),
+                                   ("internal-link-to-external", internal_link)):
+                    bad = copy.deepcopy(control)
+                    receipt = bad["check_results"][1]
+                    receipt = receipt["inherited_from"] if branch == "inherited" else receipt
+                    receipt[key] = str(path)
+                    try:
+                        error = call("preflight", bad, False)
+                    except AssertionError:
+                        accepted_internal.append((branch, key, kind))
+                        continue
+                    assert all(text in json.loads(error)["error"] for text in (
+                        "required_checks[1]." + key, "repo外", "移到", "持久",
+                        "更新绝对路径", "重新预检",
+                    )), (branch, key, kind, error)
+        assert not accepted_internal, ("repo 内日志被错误接受", accepted_internal)
+        for path in (ignored_log, internal_link, external_link):
+            path.unlink()
+        exclude.write_bytes(original_exclude)
         for field, value in (("head_commit", "0" * 40), ("status", "running"), ("exit_code", 1),
                              ("status", "skip"), ("status", "Unknown"), ("candidate_sha256", "wrong"),
                              ("reuse_contract", {}), ("input_snapshot", {})):

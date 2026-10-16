@@ -154,10 +154,19 @@ def checks(data, terminal=False):
                 path = Path(result[key])
                 if not path.is_absolute() or not path.is_file():
                     raise ValueError("日志路径必须是绝对文件")
+                # 入口与实际文件都必须在 repo 外，避免 Cleanup 删除软链入口或日志。
+                entry = Path(os.path.abspath(path))
+                repo_entry = Path(os.path.abspath(data["worktree"]))
+                if (entry.is_relative_to(repo_entry) or entry.is_relative_to(root)
+                        or (path.parent.resolve() / path.name).is_relative_to(root)
+                        or path.resolve().is_relative_to(root)):
+                    raise ValueError("日志入口或解析后的实际位置在 repo 内，必须使用 repo外日志")
                 path.read_bytes()
             except (ValueError, OSError) as error:
-                raise ValueError(field + "." + key + " 缺可读日志 (" + type(error).__name__ +
-                                 ")；下一步：保存当前候选的真实日志、修正绝对路径后重新预检") from error
+                reason = ": " + str(error) if isinstance(error, ValueError) else ""
+                raise ValueError(field + "." + key + " 缺可读日志 (" + type(error).__name__ + reason +
+                                 ")；下一步：保存当前候选的真实日志、修正绝对路径后重新预检；"
+                                 "将真实终态日志移到 repo外持久 artifact，更新绝对路径后重新预检") from error
         decisions.append({"command": item["command"], "decision": "inherited" if inherited else "current-pass",
                           "source_head": expected_head, "source": item["source"],
                           "reason": "合同内精确输入/闭包/装配/mode/blob 相同" if inherited else
