@@ -22,7 +22,7 @@ def current(data):
         require_text(data.get("worktree"), "worktree")
     except ValueError as error:
         raise ValueError(str(error) + "；下一步：补齐该字段为 Git 顶层绝对路径后重新预检") from error
-    state = CHECKPOINT["snapshot_worktree"](data["worktree"])
+    state = CHECKPOINT["snapshot_worktree"](data["worktree"], include_ignored=False)
     if data.get("head_commit") != state["head"]:
         raise ValueError("head_commit 不匹配；下一步：回读当前 candidate")
     material = {key: state[key] for key in ("head", "dirty", "index_sha256", "working_tree_diff_sha256")}

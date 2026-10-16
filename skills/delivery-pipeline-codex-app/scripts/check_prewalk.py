@@ -4,7 +4,7 @@
 import copy
 import io
 import json
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 import os
 import runpy
@@ -240,6 +240,85 @@ def check_review_preflight():
         for name, raw in originals.items():
             (bundle / name).write_bytes(raw)
         helper = runpy.run_path(str(HELPER.resolve().parents[2] / "delivery-pipeline/scripts/review_evidence.py"))
+        # 只观察真实 Git 调用，并对合成 ignored 正文拒读；不伪造 Git 返回或 snapshot。
+        policy_file = root / "ignored-policy.txt"
+        policy_dir = root / "ignored-policy-dir"
+        policy_dir.mkdir()
+        policy_nested = policy_dir / "nested.txt"
+        policy_file.write_text("synthetic excluded file\n")
+        policy_nested.write_text("synthetic excluded directory input\n")
+        exclude = root / ".git/info/exclude"
+        original_exclude = exclude.read_bytes()
+        exclude.write_bytes(original_exclude + b"\n/ignored-policy.txt\n/ignored-policy-dir/\n")
+        policy_data = {**data, "bundle_path": str(Path(folder) / "git-only-bundle")}
+        original_run, original_read = subprocess.run, Path.read_bytes
+        ignored_enumerations, ignored_reads = [], []
+        policy_paths = {policy_file.resolve(), policy_nested.resolve()}
+
+        def observe_git(*args, **kwargs):
+            argv = args[0] if args else kwargs["args"]
+            if argv[0] == "git" and "--ignored" in argv:
+                ignored_enumerations.append(argv)
+            return original_run(*args, **kwargs)
+
+        def reject_ignored_read(path):
+            if path.resolve() in policy_paths:
+                ignored_reads.append(str(path))
+                raise PermissionError("synthetic ignored read forbidden")
+            return original_read(path)
+
+        with patch.object(subprocess, "run", observe_git), patch.object(Path, "read_bytes", reject_ignored_read):
+            for command, payload in (("checks", plan), ("bundle", policy_data), ("preflight", policy_data)):
+                stdout, stderr, code = io.StringIO(), io.StringIO(), 0
+                with patch.object(sys, "argv", ["review_evidence.py", command]), \
+                        patch.object(sys, "stdin", io.StringIO(json.dumps(payload))), \
+                        redirect_stdout(stdout), redirect_stderr(stderr):
+                    try:
+                        helper["main"]()
+                    except SystemExit as error:
+                        code = error.code
+                assert code == 0, (command, stderr.getvalue(), ignored_enumerations, ignored_reads)
+                assert json.loads(stdout.getvalue())["candidate_sha256"] == candidate
+            current_state, current_candidate = helper["current"](plan)
+            excluded = helper["CHECKPOINT"]["snapshot_worktree"](root, include_ignored=False)
+            assert excluded == current_state and current_candidate == candidate
+            assert excluded["ignored"] == {"delivery_input": "Unknown", "fingerprints": {}, "paths": []}
+            assert not ignored_enumerations and not ignored_reads
+        default = call("snapshot", {"worktree": str(root)})
+        assert default["ignored"]["paths"] == ["ignored-policy-dir/nested.txt", "ignored-policy.txt"]
+        assert default["ignored"]["delivery_input"] == "Unknown"
+        assert all(default["ignored"]["fingerprints"][name]["kind"] == "file" for name in default["ignored"]["paths"])
+        assert "ignored 交付输入" in call("snapshot", {"worktree": str(root), "required_ignored": [policy_file.name]}, False)
+        for options, field in (({"include_ignored": False, "required_ignored": [policy_file.name]}, "required_ignored"),
+                               ({"include_ignored": "false"}, "include_ignored")):
+            try:
+                helper["CHECKPOINT"]["snapshot_worktree"](root, **options)
+            except ValueError as error:
+                assert field in str(error)
+            else:
+                raise AssertionError("读取策略不能跳过 " + field)
+        (root / "body.txt").write_text("staged policy input\n")
+        git("add", "body.txt")
+        (root / "new.txt").write_text("unstaged policy input\n")
+        untracked = root / "policy-untracked.txt"
+        untracked.write_text("nonignored input\n")
+        with patch.object(subprocess, "run", observe_git), patch.object(Path, "read_bytes", reject_ignored_read):
+            dirty_state, dirty_candidate = helper["current"](plan)
+        assert set(dirty_state["dirty"]) == {"body.txt", "new.txt", untracked.name}
+        assert dirty_state["staged"] == ["body.txt"] and dirty_candidate != candidate
+        default = call("snapshot", {"worktree": str(root)})
+        assert all(dirty_state[key] == default[key] for key in ("head", "dirty", "index_sha256", "working_tree_diff_sha256"))
+        assert call("checks", plan)["candidate_sha256"] == dirty_candidate
+        assert not ignored_enumerations and not ignored_reads
+        git("restore", "--staged", "--worktree", "body.txt", "new.txt")
+        untracked.unlink()
+        assert call("preflight", policy_data)["candidate_sha256"] == candidate
+        policy_file.unlink()
+        policy_nested.unlink()
+        policy_dir.rmdir()
+        exclude.write_bytes(original_exclude)
+        assert call("snapshot", {"worktree": str(root)})["ignored"] == {"delivery_input": "none", "fingerprints": {}, "paths": []}
+        print("review Git-only: pass (excluded Unknown, default fingerprints, required_ignored, WIP/index/untracked)")
         # 精确注入读取失败，避免 chmod 样本依赖测试用户权限。
         original_read = Path.read_bytes
         for key in ("stdout_log", "stderr_log"):

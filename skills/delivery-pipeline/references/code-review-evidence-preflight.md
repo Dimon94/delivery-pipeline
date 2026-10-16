@@ -28,6 +28,9 @@ packet 的“输入”引用其绝对路径；不扩展 lane 状态或交接模�
 返回当前 `candidate_sha256`（HEAD、staged/unstaged/dirty 内容与模式）和完整清单；仅表示命令
 列齐，不表示已 PASS。无规定命令时显式 `[]` 并在 source 说明回读结论；coordinator 核对清单
 是否完整，helper 不从任意自然语言自动推断要求。双时区规定必须分别列出两条命令。
+Evidence current 显式选择 checkpoint 的 `include_ignored=False`，只采 Git 输入，不枚举或读 ignored。
+该视图的 ignored 为 Unknown＋空清单/指纹，表示策略未采集，不是物理无 ignored，也不作为可恢复
+checkpoint；`required_ignored` 非空时拒绝该策略。checkpoint 默认完整采集与其原 fail-close 判据不变。
 候选改变后沿同一规定清单回读新 candidate；旧 Head 或旧 dirty 输入的结果不能直接套新候选。
 当前 candidate 已有真实 PASS 时只回读原终态，不因新报告或时间戳重跑。精确输入映射见下节。
 
