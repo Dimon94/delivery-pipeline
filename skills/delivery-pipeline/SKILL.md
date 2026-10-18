@@ -105,7 +105,8 @@ staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
 派发前核对指针可读，缺失或矛盾记 Unknown 并沿原 gate 处理。
 commit/review lane 创建 packet 时加载 `references/code-review-evidence-preflight.md`：
 在输入中指定 fixed point（commit 为 Execution base，verdict 为 map registry base）与 preflight
-绝对路径；worker 在派生子审查前生成 Review Evidence Bundle。
+绝对路径；implementation 派发前按该合同回读规定检查清单和候选版本，worker 在派生子审查前
+生成 Review Evidence Bundle 并完成规定检查终态与七文件机械预检。
 
 完成标准：配置与 owner 已验证，registry 先于 worker，packet 的 work item、role/output mode、
 隔离坐标和必要 review evidence 输入完整；启动与 bounded retry 按所属壳的 worker 生命周期合同执行。

@@ -26,6 +26,13 @@ checks与 verdict 是执行真相源。
 4. cherry-pick 后运行 focused checks；失败写 `integration_checks_failed`并保留现场；通过写
    `integrated`。
 
+## 合流后的固定候选
+
+必要主线对齐须在最终 testing/review 前完成，授权不足则保留唯一候选坐标并阻塞，不能先套旧 Head PASS。
+沿 `code-review-evidence-preflight.md` 冻结本轮 base/head/target、核 target 祖先与有效输入继承理由；
+不增加平行 validator。新 target 非祖先时明确停止，获授权合流后重冻结；祖先兼容时不追动态 main。
+规定全量清单保留，复用必须绑定原终态、命令、输入闭包/装配与本轴覆盖；新 Head 仍需独立两轴结论。
+
 ## Artifact / Checks / Verdict Modes
 
 - `artifact`：验证 tracker/artifact URL/ID/body与 expected work item一致。

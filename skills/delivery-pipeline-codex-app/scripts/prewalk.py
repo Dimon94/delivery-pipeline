@@ -16,6 +16,7 @@ MODEL_CONFIG = runpy.run_path(
     str(SKILLS_ROOT / "delivery-pipeline-setup/scripts/model_config.py")
 )
 CHECKPOINT = runpy.run_path(str(CORE_SCRIPTS / "checkpoint.py"))
+REVIEW_EVIDENCE = runpy.run_path(str(CORE_SCRIPTS / "review_evidence.py"))
 check_implementation = runpy.run_path(str(CORE_SCRIPTS / "implementation_gate.py"))[
     "check"
 ]
@@ -149,6 +150,7 @@ def resolve(data):
     ):
         return {"action": "not-applicable", "request": None}
     check_implementation(data)
+    check_plan = REVIEW_EVIDENCE["checks"](data)
     loaded = models(data)
     config = loaded["config"]
     mode, source = config["default_mode"], "default"
@@ -185,6 +187,7 @@ def resolve(data):
     model, effort = target["model"], target["effort"]
     return {
         "action": "create",
+        "checks": check_plan,
         "overlay": {
             "development_mode": mode,
             "mode_source": source,
@@ -246,6 +249,7 @@ def review(data):
             raise ValueError("Review 代码版本已过期")
     if len(identities) != 2 or data["worker_id"] in identities:
         raise ValueError("执行者与两轴 reviewer 必须独立")
+    evidence = review_preflight(data)
     current = snapshot(data["worktree"])
     if current["dirty"] or current["head"] != data["head_commit"]:
         raise ValueError("待集成代码已变化")
@@ -261,7 +265,18 @@ def review(data):
         "review_scope": scope,
         "owner": owner,
         "head_commit": data["head_commit"],
+        "preflight": evidence,
     }
+
+
+def review_preflight(data):
+    evidence = data.get("preflight")
+    if not isinstance(evidence, dict):
+        raise ValueError("缺少 preflight；下一步：读取 canonical 七文件预检合同")
+    for key in ("review_scope", "worktree", "base_commit", "head_commit", "target_commit"):
+        if key in data and evidence.get(key) != data[key]:
+            raise ValueError("preflight." + key + " 与派发/Review 不匹配")
+    return REVIEW_EVIDENCE["preflight"](evidence)
 
 
 def coordinator(data):
@@ -624,6 +639,7 @@ def subagent(data):
     if count + slots > 3:
         return {**result, "action": "wait"}
     if work == "review":
+        evidence = review_preflight(data)
         loaded = models(data)
         scope = data["review_scope"]
         axes = loaded["config"]["review"][scope]
@@ -642,6 +658,7 @@ def subagent(data):
         return {
             **result,
             "action": "invoke-owner",
+            "preflight": evidence,
             "review_scope": scope,
             "review_models": targets,
             "config_path": loaded["config_path"],
@@ -675,6 +692,8 @@ def main():
             result = coordinator(data)
         elif command == "checkpoint":
             result = checkpoint(data)
+        elif command in ("checks", "bundle", "preflight"):
+            result = REVIEW_EVIDENCE["checks"](data) if command == "checks" else REVIEW_EVIDENCE["preflight"](data, create=command == "bundle")
         elif command == "review":
             result = review(data)
         elif command == "resolve":

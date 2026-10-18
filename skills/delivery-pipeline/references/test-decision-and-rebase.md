@@ -34,6 +34,11 @@ git fetch --all --prune
 git rebase <remote>/<main-branch>
 ```
 
+最终 testing/review 前先在授权内完成必要对齐，记录一次读取的 target 完整 SHA，随后固定候选；
+上面命令不是持续追主线的循环。若之后获知新 target，沿 `code-review-evidence-preflight.md` 的原
+preflight 核祖先兼容性，非祖先停止并请求授权合流；不把旧 Head PASS 直接套新 Head。
+合流后的最小复验/本轴继承沿同一有效输入合同给理由，模块强制全量与新 Head 独立两轴义务不变。
+
 冲突时停止并解析 `resolving-merge-conflicts` owner；传递 Integration Worktree、冲突文件、完整
 requirements与测试证据。解决后重新运行 testing/review所需的最小 gates；不得通过冲突解决减少需求。
 

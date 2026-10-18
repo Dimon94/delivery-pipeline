@@ -66,7 +66,8 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 推荐配置允许用户覆盖，Unknown 或偏离推荐值本身不阻断创建或恢复。
 
 1. implementation 新 lane 先回读 canonical gate-state-machine 的实施前置证据，再按开发模式合同
-   调用 `scripts/prewalk.py resolve`；非零退出不得创建任务，把通过后的模式与
+   调用 `scripts/prewalk.py resolve`，同时传 canonical code-review-evidence-preflight 的规定检查清单与当前候选；
+   清单在 packet 输入引用的原工件可读。非零退出不得创建任务，把通过后的模式与
    完整返回 overlay（含配置路径、阶段计划和来源）持久化到既有 registry 或工件，packet 传其
    绝对路径/字段与当前阶段请求；recover 只恢复、不新建。解析并持久化 Source owner projectId
    与 coordinator task/host；project/path 未变化时复用。
@@ -90,7 +91,7 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
 
 Testing 和 Review gate 不进入本节创建流程。coordinator 先持久化 gate fixed point 与不可变证据，
 再通过 `scripts/prewalk.py subagent` 取得显式模型参数；Testing 单独读取 work.testing，Review
-传 review_scope 取得 review_models，再把参数与 `implementation` 或 `whole-change` scope 交给 owner。两者都只读并在回传后由 coordinator
+传 review_scope 与 canonical preflight 完整输入，规定检查终态与七文件通过后才取得 review_models，再把参数与 `implementation` 或 `whole-change` scope 交给 owner。两者都只读并在回传后由 coordinator
 核验结果。逐票 Integration 也走 subagent 入口，但要求父任务可写、active_count 为 0，并只允许
 写指定 Integration Worktree；完成后 coordinator 重新读取 HEAD、commit、worktree 状态与 checks。
 
@@ -140,7 +141,7 @@ coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，�
 
 cherry-pick、integrated、关闭实施票之前，coordinator 必须直接读取 reviewer 宿主记录，调用
 `scripts/prewalk.py review`。输入 worktree、worker_id、base_commit、head_commit、resolved owner
-triple、review_scope 与 reviews；reviews 必须包含 standards/spec 两轴，每轴包含 reviewer_id、
+triple、review_scope、同一 canonical preflight 输入与 reviews；reviews 必须包含 standards/spec 两轴，每轴包含 reviewer_id、
 source（宿主任务/轮次与时间）、status、verdict、verdict_text（原始最终结论）、
 blocking_findings（未解决阻断项数）、review_scope、base_commit、head_commit。只有 completed + pass
 零阻断项、两轴身份独立且版本匹配才可放行。source 和 verdict 必须由 coordinator 直接核对，
