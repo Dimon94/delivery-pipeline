@@ -9,9 +9,11 @@ idea/map -> discovery -> spec -> implementation tickets
   -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被三个平级 transport
+`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被四个平级 transport
 壳读取。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
 CLI/Herdr 交付入口为 `delivery-pipeline-herdr`，其 packet 与 references 全部共置在该壳内。
+T3 Code 交付入口为 `delivery-pipeline-t3code`：worker 是 T3 原生 `delegate_task` 子任务，运行在
+T3 管理的 worktree 里，T3 专属的派发与生命周期合同共置在该壳内。
 Codex App native task/worktree 保持显式特殊 transport，入口为 `delivery-pipeline-codex-app`，其
 packet 与 references 全部共置在该壳内。`delivery-pipeline-orca` 是严格绑定 Orca 的独立入口：
 读取当前 binary 的 version-matched guide；runtime、discovery、worker policy、identity 或当前
@@ -38,6 +40,7 @@ Coordinator 不在配置中，当前会话使用什么 agent/model，就由什�
 
 - pi、Codex CLI、Claude CLI 中至少安装一个作为 coordinator；配置引用的 worker CLI 必须存在。
 - Herdr CLI：canonical CLI 主干的 terminal multiplexer。
+- T3 Code：`delivery-pipeline-t3code` 壳所需；coordinator 运行在 project 根为本仓 Source Worktree 的 T3 线程里。
 - Orca CLI：独立 `delivery-pipeline-orca` 入口；必须能从当前 runtime 读取 version-matched
   `orca-cli` 与 `orchestration` guide。
 - Owner skills：机器可读清单在 `skill-bundle.json` 的 `requires`；安装器末尾诊断 owner skills
@@ -50,7 +53,7 @@ Coordinator 不在配置中，当前会话使用什么 agent/model，就由什�
 ```
 
 安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup、
-`delivery-pipeline-herdr` 与 `delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
+`delivery-pipeline-herdr`、`delivery-pipeline-t3code` 与 `delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
 `delivery-pipeline-codex-app`。默认安装 pre-commit validator；
 `--no-hooks` 可跳过。
 
@@ -97,6 +100,17 @@ App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/conf
 按 scope 分配的双轴 Review 与 Integration 收尾。
 
 [![Delivery Pipeline Codex App 开发流程](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)
+
+### T3 Code
+
+```text
+使用 $delivery-pipeline-t3code 继续 <任意 map/spec/ticket issue>。
+```
+
+在本仓 Source Worktree 上的 T3 Code 线程里调用。本壳复用 version 5 CLI worker 配置，把 work 项映射为
+T3 provider target，每批派发前用 `orchestrator_capabilities` 核对 model id 与 effort 取值。worker 是
+自带 T3 worktree 的 `delegate_task` 子任务，先对齐 packet 的 base commit；T3 完成唤醒 coordinator。
+v1 只承载 direct 计划，staged 计划保持 blocked。合同见 `skills/delivery-pipeline-t3code/references/`。
 
 ### Orca
 

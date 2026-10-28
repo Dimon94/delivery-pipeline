@@ -42,7 +42,7 @@ def call(command, data, success=True, extra_env=None) -> Any:
 
 def check():
     configured = call("models", {})
-    assert configured["config"]["default_mode"] == "sol-sol"
+    assert configured["config"]["default_mode"] == "sol-direct"
     assert call("model", {"work": "planning"})["target"]["model"] == configured["config"]["work"]["planning"]["model"]
     review = {
         "worktree": "unused",
@@ -423,9 +423,11 @@ def check():
     del missing_sizing["gate_evidence"]["ticket"]["sizing"]
     call("resolve", missing_sizing, False)
     default = call("resolve", base)
-    assert default["overlay"]["development_mode"] == "sol-sol"
-    assert default["request"] == {"model": configured["config"]["modes"]["sol-sol"]["agents"]["codex-app"]["starting"]["model"], "thinking": "xhigh"}
-    assert default["overlay"]["execution_target"]["model"] == configured["config"]["modes"]["sol-sol"]["agents"]["codex-app"]["execution"]["model"]
+    assert default["overlay"]["development_mode"] == "sol-direct"
+    assert default["overlay"]["execution_kind"] == "direct"
+    assert default["overlay"]["execution_phase"] == "executing"
+    assert default["request"] == {"model": "gpt-6.1-sol", "thinking": "high"}
+    assert default["overlay"]["execution_target"]["model"] == configured["config"]["modes"]["sol-direct"]["agents"]["codex-app"]["execution"]["model"]
     assert default["overlay"]["execution_target"]["effort"] == "high"
     default = call("resolve", {**base, "ticket_mode": "sol-luna"})
     assert (

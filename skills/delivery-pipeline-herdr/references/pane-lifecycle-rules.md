@@ -92,6 +92,14 @@ Terminal signal 的唯一 canonical 合同：worker 按 packet 要求在终态�
 不用 `herdr agent wait --until done`：CLI agent 完成回合回到 idle 不会触发 `done` 事件，
 listener 会永久阻塞（pi lane 实测复现）。
 
+**增量去重（2026-10-20 map#765 实证修复）**：两条 LANE_DONE 通道均按「标记数量增加」唤醒。
+jsonl 通道持久化已见计数于 `${LANE_WATCH_STATE_DIR:-/tmp}/lane-watch-count-<lane_id>-done`
+（原布尔 fired 档会让同一 lane rework 第 2 轮起 jsonl 通道永久失效）；可视通道内存跟踪上轮数量，
+watcher 重挂时屏上残留的上一轮 FINAL_REPORT 不再误唤醒（map#765 曾实证 4 次陈旧标记误报）。
+建档轮已完成的 lane 不唤醒——fan-in 恢复一律以 registry/Git 证据为准。
+回归检查：`python3 skills/delivery-pipeline-herdr/scripts/lane_watch_check.py`（覆盖精确匹配、PREWALK 去重、
+陈旧可视标记不误唤醒、第二轮增量唤醒、jsonl 计数去重）。
+
 聚合 working 确认后，为每条 lane 挂 watcher：
 
 ```bash

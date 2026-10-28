@@ -15,7 +15,7 @@ Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 
 Default target: codex
 
-Installs canonical delivery-pipeline, delivery-pipeline-herdr, delivery-pipeline-orca, and delivery-pipeline-setup into each selected CLI home.
+Installs canonical delivery-pipeline, delivery-pipeline-herdr, delivery-pipeline-orca, delivery-pipeline-t3code, and delivery-pipeline-setup into each selected CLI home.
 Codex also receives delivery-pipeline-codex-app; Codex and Claude receive ticket-sizing.
 All skills symlink to this checkout. Symlinks establish discovery only; Orca runtime and
 capability evidence still require preflight. The pre-commit validator is installed unless --no-hooks is used.
@@ -81,6 +81,8 @@ install_codex() {
     "$CODEX_HOME_DIR/skills/delivery-pipeline-herdr" "Codex Herdr shell"
   link_skill "$ROOT/skills/delivery-pipeline-orca" \
     "$CODEX_HOME_DIR/skills/delivery-pipeline-orca" "Codex Orca entrypoint"
+  link_skill "$ROOT/skills/delivery-pipeline-t3code" \
+    "$CODEX_HOME_DIR/skills/delivery-pipeline-t3code" "Codex T3Code shell"
   link_skill "$ROOT/skills/ticket-sizing" \
     "$CODEX_HOME_DIR/skills/ticket-sizing" "Codex ticket-sizing"
 }
@@ -94,6 +96,8 @@ install_claude() {
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-orca" "Claude Orca entrypoint"
   link_skill "$ROOT/skills/delivery-pipeline-herdr" \
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-herdr" "Claude Herdr shell"
+  link_skill "$ROOT/skills/delivery-pipeline-t3code" \
+    "$CLAUDE_HOME_DIR/skills/delivery-pipeline-t3code" "Claude T3Code shell"
   # The retired pane-dispatch compatibility helper is superseded by the canonical core.
   rm -rf "$CLAUDE_HOME_DIR/skills/pane-dispatch"
   link_skill "$ROOT/skills/ticket-sizing" \
@@ -111,6 +115,8 @@ install_pi() {
     "$PI_HOME_DIR/agent/skills/delivery-pipeline-orca" "pi Orca entrypoint"
   link_skill "$ROOT/skills/delivery-pipeline-herdr" \
     "$PI_HOME_DIR/agent/skills/delivery-pipeline-herdr" "pi Herdr shell"
+  link_skill "$ROOT/skills/delivery-pipeline-t3code" \
+    "$PI_HOME_DIR/agent/skills/delivery-pipeline-t3code" "pi T3Code shell"
 }
 
 install_hooks() {

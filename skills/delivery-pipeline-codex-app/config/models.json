@@ -1,6 +1,6 @@
 {
   "version": 5,
-  "default_mode": "sol-sol",
+  "default_mode": "sol-direct",
   "work": {
     "coordinator": {
       "agent": "codex-app",

@@ -1,12 +1,12 @@
 <identity>
-涉及领域术语或编排语义时读取 repo://CONTEXT.md 对应概念，沿用其中的统一语言。
+涉及领域术语或编排语义时读取 repo://GLOSSARY.md 对应概念，沿用其中的统一语言。
 交互、文档和注释使用简明中文。证据不足时写 Unknown,推断显式标注"推断"。
 </identity>
 
 <project>
 定位:delivery-pipeline 多 runtime skill bundle —— 一条可恢复的交付链(idea/map → discovery → spec → tickets → 配置驱动的 CLI/worktree 分派 → integration → testing/review → 汇总 PR/MR)。
-Canonical 核心链路是 repo://skills/delivery-pipeline/,由三个平级 transport 壳共用;CLI/Herdr transport 在 repo://skills/delivery-pipeline-herdr/（供 pi、Codex CLI、Claude CLI）;Codex App 特殊 transport 只在 repo://skills/delivery-pipeline-codex-app/;Orca 独立入口在 repo://skills/delivery-pipeline-orca/;首次配置在 repo://skills/delivery-pipeline-setup/。ticket-sizing 粒度判据在 repo://skills/ticket-sizing/,主干树外不再有 runtime 副本。软链安装即生效;安装与用法见 repo://README.md 和 repo://README.zh-CN.md。
-事实优先级:运行证据 > 代码与 scripts/validate.py > repo://CONTEXT.md 与 accepted ADR > 推理。
+Canonical 核心链路是 repo://skills/delivery-pipeline/,由四个平级 transport 壳共用;CLI/Herdr transport 在 repo://skills/delivery-pipeline-herdr/（供 pi、Codex CLI、Claude CLI）;T3 Code transport 在 repo://skills/delivery-pipeline-t3code/;Codex App 特殊 transport 只在 repo://skills/delivery-pipeline-codex-app/;Orca 独立入口在 repo://skills/delivery-pipeline-orca/;首次配置在 repo://skills/delivery-pipeline-setup/。ticket-sizing 粒度判据在 repo://skills/ticket-sizing/,主干树外不再有 runtime 副本。软链安装即生效;安装与用法见 repo://README.md 和 repo://README.zh-CN.md。
+事实优先级:运行证据 > 代码与 scripts/validate.py > repo://GLOSSARY.md 与 accepted ADR > 推理。
 </project>
 
 <workflow>
@@ -16,7 +16,7 @@ Canonical 核心链路是 repo://skills/delivery-pipeline/,由三个平级 trans
 </workflow>
 
 <constraints>
-Canonical 核心链路保持 runtime-neutral:owner 以 name + absolute SKILL.md path + runtime-specific invocation label 三字段传递;核心链路正文不写 Codex `$name` 或 Claude plugin locator。Runtime-specific transport 内容与其壳/helper 共置;`codex-thread` 只存在于 delivery-pipeline-codex-app 树;Herdr pane transport 只存在于 delivery-pipeline-herdr 树。
+Canonical 核心链路保持 runtime-neutral:owner 以 name + absolute SKILL.md path + runtime-specific invocation label 三字段传递;核心链路正文不写 Codex `$name` 或 Claude plugin locator。Runtime-specific transport 内容与其壳/helper 共置;`codex-thread` 只存在于 delivery-pipeline-codex-app 树;Herdr pane transport 只存在于 delivery-pipeline-herdr 树;T3 工具调用只存在于 delivery-pipeline-t3code 树。
 提交前必跑 `python3 scripts/validate.py`;pre-commit hook 与 CI(.github/workflows/validate.yml)强制执行。
 Git 只 stage 语义相关路径,不用 git add .。
 提交、推送、建 PR 需要用户明确要求。
@@ -43,4 +43,4 @@ Issue 归 GitHub(`Dimon94/delivery-pipeline`),操作用 `gh` CLI;`.scratch/` 只
 
 ### Domain docs
 
-单上下文:根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
+单上下文:根目录 `GLOSSARY.md` + `docs/adr/`。详见 `docs/agents/domain.md`。

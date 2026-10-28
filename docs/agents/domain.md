@@ -11,7 +11,7 @@
 
 ## 统一语言
 
-issue 标题、测试名、类型名和文档使用 CONTEXT.md 的 canonical term,不漂移到同义词。新概念先确认不是现有概念的同义词,再更新词表。
+issue 标题、测试名、类型名和文档使用 GLOSSARY.md 的 canonical term,不漂移到同义词。新概念先确认不是现有概念的同义词,再更新词表。
 
 ## ADR 冲突
 
@@ -19,7 +19,7 @@ issue 标题、测试名、类型名和文档使用 CONTEXT.md 的 canonical ter
 
 ## 文档边界
 
-- CONTEXT.md 负责统一语言。
+- GLOSSARY.md 负责统一语言。
 - ADR 负责难回退决定和取舍。
 - AGENTS.md 负责修改规则和验证入口。
 - 代码与 scripts/validate.py 负责可执行行为与门禁。

@@ -71,7 +71,7 @@ CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实
 | `ticket-sizing` | 拆分评估 |
 
 每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
-`pi|codex|claude|codex-app`；agent 值决定 transport：前三个经 Herdr 起对应 CLI pane，
+`pi|codex|claude|codex-app`：agent 值决定 worker kind，前三个由所选 CLI transport 壳（Herdr pane 或 T3Code task）承载，
 `codex-app` 经 App task。仅 implementation 任务类型（`design`/`frontend`/`backend`）
 允许附加可选 `execution: {model, effort}`；其他任务类型写 `execution` 一律拒绝。
 配置文件可以只定义已知 key 的子集；每个 transport 声明自己的必需集（见下文），缺必需项

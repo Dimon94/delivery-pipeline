@@ -12,6 +12,7 @@ CORE = ROOT / "skills" / "delivery-pipeline"
 APP = ROOT / "skills" / "delivery-pipeline-codex-app"
 ORCA = ROOT / "skills" / "delivery-pipeline-orca"
 HERDR = ROOT / "skills" / "delivery-pipeline-herdr"
+T3CODE = ROOT / "skills" / "delivery-pipeline-t3code"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
 TICKET_SIZING = ROOT / "skills" / "ticket-sizing"
 
@@ -119,6 +120,7 @@ def check_manifest() -> None:
         "herdr": "skills/delivery-pipeline-herdr/SKILL.md",
         "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
         "orca": "skills/delivery-pipeline-orca/SKILL.md",
+        "t3code": "skills/delivery-pipeline-t3code/SKILL.md",
         "setup": "skills/delivery-pipeline-setup/SKILL.md",
     }:
         record("v2 entrypoints mismatch")
@@ -127,6 +129,7 @@ def check_manifest() -> None:
         "herdrSkillDirectory": "skills/delivery-pipeline-herdr",
         "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
         "orcaSkillDirectory": "skills/delivery-pipeline-orca",
+        "t3codeSkillDirectory": "skills/delivery-pipeline-t3code",
         "setupSkillDirectory": "skills/delivery-pipeline-setup",
     }:
         record("v2 install directories mismatch")
@@ -140,6 +143,7 @@ def check_frontmatter() -> None:
         (HERDR / "SKILL.md", "delivery-pipeline-herdr"),
         (APP / "SKILL.md", "delivery-pipeline-codex-app"),
         (ORCA / "SKILL.md", "delivery-pipeline-orca"),
+        (T3CODE / "SKILL.md", "delivery-pipeline-t3code"),
         (SETUP / "SKILL.md", "delivery-pipeline-setup"),
     )
     for path, name in expected:
@@ -234,7 +238,7 @@ def check_core_contract() -> None:
                     f"legacy per-map workspace rule restored: {path.relative_to(ROOT)}: {phrase}"
                 )
     legacy_topology_rules = {
-        ROOT / "CONTEXT.md": ("HITL lanes get a `G-#<ticket>` tab",),
+        ROOT / "GLOSSARY.md": ("HITL lanes get a `G-#<ticket>` tab",),
         HERDR / "references" / "pane-lifecycle-rules.md": (
             "每条新 lane 默认在目标 Workspace 新建 tab",
             "一 lane一 tab",
@@ -277,9 +281,9 @@ def check_core_contract() -> None:
             "<!-- wayfinder-lane-registry:v2 -->",
             "role: planning | design | frontend | backend | testing | review | map",
             "output_mode: commit | artifact | checks | verdict | none",
-            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | orchestrator | orca",
-            "coordinator_runtime: pi-cli | codex-cli | claude-cli | orca-terminal | none",
-            "dispatch_runtime: herdr | orca | none",
+            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | orchestrator | orca",
+            "coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | orca-terminal | none",
+            "dispatch_runtime: herdr | t3code | orca | none",
             "orca: <opaque-overlay-or-none>",
             "Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`",
             "两者都显式记录 `dispatch_runtime: orca`",
@@ -1405,6 +1409,82 @@ def check_orca_contract() -> None:
     check_skill_links(ORCA / "SKILL.md")
 
 
+def check_t3code_contract() -> None:
+    for path in (
+        T3CODE / "SKILL.md",
+        T3CODE / "references" / "t3code-dispatch.md",
+        T3CODE / "references" / "t3code-lifecycle.md",
+        T3CODE / "assets" / "T3CODE_ROLE_DISPATCH_PACKET.md",
+    ):
+        check_skill_links(path)
+    require(
+        T3CODE / "SKILL.md",
+        (
+            "coordinator_runtime: t3code",
+            "dispatch_runtime: t3code",
+            'delegate_task(mode:"async", isolation:"worktree")',
+            "`t3-task`",
+            "coordinator 留在 Source Worktree",
+            "staged 计划保持 `blocked`",
+            "existing lane 始终按 registry runtime 恢复",
+        ),
+    )
+    require(
+        T3CODE / "references" / "t3code-dispatch.md",
+        (
+            "orchestrator_capabilities",
+            "t3_worktree_status",
+            "`attached: false`",
+            "model_evidence: t3-capabilities",
+            "`claudeAgent`",
+            "`reasoningEffort`",
+            "配置值原样使用",
+            "t3 staged adapter unavailable",
+            "clientRequestId: <lane_id>",
+            "implementation_gate.py",
+            "结束本轮",
+        ),
+    )
+    require(
+        T3CODE / "references" / "t3code-lifecycle.md",
+        (
+            "`task_status` 只读本线程派发的任务",
+            "LANE_DONE <lane_id>",
+            "hasPendingQuestion",
+            "t3_pending_request",
+            't3_thread_organize(threadId: child_thread_id, action: "archive")',
+            "git worktree remove",
+            "close_pending",
+            "release_stage: deployed",
+            "完成唤醒只投递给 `coordinator_thread_id`",
+            "task_cancel(task_id)",
+        ),
+    )
+    require(
+        T3CODE / "assets" / "T3CODE_ROLE_DISPATCH_PACKET.md",
+        (
+            "lane-registry.md",
+            "git switch --detach <base_sha>",
+            "git rev-parse --git-common-dir",
+            "preflight bundle 完成前不派生",
+            "宿主原生 subagent",
+            "LANE_DONE <lane_id>",
+            "T3 初始分支",
+        ),
+    )
+    t3_only = re.compile(
+        r"delegate_task|task_status|t3_thread_|t3_worktree_|t3_pending_request|"
+        r"orchestrator_capabilities"
+    )
+    for root in (CORE, SETUP, HERDR, APP, ORCA):
+        for path in sorted(root.rglob("*.md")):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if t3_only.search(line):
+                    record(
+                        f"T3Code transport leaked outside its shell: {path.relative_to(ROOT)}:{lineno}"
+                    )
+
+
 def check_tree_ownership() -> None:
     retired = (
         ROOT / "skills" / "delivery-pipeline-pi",
@@ -1477,12 +1557,14 @@ def check_installer() -> None:
         record("Orca entrypoint must be installed into exactly three agent homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-herdr"') != 3:
         record("Herdr shell must be installed into exactly three CLI homes")
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline-t3code"') != 3:
+        record("T3Code shell must be installed into exactly three CLI homes")
     subprocess.run(["bash", "-n", str(install_path)], check=True)
 
 
 def check_context_and_docs() -> None:
     require(
-        ROOT / "CONTEXT.md",
+        ROOT / "GLOSSARY.md",
         (
             "Configured Planning Lane",
             "Review Evidence Bundle",
@@ -1939,6 +2021,7 @@ def main() -> None:
     check_lane_wakeup()
     check_app_shell()
     check_orca_contract()
+    check_t3code_contract()
     check_tree_ownership()
     check_installer()
     check_context_and_docs()
