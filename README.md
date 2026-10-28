@@ -10,7 +10,7 @@ idea/map -> discovery -> spec -> implementation tickets
 ```
 
 `skills/delivery-pipeline` is the single canonical core chain, installed unchanged for pi,
-Codex CLI, and Claude CLI, and read by four peer transport shells. The calling session is the
+Codex CLI, and Claude CLI, and read by five peer transport shells. The calling session is the
 coordinator; worker agent/model/effort comes from user configuration. CLI/Herdr delivery enters
 through `delivery-pipeline-herdr` with all Herdr-specific packets and references co-located in
 that shell. T3 Code delivery enters through `delivery-pipeline-t3code`: workers are native

@@ -127,6 +127,7 @@ def check_manifest() -> None:
         "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
         "orca": "skills/delivery-pipeline-orca/SKILL.md",
         "t3code": "skills/delivery-pipeline-t3code/SKILL.md",
+        "alma": "skills/delivery-pipeline-alma/SKILL.md",
         "setup": "skills/delivery-pipeline-setup/SKILL.md",
     }:
         record("v2 entrypoints mismatch")
@@ -136,6 +137,7 @@ def check_manifest() -> None:
         "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
         "orcaSkillDirectory": "skills/delivery-pipeline-orca",
         "t3codeSkillDirectory": "skills/delivery-pipeline-t3code",
+        "almaSkillDirectory": "skills/delivery-pipeline-alma",
         "setupSkillDirectory": "skills/delivery-pipeline-setup",
     }:
         record("v2 install directories mismatch")

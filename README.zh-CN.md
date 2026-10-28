@@ -9,7 +9,7 @@ idea/map -> discovery -> spec -> implementation tickets
   -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被四个平级 transport
+`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被五个平级 transport
 壳读取。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
 CLI/Herdr 交付入口为 `delivery-pipeline-herdr`，其 packet 与 references 全部共置在该壳内。
 T3 Code 交付入口为 `delivery-pipeline-t3code`：worker 是 T3 原生 `delegate_task` 子任务，运行在
