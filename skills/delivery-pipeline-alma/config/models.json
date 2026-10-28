@@ -1,0 +1,117 @@
+{
+  "version": 5,
+  "default_mode": "standard",
+  "work": {
+    "coordinator": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+      "effort": "high"
+    },
+    "research": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+      "effort": "high"
+    },
+    "prototype": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+      "effort": "high"
+    },
+    "planning": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+      "effort": "high"
+    },
+    "testing": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+      "effort": "high"
+    },
+    "integration": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+      "effort": "low"
+    },
+    "assistance": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+      "effort": "low"
+    },
+    "second-opinion": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+      "effort": "high"
+    },
+    "ticket-sizing": {
+      "agent": "alma",
+      "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+      "effort": "high"
+    }
+  },
+  "modes": {
+    "standard": {
+      "kind": "direct",
+      "agents": {
+        "alma": {
+          "starting": {
+            "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+            "effort": "high"
+          },
+          "execution": {
+            "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+            "effort": "high"
+          },
+          "direct": {
+            "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+            "effort": "high"
+          }
+        }
+      }
+    },
+    "fast": {
+      "kind": "direct",
+      "agents": {
+        "alma": {
+          "starting": {
+            "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+            "effort": "high"
+          },
+          "execution": {
+            "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+            "effort": "high"
+          },
+          "direct": {
+            "model": "mvrun1zfy9z3m1rkigd:claude/claude-sonnet-5-5",
+            "effort": "high"
+          }
+        }
+      }
+    }
+  },
+  "review": {
+    "implementation": {
+      "standards": {
+        "agent": "alma",
+        "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+        "effort": "high"
+      },
+      "spec": {
+        "agent": "alma",
+        "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+        "effort": "high"
+      }
+    },
+    "whole-change": {
+      "standards": {
+        "agent": "alma",
+        "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+        "effort": "high"
+      },
+      "spec": {
+        "agent": "alma",
+        "model": "mvrun1zfy9z3m1rkigd:claude/claude-opus-5-5",
+        "effort": "high"
+      }
+    }
+  }
+}

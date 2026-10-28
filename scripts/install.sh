@@ -16,7 +16,8 @@ Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 Default target: codex
 
 Installs canonical delivery-pipeline, delivery-pipeline-herdr, delivery-pipeline-orca, delivery-pipeline-t3code, and delivery-pipeline-setup into each selected CLI home.
-Codex also receives delivery-pipeline-codex-app; Codex and Claude receive ticket-sizing.
+Codex also receives delivery-pipeline-codex-app; Claude also receives delivery-pipeline-alma
+(Alma reads the Claude skills home); Codex and Claude receive ticket-sizing.
 All skills symlink to this checkout. Symlinks establish discovery only; Orca runtime and
 capability evidence still require preflight. The pre-commit validator is installed unless --no-hooks is used.
 EOF
@@ -98,6 +99,9 @@ install_claude() {
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-herdr" "Claude Herdr shell"
   link_skill "$ROOT/skills/delivery-pipeline-t3code" \
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-t3code" "Claude T3Code shell"
+  # Alma discovers skills from the Claude skills home (ADR-0015).
+  link_skill "$ROOT/skills/delivery-pipeline-alma" \
+    "$CLAUDE_HOME_DIR/skills/delivery-pipeline-alma" "Alma Task shell"
   # The retired pane-dispatch compatibility helper is superseded by the canonical core.
   rm -rf "$CLAUDE_HOME_DIR/skills/pane-dispatch"
   link_skill "$ROOT/skills/ticket-sizing" \

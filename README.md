@@ -17,7 +17,8 @@ that shell. T3 Code delivery enters through `delivery-pipeline-t3code`: workers 
 `delegate_task` children in T3-managed worktrees, with T3-specific dispatch and lifecycle co-located
 in that shell. Codex App native tasks/worktrees remain an explicit transport exception,
 exposed by `delivery-pipeline-codex-app` with all App-specific packets and references co-located
-inside that shell. `delivery-pipeline-orca` is a separate, Orca-bound entrypoint: it reads the
+inside that shell. `delivery-pipeline-alma` is the Alma UI transport: it uses the Task tool for
+worker dispatch and shares the canonical core. `delivery-pipeline-orca` is a separate, Orca-bound entrypoint: it reads the
 active binary's version-matched guides and blocks with `dispatch unavailable` when runtime,
 discovery, worker-policy, identity, or operation capability evidence is missing. It never falls
 back to Herdr or Codex App.
@@ -58,7 +59,8 @@ lane kinds and runtime mapping are owned by
 
 The installer symlinks the same `skills/delivery-pipeline` directory into Codex, Claude, and pi
 skill homes, installs setup, `delivery-pipeline-herdr`, and `delivery-pipeline-t3code` in all three, and exposes `delivery-pipeline-orca` in those same native
-skill discovery directories. Codex additionally receives `delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
+skill discovery directories. Codex additionally receives `delivery-pipeline-codex-app`; Claude additionally
+receives `delivery-pipeline-alma` (Alma reads the Claude skills home). The pre-commit validator is installed by default; pass `--no-hooks`
 to skip it.
 
 Before first use in a project repo, also run `setup-matt-pocock-skills` for tracker, triage, and
@@ -123,6 +125,17 @@ against `orchestrator_capabilities` before every batch. Workers are `delegate_ta
 own T3 worktrees, aligned to the packet's base commit; T3 completion wakes the coordinator. Version 1
 carries direct plans only; staged plans stay blocked. Contracts live in
 `skills/delivery-pipeline-t3code/references/`.
+
+### Alma
+
+Alma UI sessions coordinate via the current thread; workers run as Alma Task subagents.
+
+Use $delivery-pipeline-alma with <any-map-spec-or-ticket-issue>.
+
+The Alma shell uses native Task + coordinator-created Execution Worktrees; all task types bind
+`agent: alma`. Task models are read from [config/models.json](skills/delivery-pipeline-alma/config/models.json). **Only direct mode**
+is supported (ADR-0015: Task resume does not preserve context). Effort is recorded but not enforced (Task has no effort parameter).
+Work entry, override parameters, and recovery see [Alma dispatch contract](skills/delivery-pipeline-alma/references/alma-dispatch.md).
 
 ### Orca
 
