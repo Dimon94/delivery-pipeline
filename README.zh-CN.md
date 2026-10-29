@@ -9,14 +9,13 @@ idea/map -> discovery -> spec -> implementation tickets
   -> configured CLI/worktree dispatch -> integration -> testing -> review -> summary PR/MR
 ```
 
-`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被五个平级 transport
+`skills/delivery-pipeline` 是唯一 canonical 核心链路，同一份物理 skill 被四个平级 transport
 壳读取。当前调用会话就是 coordinator；worker agent/model/effort 由用户级配置决定。
 CLI/Herdr 交付入口为 `delivery-pipeline-herdr`，其 packet 与 references 全部共置在该壳内。
 T3 Code 交付入口为 `delivery-pipeline-t3code`：worker 是 T3 原生 `delegate_task` 子任务，运行在
 T3 管理的 worktree 里，T3 专属的派发与生命周期合同共置在该壳内。
 Codex App native task/worktree 保持显式特殊 transport，入口为 `delivery-pipeline-codex-app`，其
-packet 与 references 全部共置在该壳内。`delivery-pipeline-alma` 是 Alma UI transport：使用 Task tool
-派发 worker 并共用 canonical 核心链路。`delivery-pipeline-orca` 是严格绑定 Orca 的独立入口：
+packet 与 references 全部共置在该壳内。`delivery-pipeline-orca` 是严格绑定 Orca 的独立入口：
 读取当前 binary 的 version-matched guide；runtime、discovery、worker policy、identity 或当前
 operation capability 缺证据时明确返回 `dispatch unavailable`，不 fallback 到 Herdr/Codex App。
 
@@ -55,7 +54,7 @@ Coordinator 不在配置中，当前会话使用什么 agent/model，就由什�
 
 安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup、
 `delivery-pipeline-herdr`、`delivery-pipeline-t3code` 与 `delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
-`delivery-pipeline-codex-app`；Claude 额外获得 `delivery-pipeline-alma`（Alma 读取 Claude skills home）。默认安装 pre-commit validator；
+`delivery-pipeline-codex-app`。默认安装 pre-commit validator；
 `--no-hooks` 可跳过。
 
 首次使用项目 repo 前，还需运行 `setup-matt-pocock-skills`，配置 owner skills 使用的 tracker、
@@ -112,17 +111,6 @@ App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/conf
 T3 provider target，每批派发前用 `orchestrator_capabilities` 核对 model id 与 effort 取值。worker 是
 自带 T3 worktree 的 `delegate_task` 子任务，先对齐 packet 的 base commit；T3 完成唤醒 coordinator。
 v1 只承载 direct 计划，staged 计划保持 blocked。合同见 `skills/delivery-pipeline-t3code/references/`。
-
-### Alma
-
-Alma UI 会话通过当前 thread 协调；worker 以 Alma Task 子代理形式运行。
-
-使用 $delivery-pipeline-alma 继续 <任意 map/spec/ticket issue>。
-
-Alma 壳使用原生 Task + coordinator 创建的 Execution Worktree；所有任务类型绑定 `agent: alma`。Task 模型读取
-[config/models.json](skills/delivery-pipeline-alma/config/models.json)。**只支持 direct 模式**（ADR-0015：Task resume
-不保留上下文）。Effort 只记录不落实（Task 无 effort 参数）。
-工作入口、覆盖参数与恢复见 [Alma 派发合同](skills/delivery-pipeline-alma/references/alma-dispatch.md)。
 
 ### Orca
 

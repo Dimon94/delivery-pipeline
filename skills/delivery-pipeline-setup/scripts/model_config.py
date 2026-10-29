@@ -92,15 +92,10 @@ def _entry_errors(
 
 
 def validate_document(document: object, transport: str = "cli") -> list[str]:
-    """只检查 version 5 结构，不探测或修改用户配置。transport 为 cli、app 或 alma。
-
-    alma 实例与 app 实例同形（九项 work、default_mode、非空 modes），但 agent 只认 alma、
-    mode 只允许 direct、禁止 legacy_execution（ADR-0015）。
-    """
-    if transport not in ("cli", "app", "alma"):
-        return ["transport must be cli, app or alma"]
-    native = {"app": "codex-app", "alma": "alma"}.get(transport)
-    agents = CLI_AGENTS if transport == "cli" else {native}
+    """只检查 version 5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
+    if transport not in ("cli", "app"):
+        return ["transport must be cli or app"]
+    agents = CLI_AGENTS if transport == "cli" else {"codex-app"}
     errors: list[str] = []
     if not isinstance(document, dict):
         return ["top-level value must be an object"]
@@ -108,9 +103,6 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
     if transport == "app":
         top_level = top_level | {"default_mode"}
         allowed = top_level | {"legacy_execution"}
-    elif transport == "alma":
-        top_level = top_level | {"default_mode"}
-        allowed = top_level
     else:
         allowed = top_level
     if not set(document) <= allowed or not top_level <= set(document):
@@ -147,8 +139,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
     modes = document.get("modes")
     if not isinstance(modes, dict):
         errors.append("modes must be an object")
-    elif transport != "cli" and not modes:
-        errors.append(f"{transport} modes must be a non-empty object")
+    elif transport == "app" and not modes:
+        errors.append("app modes must be a non-empty object")
     else:
         for name, mode in sorted(modes.items()):
             prefix = f"modes.{name}"
@@ -159,16 +151,12 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                 continue
             if mode["kind"] not in KINDS:
                 errors.append(f"{prefix}.kind must equal staged or direct")
-            elif transport == "alma" and mode["kind"] != "direct":
-                errors.append(
-                    f"{prefix}.kind must be direct; Alma Task resume 不保留上下文（ADR-0015）"
-                )
             plans = mode["agents"]
             if not isinstance(plans, dict) or not plans:
                 errors.append(f"{prefix}.agents must be a non-empty object")
                 continue
-            if transport != "cli" and set(plans) != {native}:
-                errors.append(f"{prefix}.agents keys must be exactly ['{native}']")
+            if transport == "app" and set(plans) != {"codex-app"}:
+                errors.append(f"{prefix}.agents keys must be exactly ['codex-app']")
             elif not set(plans) <= agents:
                 errors.append(
                     f"{prefix}.agents keys must be known agents {sorted(agents)}"
@@ -185,7 +173,7 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                             f"{prefix}.agents.{agent}.{stage}", plan.get(stage)
                         )
                     )
-    if transport != "cli":
+    if transport == "app":
         default_mode = document.get("default_mode")
         if (
             not isinstance(default_mode, str)
@@ -218,9 +206,9 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
     return errors
 
 
-def validate_path(path: Path, transport: str = "cli") -> list[str]:
+def validate_path(path: Path) -> list[str]:
     try:
-        return validate_document(json.loads(path.expanduser().read_text()), transport)
+        return validate_document(json.loads(path.expanduser().read_text()))
     except FileNotFoundError:
         return [f"config file not found: {path.expanduser()}"]
     except json.JSONDecodeError as error:
@@ -910,59 +898,8 @@ def valid_app_fixture() -> dict:
     }
 
 
-def valid_alma_fixture() -> dict:
-    pair = {"agent": "alma", "model": "provider:model", "effort": "high"}
-    return {
-        "version": 5,
-        "default_mode": "standard",
-        "work": {task: dict(pair) for task in sorted(APP_REQUIRED_WORK)},
-        "modes": {
-            "standard": {
-                "kind": "direct",
-                "agents": {
-                    "alma": {
-                        stage: {"model": "provider:model", "effort": "high"}
-                        for stage in STAGES
-                    }
-                },
-            }
-        },
-        "review": {
-            scope: {axis: dict(pair) for axis in REVIEW_AXES} for scope in REVIEW_SCOPES
-        },
-    }
-
-
-def _alma_self_test() -> list[str]:
-    """ADR-0015：alma 实例只允许 direct mode，agent 只认 alma，禁止 legacy_execution。"""
-    failures: list[str] = []
-    if validate_document(valid_alma_fixture(), "alma"):
-        failures.append("valid v5 Alma fixture was rejected")
-    if not validate_document(valid_alma_fixture()):
-        failures.append("Alma fixture was accepted as CLI config")
-    if not validate_document(valid_app_fixture(), "alma"):
-        failures.append("App fixture was accepted as Alma config")
-    case = valid_alma_fixture()
-    case["modes"]["standard"]["kind"] = "staged"
-    if not validate_document(case, "alma"):
-        failures.append("Alma staged mode was accepted")
-    case = valid_alma_fixture()
-    case["work"]["planning"]["agent"] = "codex-app"
-    if not validate_document(case, "alma"):
-        failures.append("codex-app agent in Alma config was accepted")
-    case = valid_alma_fixture()
-    case["legacy_execution"] = valid_app_fixture()["legacy_execution"]
-    if not validate_document(case, "alma"):
-        failures.append("Alma config with legacy_execution was accepted")
-    case = valid_alma_fixture()
-    case["modes"] = {}
-    if not validate_document(case, "alma"):
-        failures.append("Alma config with empty modes was accepted")
-    return failures
-
-
 def self_test() -> list[str]:
-    failures: list[str] = _alma_self_test()
+    failures: list[str] = []
     fixture = valid_fixture()
     if validate_document(fixture):
         failures.append("valid v5 CLI fixture was rejected")
@@ -1535,12 +1472,6 @@ def main() -> int:
     parser.add_argument("--worker-name", default="worker")
     parser.add_argument("--pane-id", default="pane")
     parser.add_argument("--request", help="persisted native continuation payload JSON")
-    parser.add_argument(
-        "--transport",
-        choices=("cli", "app", "alma"),
-        default="cli",
-        help="validate 使用的配置实例类型",
-    )
     args = parser.parse_args()
 
     if args.command == "self-test":
@@ -1552,7 +1483,7 @@ def main() -> int:
         )
         return 0 if not errors else 1
     if args.command == "validate":
-        errors = validate_path(Path(args.path), args.transport)
+        errors = validate_path(Path(args.path))
         print(
             json.dumps(
                 {"valid": not errors, "errors": errors}, ensure_ascii=False, indent=2

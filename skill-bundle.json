@@ -5,7 +5,6 @@
     "cli": "skills/delivery-pipeline/SKILL.md",
     "herdr": "skills/delivery-pipeline-herdr/SKILL.md",
     "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
-    "alma": "skills/delivery-pipeline-alma/SKILL.md",
     "orca": "skills/delivery-pipeline-orca/SKILL.md",
     "t3code": "skills/delivery-pipeline-t3code/SKILL.md",
     "setup": "skills/delivery-pipeline-setup/SKILL.md"
@@ -14,7 +13,6 @@
     "sharedSkillDirectory": "skills/delivery-pipeline",
     "herdrSkillDirectory": "skills/delivery-pipeline-herdr",
     "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
-    "almaSkillDirectory": "skills/delivery-pipeline-alma",
     "orcaSkillDirectory": "skills/delivery-pipeline-orca",
     "t3codeSkillDirectory": "skills/delivery-pipeline-t3code",
     "setupSkillDirectory": "skills/delivery-pipeline-setup"

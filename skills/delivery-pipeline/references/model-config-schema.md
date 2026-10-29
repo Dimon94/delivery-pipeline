@@ -71,8 +71,8 @@ CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实
 | `ticket-sizing` | 拆分评估 |
 
 每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
-`pi|codex|claude|codex-app|alma`：agent 值决定 worker kind，前三个由所选 CLI transport 壳（Herdr pane 或 T3Code task）承载，
-`codex-app` 经 App task，`alma` 经 Alma Task tool。仅 implementation 任务类型（`design`/`frontend`/`backend`）
+`pi|codex|claude|codex-app`：agent 值决定 worker kind，前三个由所选 CLI transport 壳（Herdr pane 或 T3Code task）承载，
+`codex-app` 经 App task。仅 implementation 任务类型（`design`/`frontend`/`backend`）
 允许附加可选 `execution: {model, effort}`；其他任务类型写 `execution` 一律拒绝。
 配置文件可以只定义已知 key 的子集；每个 transport 声明自己的必需集（见下文），缺必需项
 阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。
@@ -106,9 +106,6 @@ CLI 实例的 `modes` 可以为空对象；它只在 ticket 或 map **显式点�
 
 App 实例的 `modes` 必须非空，`agents` key 精确为 `codex-app`；App 的 implementation lane
 没有对应 work 项，阶段计划只能来自 mode，解析顺序为 本票 → map → 配置 `default_mode`。
-
-Alma 实例的 `modes` 必须非空，`agents` key 精确为 `alma`；Alma 的 implementation lane
-没有对应 work 项，阶段计划只能来自 mode，解析顺序为 本票 → map → 配置 `default_mode`。
 `default_mode` 必须命中 `modes` 的 key；它是 App-only 顶层 key，CLI 实例出现即拒绝。
 
 旧票据遗留的 `staged`/`direct` 字面值不是合法 mode 名；遇到时阻塞并要求用户显式选择
@@ -136,10 +133,6 @@ App 实例允许可选的 `legacy_execution`，key 精确为 `astra-luna` 与 `a
   `integration`、`assistance`、`second-opinion`、`ticket-sizing` 九项；所有 entry 与 review
   轴的 agent 必须等于 `codex-app`；必需 `default_mode`；`modes` 非空且 `agents` key 精确为
   `codex-app`。
-- **Alma 实例**：`work` 精确为 `coordinator`、`research`、`prototype`、`planning`、`testing`、
-  `integration`、`assistance`、`second-opinion`、`ticket-sizing` 九项；所有 entry 与 review
-  轴的 agent 必须等于 `alma`；必需 `default_mode`；`modes` 非空且 `agents` key 精确为
-  `alma`。
 
 ## 迁移
 

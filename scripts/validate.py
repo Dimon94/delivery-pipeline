@@ -2,7 +2,6 @@
 import json
 import os
 import re
-import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "skills" / "delivery-pipeline"
 APP = ROOT / "skills" / "delivery-pipeline-codex-app"
 ORCA = ROOT / "skills" / "delivery-pipeline-orca"
-ALMA = ROOT / "skills" / "delivery-pipeline-alma"
 HERDR = ROOT / "skills" / "delivery-pipeline-herdr"
 T3CODE = ROOT / "skills" / "delivery-pipeline-t3code"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
@@ -33,10 +31,6 @@ DEPENDENCIES = [
     "orca-cli",
     "orchestration",
 ]
-MODEL_CONFIG = runpy.run_path(
-    str(SETUP / "scripts" / "model_config.py"),
-    run_name="__model_config_validation__",
-)
 OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "none"}
 STATES = {
     "created",
@@ -127,7 +121,6 @@ def check_manifest() -> None:
         "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
         "orca": "skills/delivery-pipeline-orca/SKILL.md",
         "t3code": "skills/delivery-pipeline-t3code/SKILL.md",
-        "alma": "skills/delivery-pipeline-alma/SKILL.md",
         "setup": "skills/delivery-pipeline-setup/SKILL.md",
     }:
         record("v2 entrypoints mismatch")
@@ -137,7 +130,6 @@ def check_manifest() -> None:
         "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
         "orcaSkillDirectory": "skills/delivery-pipeline-orca",
         "t3codeSkillDirectory": "skills/delivery-pipeline-t3code",
-        "almaSkillDirectory": "skills/delivery-pipeline-alma",
         "setupSkillDirectory": "skills/delivery-pipeline-setup",
     }:
         record("v2 install directories mismatch")
@@ -469,7 +461,6 @@ def check_model_contract() -> None:
             "version 5",
             "任务类型",
             "codex-app",
-            "alma",
             "default_mode",
             "modes",
             "starting",
@@ -483,7 +474,7 @@ def check_model_contract() -> None:
             "standards",
             "spec",
             "skill 与 reference 不提供默认 agent/model/effort",
-            "`pi|codex|claude|codex-app|alma`",
+            "`pi|codex|claude|codex-app`",
         ),
     )
     schema = extract_schema_example(schema_doc)
@@ -1494,49 +1485,6 @@ def check_t3code_contract() -> None:
                     )
 
 
-def check_alma_shell() -> None:
-    """ADR-0015：Alma Task transport 壳的硬约束。"""
-    config = ALMA / "config" / "models.json"
-    if not config.exists():
-        record("Alma config must exist at skills/delivery-pipeline-alma/config/models.json")
-    else:
-        try:
-            doc = json.loads(config.read_text())
-        except json.JSONDecodeError as error:
-            record(f"invalid JSON in Alma config: {error}")
-        else:
-            errors = MODEL_CONFIG["validate_document"](doc, "alma")
-            if errors:
-                record(f"Alma config validation failed: {errors}")
-    require(
-        ALMA / "SKILL.md",
-        (
-            "coordinator_runtime: alma-ui",
-            "dispatch_runtime: alma-task",
-            "agent: alma",
-            "references/alma-dispatch.md",
-            "config/models.json",
-        ),
-    )
-    require(
-        ALMA / "references" / "alma-dispatch.md",
-        (
-            "kind: direct",
-            "resume 不保留上下文（ADR-0015）",
-            "effort 只记录请求值（ADR-0015）",
-            "coordinator cwd",
-        ),
-    )
-    dispatch = ALMA / "references" / "alma-dispatch.md"
-    if dispatch.exists():
-        content = dispatch.read_text()
-        if re.search(r"\bstaged\b.*mode", content, re.IGNORECASE):
-            record(
-                f"{dispatch.relative_to(ROOT)} 提及 staged，但 Alma resume 无上下文（ADR-0015）"
-            )
-    check_skill_links(ALMA / "SKILL.md")
-
-
 def check_tree_ownership() -> None:
     retired = (
         ROOT / "skills" / "delivery-pipeline-pi",
@@ -1605,10 +1553,6 @@ def check_installer() -> None:
         record("setup skill must be installed into exactly three CLI homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-codex-app"') != 1:
         record("Codex App shell must be installed exactly once")
-    if text.count('link_skill "$ROOT/skills/delivery-pipeline-alma"') != 1 or (
-        '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-alma"' not in text
-    ):
-        record("Alma shell must be installed exactly once into the Claude skills home")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-orca"') != 3:
         record("Orca entrypoint must be installed into exactly three agent homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-herdr"') != 3:
@@ -2078,7 +2022,6 @@ def main() -> None:
     check_app_shell()
     check_orca_contract()
     check_t3code_contract()
-    check_alma_shell()
     check_tree_ownership()
     check_installer()
     check_context_and_docs()
