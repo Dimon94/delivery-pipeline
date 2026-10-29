@@ -10,12 +10,13 @@ idea/map -> discovery -> spec -> implementation tickets
 ```
 
 `skills/delivery-pipeline` is the single canonical core chain, installed unchanged for pi,
-Codex CLI, and Claude CLI, and read by four peer transport shells. The calling session is the
+Codex CLI, and Claude CLI, and read by five peer transport shells. The calling session is the
 coordinator; worker agent/model/effort comes from user configuration. CLI/Herdr delivery enters
 through `delivery-pipeline-herdr` with all Herdr-specific packets and references co-located in
 that shell. T3 Code delivery enters through `delivery-pipeline-t3code`: workers are native
 `delegate_task` children in T3-managed worktrees, with T3-specific dispatch and lifecycle co-located
-in that shell. Codex App native tasks/worktrees remain an explicit transport exception,
+in that shell. Lody delivery enters through `delivery-pipeline-lody`: workers are Lody sessions with
+Lody-managed worktrees, and their final replies return as Operation results. Codex App native tasks/worktrees remain an explicit transport exception,
 exposed by `delivery-pipeline-codex-app` with all App-specific packets and references co-located
 inside that shell. `delivery-pipeline-orca` is a separate, Orca-bound entrypoint: it reads the
 active binary's version-matched guides and blocks with `dispatch unavailable` when runtime,
@@ -45,6 +46,8 @@ lane kinds and runtime mapping are owned by
 - Herdr CLI as the canonical core's terminal multiplexer.
 - T3 Code for the `delivery-pipeline-t3code` shell; the coordinator runs in a T3 thread whose project
   root is this repo's Source Worktree.
+- Lody for the `delivery-pipeline-lody` shell; the coordinator runs in a Lody session whose local project
+  is a Git repository (`isGit: true`) rooted at this repo's Source Worktree.
 - Orca CLI for the independent `delivery-pipeline-orca` entrypoint; its current-runtime
   `orca-cli` and `orchestration` guides must be readable.
 - Owner skills: the machine-readable list is `skill-bundle.json` (`requires`); the installer diagnoses
@@ -57,7 +60,7 @@ lane kinds and runtime mapping are owned by
 ```
 
 The installer symlinks the same `skills/delivery-pipeline` directory into Codex, Claude, and pi
-skill homes, installs setup, `delivery-pipeline-herdr`, and `delivery-pipeline-t3code` in all three, and exposes `delivery-pipeline-orca` in those same native
+skill homes, installs setup, `delivery-pipeline-herdr`, `delivery-pipeline-t3code`, and `delivery-pipeline-lody` in all three, and exposes `delivery-pipeline-orca` in those same native
 skill discovery directories. Codex additionally receives `delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
 to skip it.
 
@@ -123,6 +126,19 @@ against `orchestrator_capabilities` before every batch. Workers are `delegate_ta
 own T3 worktrees, aligned to the packet's base commit; T3 completion wakes the coordinator. Version 1
 carries direct plans only; staged plans stay blocked. Contracts live in
 `skills/delivery-pipeline-t3code/references/`.
+
+### Lody
+
+```text
+Use $delivery-pipeline-lody with <any-map-spec-or-ticket-issue>.
+```
+
+Run it in a Lody session on this repo's Source Worktree. The shell reuses the version 5 CLI worker
+configuration, maps each work entry to a Lody agent config, and verifies model ids and effort values
+against that config's `runConfig` before every batch. Workers are `lody_session_create` sessions with
+Lody-managed worktrees, aligned to the packet's base commit; each worker's final reply is delivered to the
+coordinator as an Operation result. Version 1 carries direct plans only; staged plans stay blocked.
+Contracts live in `skills/delivery-pipeline-lody/references/`.
 
 ### Orca
 

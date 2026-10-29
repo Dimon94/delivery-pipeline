@@ -13,6 +13,7 @@ APP = ROOT / "skills" / "delivery-pipeline-codex-app"
 ORCA = ROOT / "skills" / "delivery-pipeline-orca"
 HERDR = ROOT / "skills" / "delivery-pipeline-herdr"
 T3CODE = ROOT / "skills" / "delivery-pipeline-t3code"
+LODY = ROOT / "skills" / "delivery-pipeline-lody"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
 TICKET_SIZING = ROOT / "skills" / "ticket-sizing"
 
@@ -121,6 +122,7 @@ def check_manifest() -> None:
         "codexApp": "skills/delivery-pipeline-codex-app/SKILL.md",
         "orca": "skills/delivery-pipeline-orca/SKILL.md",
         "t3code": "skills/delivery-pipeline-t3code/SKILL.md",
+        "lody": "skills/delivery-pipeline-lody/SKILL.md",
         "setup": "skills/delivery-pipeline-setup/SKILL.md",
     }:
         record("v2 entrypoints mismatch")
@@ -130,6 +132,7 @@ def check_manifest() -> None:
         "codexAppSkillDirectory": "skills/delivery-pipeline-codex-app",
         "orcaSkillDirectory": "skills/delivery-pipeline-orca",
         "t3codeSkillDirectory": "skills/delivery-pipeline-t3code",
+        "lodySkillDirectory": "skills/delivery-pipeline-lody",
         "setupSkillDirectory": "skills/delivery-pipeline-setup",
     }:
         record("v2 install directories mismatch")
@@ -144,6 +147,7 @@ def check_frontmatter() -> None:
         (APP / "SKILL.md", "delivery-pipeline-codex-app"),
         (ORCA / "SKILL.md", "delivery-pipeline-orca"),
         (T3CODE / "SKILL.md", "delivery-pipeline-t3code"),
+        (LODY / "SKILL.md", "delivery-pipeline-lody"),
         (SETUP / "SKILL.md", "delivery-pipeline-setup"),
     )
     for path, name in expected:
@@ -281,9 +285,9 @@ def check_core_contract() -> None:
             "<!-- wayfinder-lane-registry:v2 -->",
             "role: planning | design | frontend | backend | testing | review | map",
             "output_mode: commit | artifact | checks | verdict | none",
-            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | orchestrator | orca",
-            "coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | orca-terminal | none",
-            "dispatch_runtime: herdr | t3code | orca | none",
+            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | lody-session | orchestrator | orca",
+            "coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | lody | orca-terminal | none",
+            "dispatch_runtime: herdr | t3code | lody | orca | none",
             "orca: <opaque-overlay-or-none>",
             "Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`",
             "两者都显式记录 `dispatch_runtime: orca`",
@@ -1476,12 +1480,87 @@ def check_t3code_contract() -> None:
         r"delegate_task|task_status|t3_thread_|t3_worktree_|t3_pending_request|"
         r"orchestrator_capabilities"
     )
-    for root in (CORE, SETUP, HERDR, APP, ORCA):
+    for root in (CORE, SETUP, HERDR, APP, ORCA, LODY):
         for path in sorted(root.rglob("*.md")):
             for lineno, line in enumerate(path.read_text().splitlines(), 1):
                 if t3_only.search(line):
                     record(
                         f"T3Code transport leaked outside its shell: {path.relative_to(ROOT)}:{lineno}"
+                    )
+
+
+
+def check_lody_contract() -> None:
+    for path in (
+        LODY / "SKILL.md",
+        LODY / "references" / "lody-dispatch.md",
+        LODY / "references" / "lody-lifecycle.md",
+        LODY / "assets" / "LODY_ROLE_DISPATCH_PACKET.md",
+    ):
+        check_skill_links(path)
+    require(
+        LODY / "SKILL.md",
+        (
+            "coordinator_runtime: lody",
+            "dispatch_runtime: lody",
+            'lody_session_create(workContext: {kind: "local", worktree: true})',
+            "`lody-session`",
+            "coordinator 留在 Source Worktree",
+            "staged 计划保持 `blocked`",
+            "existing lane 始终按 registry runtime 恢复",
+        ),
+    )
+    require(
+        LODY / "references" / "lody-dispatch.md",
+        (
+            "lody_session_create_options",
+            "`isGit: true`",
+            "dispatch unavailable",
+            "model_evidence: lody-run-config",
+            "`reasoningEffortValues`",
+            "配置值原样使用",
+            "lody staged adapter unavailable",
+            "`operationId: <lane_id>`",
+            "`useCurrentSessionAsParent: false`",
+            "implementation_gate.py",
+            "结束本轮",
+        ),
+    )
+    require(
+        LODY / "references" / "lody-lifecycle.md",
+        (
+            "`lody_operation_get` 只读本 session 拥有的 Operation",
+            "LANE_DONE <lane_id>",
+            "LANE_WAITING <lane_id>",
+            "lody_session_chat(sessionId: session_id",
+            "lody_session_archive(sessionId: session_id)",
+            "git worktree remove",
+            "close_pending",
+            "release_stage: deployed",
+            "Operation 结果只投递给拥有它的 `coordinator_session_id`",
+            "lody_session_cancel(sessionId: session_id)",
+        ),
+    )
+    require(
+        LODY / "assets" / "LODY_ROLE_DISPATCH_PACKET.md",
+        (
+            "lane-registry.md",
+            "git switch --detach <base_sha>",
+            "git rev-parse --git-common-dir",
+            "preflight bundle 完成前不派生",
+            "宿主原生 subagent",
+            "LANE_WAITING <lane_id>",
+            "LANE_DONE <lane_id>",
+            "Lody 初始分支",
+        ),
+    )
+    lody_only = re.compile(r"\blody_(?:session|operation|agent_config)_")
+    for root in (CORE, SETUP, HERDR, APP, ORCA, T3CODE):
+        for path in sorted(root.rglob("*.md")):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if lody_only.search(line):
+                    record(
+                        f"Lody transport leaked outside its shell: {path.relative_to(ROOT)}:{lineno}"
                     )
 
 
@@ -1559,6 +1638,8 @@ def check_installer() -> None:
         record("Herdr shell must be installed into exactly three CLI homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-t3code"') != 3:
         record("T3Code shell must be installed into exactly three CLI homes")
+    if text.count('link_skill "$ROOT/skills/delivery-pipeline-lody"') != 3:
+        record("Lody shell must be installed into exactly three CLI homes")
     subprocess.run(["bash", "-n", str(install_path)], check=True)
 
 
@@ -2022,6 +2103,7 @@ def main() -> None:
     check_app_shell()
     check_orca_contract()
     check_t3code_contract()
+    check_lody_contract()
     check_tree_ownership()
     check_installer()
     check_context_and_docs()

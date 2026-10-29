@@ -96,12 +96,12 @@ work_item: <url-or-gate-coordinate>
 role: planning | design | frontend | backend | testing | review | map   # 持久化字段名保留；新 lane 写入任务类型
 output_mode: commit | artifact | checks | verdict | none
 lane_id: <stable-id>
-runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | orchestrator | orca
+runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | lody-session | orchestrator | orca
 state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed | superseded
 agent: pi | codex | claude | none
 model: <configured-model-or-none>
 effort: <configured-effort-or-none>
-model_evidence: pi-list-models | codex-catalog | claude-env | t3-capabilities | none
+model_evidence: pi-list-models | codex-catalog | claude-env | t3-capabilities | lody-run-config | none
 execution_mode: legacy | staged | direct | none   # legacy 仅 version 4 前 lane；新 lane 用 staged | direct | none
 execution_mode_name: <modes 中的命名预设-or-none>   # version 5 新 lane 记录 mode 名；默认路径为 none
 execution_source: role-config | ticket | map | user-config | work | none   # role-config 仅旧 lane；非实现任务用 work
@@ -121,10 +121,11 @@ continuation: <single persisted continuation overlay-or-none>
 workspace_id: <id-or-none>
 tab_id: <id-or-none>
 pane_id: <id-or-none>
-coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | orca-terminal | none
-dispatch_runtime: herdr | t3code | orca | none
+coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | lody | orca-terminal | none
+dispatch_runtime: herdr | t3code | lody | orca | none
 orca: <opaque-overlay-or-none>
 t3code: <opaque-overlay-or-none>
+lody: <opaque-overlay-or-none>
 herdr_session_name: <name-or-none>
 herdr_session_owned: true | false | none
 bootstrap_authority: trusted_execution_bootstrap | none
@@ -142,7 +143,7 @@ test_strategy: test_in_integration | rebase_then_test | skip_extra_test | none
 updated_at: <ISO-8601>
 ```
 
-`orca` 和 `t3code` 仅为共享 registry 的嵌套 opaque overlay 槽位；其内部字段、操作与恢复合同全部归
+`orca`、`t3code` 和 `lody` 仅为共享 registry 的嵌套 opaque overlay 槽位；其内部字段、操作与恢复合同全部归
 写入方 runtime 的入口 skill 及其 helper 所有，本文件不枚举 runtime-specific schema。
 overlay 写入方必须先持久化 intent、再补真实坐标与 receipt；共享 registry owner 必须在
 写入后精确 readback。写入方 helper 不持有第二份 registry、dispatcher 或 event journal。
@@ -152,6 +153,9 @@ Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`；
 
 T3Code worker 使用 `runtime: t3-task`，map 仍使用 `runtime: orchestrator`；
 两者都显式记录 `dispatch_runtime: t3code`，coordinator 为 `coordinator_runtime: t3code`。
+
+Lody worker 使用 `runtime: lody-session`，map 仍使用 `runtime: orchestrator`；
+两者都显式记录 `dispatch_runtime: lody`，coordinator 为 `coordinator_runtime: lody`。
 非 Orca lane 不补写这些 markers，也不因当前配置自动迁移。
 
 ## Worker State Machine
