@@ -157,8 +157,13 @@ def _file_record(path: Path) -> dict[str, Any]:
     }
 
 
-def snapshot_worktree(worktree: str | Path, *, required_ignored: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
-    """读取未提交现场；ignored 不作为 dirty 输入，仅保存指纹并 fail-closed。"""
+def snapshot_worktree(worktree: str | Path, *, required_ignored: list[str] | tuple[str, ...] = (),
+                      include_ignored: bool = True) -> dict[str, Any]:
+    """默认完整采集；Git-only 显式不采 ignored，Unknown+空清单不表示物理无 ignored。"""
+    if type(include_ignored) is not bool:
+        raise CheckpointError("include_ignored 必须为 bool")
+    if not include_ignored and required_ignored:
+        raise CheckpointError("Git-only 未采 ignored，不能跳过 required_ignored；使用默认完整采集核对交付输入")
     root = _git_top(Path(worktree))
     dirty_names = set(_nul_paths(_run_git(root, "diff", "--name-only", "-z", "HEAD")))
     staged = sorted(set(_nul_paths(_run_git(root, "diff", "--cached", "--name-only", "-z", "HEAD"))))
@@ -172,13 +177,15 @@ def snapshot_worktree(worktree: str | Path, *, required_ignored: list[str] | tup
         else:
             dirty[name] = _file_record(path)
 
-    ignored = sorted(set(_nul_paths(_run_git(root, "ls-files", "--others", "--ignored",
-                                               "--exclude-standard", "-z"))))
-    if set(required_ignored) & set(ignored):
-        raise CheckpointError("ignored 交付输入未纳入 checkpoint，无法安全继续")
-    ignored_fingerprints = {
-        name: _file_record(_safe_path(root, name)) for name in ignored
-    }
+    ignored, ignored_fingerprints = [], {}
+    if include_ignored:
+        ignored = sorted(set(_nul_paths(_run_git(root, "ls-files", "--others", "--ignored",
+                                                   "--exclude-standard", "-z"))))
+        if set(required_ignored) & set(ignored):
+            raise CheckpointError("ignored 交付输入未纳入 checkpoint，无法安全继续")
+        ignored_fingerprints = {
+            name: _file_record(_safe_path(root, name)) for name in ignored
+        }
     index_diff = _run_git(root, "diff", "--cached", "--binary", "HEAD")
     worktree_diff = _run_git(root, "diff", "--binary", "HEAD")
     return {
@@ -186,7 +193,7 @@ def snapshot_worktree(worktree: str | Path, *, required_ignored: list[str] | tup
         "common_dir": _common_dir(root),
         "dirty": dirty,
         "head": os.fsdecode(_run_git(root, "rev-parse", "HEAD").strip()),
-        "ignored": {"delivery_input": "none" if not ignored else UNKNOWN,
+        "ignored": {"delivery_input": "none" if include_ignored and not ignored else UNKNOWN,
                     "fingerprints": ignored_fingerprints, "paths": ignored},
         "index_sha256": hashlib.sha256(index_diff).hexdigest(),
         "staged": staged,
