@@ -156,10 +156,43 @@ dispatch circuit-break 只数派发失败，验收失败不占用其计数。诊
 1. 每轮先产出诊断 artifact，归因一类：实现 / 环境 / 判据 / 前置（ADR-0011 prereq check）。
    无诊断 artifact 不得发起下一轮，不原地重跑。
 2. 复验使用与首次失败同一套机器证据，不换更宽松的判据。
-3. 实现问题由 implementation owner 持续修复，直到原验收通过；不设修复轮次上限，
-   不因历史失败次数暂停。环境或判据问题交对应 owner 修复；证据指向上游前提才动图
-   （ADR-0011 supersede / ADR-0013 补票）。
+3. checks 与 prereq check 失败的实现问题由 implementation owner 持续修复，直到原验收通过；
+   不设修复轮次上限，不因历史失败次数暂停。Review finding 不走本回路，按 §Review 预算处理。
+   环境或判据问题交对应 owner 修复；证据指向上游前提才动图（ADR-0011 supersede / ADR-0013 补票）。
 4. 只有当前授权内无法解除的权限、外部依赖或用户决策阻塞才上浮用户，附失败证据与恢复条件。
+
+## Review 预算（ADR-0017）
+
+每张票的 implementation review 最多 3 轮；Map、Spec 或独立票 PR 的 whole-change review 另有 3 轮。
+两份预算互不共享，也不能续。一轮是一次审查派发，命中的专项 Review 与主审同轮，只在 R1 运行。
+
+| 轮次 | 触发条件 | 范围 |
+| --- | --- | --- |
+| R1 | 候选 head 已同步目标分支，本地检查与验收对账完成 | 完整 diff |
+| R2 | R1 有 P0/P1 且已修复 | 修复 diff 及其影响到的行为；只重跑报过 P0/P1 的轴，修复改了公开 Interface 或依赖时两轴都跑 |
+| R3 | R2 有 P0/P1 且已修复 | 同 R2 |
+
+每轮 fan-in 运行 `scripts/review_gate.py --ledger <artifacts_root>/review-budget/<scope>-<work_item>.json`。
+输入与账本合同见脚本头部。verdict 只由 P0/P1 计数决定；中断、超时或缺 verdict 的审查不进账本，由派发熔断兜底。
+
+按 gate 输出处置：
+
+- `PASS`：进入下一 gate。验证缺口写入报告，由 testing/closeout gate 判定，不改变 Review verdict。
+- `FIX`：写诊断 artifact，给出根因和归因类别，修复并排查同类位置，再开下一轮。
+- `REVIEW_EXHAUSTED`：lane 写 `blocked`，不合并，不开第 4 轮。对实现链路运行 `retro`，输入三轮 finding、
+  诊断 artifact 与 packet，产出漏在哪一环及环境改法。用户随后决定重开新票（新预算）或放弃，原票不再加轮。
+
+归因类别：合同未兑现、时序或身份代次、入口或调用方遗漏、持久或升级恢复、测试或夹具、越界或权限、环境。
+
+其他规则：
+
+- P2 查重后登记 Issue，P3 留在报告里。两者都不开修复 lane，也不触发新一轮。
+- whole-change 阶段的修复 lane 和同步主干不跑内嵌 Review，由下一轮 whole-change 复核。
+- 干净的 merge 不占轮。改变语义的冲突解决占一轮；预算用尽时靠测试验证，并在 PR 注明。
+- base 与 head 相同的 Review 结果直接复用，不重跑。
+- packet 不得抬高阻断线或预算。用户明确破例时，packet 引用用户原话与来源坐标。
+
+完成标准：每轮都有账本记录，输出由 gate 给出；每条 P2 有 Issue 坐标；`REVIEW_EXHAUSTED` 有 retro 交付物。
 
 ## Supersede（ADR-0011）
 

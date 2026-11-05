@@ -5,6 +5,7 @@
 **Decider:** User (Dimon)
 
 > 2026-10-09 用户修订：取消验收修复轮次上限，有 bug 就持续修复并按原判据复验直到通过。
+> 2026-11-05：Review finding 改由 ADR-0017 的 Review 预算约束；checks 与 prereq check 失败仍按本记录。
 
 ## Context
 

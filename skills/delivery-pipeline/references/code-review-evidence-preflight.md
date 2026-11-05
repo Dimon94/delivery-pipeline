@@ -51,11 +51,16 @@ worktree snapshot 未变化。
 
 ## 子审查 Fan-out
 
+轮次、范围与处置归 `gate-state-machine.md` §Review 预算。packet 给出轮次和账本路径；父 worker 拿到各轴
+verdict 后运行 `scripts/review_gate.py`，不自行判定通过。R2/R3 另传上轮 finding 与修复 diff 的绝对路径，
+reviewer 只审修复 diff 及其影响到的行为，其余范围沿用上轮结论。whole-change 阶段的修复 lane 不进入本节。
+
 - 每个子 reviewer prompt 传 bundle 绝对目录、fixed point/HEAD、当前轴和 standards/spec source；
   spec source 全部以绝对路径或 tracker URL 给出（spec、ticket body、相关 ADR），reviewer 不搜索定位；
   七个文件名沿上表恢复。先读 fixed-point.txt、changed-paths.txt、worktree-state.txt，再按当前轴读取
   diff.patch 的相关 hunk、commits.txt、fixed-point-added-paths.txt 与 commands.txt；完整审查范围
   保持不变，各轴仍须覆盖其职责内的全部变更，再读源码补充上下文。
+- prompt 写明“第 N 轮，共 3 轮”。
 - 子任务显式标记 review-only；交付物是 findings/verdict，不承担 Git 命令、测试命令或 staged-state 自证。
 - runtime 若自动附加 child acceptance/evidence gate，父 worker 选择其 review-only/no-acceptance
   形式；`noStagedFiles` 等 shell-derived 字段以 `worktree-state.txt` 为父级证据，不向子 reviewer 索取。

@@ -1976,6 +1976,29 @@ def check_recovery_record() -> None:
         record(f"recovery_record self-test failed: {result.stdout}{result.stderr}")
 
 
+def check_review_gate() -> None:
+    script = CORE / "scripts" / "review_gate.py"
+    if not is_executable(script):
+        record("review gate must exist and remain executable: review_gate.py")
+        return
+    result = subprocess.run(
+        [sys.executable, str(script), "--self-test"],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if result.returncode != 0:
+        record(f"review_gate self-test failed: {result.stdout}{result.stderr}")
+    require(
+        CORE / "references" / "gate-state-machine.md",
+        ("## Review 预算", "review_gate.py", "REVIEW_EXHAUSTED"),
+    )
+    require(
+        CORE / "references" / "code-review-evidence-preflight.md",
+        ("review_gate.py", "§Review 预算"),
+    )
+
+
 def check_claude_adapter_contract() -> None:
     helper = CORE / "scripts" / "claude_adapter.py"
     probe = CORE / "scripts" / "claude_adapter_check.py"
@@ -2112,6 +2135,7 @@ def main() -> None:
     check_checkpoint_contract()
     check_lane_graph()
     check_recovery_record()
+    check_review_gate()
     check_claude_adapter_contract()
 
     if ERRORS:
