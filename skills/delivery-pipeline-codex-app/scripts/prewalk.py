@@ -598,7 +598,6 @@ def subagent(data):
         "assistance",
         "second-opinion",
         "review",
-        "ticket-sizing",
         "testing",
         "integration",
     ):

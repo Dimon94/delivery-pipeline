@@ -6,8 +6,6 @@ description: 拆分 implementation tickets、审查现有拆票粒度或预估�
 # Ticket Sizing
 
 主动预测逐票 token 需求，结合独立验收与依赖边界确定粒度。拆票流程的 owner 是 `to-tickets`。
-delivery-pipeline 的 to-tickets 阶段必须执行本 skill，并保留逐票判定产物供 tickets gate 回读；
-既有票复用仍须有这份证据，不另设 coordinator 粒度复审。
 
 ## 执行步骤
 

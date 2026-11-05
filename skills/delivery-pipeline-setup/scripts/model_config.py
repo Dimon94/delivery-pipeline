@@ -31,7 +31,6 @@ TASK_TYPES = {
     "integration",
     "assistance",
     "second-opinion",
-    "ticket-sizing",
 }
 CLI_REQUIRED_WORK = {"planning", "design", "frontend", "backend", "testing"}
 APP_REQUIRED_WORK = {
@@ -43,7 +42,6 @@ APP_REQUIRED_WORK = {
     "integration",
     "assistance",
     "second-opinion",
-    "ticket-sizing",
 }
 CLI_AGENTS = {"pi", "codex", "claude"}
 LEGACY_ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}

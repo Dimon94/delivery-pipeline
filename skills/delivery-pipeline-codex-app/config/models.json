@@ -41,11 +41,6 @@
       "agent": "codex-app",
       "model": "gpt-6.1-sol",
       "effort": "low"
-    },
-    "ticket-sizing": {
-      "agent": "codex-app",
-      "model": "gpt-6.1-sol",
-      "effort": "high"
     }
   },
   "modes": {

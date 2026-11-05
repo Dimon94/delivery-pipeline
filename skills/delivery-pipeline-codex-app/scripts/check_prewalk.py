@@ -72,26 +72,11 @@ def check():
         )
         assert observed["action"] == ("verified" if source else "Unknown")
         assert observed["model"] == (model if source else "Unknown")
-    sizing = call(
-        "subagent",
-        {
-            "work": "ticket-sizing",
-            "active_count": 0,
-            "source": "live list",
-            "read_only": False,
-        },
-    )
-    assert sizing["request"] == {
-        "model": configured["config"]["work"]["ticket-sizing"]["model"],
-        "reasoning_effort": "high",
-        "fork_turns": "none",
-    }
-    assert sizing["read_only"] is True
     assert (
         call(
             "subagent",
             {
-                "work": "ticket-sizing",
+                "work": "second-opinion",
                 "active_count": 3,
                 "source": "live list",
                 "read_only": False,
@@ -238,7 +223,6 @@ def check():
                 "parent": "spec-650",
                 "body": "ticket body",
                 "owner_run": "to-tickets artifact",
-                "sizing": "ticket-sizing per-ticket assessment artifact",
                 "confirmation": "user approved breakdown",
                 "dependencies": [],
             },
@@ -277,7 +261,6 @@ def check():
             "testing",
             "integration",
             "second-opinion",
-            "ticket-sizing",
         ):
             actual = call(
                 "subagent",
@@ -419,9 +402,6 @@ def check():
     del standalone["map"]
     assert call("resolve", standalone)["action"] == "create"
     assert call("resolve", {"existing_lane": {"model": "old"}})["action"] == "recover"
-    missing_sizing = copy.deepcopy(base)
-    del missing_sizing["gate_evidence"]["ticket"]["sizing"]
-    call("resolve", missing_sizing, False)
     default = call("resolve", base)
     assert default["overlay"]["development_mode"] == "sol-direct"
     assert default["overlay"]["execution_kind"] == "direct"

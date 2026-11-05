@@ -32,7 +32,7 @@ App 壳从配置解析两轴模型作为显式参数传给 owner，不选择或�
 | 地图沟通、规划、spec、issue 拆分 | `work.planning` | `model`，work 为 planning |
 | implementation 起步、实现接续、直接实现 | `default_mode`、`modes` | `resolve` 冻结计划，`prepare` 接续 |
 | 内部辅助、whole-change testing、逐票 Integration | 对应 `work.assistance/testing/integration` | `subagent` |
-| second opinion、ticket-sizing 评估 | 对应 `work.second-opinion/ticket-sizing` | `subagent` |
+| second opinion | 对应 `work.second-opinion` | `subagent` |
 | 正式 implementation / whole-change 双轴 | `review.<scope>.standards/spec` | `subagent` 返回 review_models，传给 resolved owner |
 | 旧无 phase_plan 的 legacy checkpoint | `legacy_execution` | 仅 `prepare` 的显式 legacy 恢复 |
 
@@ -81,7 +81,7 @@ model、effort 与来源，调用 `scripts/prewalk.py coordinator` 记录观测�
 ### 内部委派
 
 内部辅助、咨询、Testing、Integration 和正式 Review 前，父会话先读当前宿主子代理列表，调用
-   `scripts/prewalk.py subagent`：输入 work（assistance / second-opinion / review / ticket-sizing / testing / integration）、
+   `scripts/prewalk.py subagent`：输入 work（assistance / second-opinion / review / testing / integration）、
    active_count（当前父会话未结束的子代理数）、source（观测来源与时间）、read_only
    （父任务是否只读）。同一父会话串行做核验与分派，宿主更低上限仍优先。
    wait 表示等待并回读；spawn 才可使用返回参数，prompt 必须带父范围、允许编辑路径和
@@ -235,13 +235,6 @@ planning worker 按 owner 合同保留用户确认：决定内容、确认来源
 坐标，并沿 Terminal 回传合同交给 coordinator。需要用户交互时登记 awaiting_human，保留 task；
 task completed 只是唤醒信号。coordinator 核验用户确认及当前 gate 的持久通过证据后才推进，
 缺失确认不因 artifact 存在而自动通过。既有确认仍适用时直接接续。
-
-## Ticket-sizing 评估子代理
-
-`to-tickets` owner 可通过 subagent 入口指定 `work: ticket-sizing`，读取 work.ticket-sizing。
-沿同一父会话并发上限，占一个 slot，强制只读；不回落到通用 assistance 配置。
-输入与逐票结果按 resolved ticket-sizing 合同；owner 核验并持久化为 tickets gate 的 sizing 证据，
-用户对拆分与依赖的批准仍是必需条件。能力不可用时可由 owner 直接执行评估，不跳过 ticket-sizing。
 
 ## 内部辅助工作
 

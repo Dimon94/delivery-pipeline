@@ -33,7 +33,7 @@ staged 只适用于 implementation；planning 行只适用于 planning artifact�
 内部委派、正式 Review 行在实际调用前加载；coordinator 管理正式 Review，实施 worker 准备
 候选审查证据时只读 preflight，不能因此取得放行权。正式 Review 同时加载内部委派行。
 其他 output mode 按完整 owner 与本项验收执行。
-咨询与 sizing 再读开发模式对应章节；缺失、Unknown 或历史 legacy phase 时回到持久证据和对应
+咨询再读开发模式对应章节；缺失、Unknown 或历史 legacy phase 时回到持久证据和对应
 恢复分支，不能猜 direct。同一未压缩上下文只复用已读且未变化的合同，冷恢复重新读取必要章节。
 
 ## Worker 执行

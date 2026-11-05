@@ -24,7 +24,6 @@ def check(data):
         for field in ("url", "body", "owner_run", "confirmation"):
             require_text(item.get(field), stage + "." + field)
     spec, ticket = evidence["spec"], evidence["ticket"]
-    require_text(ticket.get("sizing"), "ticket-sizing 逐票判定产物")
     if ticket.get("parent") != spec["url"] or ticket["url"] != data["work_item"]:
         raise ValueError("实施 ticket / Spec Parent 回链不匹配")
     dependencies = ticket.get("dependencies")

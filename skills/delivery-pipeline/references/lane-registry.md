@@ -78,7 +78,7 @@ Gate/状态：<最早未完成 gate；持久状态>
    排除 Source/Integration，HEAD 包含 base。只处理本项，tracker fan-in、Integration、
    下一 gate 和远程动作由 coordinator 处理。
 2. 完整读取 Owner SKILL.md 与当前分支必要引用，记录 frontmatter name + resolved path 与 runtime invocation label。
-   `commit` 写入前按 `gate-state-machine.md` §实施前置检查核对 to-spec、to-tickets、ticket-sizing 与用户确认；
+   `commit` 写入前按 `gate-state-machine.md` §实施前置检查核对 to-spec、to-tickets 与用户确认；
    缺失则 blocked。请求值和实际模型 readback 分开留证，缺证据写 Unknown。
 3. 按 output_mode 交付：commit 保存本项候选；artifact 给产物坐标；checks 给完整命令/结果；
    verdict 给原始独立结论。后三者保持 clean。需要 Review 时先读

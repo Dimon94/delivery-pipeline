@@ -616,7 +616,7 @@ def check_handoff_contract() -> None:
             record(f"fixed handoff fields mismatch: {title}: {actual}")
     require(registry, (
         "FINAL_REPORT_BEGIN", "FINAL_REPORT_END", "Owner SKILL.md",
-        "frontmatter name + resolved path", "to-spec、to-tickets、ticket-sizing 与用户确认",
+        "frontmatter name + resolved path", "to-spec、to-tickets 与用户确认",
         "请求值和实际模型 readback 分开留证", "三个固定模板", "不扩展交接字段",
         "cwd 必须为属于 Source repo 的 Execution Worktree", "HEAD 包含 base",
         "Review 的证据须可恢复 scope、owner、fixed point、HEAD、bundle",
@@ -690,7 +690,7 @@ def check_context_loading() -> None:
         if set(branches) != {"全部", "commit", "staged", "planning", "内部委派", "正式 Review"}:
             raise ValueError("App 加载表缺少角色或阶段")
         direct = branches["全部"] + branches["commit"] + read_contract_section(packet, "Worker 执行")
-        for required in ("Owner SKILL.md", "HEAD 包含 base", "to-spec", "ticket-sizing", "send_message_to_thread", "Unknown", "phase: executing"):
+        for required in ("Owner SKILL.md", "HEAD 包含 base", "to-spec", "send_message_to_thread", "Unknown", "phase: executing"):
             if required not in direct:
                 raise ValueError(f"direct 缺少必要合同: {required}")
         for unrelated in ("### Prewalk 接续", "legacy_checkpoint: true", "## 创建", "## 恢复、Archive 与 Cleanup"):

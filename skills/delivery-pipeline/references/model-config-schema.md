@@ -68,7 +68,6 @@ CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实
 | `integration` | 逐票 Integration 辅助 |
 | `assistance` | 内部辅助（检索、研究、有界实现） |
 | `second-opinion` | 咨询子代理 |
-| `ticket-sizing` | 拆分评估 |
 
 每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
 `pi|codex|claude|codex-app`：agent 值决定 worker kind，前三个由所选 CLI transport 壳（Herdr pane、T3Code task 或 Lody session）承载，
@@ -130,7 +129,7 @@ App 实例允许可选的 `legacy_execution`，key 精确为 `astra-luna` 与 `a
   `review` 矩阵；允许定义其余已知任务类型（当前调度不消费，为后续留口）；entry 与 review
   轴的 agent 属于 `pi|codex|claude`；禁止 `default_mode` 与 `legacy_execution`。
 - **App 实例**：`work` 精确为 `coordinator`、`research`、`prototype`、`planning`、`testing`、
-  `integration`、`assistance`、`second-opinion`、`ticket-sizing` 九项；所有 entry 与 review
+  `integration`、`assistance`、`second-opinion` 八项；所有 entry 与 review
   轴的 agent 必须等于 `codex-app`；必需 `default_mode`；`modes` 非空且 `agents` key 精确为
   `codex-app`。
 

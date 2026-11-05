@@ -25,7 +25,7 @@ tracker relationships、Git、lane registry 和 PR/MR 是状态，聊天不是�
 | --- | --- | --- |
 | `discovery` | map 与 decision child issues | 所有 in-scope child issues closed；resolution 与 artifacts 可读回 |
 | `spec` | published spec issue | to-spec owner 执行产物、owner 要求的用户确认、spec URL/ID、source map link 和 body 可读回 |
-| `tickets` | published implementation tickets | to-tickets owner 与 ticket-sizing 执行产物、用户对拆分与依赖的批准、ticket ID、spec `Parent` 回链和 dependency edges 可读回 |
+| `tickets` | published implementation tickets | to-tickets owner 执行产物、用户对拆分与依赖的批准、ticket ID、spec `Parent` 回链和 dependency edges 可读回 |
 | `dispatch` | ticket dependency graph | ready frontier 已派给独立 worktree tasks（kind 按绑定规则）；冲突/blocked tickets 有原因 |
 | `execute` | worker packets、worktrees | 每个 terminal worker 有与 output mode 对应的交付与 dirty-state report |
 | `collect` | terminal reports | 持久交付证据已验证；blocked 只影响对应 item |
@@ -59,29 +59,27 @@ whole-map `testing/review`、`test-decision`、`rebase` 与 summary MR。
 - `wayfinder owner` 负责 map 与 decision tickets。松散想法的建图留在当前交互会话；
   decision work 按 `wayfinder-frontier-loop.md` 进入 configured lanes。
 - 链路没有已批准 spec 时，由 `to-spec owner` 负责 spec 内容与发布。
-- 没有通过 tickets gate 的 linked implementation tickets 时，由 `to-tickets owner` 负责内容、依赖和发布，必读并执行本 bundle 的 `ticket-sizing`。
+- 没有通过 tickets gate 的 linked implementation tickets 时，由 `to-tickets owner` 负责内容、依赖和发布。
 - `implement owner` 负责单张 ticket 的实现、验证、review 和 commit。
 - `code-review owner` 负责 whole-change verdict；testing lane 负责 whole-change checks。
 - 以上 delegated work 的 role/output mode 由 `frontier-lanes.md` 的 Role Binding 唯一定义。
   orchestrator 只验证持久坐标与状态转换，然后自动分配下一 ready batch。
 
 如果 linked implementation tickets 已存在且前置 gate 证据齐全，直接复用。只有精确 parent/backlink 关系算 linked；
-宽关键词或相似标题不算。无票或缺 owner/粒度/确认执行证据时调用 `to-tickets owner`，复用既有票坐标，发布后重新 readback。
+宽关键词或相似标题不算。无票或缺 owner/确认执行证据时调用 `to-tickets owner`，复用既有票坐标，发布后重新 readback。
 不得因 ticket 大小、拆分方式、描述详细度、验收内容或主观”合理性”阻止 dispatch；
 这些都属于 `to-tickets owner` 的产物所有权。
 
 ## 实施前置检查
 
 每次选 frontier、发布实施票、创建或接续 implementation lane 前，先重建最早未完成 gate。
-`to-spec → to-tickets（含 ticket-sizing）→ dispatch` 是必经流程；三个 skill 都须有执行证据。
+`to-spec → to-tickets → dispatch` 是必经流程；两个 skill 都须有执行证据。
 已有且仍适用的执行证据可以复用；只读过 skill、存在票或补齐字段不算已执行。
 Map Run Authority 的 follow-up decision ticket 只扩展 discovery；原型报告里的实施建议是
 规划输入，不是 Spec、获批拆票或实施授权。coordinator 将输入交给对应 owner：
 
 - 缺 Spec：调用 resolved `to-spec`，按 owner 核验测试切入点等用户确认并发布 Spec。
-- Spec 已通过但缺获批拆票：调用 resolved `to-tickets`，packet 同时传递本 bundle 的
-  `ticket-sizing` name、绝对 SKILL.md path、runtime-specific invocation label；owner 完整读取并逐票
-  判定独立验收目标、前置依赖与单 worktree 边界；可按 ticket-sizing 委派评估，由 owner 核验并保存判定结果，再展示拆分与依赖，用户批准后发布。
+- Spec 已通过但缺获批拆票：调用 resolved `to-tickets`，owner 展示拆分与依赖，用户批准后发布。
 - 既有票缺上述证据：保留票与 worktree，阻塞实施，回到最早缺失 gate；不靠补标签或只补 Parent 放行。
 - discovery 原型需要尚未实现的生产功能：保留 blocked 和缺口，回到 decision owner 收窄为可独立验证的
   原型，或由用户明确调整 discovery 验收范围并记录延期事项；满足 discovery 后才进入 Spec。
@@ -103,7 +101,7 @@ Map Run Authority 的 follow-up decision ticket 只扩展 discovery；原型报�
     },
     "ticket": {
       "url": "<ticket URL>", "parent": "<Spec URL>", "body": "<回读正文>",
-      "owner_run": "<to-tickets 执行产物坐标>", "sizing": "<ticket-sizing 逐票判定产物坐标>",
+      "owner_run": "<to-tickets 执行产物坐标>",
       "confirmation": "<拆分与依赖获批的来源与内容>",
       "dependencies": []
     }
