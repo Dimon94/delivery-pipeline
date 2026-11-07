@@ -47,7 +47,7 @@
     },
     {
       "name": "to-spec",
-      "source": "mattpocock-skills",
+      "source": "dimon94-skills",
       "reason": "Publish the implementation spec after discovery."
     },
     {
@@ -57,12 +57,12 @@
     },
     {
       "name": "implement",
-      "source": "mattpocock-skills",
+      "source": "dimon94-skills",
       "reason": "Issue-level implementation directive sent to each configured worker."
     },
     {
       "name": "code-review",
-      "source": "mattpocock-skills",
+      "source": "dimon94-skills",
       "reason": "Review integrated changes before remote publication."
     },
     {
