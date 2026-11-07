@@ -59,7 +59,7 @@ lane kinds and runtime mapping are owned by
 ./scripts/install.sh --target all
 ```
 
-The installer symlinks the same `skills/delivery-pipeline` directory into Codex, Claude, and pi
+The installer symlinks the same `skills/delivery-pipeline` directory into Codex (`~/.agents/skills`), Claude, and pi
 skill homes, installs setup, `delivery-pipeline-herdr`, `delivery-pipeline-t3code`, and `delivery-pipeline-lody` in all three, and exposes `delivery-pipeline-orca` in those same native
 skill discovery directories. Codex additionally receives `delivery-pipeline-codex-app`. The pre-commit validator is installed by default; pass `--no-hooks`
 to skip it.

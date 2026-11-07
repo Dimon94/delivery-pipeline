@@ -55,7 +55,7 @@ Coordinator 不在配置中，当前会话使用什么 agent/model，就由什�
 ./scripts/install.sh --target all
 ```
 
-安装器把同一个 `skills/delivery-pipeline` 软链到 Codex、Claude 与 pi skill home；setup、
+安装器把同一个 `skills/delivery-pipeline` 软链到 Codex（`~/.agents/skills`，不写 `~/.codex/skills`）、Claude 与 pi skill home；setup、
 `delivery-pipeline-herdr`、`delivery-pipeline-t3code`、`delivery-pipeline-lody` 与 `delivery-pipeline-orca` 也安装到三端各自的原生 discovery 目录。Codex 额外获得
 `delivery-pipeline-codex-app`。默认安装 pre-commit validator；
 `--no-hooks` 可跳过。

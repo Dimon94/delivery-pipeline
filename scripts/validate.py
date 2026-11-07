@@ -739,6 +739,8 @@ def check_installer() -> None:
         record("T3Code shell must be installed into exactly three CLI homes")
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-lody"') != 3:
         record("Lody shell must be installed into exactly three CLI homes")
+    if re.search(r'^\s+"\$CODEX_HOME_DIR/skills/', text, re.M):
+        record("Codex skills install into $AGENTS_HOME_DIR/skills, never $CODEX_HOME_DIR/skills")
     subprocess.run(["bash", "-n", str(install_path)], check=True)
 
 

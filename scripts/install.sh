@@ -71,22 +71,27 @@ link_skill() {
 }
 
 install_codex() {
+  # Codex 从 ~/.agents/skills 发现 skill；清理旧版装进 $CODEX_HOME/skills 的本项目软链。
+  local legacy
+  for legacy in "$CODEX_HOME_DIR"/skills/delivery-pipeline* "$CODEX_HOME_DIR/skills/ticket-sizing"; do
+    [ -L "$legacy" ] && case "$(readlink "$legacy")" in "$ROOT"/skills/*) rm "$legacy" ;; esac
+  done
   link_skill "$ROOT/skills/delivery-pipeline" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline" "Codex delivery-pipeline"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline" "Codex delivery-pipeline"
   link_skill "$ROOT/skills/delivery-pipeline-setup" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline-setup" "Codex delivery-pipeline-setup"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline-setup" "Codex delivery-pipeline-setup"
   link_skill "$ROOT/skills/delivery-pipeline-codex-app" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app" "Codex App shell"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline-codex-app" "Codex App shell"
   link_skill "$ROOT/skills/delivery-pipeline-herdr" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline-herdr" "Codex Herdr shell"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline-herdr" "Codex Herdr shell"
   link_skill "$ROOT/skills/delivery-pipeline-orca" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline-orca" "Codex Orca entrypoint"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline-orca" "Codex Orca entrypoint"
   link_skill "$ROOT/skills/delivery-pipeline-t3code" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline-t3code" "Codex T3Code shell"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline-t3code" "Codex T3Code shell"
   link_skill "$ROOT/skills/delivery-pipeline-lody" \
-    "$CODEX_HOME_DIR/skills/delivery-pipeline-lody" "Codex Lody shell"
+    "$AGENTS_HOME_DIR/skills/delivery-pipeline-lody" "Codex Lody shell"
   link_skill "$ROOT/skills/ticket-sizing" \
-    "$CODEX_HOME_DIR/skills/ticket-sizing" "Codex ticket-sizing"
+    "$AGENTS_HOME_DIR/skills/ticket-sizing" "Codex ticket-sizing"
 }
 
 install_claude() {
