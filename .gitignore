@@ -2,6 +2,9 @@
 *.log
 __pycache__/
 
+# feature 工作区与复盘原始数据只留本机；结论写进 docs/research
+.scratch/
+
 # lane-graph 私有 GitLab 访问配置（含内部 host/凭据引用，永不入库；
 # 推荐默认位置 ~/.config/lane-graph/gitlab.json 本就在仓外）
 lane-graph.gitlab.json
