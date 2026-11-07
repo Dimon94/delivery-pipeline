@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -88,26 +89,39 @@ def size_of(path: Path) -> int:
     return total
 
 
+def _make_writable(func, target, excinfo) -> None:
+    """只读 bundle 只表示审查期不可改写；过期后恢复父目录写权限再删。uchg 等标志不碰。"""
+    if func not in (os.unlink, os.remove, os.rmdir) or not isinstance(excinfo[1], PermissionError):
+        raise excinfo[1]
+    parent = os.path.dirname(target)
+    os.chmod(parent, os.stat(parent).st_mode | stat.S_IRWXU)
+    func(target)
+
+
 def remove(path: Path) -> None:
     if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
+        shutil.rmtree(path, onerror=_make_writable)
     else:
         path.unlink()
 
 
 def collect(root: Path, days: float, apply: bool) -> dict:
     cutoff = time.time() - days * 86400
-    expired, reclaimed = [], 0
+    expired, failed, reclaimed = [], [], 0
     for unit in units(root):
         if fresh_or_kept(unit, cutoff):
             continue
         size = size_of(unit)
         if apply:
-            remove(unit)
+            try:
+                remove(unit)
+            except OSError as exc:  # 单元删不掉只记录，继续处理其余单元
+                failed.append({"path": str(unit), "error": str(exc)})
+                continue
         expired.append({"path": str(unit), "bytes": size})
         reclaimed += size
-    return {"root": str(root), "days": days, "applied": apply,
-            "units": len(expired), "bytes": reclaimed, "expired": expired}
+    return {"root": str(root), "days": days, "applied": apply, "units": len(expired),
+            "bytes": reclaimed, "expired": expired, "failed": failed}
 
 
 def human(n: int) -> str:
@@ -182,7 +196,25 @@ def self_test() -> int:
             failures.append(f"expired set {sorted(got)} != {sorted(expected)}")
         if not (root / "lanes/artifacts/map-old").exists():
             failures.append("dry-run deleted data")
-        collect(root, 14, apply=True)
+        make("lanes/zz-readonly/bundle/diff.patch")  # 只读 review bundle 过期后照删
+        os.chmod(root / "lanes/zz-readonly/bundle/diff.patch", 0o444)
+        os.chmod(root / "lanes/zz-readonly/bundle", 0o555)
+        os.utime(root / "lanes/zz-readonly/bundle", (old, old)); os.utime(root / "lanes/zz-readonly", (old, old))
+        expected.add("lanes/zz-readonly")
+        immutable = make("lanes/zz-immutable/f")  # uchg 删不掉：记 failed，不中断其余单元
+        os.chflags(immutable, stat.UF_IMMUTABLE)
+        os.utime(root / "lanes/zz-immutable", (old, old))
+        try:
+            applied = collect(root, 14, apply=True)
+        except OSError as exc:
+            applied = {"failed": [], "error": exc}
+            failures.append(f"apply aborted on one unit: {exc}")
+        finally:
+            os.chflags(immutable, 0)
+            if (root / "lanes/zz-readonly/bundle").exists():
+                os.chmod(root / "lanes/zz-readonly/bundle", 0o755)
+        if "error" not in applied and [Path(e["path"]).name for e in applied["failed"]] != ["zz-immutable"]:
+            failures.append(f"apply must report only the immutable unit as failed: {applied['failed']}")
         for rel in expected:
             if (root / rel).exists():
                 failures.append(f"apply kept {rel}")
@@ -227,7 +259,9 @@ def main() -> int:
         verb = "removed" if args.apply else "would remove"
         print(f"{time.strftime('%F %T')} {verb} {result['units']} units, {human(result['bytes'])} "
               f"(>{args.days:g}d idle) under {args.root}")
-    return 0
+        for item in result["failed"]:
+            print(f"  failed {item['path']}: {item['error']}")
+    return 1 if result["failed"] else 0
 
 
 if __name__ == "__main__":
