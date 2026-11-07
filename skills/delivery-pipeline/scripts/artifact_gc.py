@@ -3,7 +3,7 @@
 
 单元 = 各工件根目录的直接子项（lanes/artifacts 再下钻一层）与根目录下 map* 散落文件。
 单元内最新 mtime 早于保留期且不含 `.keep` 才过期。默认只预览；`--apply` 才删除。
-配置（model-roles.json*）、bin/ 与其他未列出的路径从不触碰。
+配置（model-roles.json*）、lane registry（registry*）、bin/ 与其他未列出的路径从不触碰。
 
 用法：artifact_gc.py [--root DIR] [--days 14] [--apply] [--json]
       artifact_gc.py install-schedule [--days 14] [--hour 4]   # macOS launchd，每天 --apply
@@ -31,6 +31,7 @@ GC_DIRS = ("lanes", "lanes/artifacts", "artifacts", "review-bundles", "review-ev
            "packets", "checkpoints", "reports", "logs", "private-backups")
 NESTED = {"lanes": {"artifacts"}}
 KEEP = ".keep"
+REGISTRY = "registry"  # lane registry 是恢复坐标，永不清理
 
 
 def units(root: Path):
@@ -40,7 +41,7 @@ def units(root: Path):
             continue
         skip = NESTED.get(rel, set())
         for entry in os.scandir(base):
-            if entry.name not in skip:
+            if entry.name not in skip and not entry.name.startswith(REGISTRY):
                 yield Path(entry.path)
     for entry in os.scandir(root):
         if entry.is_file(follow_symlinks=False) and entry.name.startswith("map"):
@@ -181,6 +182,7 @@ def self_test() -> int:
         make("artifacts/mixed/old"); make("artifacts/mixed/new", stale=False)
         make("model-roles.json"); make("model-roles.json.bak"); make("bin/tool")
         make("map814-old.json")
+        make("lanes/registry-old.md")  # registry 是恢复坐标，不随工件过期
         make("orca-old/x")
         for d in sorted({p for p in root.rglob("*") if p.is_dir()}, key=lambda p: -len(p.parts)):
             if not any(c.stat().st_mtime > old + 1 for c in d.iterdir()):
@@ -219,7 +221,8 @@ def self_test() -> int:
             if (root / rel).exists():
                 failures.append(f"apply kept {rel}")
         for rel in ("lanes/artifacts/map-new", "artifacts/kept", "artifacts/mixed", "artifacts/deep",
-                    "model-roles.json", "model-roles.json.bak", "bin/tool", "lanes/artifacts"):
+                    "model-roles.json", "model-roles.json.bak", "bin/tool", "lanes/artifacts",
+                    "lanes/registry-old.md"):
             if not (root / rel).exists():
                 failures.append(f"apply removed protected/fresh {rel}")
     plist = plistlib.loads(plistlib.dumps(schedule_plist(14, 4)))
