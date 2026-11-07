@@ -7,7 +7,8 @@
             "spec": {"verdict": "NO_SPEC"}},
    "p2_issues": ["<Issue 坐标>"]}
 输出：PASS | FIX | REVIEW_EXHAUSTED。输入非法或超预算时非零退出。
-账本只记录已产生有效 verdict 的轮次；中断的审查不进账本，因此不占预算。
+账本只记录已产生有效 verdict 的轮次及其 P0-P3 合计；中断的审查不进账本，因此不占预算。
+只有 FIX 能续轮：PASS 与 REVIEW_EXHAUSTED 是终态，之后再写入一律拒绝。
 """
 import argparse
 import json
@@ -84,10 +85,17 @@ def write_ledger(path, rounds):
 def run(data, ledger):
     outcome = evaluate(data)
     rounds = read_ledger(ledger)
+    if rounds and rounds[-1]["outcome"] != "FIX":
+        raise ValueError(f"账本已终结于 {rounds[-1]['outcome']}，只有 FIX 之后才能开下一轮")
     expected = len(rounds) + 1
     if data["round"] != expected:
         raise ValueError(f"账本要求下一轮为 {expected}，输入为 {data['round']}")
-    write_ledger(ledger, rounds + [{"round": data["round"], "outcome": outcome}])
+    totals = {severity: 0 for severity in SEVERITIES}
+    for name, axis in data["axes"].items():
+        for severity, value in axis_counts(name, axis).items():
+            totals[severity] += value
+    entry = {"round": data["round"], "outcome": outcome, "counts": totals}
+    write_ledger(ledger, rounds + [entry])
     return outcome
 
 
@@ -134,6 +142,15 @@ def self_test():
         assert run(payload(2, blocking), ledger) == "FIX"
         assert run(payload(3, blocking), ledger) == "REVIEW_EXHAUSTED"
         assert len(read_ledger(ledger)) == 3
+        closed = os.path.join(root, "closed.json")
+        assert run(payload(1, passing), closed) == "PASS"
+        try:  # PASS 后的改动不再开轮
+            run(payload(2, blocking), closed)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("PASS 后账本应拒绝新一轮")
+        assert read_ledger(closed)[0]["counts"]["P1"] == 0
     print("review gate self-test: pass")
 
 

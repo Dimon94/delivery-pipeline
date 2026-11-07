@@ -18,6 +18,7 @@ Agent 用尽量少的审查次数找尽量多的 P0/P1，不做抽象的对抗�
 1. Review finding 与 checks 失败分开：后者继续适用 ADR-0012，前者适用预算。
 2. 预算、轮次范围和处置归 `gate-state-machine.md` §Review 预算；严重度和审查内容归 code-review owner。
 3. `review_gate.py` 由 P0/P1 计数推导结论，账本强制连续轮次与上限，并要求每条 P2 有 Issue 坐标。
+   只有 FIX 能续轮，PASS 后的改动不再开轮（DD-291 曾在 R1 PASS 后续开 R2、R3）；账本每轮记录 P0-P3 合计，供事后核查分级。
 4. R3 后仍有 P0/P1 时写 `REVIEW_EXHAUSTED`：不合并，不续轮，运行实现链路 retro，由用户决定重开新票或放弃。
 5. whole-change 阶段的修复 lane 不跑内嵌 Review，避免绕过预算。
 
