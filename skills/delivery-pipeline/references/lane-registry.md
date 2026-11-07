@@ -60,6 +60,8 @@ Gate/状态：<最早未完成 gate；持久状态>
 本记录的持久化、更新与恢复核验由 `fresh-session-boundaries.md` §Coordinator Recovery 定义。
 `artifacts_root` 让恢复直接定位本 map 的 review bundle 与 checks，不扫描全局 artifacts 树；
 `合同入口` 是下一步动作所需的唯一 reference 章节。
+工件只存证据（日志、diff、结果 JSON、截图），依赖树、构建产物与数据库副本用路径引用原位置。
+`scripts/artifact_gc.py` 清理 14 天无写入的工件单元；需长期保留时在该单元放 `.keep`。
 
 ### Worker 共同行为
 

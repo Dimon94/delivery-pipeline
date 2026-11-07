@@ -838,6 +838,21 @@ def check_review_gate() -> None:
         record(f"review_gate self-test failed: {result.stdout}{result.stderr}")
 
 
+def check_artifact_gc() -> None:
+    script = CORE / "scripts" / "artifact_gc.py"
+    if not is_executable(script):
+        record("artifact GC must exist and remain executable: artifact_gc.py")
+        return
+    result = subprocess.run(
+        [sys.executable, str(script), "self-test"],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if result.returncode != 0:
+        record(f"artifact_gc self-test failed: {result.stdout}{result.stderr}")
+
+
 def main() -> None:
     check_manifest()
     check_frontmatter()
@@ -861,6 +876,7 @@ def main() -> None:
     check_lane_graph()
     check_recovery_record()
     check_review_gate()
+    check_artifact_gc()
 
     if ERRORS:
         fail(
