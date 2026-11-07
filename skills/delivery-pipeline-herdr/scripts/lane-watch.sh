@@ -1,6 +1,6 @@
 #!/bin/bash
 # Lane watcher:CLI/Herdr lane 的 canonical 完成信号探测。
-# 轮询 worker pane 输出，见到 packet 合同要求的 `LANE_DONE <lane_id>` 单行标记后
+# 轮询 worker pane 输出，见到 packet 合同要求的 `LANE_DONE <lane_id> [commit]` 单行标记后
 # prompt Coordinator Pane 唤醒 fan-in；pane 异常消失或超时也会唤醒。
 # 不用 `herdr agent wait --until done`:CLI agent 完成回合回到 idle 不会触发
 # `done` 事件,listener 会永久阻塞。
@@ -9,8 +9,6 @@ set -u
 PANE="$1"; COORD="$2"; LANE_ID="$3"; LABEL="$4"; TIMEOUT_H="${5:-2}"
 export HERDR_ENV=1
 DEADLINE=$(( $(date +%s) + TIMEOUT_H*3600 ))
-SEEN_PREWALK=''
-PENDING_PREWALK=''
 # 可视通道 LANE_DONE 增量检测基线（空 = 首轮建档）：watcher 重挂时屏上可能残留
 # 上一轮 FINAL_REPORT 的 LANE_DONE 行，无增量检测会每次重挂都误唤醒（map#765 实证 4 次）。
 # 只跟踪数量变化：陈旧标记滚出（减）不唤醒，新一轮标记出现（增）才唤醒，兼容多轮 rework。
@@ -22,7 +20,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   # map#1262 实证修复：jsonl 通道必须只数 assistant 输出的真实 marker；packet 投递回显的
   # toolResult 含 LANE_DONE 字样（指令原文）曾致两次 false-positive WAKE。
   # map#1262 codex lane 实证：rollout jsonl 是 response_item/message/output_text 结构，
-  # pi 格式解析全漏（4 条 lane PREWALK/LANE_DONE 未捕获）；这里同时支持两种格式，
+  # pi 格式解析全漏（4 条 lane LANE_DONE 未捕获）；这里同时支持两种格式，
   # 输出匹配到的完整 marker 行（每行一条），由 shell 统一走去重与唤醒。
   MARKERS=$(
   if [ -n "$JSONL" ] && [ -f "$JSONL" ]; then python3 -c '
@@ -44,14 +42,14 @@ for line in open(sys.argv[1]):
     for t in texts:
         for ln in t.splitlines():
             ln=ln.strip()
-            if ln=="LANE_DONE "+lane or ln.startswith("PREWALK_READY "+lane+" /"):
+            if ln=="LANE_DONE "+lane or ln.startswith("LANE_DONE "+lane+" "):
                 print(ln)
 ' "$JSONL" "$LANE_ID" 2>/dev/null; fi)
   # jsonl 通道计数增量去重（2026-10-20 map#765 实证）：布尔 fired 档让同一 lane 的
   # rework 第 2 轮起 jsonl 通道永久失效；改为持久化已见标记数，建档轮不唤醒、
   # 数量增加才唤醒。建档轮已完成的 lane 依赖可视通道/超时兜底，恢复以 registry 证据为准。
   DONE_COUNT_FILE="${LANE_WATCH_STATE_DIR:-/tmp}/lane-watch-count-${LANE_ID}-done"
-  DONE_NOW=$(printf '%s\n' "$MARKERS" | grep -cxF "LANE_DONE $LANE_ID" || true)
+  DONE_NOW=$(printf '%s\n' "$MARKERS" | grep -c . || true)
   DONE_NOW=${DONE_NOW:-0}
   if [ ! -f "$DONE_COUNT_FILE" ]; then
     echo "$DONE_NOW" > "$DONE_COUNT_FILE"
@@ -60,51 +58,12 @@ for line in open(sys.argv[1]):
     DONE_LAST=${DONE_LAST:-0}
     if [ "$DONE_NOW" -gt "$DONE_LAST" ]; then
       echo "$DONE_NOW" > "$DONE_COUNT_FILE"
-      herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(session jsonl 实证 LANE_DONE $LANE_ID 新增)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
+      herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(session jsonl 实证 LANE_DONE $LANE_ID 新增)。按 delivery-pipeline terminal fan-in:把 lane $LANE_ID 交给 integration lane(merger)收口;merger 自身终态则重算 ready frontier 并派发下一批。" >/dev/null 2>&1
       exit 0
     fi
   fi
   # --source visible 只取当前屏幕，避免匹配到已滚动走的历史回显（packet 指令文本本身含 LANE_DONE 字样，曾致两次误报）
   OUT=$(herdr pane read "$PANE" --source visible 2>/dev/null || true)
-  # 按完整行和字面 lane ID 匹配；路径保留空格，artifact 内容由 coordinator 核验。
-  while IFS= read -r LINE; do
-    # 去掉 TUI 行首缩进；保留 marker/path 内容，供精确匹配与去重。
-    LINE="${LINE#"${LINE%%[![:space:]]*}"}"
-    case "$LINE" in
-      "PREWALK_READY $LANE_ID /"*)
-        if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
-           ! printf '%s\n' "$PENDING_PREWALK" | grep -qxF -- "$LINE"; then
-          PENDING_PREWALK="${PENDING_PREWALK}${LINE}
-"
-        fi
-        ;;
-    esac
-  done <<< "$OUT"
-  # jsonl 通道检出的 PREWALK（含 codex rollout）同样走去重队列
-  while IFS= read -r LINE; do
-    case "$LINE" in
-      "PREWALK_READY $LANE_ID /"*)
-        if ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
-           ! printf '%s\n' "$PENDING_PREWALK" | grep -qxF -- "$LINE"; then
-          PENDING_PREWALK="${PENDING_PREWALK}${LINE}
-"
-        fi
-        ;;
-    esac
-  done <<< "$MARKERS"
-  while IFS= read -r LINE; do
-    [ -n "$LINE" ] || continue
-    # 持久去重（2026-09-27）：watcher 超时重挂后重扫 jsonl 会重报历史 PREWALK；
-    # 以 lane+标记行哈希建档，跨进程只报一次。LANE_DONE 不在此列（进程见到即退出）。
-    LINE_KEY=$(printf '%s' "$LINE" | shasum | cut -c1-16)
-    FIRED="${LANE_WATCH_STATE_DIR:-/tmp}/lane-watch-fired-${LANE_ID}-${LINE_KEY}"
-    if [ ! -f "$FIRED" ] && ! printf '%s\n' "$SEEN_PREWALK" | grep -qxF -- "$LINE" &&
-       herdr agent prompt "$COORD" "WAKE: $LABEL 的 pane $PANE 输出阶段标记：${LINE}。请仅核验 checkpoint 与原 runtime 停止证据；此信号不证明已停止或完成，不授权接续、fan-in、Integration 或 cleanup。watcher 继续监听 LANE_DONE。" >/dev/null 2>&1; then
-      touch "$FIRED"
-      SEEN_PREWALK="${SEEN_PREWALK}${LINE}
-"
-    fi
-  done <<< "$PENDING_PREWALK"
   # 行首锚定匹配单行标记，防止 worker 计划/回显文本中的子串误报（曾致 false-positive WAKE）。
   # 增量检测：首轮轮询只建档不唤醒（重挂时屏上陈旧标记不算新）；之后数量增加才唤醒。
   VISIBLE_DONE_NOW=$(printf '%s\n' "$OUT" | grep -cE "^[[:space:]]*LANE_DONE ${LANE_ID}([[:space:]]|$)" || true)
@@ -112,7 +71,7 @@ for line in open(sys.argv[1]):
   if [ -z "$VISIBLE_DONE_LAST" ]; then
     VISIBLE_DONE_LAST=$VISIBLE_DONE_NOW
   elif [ "$VISIBLE_DONE_NOW" -gt "$VISIBLE_DONE_LAST" ]; then
-    herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出新增 LANE_DONE $LANE_ID 标记)。请按 delivery-pipeline terminal fan-in:从 registry 与 Git 验证 lane $LANE_ID 的持久证据 → 按 output_mode 执行 Integration 或写 consumed → cleanup → 重算 ready frontier 并派发下一批 lane(每条新 lane 复用 scripts/lane-watch.sh 挂 watcher)。WAKE 只负责唤醒,证据以 Git、tracker、artifact 与 registry 为准。" >/dev/null 2>&1
+    herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出新增 LANE_DONE $LANE_ID 标记)。按 delivery-pipeline terminal fan-in:把 lane $LANE_ID 交给 integration lane(merger)收口;merger 自身终态则重算 ready frontier 并派发下一批。" >/dev/null 2>&1
     exit 0
   fi
   VISIBLE_DONE_LAST=$VISIBLE_DONE_NOW

@@ -28,6 +28,7 @@ Dispatch blocker。
 | backend/other implementation | `backend` | `commit` |
 | whole-change tests | `testing` | `checks` |
 | code review | review 矩阵（见下） | `verdict` |
+| terminal fan-in（merger） | `integration`（CLI 配置未定义时用 `backend` 项） | `integration` |
 
 review lane 无独立 work 项：用配置 `review.<scope>.standards` 的 `{agent, model, effort}`
 启动 worker，packet 携带该 scope 的两轴矩阵配置给 resolved code-review owner。
@@ -48,7 +49,7 @@ version 5 配置读取；implementation lane 的 mode 名/source 也必须随 pa
 每条 lane 的 worker transport、Execution Worktree、packet、owner/work item、role config 与 registry 已互相验证，
 worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`，即完成该 lane startup。
 `working` 确认后立即按所属壳的 terminal-signal 合同建立唤醒通道；未建立的 lane
-不算完成 Dispatch Handoff——terminal 与 `PREWALK_READY` 都不会唤醒 coordinator，只能靠用户手动发现。
+不算完成 Dispatch Handoff——terminal 不会唤醒 coordinator，只能靠用户手动发现。
 整批成功 lanes 完成 startup、失败项隔离为 `setup_blocked` 后，统一报告全部坐标并立即 yield；
 不等待 routine progress、首个问题或最终结果。报告时重跑一次
 `skills/delivery-pipeline/scripts/lane_graph.py --registry-root <本机 registry root>`，
@@ -56,15 +57,21 @@ worker 进入 `working`，registry readback 为 `running` 或 `awaiting_human`�
 
 ## Terminal Fan-in
 
-- normal path 只消费 completed/blocked terminal event（由所属壳的 terminal 合同产生）；HITL 由用户完成信号唤醒。
-- final report 是 transport cache；Git、tracker 与 artifact 是持久证据。
-- 用户返回后对 worker transport 做一次 bounded read；final marker 缺字段记 Unknown，不要求 worker 重显。
-- coordinator 用 registry、worktree base/head/diff/dirty state、tracker 与 artifacts 验证，按 dependency
-  order串行 Integration。
-- Integration 后完成 canonical tracker transitions，自动重算下一 ready frontier，不等待“继续”。
-- fan-in/cleanup 收口后重跑 `lane_graph.py` 刷新静态页；脚本只读 registry 与 tracker，失败记
-  Unknown 不阻塞收口。
-- watchdog 只处理 startup failure、terminal signal 丢失或工具 timeout；不固定轮询。
+coordinator 不亲自 fan-in。terminal event（HITL 为用户完成信号）到达后：
+
+1. 把该 lane 加入待收口队列；无 active merger 时派发一条 integration lane（merger），
+   worktree/branch 为 Map Integration Worktree，packet 只给待收口 lane_id 列表与本文件指针。
+   merger 运行中到达的 terminal 累积到下一批；Map Integration Worktree 同时只有一个 merger。
+2. merger 按 dependency order 对每条 lane 执行 `execution-worktree-integration.md`（验证、
+   cherry-pick 或 `consumed`、focused checks、Cleanup、tracker transitions），逐条写 registry，
+   刷新 `lane_graph.py`，终态只回 `LANE_DONE <merger_lane> <integration HEAD>`。
+   worker transport 由所属壳指定的一方释放：壳未指定时由 coordinator 在 merger 终态后按壳
+   Cleanup 第 1 步释放。
+3. merger 终态后 coordinator 只读 registry state：重算 ready frontier 并派发下一批，
+   `integration_conflict` 等阻塞项按 gate 报告；不等待“继续”。
+
+final report 是 transport cache，Git、tracker、artifact 与 registry 是持久证据。watchdog 只处理
+startup failure、terminal signal 丢失或工具 timeout；不固定轮询。
 
 ## Authority
 

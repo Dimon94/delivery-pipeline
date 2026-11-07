@@ -1,6 +1,6 @@
 # ADR-0010: Per-task-type Staged Plans（version 5）
 
-**Status:** Accepted
+**Status:** Accepted（CLI staged 部分由 ADR-0018 取代）
 **Date:** 2026-09-26
 **Decider:** User (Dimon)
 

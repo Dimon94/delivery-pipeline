@@ -5,7 +5,7 @@ Canonical 本文件只定义共享 base schema 与 transport markers；特殊 tr
 
 ## 轻量交接
 
-派发、终态回传、恢复只用下面三个固定模板。每项写一句或证据指针；输入有多个来源时逐条列出。
+派发、恢复只用下面两个固定模板，终态只用 §终态行。每项写一句或证据指针；输入有多个来源时逐条列出。
 壳只追加 transport 坐标，其他信息放入现有 registry/工件并引用，不扩展交接字段。
 无事项写“无”，无法确认写 Unknown。机器字段与指纹保持原合同，旧 lane 沿原证据恢复。
 
@@ -15,7 +15,7 @@ Canonical 本文件只定义共享 base schema 与 transport markers；特殊 tr
   Spec、ticket、repo instructions、冻结计划和日志正文留在各自来源。
 - helper 校验完整输入，模型只接收判定与必要字段。大 JSON/日志用 python/jq/rg 定位读取；
   写入 readback 仍逐项比较 expected/actual。错误原文、命令、来源与历史失败留在原工件。
-- 文件级哈希、component/checkpoint SHA256 和 ignored 指纹清单只留在机器工件；
+- 文件级哈希与指纹清单只留在机器工件；
   base/head/交付 commit 的 Git SHA 保留为版本坐标。发布/完整性验收需要的 digest 沿原合同。
 
 ### 派发模板
@@ -33,25 +33,18 @@ Registry：<absolute path；当前 lane>
 Worker 合同：<absolute 所属壳 packet path，读取 Worker 执行节>
 ```
 
-### 终态模板
+### 终态行
+
+worker 终态只输出一行：
 
 ```text
-FINAL_REPORT_BEGIN
-Lane ID：<原 lane_id>
-状态：completed | blocked
-交付：<commit SHA 或 artifact/checks/verdict 坐标>
-证据：<完整命令/结果、模型实际 readback、独立审查结论的来源/字段>
-现场：<HEAD；实际 dirty 状态；dirty/untracked 精确路径>
-确认：<本次用户决定与来源、未决事项；无新增确认写无>
-阻断：<原因与失败工件；无阻断写无>
-下一步：<coordinator 应执行的动作>
-FINAL_REPORT_END
+LANE_DONE <lane_id> <交付坐标>
+LANE_DONE <lane_id> BLOCKED <一句原因；失败工件绝对路径>
 ```
 
-`completed` 是 outcome，不是 registry state。通知与最终回复使用同一短报告，coordinator 从
-原证据验收，指针不构成 PASS。Review 的证据须可恢复 scope、owner、fixed point、HEAD、bundle
-目录和七文件校验结果；clean commit 的 touched paths 从 `git diff <base> <commit> --name-status`
-恢复。省去未变化的坐标和配置；额外工件仍给精确路径。
+交付坐标：commit → commit SHA；artifact → tracker/artifact URL；checks → 结果文件绝对路径；
+verdict → verdict 文件绝对路径；integration → Integration HEAD。证据留在 Git、tracker 与 artifact，
+收口方从原证据验收，不要求 worker 复述。用户决定写入 tracker 评论，由坐标指向。
 
 ### 恢复模板
 
@@ -65,7 +58,7 @@ Gate/状态：<最早未完成 gate；持久状态>
 ```
 
 本记录的持久化、更新与恢复核验由 `fresh-session-boundaries.md` §Coordinator Recovery 定义。
-`artifacts_root` 让恢复直接定位本 map 的 review bundle、checks 与 checkpoint，不扫描全局 artifacts 树；
+`artifacts_root` 让恢复直接定位本 map 的 review bundle 与 checks，不扫描全局 artifacts 树；
 `合同入口` 是下一步动作所需的唯一 reference 章节。
 
 ### Worker 共同行为
@@ -81,82 +74,51 @@ Gate/状态：<最早未完成 gate；持久状态>
    `commit` 写入前按 `gate-state-machine.md` §实施前置检查核对 to-spec、to-tickets 与用户确认；
    缺失则 blocked。请求值和实际模型 readback 分开留证，缺证据写 Unknown。
 3. 按 output_mode 交付：commit 保存本项候选；artifact 给产物坐标；checks 给完整命令/结果；
-   verdict 给原始独立结论。后三者保持 clean。需要 Review 时先读
-   `code-review-evidence-preflight.md`，使用输入中的 scope/fixed point 与同一不可变 bundle；
-   审查权限、阶段停止与终态通知按所属壳合同执行。
+   verdict 给原始独立结论。后三者保持 clean。verdict lane 先读
+   `code-review-evidence-preflight.md`，使用输入中的 fixed point 与同一不可变 bundle；
+   终态按 §终态行，通知按所属壳合同。
 
 完成标准：固定模板可定位当前分支的输入与原始验收证据，权限、失败和恢复坐标完整。
 
 ## Base Schema
 
-以 `<!-- wayfinder-lane-registry:v2 -->` 开头：
+以 `<!-- wayfinder-lane-registry:v2 -->` 开头。lane row 只写下列字段；权限、model evidence
+与日志可由 Agent 从 transport/Git/工件读回，不进 registry。
 
 ```yaml
-work_item: <url-or-gate-coordinate>
-role: planning | design | frontend | backend | testing | review | map   # 持久化字段名保留；新 lane 写入任务类型
-output_mode: commit | artifact | checks | verdict | none
 lane_id: <stable-id>
+work_item: <url-or-gate-coordinate>
+role: planning | design | frontend | backend | testing | review | integration | map   # 持久化字段名保留；新 lane 写入任务类型
+output_mode: commit | artifact | checks | verdict | integration | none
 runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | lody-session | orchestrator | orca
 state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed | superseded
 agent: pi | codex | claude | none
 model: <configured-model-or-none>
 effort: <configured-effort-or-none>
-model_evidence: pi-list-models | codex-catalog | claude-env | t3-capabilities | lody-run-config | none
-execution_mode: legacy | staged | direct | none   # legacy 仅 version 4 前 lane；新 lane 用 staged | direct | none
-execution_mode_name: <modes 中的命名预设-or-none>   # version 5 新 lane 记录 mode 名；默认路径为 none
-execution_source: role-config | ticket | map | user-config | work | none   # role-config 仅旧 lane；非实现任务用 work
-starting_model: <frozen-model-or-none>
-starting_effort: <frozen-effort-or-none>
-execution_model: <frozen-model-or-none>
-execution_effort: <frozen-effort-or-none>
-direct_model: <frozen-model-or-none>
-direct_effort: <frozen-effort-or-none>
-execution_phase: starting | switching | executing | direct | none
-prereq_check: <command-or-probe + expected evidence-or-none>   # ADR-0011；ticket 声明前提能力时必填
-prereq_check_result: <persisted run evidence-or-none>
-checkpoint: <repo-external absolute path-or-none>
-checkpoint_version: <supported version-or-none>
-checkpoint_sha256: <whole-checkpoint sha256-or-none>
-continuation: <single persisted continuation overlay-or-none>
-workspace_id: <id-or-none>
-tab_id: <id-or-none>
-pane_id: <id-or-none>
-coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | lody | orca-terminal | none
-dispatch_runtime: herdr | t3code | lody | orca | none
-orca: <opaque-overlay-or-none>
-t3code: <opaque-overlay-or-none>
-lody: <opaque-overlay-or-none>
-herdr_session_name: <name-or-none>
-herdr_session_owned: true | false | none
-bootstrap_authority: trusted_execution_bootstrap | none
-agent_permission_mode: approve | danger-full-access | dangerously-skip-permissions | none
+mode: <modes 中的命名预设-or-none>
 worktree: <absolute-path-or-none>
 branch: <branch-or-none>
 base_commit: <hash-or-none>
-head_commit: <hash-or-none>
-integrated_commit: <hash-or-none>
-integration_worktree_path: <absolute-path-or-none>
-integration_branch: <feature/map-N-or-none>
-map_run_authority: canonical_tracker_transitions | none
-herdr_workspace_label: <actual-workspace-label-or-none>
-test_strategy: test_in_integration | rebase_then_test | skip_extra_test | none
 updated_at: <ISO-8601>
 ```
 
-`orca`、`t3code` 和 `lody` 仅为共享 registry 的嵌套 opaque overlay 槽位；其内部字段、操作与恢复合同全部归
-写入方 runtime 的入口 skill 及其 helper 所有，本文件不枚举 runtime-specific schema。
-overlay 写入方必须先持久化 intent、再补真实坐标与 receipt；共享 registry owner 必须在
-写入后精确 readback。写入方 helper 不持有第二份 registry、dispatcher 或 event journal。
+按需字段，只在适用时出现：
 
-Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`；
-两者都显式记录 `dispatch_runtime: orca`，coordinator 为 `coordinator_runtime: orca-terminal`。
+- `head_commit` / `integrated_commit`：commit lane 终态与 Integration 后写入。
+- `prereq_check` / `prereq_check_result`：ticket 声明前提能力时（ADR-0011）。
+- transport overlay 槽位 `herdr` / `orca` / `t3code` / `lody`：opaque，内部字段归写入方壳。
+- `coordinator_runtime` / `dispatch_runtime`：非 Herdr transport 的 markers。
+- map row：`integration_worktree_path`、`integration_branch`、`map_run_authority`、`test_strategy`、
+  `coordinator_runtime`。
 
-T3Code worker 使用 `runtime: t3-task`，map 仍使用 `runtime: orchestrator`；
-两者都显式记录 `dispatch_runtime: t3code`，coordinator 为 `coordinator_runtime: t3code`。
+overlay 内部字段、操作与恢复合同全部归写入方 runtime 的入口 skill 及其 helper 所有。
+overlay 写入方先持久化 intent、再补真实坐标与 receipt；共享 registry owner 写入后精确 readback。
+写入方 helper 不持有第二份 registry、dispatcher 或 event journal。旧 lane 的额外字段原样保留，
+恢复时照常读取。
 
-Lody worker 使用 `runtime: lody-session`，map 仍使用 `runtime: orchestrator`；
-两者都显式记录 `dispatch_runtime: lody`，coordinator 为 `coordinator_runtime: lody`。
-非 Orca lane 不补写这些 markers，也不因当前配置自动迁移。
+Orca worker 使用 `runtime: orca`，T3Code worker `runtime: t3-task`，Lody worker `runtime: lody-session`；
+map 均为 `runtime: orchestrator`。三者 lane/map 都写 `dispatch_runtime`（`orca|t3code|lody`）与
+`coordinator_runtime`（`orca-terminal|t3code|lody`）；Herdr lane 不写这两项。
 
 ## Worker State Machine
 
@@ -196,8 +158,8 @@ session/workspace/tab/pane是 lane坐标；
 
 1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry；按持久化的 `runtime` 与 `dispatch_runtime` 选择原 transport。
    Orca markers 缺失或互相矛盾时保留现场并 blocked/stale，不从当前 coordinator、配置或环境推断。
-2. Herdr runtime 验证 session/workspace/tab/pane、kind、role/output_mode、agent/model/effort 与 worktree；
-   execution mode/source 与阶段参数也必须一致；agent/model/effort 是 stored 启动坐标，不与 pane 的
+2. Herdr runtime 验证 `herdr` overlay 的 workspace/tab/pane、kind、role/output_mode、
+   agent/model/effort/mode 与 worktree；agent/model/effort 是 stored 启动坐标，不与 pane 的
    运行中模型对账。existing lane 不应用新 config 也不迁移 Workspace，新 lane 重新解析 Coordinator Pane
    当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
@@ -205,58 +167,3 @@ session/workspace/tab/pane是 lane坐标；
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
 5. `integrated` / `consumed` / `close_pending` 按 cleanup contract readback或重试。
 6. registry 与现实不一致时写 `stale`并保留证据，不覆盖可能存在的 writer。
-
-## Prewalk Checkpoint
-
-`starting` implementation worker 的首改现场由 canonical
-`skills/delivery-pipeline/scripts/checkpoint.py` 生成；checkpoint 必须位于 repo 外，并由同目录临时
-文件 `flush` + `fsync` 后原子替换。JSON 使用 UTF-8、键排序和紧凑分隔；`component_sha256` 分别
-覆盖 dirty content、file mode、staged/index 与完整 snapshot，`checkpoint_sha256` 计算时排除自身。
-同一路径只允许相同指纹幂等重写；任何更新必须写入新的 repo 外 artifact 路径，旧 checkpoint 不覆盖。
-
-checkpoint 至少包含 lane/work item、runtime 与原生 session、Coordinator 坐标、CLI version、Execution
-Worktree/branch/base/HEAD、phase/development mode/source/plan、requested/tool acceptance/actual
-readback（不可读时显式 `Unknown`）、首改、检查、TODO、decision 和 evidence。dirty 路径按路径排序，
-删除项显式记录，未跟踪项纳入；ignored 路径只保存内容/模式指纹并标记 `delivery_input: Unknown`，
-直到确认没有 ignored 路径才可继续；unsupported 文件类型、缺字段、旧版本、hash 不匹配或当前 Git
-snapshot 改变均不得登记成功引用。
-
-阶段计划必须完整冻结 `starting`、`execution`、`direct` 三组 model/effort，并与当前 phase、
-`development_mode`（`legacy|staged|direct`）及 `mode_source`（`role-config|ticket|map|user-config`）
-一致；`tool_acceptance` 必须是明确的 accepted/status/source 结构。阶段信号分层：
-`PREWALK_READY` 只触发 checkpoint 持久读回；只有原 runtime 的 `runtime`、原生 `session_id`、
-coordinator thread/host 身份全部匹配，且已停止、单写者明确为 false 的 `WORKER_STOPPED` 才能返回
-`ready-for-coordinator`。active 返回等待，活动状态或身份 Unknown、关键设计 Unknown、ignored 路径、
-工具拒绝或实际模型/effort Unknown 均保留现场；该入口不发送接续、不触发 Terminal fan-in。
-
-## Continuation Overlay
-
-接续复用同一 lane registry，不创建第二份 registry、receipt 或 journal。`continuation.py` 只返回
-overlay 和 runtime-neutral request；coordinator 必须先把一个 `continuation` overlay 写入既有 registry
-并 readback，再向原 session 发送。overlay 的 `intent` 由 lane、原 session、source phase、checkpoint
-SHA-256 和 target request 唯一确定；`state` 依次记录 `prepared`、`dispatching`、`send-authorized`、`sent`、`send-unknown`、`accepted`、
-`started`、`executing` 或 `blocked`。
-
-`dispatching` 只能在带当前 `request_id`、`after_marker: true`、`settled: true`、非空来源/时间的发送后
-readback 且明确 `not_seen` 时返回可发送请求；旧 stopped 观测、在途调用或缺少 readback 只能回读，不能重发。
-
-`send-authorized` 已落盘但发送前崩溃时，只有当前 `request_id` 的权威回读明确
-`request_seen: false`、`not_seen`、`after_marker: true`、`after_lease: true`、`settled: true`，
-且来源/时间非空、不是生成当前 lease 的同一 `send_probe`，才返回恢复到 `dispatching` 的 overlay。
-该步返回 `request: null`；coordinator 必须持久化并读回后，再生成、持久化并读回新的 send lease 才发送。
-同一 intent 保持既有 request_id；恢复回读保存在 `send_probe`，不新增协议或 journal。
-seen、Unknown、身份不匹配或仅有 lease 前回读均保留现场，不重发；acceptance 可独立先于发送回执到达。
-
-`request`、`tool_acceptance`、`new_turn`、`actual_model` 是四个独立字段；发送结果 Unknown 只允许
-回读原 session，不允许增加请求数。`new_turn` 必须绑定本次 `request_id`、原 session 和新的
-`turn_id`；只有原 session 的 `new_turn.started: true` 才能把 `execution_phase` 写为 `executing`。
-`actual_model` 必须绑定该 `turn_id` 并带非空 `readback_at`；实际 model/effort Unknown 或 mismatch 不通过换模验收，
-但后续同一 turn 的漂移只更新验收证据，不自动阻断已有交付 fan-in。用户手动
-目标保留在 intent，`configuration_unchanged: true`，不回写 Worker Role Configuration。重复 terminal
-和 fan-in 以稳定 ID 幂等消费，冲突或无法消歧时保持现场并 fail-closed。适用 gate 必须同时绑定
-当前 `checkpoint_sha256`、`work_item` 和非空 `source`；旧版本批准不能替代当前用户确认。
-未改动目标可沿既有分派授权以 `authorization: inherited-dispatch` 接续；用户改码或手动换模必须带新的
-`approved: true` 覆盖，不回写全局配置。
-`terminal.outcome: blocked` 可以在新轮前记录受阻终态但不得 fan-in；`completed` 必须绑定当前原
-session、接续 request 和新轮 `turn_id`，并与 lane 的 `output_mode` 一致，`commit` 只可 `integrated`，
-`artifact/checks/verdict` 只可 `consumed`。

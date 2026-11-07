@@ -34,7 +34,7 @@ map 或用户明确要求逐票上线时启用，写入 map registry `delivery_m
   读回 merge commit）→ `deployed`（按目标仓发布对象读回运行版本与业务验收；无部署对象写 `N/A`
   及理由）。lane 停在 `terminal` 直到 `deployed`，再走 cleanup → `closed`、关票、删树删分支。
   worker transport 可以在 `candidate` 后释放。
-- 保留模型配置、checkpoint、单写者与独立 review 合同；不新增 gate 或框架。
+- 保留模型配置、单写者与独立 review 合同；不新增 gate 或框架。
 
 ## Map Integration Worktree
 

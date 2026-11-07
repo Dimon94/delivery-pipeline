@@ -45,7 +45,7 @@ limit 3，结果不作为 gate、lane 或 head 的证据。
 
 可控压缩时以已核验的本记录和未决约束为摘要输入，保留原证据入口；完成后 readback 摘要，
 确认没有丢失新事实。宿主不暴露压缩入口时保留短记录供下一次恢复，不声称已替换其自动摘要。
-本流程不新建 runtime 会话；staged worker 始终沿原 task/session 和冻结 checkpoint 接续。
+本流程不新建 runtime 会话。
 
 ## Worker Session
 

@@ -4,7 +4,7 @@
 全部产品能力，只覆盖已证实且获授权的 operation：GitHub/Linear work item 读取与
 mutation、delivery artifact 的 publish/read/archive/delete、既有 PR/MR 的
 ready-for-review 状态转换。Phase 2 provider 失败不破坏 Phase 1 本地交付链；
-共享 registry、checkpoint、overlay、FIFO 与项目 authority 仍由既有合同持有，
+共享 registry、overlay、FIFO 与项目 authority 仍由既有合同持有，
 本门禁不新建第二套。
 
 ## 只读门禁
@@ -119,4 +119,4 @@ DRY record:
 - reused：`validate_markers`、`_known_text/_known_bool/_readable_absolute/_read_json_object/_at`、
   registry markers 与 attempt 身份核验。
 - remaining duplication：provider 命令闭集是本 transport 边界的显式声明；
-  不复制共享 registry/FIFO/continuation 状态机。
+  不复制共享 registry/FIFO 状态机。

@@ -33,7 +33,7 @@ planning  design  frontend  backend  testing  review(implementation/whole-change
 
 Configuration lives at `~/.config/delivery-pipeline/model-roles.json` (version 4); the schema is
 defined once in `skills/delivery-pipeline/references/model-config-schema.md` and shared with the Codex App
-shell's `config/models.json`. Named `modes` presets carry staged/direct model/effort pairs per agent; new
+shell's `config/models.json`. CLI lanes run direct in one pass; named `modes` presets carry model/effort pairs per agent (App keeps staged); new
 implementation lanes freeze their mode selection and existing lanes recover from their registry. Skills
 contain no default models: missing, unknown, or invalid configuration blocks dispatch and re-enters setup.
 The coordinator is not configured — whichever agent/model invoked the skill remains coordinator. Per-agent
@@ -86,7 +86,7 @@ requests one.
 #### CLI / Herdr version-3 development flow
 
 The flow below shows version-3 configuration and capability evidence, ticket → map → user-config mode
-selection, staged/direct execution, same-session continuation for Pi/Codex/Claude, terminal fan-in,
+selection, direct execution, terminal fan-in,
 and whole-change closeout.
 
 [![Delivery Pipeline CLI / Herdr version-3 development flow](docs/images/delivery-pipeline-cli-v3-flow.en.svg)](docs/images/delivery-pipeline-cli-v3-flow.en.svg)
@@ -123,8 +123,7 @@ Use $delivery-pipeline-t3code with <any-map-spec-or-ticket-issue>.
 Run it in a T3 Code thread on this repo's Source Worktree. The shell reuses the version 5 CLI worker
 configuration, maps each work entry to a T3 provider target, and verifies model ids and effort values
 against `orchestrator_capabilities` before every batch. Workers are `delegate_task` children with their
-own T3 worktrees, aligned to the packet's base commit; T3 completion wakes the coordinator. Version 1
-carries direct plans only; staged plans stay blocked. Contracts live in
+own T3 worktrees, aligned to the packet's base commit; T3 completion wakes the coordinator. Contracts live in
 `skills/delivery-pipeline-t3code/references/`.
 
 ### Lody
@@ -137,7 +136,7 @@ Run it in a Lody session on this repo's Source Worktree. The shell reuses the ve
 configuration, maps each work entry to a Lody agent config, and verifies model ids and effort values
 against that config's `runConfig` before every batch. Workers are `lody_session_create` sessions with
 Lody-managed worktrees, aligned to the packet's base commit; each worker's final reply is delivered to the
-coordinator as an Operation result. Version 1 carries direct plans only; staged plans stay blocked.
+coordinator as an Operation result.
 Contracts live in `skills/delivery-pipeline-lody/references/`.
 
 ### Orca

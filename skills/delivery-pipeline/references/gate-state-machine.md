@@ -138,15 +138,6 @@ Testing 或 review 失败时保留现场与精确失败，进入验收失败修�
 摘要只用于报告；在同次持久化中按 `fresh-session-boundaries.md` §Coordinator Recovery 更新六项
 恢复记录。新会话从 tracker relationships、lane registries、Git 和 PR/MR 重建。
 
-implementation 的 `starting` / `switching` / `executing` 是 lane 内阶段，不新增业务 gate。
-`PREWALK_READY` 只表示 repo 外 checkpoint 已写入并等待 coordinator 持久读回；它不能代替停止、
-terminal outcome 或用户 gate。只有原 runtime 的 `WORKER_STOPPED`、明确无 active writer 且 checkpoint
-仍与 Git snapshot 一致，才返回可供 coordinator 判断的停止状态；active、Unknown、关键设计 Unknown
-或过期现场均保留并 fail-closed，不提前接续或 fan-in。
-WORKER_STOPPED 通过后仍须按 `continuation.py` 固定顺序恢复：registry → 原 session/旧 writer →
-Git/checkpoint → 用户覆盖 → applicable gate（绑定当前 checkpoint 版本）→ persist/readback → send。接续请求、工具接受、新轮、
-实际 model/effort 和 terminal/fan-in 各自留证；Unknown、冲突或重入不增加请求，也不提前推进业务 gate。
-
 ## 验收失败修复（ADR-0012）
 
 验收层失败（checks/verdict/prereq check 不过）由核心链路负责诊断、修复与复验；transport 层
@@ -163,8 +154,9 @@ dispatch circuit-break 只数派发失败，验收失败不占用其计数。诊
 
 ## Review 预算（ADR-0017）
 
-每张票的 implementation review 最多 3 轮；Map、Spec 或独立票 PR 的 whole-change review 另有 3 轮。
-两份预算互不共享，也不能续。一轮是一次审查派发，命中的专项 Review 与主审同轮，只在 R1 运行。
+CLI 不做逐票 review：commit lane 交付即收口，Review 只在 Map Integration（或独立票 PR）上做一次
+whole-change，最多 3 轮，不能续。所属壳仍启用逐票 review 时，每票另有独立的 3 轮预算。
+一轮是一次审查派发，命中的专项 Review 与主审同轮，只在 R1 运行。
 
 | 轮次 | 触发条件 | 范围 |
 | --- | --- | --- |
@@ -178,7 +170,8 @@ dispatch circuit-break 只数派发失败，验收失败不占用其计数。诊
 按 gate 输出处置：
 
 - `PASS`：进入下一 gate。验证缺口写入报告，由 testing/closeout gate 判定，不改变 Review verdict。
-- `FIX`：写诊断 artifact，给出根因和归因类别，修复并排查同类位置，再开下一轮。
+- `FIX`：写诊断 artifact，给出根因和归因类别；whole-change 的全部 finding 交给同一个 implementer
+  lane 修复并排查同类位置，merger 收口后再开下一轮。
 - `REVIEW_EXHAUSTED`：lane 写 `blocked`，不合并，不开第 4 轮。对实现链路运行 `retro`，输入三轮 finding、
   诊断 artifact 与 packet，产出漏在哪一环及环境改法。用户随后决定重开新票（新预算）或放弃，原票不再加轮。
 

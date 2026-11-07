@@ -1,90 +1,35 @@
 # CLI/Herdr 调度运行时路由
 
-创建、恢复或替换任何 worker lane 前读取。本文件是 canonical CLI 主干的 transport adapter；
-Coordinator 是当前 pi/Codex CLI/Claude CLI 会话，所有新 worker 都通过 Herdr，worker kind
-完全由 version 5 work config 的 `agent` 决定。
+创建、恢复或替换 worker lane 前读取。Coordinator 是当前 pi/Codex CLI/Claude CLI 会话；
+新 worker 都经 Herdr，worker kind 完全由 version 5 work config 的 `agent` 决定：
+pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
 
 恢复既有 lane 直接进入“恢复与切换”，不运行新 lane 的配置 gate。
 
-## 新 lane 选择顺序
+## 新 lane
 
-1. 记录当前宿主 `coordinator_runtime: pi-cli | codex-cli | claude-cli`；无法唯一识别时报告
-   Unknown并让用户确认。当前宿主不改写 worker 配置。
-2. 固定 `dispatch_runtime: herdr`。验证 `command -v herdr`、visible Herdr session 与
-   `herdr agent start --help` 支持 `pi`、`codex`、`claude` kind。
-3. 加载 `model-config-schema.md` 与 `model-role-routing.md`，从 work 项读取 agent/model/effort；implementation lane 还要
-   冻结阶段参数：默认取本任务类型 work 项（设了 `execution` 则 staged，未设则 direct 直跑）；ticket/map 显式点名命名 mode 时整体覆盖。三字段、计划或 evidence 验证失败时阻塞并
-   运行 setup，不替换成 coordinator 自身 agent。
-4. agent 映射 runtime：pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude →
-   `herdr-claude-pane`。同一任务类型可由用户重跑 setup 后改变 agent，existing lane 仍按 registry 恢复。
-5. `bootstrap_authority: trusted_execution_bootstrap` 覆盖已配置 worker 在精确 Execution
-   Worktree 内的 kind-specific startup permission；不覆盖 remote publication。
+implementation lane 先按 `gate-state-machine.md` 实施前置检查运行 `scripts/implementation_gate.py`。
+随后每条 lane：
 
-## Herdr Session 与 Workspace
+1. 从当前 Integration HEAD 建 Execution Worktree；packet 按 `assets/HERDR_ROLE_DISPATCH_PACKET.md`
+   写到 repo 外 `~/.config/delivery-pipeline/packets/<lane_id>.md`。
+2. 运行本壳 `scripts/dispatch.py`（参数见 `--help`），capability evidence 按 `model-role-routing.md`
+   探测。它一次完成：Coordinator Pane 坐标 readback（`herdr pane current --current` 与
+   `HERDR_WORKSPACE_ID`/`HERDR_TAB_ID`/`HERDR_PANE_ID` 一致）、计划解析与冻结、registry
+   先于 worker 写入、worker tab 落位与 readback、agent start、packet 单行投递、working 确认
+   （重投一次）、lane watcher、registry `running`。成功只回一行 JSON 坐标；失败写 `setup_blocked`
+   并回原因。
+3. 同批 lane 并发运行 dispatch；默认复用 coordinator 当前所在的 Herdr Workspace，
+   只有用户显式要求新 Workspace 才创建。整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff。
 
-Coordinator Pane 的 caller context 是新 lane 的唯一默认落点。先验证 `HERDR_ENV=1`，且
-`HERDR_WORKSPACE_ID`、`HERDR_TAB_ID`、`HERDR_PANE_ID` 非空；任一缺失即报告
-`dispatch unavailable`，不改用其他 client 的 focused session/workspace。验证通过后执行：
-
-```bash
-herdr pane current --current
-herdr workspace get "$HERDR_WORKSPACE_ID"
-```
-
-readback 的 workspace/tab/pane 必须与环境坐标一致。当前 CLI socket就是 Herdr Session Target；
-将它与 `herdr session list` 的 socket 唯一匹配后记录 `herdr_session_name`，并记录
-`herdr_session_owned: false`；无法唯一匹配时以 Unknown阻塞新 lane。使用裸 `herdr <group> ...`
-继承当前 session；不通过 `--session` 搜索、切换或创建另一个 session。
-
-默认复用 coordinator 当前所在的 Herdr Workspace，并把 `HERDR_WORKSPACE_ID` 记为本次新 lane 的
-`workspace_id`。只有用户显式要求新 Workspace 才执行 `herdr workspace create` 并使用返回的真实
-ID；不重命名当前 Workspace为 map label。workspace 解析是 maximal safe batch 的唯一串行前置，
-readback 后同批 tab/pane creation、placement验证、agent start 与 packet delivery并发发出。
-已有 active lane始终按 registry 中原 session/workspace恢复；后续新 lane按本次 Coordinator Pane
-的 current-workspace 默认重新解析。
-
-## Dispatch Critical Path
-
-implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前置检查运行
-`scripts/implementation_gate.py`；通过后才进入以下配置、worktree 与启动步骤。
-
-1. 一次并行 preflight snapshot：ticket/claim/registry、Integration HEAD/clean state、worktree
-   path/branch collision、Coordinator Pane 的 current session/workspace/tab/pane、role config 与
-   agent model evidence。
-2. registry 先写 task type、agent、model、effort、model_evidence、execution mode 名/source、阶段 model/effort、
-   runtime、permission mode、pane/worktree 计划坐标与 base commit，再精确 readback。
-3. 从同一 Integration HEAD 创建各 lane Execution Worktree，branch prefix 与 agent kind 一致。
-4. 填写 `assets/HERDR_ROLE_DISPATCH_PACKET.md`；按 `model-role-routing.md` 启动 kind-matched CLI。
-   Packet 投递默认走 repo 外文件路径（`~/.config/delivery-pipeline/packets/<lane_id>.md`），
-   `herdr agent prompt` 只发「读取 dispatch packet 执行：<绝对路径>」；超长内嵌文本会被
-   pane 折叠成 `[paste #N +M lines]` 占位符，worker 拿不到内容空转。
-   **模型注入默认走环境变量，不用 `/model` 会话内命令**：`herdr tab create --env PI_MODEL=<provider/id>
-   --env PI_REASONING_LEVEL=<effort>`（pi 在启动时读入并在 session jsonl 落 model_change 实证）。
-   `/model` 交互选择器会截获逐字注入的文本（开头 `/model ` 触发选择器、后续字符进过滤框导致
-   mangling，map#765 lane-782 实证）；仅在 env 不可用时才退到 `/model` 注入，且注入后必须以
-   session jsonl 的 model_change 记录实证，不以屏幕回显为准。
-5. 按 `pane-lifecycle-rules.md` 完成落点验证、投递、记账和聚合 Working 确认；单条失败隔离为
-   `setup_blocked`，不影响 siblings。
-6. 整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff；单 lane working 不提前 yield。
+配置或 evidence 校验失败时阻塞并运行 setup，不替换成 coordinator 自身 agent。trusted execution
+bootstrap 覆盖已配置 worker 在精确 Execution Worktree 内的 kind-specific startup permission；
+不覆盖 remote publication。Herdr unavailable 时输出完整 durable packet 并报告 `dispatch unavailable`。
 
 ## 恢复与切换
 
-- `herdr-pi-pane`、`herdr-codex-pane`、`herdr-claude-pane` 均按自己的 registry kind、model、effort
-  恢复；配置变化不迁移 running lane。
+- 各 kind 按 registry 的 agent/model/effort 与 `herdr` overlay 恢复；配置变化不迁移 running lane。
 - replacement 先按 `lane-registry.md` 排除 active writer，再沿原 lane runtime/model/effort。
-  replacement 验证 stored agent/model/effort 的实时可用性（使用 `model-role-routing.md` 的 evidence），
-  不要求当前配置一致；失败时保留 `setup_blocked`，不静默回落。用户明确选择改配时才经 setup
-  验证新配置并更新 registry。
-- Codex CLI staged continuation 使用 `scripts/codex_cli_adapter.py`：它只消费已持久化的
-  canonical checkpoint 与 `continuation.py` request，校验 `herdr-codex-pane`、原生 session UUID、
-  Execution Worktree 和 execution model/effort 后生成 `codex resume <SESSION_ID>` 参数；禁止
-  `--last`、最近会话猜测和跨 runtime request。adapter 不写 registry、不发送 prompt，Herdr 继续拥有
-  pane 生命周期与可见 TUI。
-- version 5 work 项与 kind 为 `direct` 的命名 mode 都沿既有一次启动流程；staged 计划（work 项设了 `execution`，或显式点名 kind 为 `staged` 的 mode）必须调用对应阶段
-  adapter 并在发送前保留其计划与 evidence；adapter 缺失或核验失败即保持 blocked，不能退回
-  `direct`。Pi/Codex/Claude 的 staged 起步与接续统一使用 `model_config.py start` 与
-  `model_config.py resume --request <payload.json>`，复用既有 native adapter；payload 合同见
-  `model-role-routing.md`。入口只生成计划，不创建第二 dispatcher，也不写 registry。
-- cleanup 只关闭本 lane pane并按 `pane-lifecycle-rules.md` 同步 tab label,以及本 lane
-  Execution Worktree/branch;保留 Coordinator Pane及承载它的 user-visible session/workspace。
-- Herdr unavailable 时输出完整 durable packet并报告 `dispatch unavailable`，不假装已经派发。
+  replacement 验证 stored agent/model/effort 的实时可用性，不要求当前配置一致；失败时保留
+  `setup_blocked`。用户明确选择改配时才经 setup 验证新配置。
+- cleanup 只关闭本 lane pane 与本 lane Execution Worktree/branch；保留 Coordinator Pane 及其 Workspace。

@@ -31,7 +31,7 @@ planning  design  frontend  backend  testing  review(implementation/whole-change
 
 配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 4）；schema 在
 `skills/delivery-pipeline/references/model-config-schema.md` 单一定义，与 Codex App 壳的
-`config/models.json` 共用。命名 `modes` 预设按 agent 保存 staged/direct 的 model/effort 对；
+`config/models.json` 共用。CLI lane 单轮直跑；命名 `modes` 预设按 agent 保存 model/effort 对（App 仍支持 staged）；
 新 implementation lane 冻结 mode 名选择，已有 lane 沿 registry 恢复。
 Skill 不包含默认模型；配置缺失、未知 version 或字段非法都会阻塞派发并重新进入 setup。
 Coordinator 不在配置中，当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
@@ -79,8 +79,8 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 
 #### CLI / Herdr version-3 开发流程
 
-下图覆盖 version-3 配置与 capability evidence、ticket → map → user config 模式选择、staged/direct
-实施、Pi/Codex/Claude 同 session 接续、终态 fan-in 与 whole-change 收尾。
+下图覆盖 version-3 配置与 capability evidence、ticket → map → user config 模式选择、direct
+实施、终态 fan-in 与 whole-change 收尾。
 
 [![Delivery Pipeline CLI / Herdr version-3 开发流程](docs/images/delivery-pipeline-cli-v3-flow.zh-CN.svg)](docs/images/delivery-pipeline-cli-v3-flow.zh-CN.svg)
 
@@ -113,7 +113,7 @@ App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/conf
 在本仓 Source Worktree 上的 T3 Code 线程里调用。本壳复用 version 5 CLI worker 配置，把 work 项映射为
 T3 provider target，每批派发前用 `orchestrator_capabilities` 核对 model id 与 effort 取值。worker 是
 自带 T3 worktree 的 `delegate_task` 子任务，先对齐 packet 的 base commit；T3 完成唤醒 coordinator。
-v1 只承载 direct 计划，staged 计划保持 blocked。合同见 `skills/delivery-pipeline-t3code/references/`。
+合同见 `skills/delivery-pipeline-t3code/references/`。
 
 ### Lody
 
@@ -124,7 +124,7 @@ v1 只承载 direct 计划，staged 计划保持 blocked。合同见 `skills/del
 在本仓 Source Worktree 上的 Lody session 里调用。本壳复用 version 5 CLI worker 配置，把 work 项映射为
 Lody agent config，每批派发前用该 config 的 `runConfig` 核对 model id 与 effort 取值。worker 是带
 Lody-managed worktree 的 `lody_session_create` 子 session，先对齐 packet 的 base commit；worker 最终回复
-作为 Operation 结果投递给 coordinator。v1 只承载 direct 计划，staged 计划保持 blocked。合同见
+作为 Operation 结果投递给 coordinator。合同见
 `skills/delivery-pipeline-lody/references/`。
 
 ### Orca

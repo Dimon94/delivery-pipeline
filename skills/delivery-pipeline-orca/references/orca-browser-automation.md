@@ -2,7 +2,7 @@
 
 本文件是 delivery-pipeline 交付所需 browser/automation operation 的只读门禁合同。
 不代理全部 Orca browser 产品能力，只覆盖 delivery 相关场景（测试页面操作/截图与
-有限自动任务）；Phase 2 失败不破坏 Phase 1 本地链。共享 registry、checkpoint、
+有限自动任务）；Phase 2 失败不破坏 Phase 1 本地链。共享 registry、
 overlay、FIFO 与项目 authority 仍由既有合同持有，本门禁不新建第二套。
 
 ## 只读门禁
@@ -119,4 +119,4 @@ DRY record:
 - reused：`validate_markers`、`_known_text/_known_bool/_readable_absolute/_read_json_object/_at`、
   registry markers 与 attempt 身份核验、native envelope 形态。
 - remaining duplication：operation 命令闭集是本 transport 边界的显式声明；不复制共享
-  registry/FIFO/continuation 状态机。
+  registry/FIFO 状态机。

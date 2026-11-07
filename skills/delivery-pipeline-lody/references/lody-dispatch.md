@@ -34,9 +34,8 @@ canonical 合同位于 `../../delivery-pipeline/references/`，下文以文件�
 `agentType` 匹配且 `availability.state: available` 的唯一 config 作 `agent_config_id`；零个匹配写
 `setup_blocked`，多个匹配列出候选并由用户点名，点名结果写入 overlay。对选中的 config：
 `runConfig.models[].id` 与配置 model 完全一致，配置 effort 属于该项 `reasoningEffortValues`。
-读回写 `model_evidence: lody-run-config`。不一致时该 lane 写 `setup_blocked`，附候选 id，
+不一致时该 lane 写 `setup_blocked`，附候选 id，
 交 `delivery-pipeline-setup` 改配置；配置值原样使用。
-冻结为 staged 的 implementation lane 写 `blocked`，原因 `lody staged adapter unavailable`。
 
 ## Registry Overlay
 
@@ -58,16 +57,14 @@ lody:
 ```
 
 base 字段：`runtime: lody-session`；`worktree` 取 Lody 子 worktree 绝对路径；`branch` 在 commit mode 为
-`<prefix>issue-<coordinate>`，其他 mode 为 `none`；`base_commit` 为 `base_sha`；`workspace_id`、
-`tab_id`、`pane_id` 与 `herdr_*` 字段为 `none`。
+`<prefix>issue-<coordinate>`，其他 mode 为 `none`；`base_commit` 为 `base_sha`。
 
 ## 派发关键路径
 
 implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前置检查运行
 `implementation_gate.py`，通过后执行：
 
-1. registry 写 task type、output_mode、agent/model/effort、`model_evidence`、阶段计划与来源、
-   `base_commit` 与 overlay intent（`operation_id: <lane_id>`），精确 readback。
+1. registry 写 Base Schema 字段与 overlay intent（`operation_id: <lane_id>`），精确 readback。
 2. 填写 `../assets/LODY_ROLE_DISPATCH_PACKET.md`，写入 `~/.config/delivery-pipeline/packets/<lane_id>.md`。
 3. 同批 lanes 在同一轮并行调用 `lody_session_create`：`operationId: <lane_id>`；`prompt` 为 packet
    全文；`machineId` 与 `agentConfigId` 取 overlay；`modelId` 与 `reasoningEffort` 取冻结计划；

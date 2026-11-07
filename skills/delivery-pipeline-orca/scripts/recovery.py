@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 import sys
 from pathlib import Path
@@ -16,10 +15,6 @@ from typing import Any
 import registry_overlay as REGISTRY
 import worker_lifecycle as WORKER
 
-CORE = Path(__file__).resolve().parents[2] / "delivery-pipeline" / "scripts"
-sys.path.insert(0, str(CORE))
-CHECKPOINT = importlib.import_module("checkpoint")
-CONTINUATION = importlib.import_module("continuation")
 
 Error = WORKER.WorkerLifecycleError
 text = WORKER._known_text
@@ -248,33 +243,9 @@ def cancel(request: dict[str, Any]) -> dict[str, Any]:
             "preserve_worktree": True, "reason": "stop 后重新读回；abandon 不证明停止，cleanup 另走项目 gate"}
 
 
-def checkpoint_binding(request: dict[str, Any], lane: dict[str, Any]) -> dict[str, Any]:
-    document = CHECKPOINT.read_checkpoint(lane["checkpoint"], worktree=lane["worktree"],
-                                          expected_lane=lane["lane_id"])
-    require(document["runtime"] == "orca" and document["work_item"] == lane["work_item"],
-            "checkpoint runtime/work item 不一致")
-    for field in ("coordinator_thread_id", "coordinator_host_id", "checkpoint_sha256"):
-        require(document[field] == lane.get(field), f"checkpoint {field} 与 lane 不一致")
-    binding_path = WORKER._readable_absolute(request["binding"], "checkpoint evidence")
-    require(any(Path(item).is_absolute() and Path(item).resolve() == Path(binding_path)
-                for item in document["evidence"]),
-            "Orca binding 必须在既有 checkpoint.evidence 内")
-    _, binding = WORKER._read_json_object(binding_path, "Orca binding")
-    for field in ("run_id", "task_id", "dispatch_id", "terminal_handle", "execution_host", "worktree_selector"):
-        require(binding.get(field) == lane["orca"][field], f"checkpoint evidence {field} 不一致")
-    for field, expected in (("lane_id", lane["lane_id"]), ("work_item", lane["work_item"]),
-                            ("worktree", lane["worktree"]), ("provider_session_id", document["session_id"])):
-        require(binding.get(field) == expected, f"checkpoint evidence {field} 不一致")
-    require(document["session_id"] not in {lane["orca"][field] for field in ("run_id", "task_id", "dispatch_id", "terminal_handle")},
-            "Task/Dispatch/terminal 不能冒充 provider session")
-    WORKER._readable_absolute(binding.get("provider_session_source"), "provider session proof")
-    return document
-
-
 def question(request: dict[str, Any]) -> dict[str, Any]:
     lane = lane_row(request)
     _, _, runtime = attempt(request, lane)
-    document = checkpoint_binding(request, lane)
     delivery, delivery_runtime = native(request["delivery"])
     require(runtime == delivery_runtime, "question readback runtime 不一致")
     require(delivery.get("runId") == lane["orca"]["run_id"], "message Run 不一致")
@@ -297,8 +268,7 @@ def question(request: dict[str, Any]) -> dict[str, Any]:
             raise Error("question/escalation context 不是 JSON") from error
     require(isinstance(payload, dict), "question/escalation 缺结构化绑定")
     for field, expected in (("taskId", lane["orca"]["task_id"]), ("dispatchId", lane["orca"]["dispatch_id"]),
-                            ("lane_id", lane["lane_id"]), ("work_item", lane["work_item"]),
-                            ("checkpoint_sha256", document[CHECKPOINT.FINGERPRINT_FIELD])):
+                            ("lane_id", lane["lane_id"]), ("work_item", lane["work_item"])):
         require(at(payload, (field,), "message") == expected, f"message {field} 不一致")
     reply = request.get("reply")
     if reply is not None:
@@ -313,45 +283,16 @@ def question(request: dict[str, Any]) -> dict[str, Any]:
             "reason": "沿原 durable question 等 reply；timeout 不重新 ask，不自动 retry/release"}
 
 
-def staged(request: dict[str, Any]) -> dict[str, Any]:
-    lane = lane_row(request)
-    attempt(request, lane)
-    settled_mutation(lane)
-    document = checkpoint_binding(request, lane)
-    # 原生同 session 证据归 provider；不能用 worker-start --terminal 或模型参数回显代替。
-    _, provider = WORKER._read_json_object(request["provider_readback"], "provider readback")
-    require(provider.get("status") == "verified" and boolean(provider.get("same_session"), "same_session"),
-            "native same-session capability Unknown")
-    require(provider.get("agent") == lane["agent"] and provider.get("session_id") == document["session_id"],
-            "provider session/agent 不一致")
-    require(provider.get("worktree") == lane["worktree"], "provider Execution Worktree 不一致")
-    transport = text(provider.get("transport"), "provider transport")
-    require("worker-start" not in transport and "herdr" not in transport,
-            "不以 worker-start --terminal 伪称换模，不回退 Herdr")
-    WORKER._readable_absolute(provider.get("source"), "native same-session source")
-    observation = provider.get("observation")
-    if not isinstance(observation, dict):
-        raise Error("provider observation Unknown")
-    require(observation.get("session_id") == document["session_id"], "observation session 不一致")
-    # 复用完整停止/Git/hash/gate/send lease 状态机，不复制其状态或另存 receipt。
-    result = CONTINUATION.prepare_continuation(document, lane, observation,
-        signal=request["signal"], gate_evidence=request["gate_evidence"], user_override=request["user_override"])
-    result["status"] = "blocked" if result.get("overlay") is None else "ready"
-    result["transport_executed"] = False
-    return result
-
-
 def validate(request: Any) -> dict[str, Any]:
     base = {"authority": False, "mutations": [], "project_lane_transition": "unchanged"}
     try:
         require(isinstance(request, dict), "request 必须为 object")
         handlers = {"retry": retry, "response-lost": response_lost, "restart": restart,
-                    "cancel": cancel, "question": question, "staged": staged}
+                    "cancel": cancel, "question": question}
         operation = request.get("operation")
         require(isinstance(operation, str) and operation in handlers, "未知 recovery operation")
         return {"status": "ready", **handlers[operation](request), **base}
-    except (Error, REGISTRY.OverlayError, CHECKPOINT.CheckpointError,
-            CONTINUATION.ContinuationError, KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+    except (Error, REGISTRY.OverlayError, KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
         return {"status": "blocked", "action": "inspect", "reason": str(error), **base}
 
 

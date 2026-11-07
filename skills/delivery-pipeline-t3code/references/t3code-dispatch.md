@@ -32,9 +32,8 @@ canonical 合同位于 `../../delivery-pipeline/references/`，下文以文件�
 | `claude` | `claudeAgent` | `effort` | `claude/` |
 
 每个不同的 `(agent, model)` 调一次 `orchestrator_capabilities(search: <model>)`：model id 与目录项
-完全一致，effort 属于该 option 的 `values`。读回写 `model_evidence: t3-capabilities`。不一致时该
+完全一致，effort 属于该 option 的 `values`。不一致时该
 lane 写 `setup_blocked`，附目录候选 id，交 `delivery-pipeline-setup` 改配置；配置值原样使用。
-冻结为 staged 的 implementation lane 写 `blocked`，原因 `t3 staged adapter unavailable`。
 
 ## Registry Overlay
 
@@ -55,16 +54,14 @@ t3code:
 ```
 
 base 字段：`runtime: t3-task`；`worktree` 取子线程 `worktreePath`；`branch` 在 commit mode 为
-`<prefix>issue-<coordinate>`，其他 mode 为 `none`；`base_commit` 为 `base_sha`；`workspace_id`、
-`tab_id`、`pane_id` 与 `herdr_*` 字段为 `none`。
+`<prefix>issue-<coordinate>`，其他 mode 为 `none`；`base_commit` 为 `base_sha`。
 
 ## 派发关键路径
 
 implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前置检查运行
 `implementation_gate.py`，通过后执行：
 
-1. registry 写 task type、output_mode、agent/model/effort、`model_evidence`、阶段计划与来源、
-   `base_commit` 与 overlay intent，精确 readback。
+1. registry 写 Base Schema 字段与 overlay intent，精确 readback。
 2. 填写 `../assets/T3CODE_ROLE_DISPATCH_PACKET.md`，写入 `~/.config/delivery-pipeline/packets/<lane_id>.md`。
 3. 调用 `delegate_task`：`task` 为 packet 全文；`title` 为 `map-<map> <role> #<coordinate>`；
    `target` 按上表映射，`options` 只含 effort option；`isolation: "worktree"`；`mode: "async"`；

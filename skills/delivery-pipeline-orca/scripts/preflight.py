@@ -317,7 +317,6 @@ def _test_config() -> dict[str, Any]:
         task: {"agent": "pi", **pair}
         for task in ("planning", "design", "frontend", "backend", "testing")
     }
-    work["backend"]["execution"] = {"model": "provider/model", "effort": "medium"}
     stages = {
         stage: {"model": "provider/model", "effort": effort}
         for stage, effort in (
@@ -331,7 +330,7 @@ def _test_config() -> dict[str, Any]:
         "work": work,
         "modes": {
             "standard": {
-                "kind": "staged",
+                "kind": "direct",
                 "agents": {agent: dict(stages) for agent in ("pi", "codex", "claude")},
             }
         },
@@ -387,24 +386,13 @@ def _evidence_source(value: object, field: str) -> str:
     return str(path.resolve())
 
 
-def _matching_readback(
-    value: object, plan: dict[str, Any], phase: str
-) -> dict[str, Any]:
+def _matching_readback(value: object, plan: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise PreflightError("shared agent/model/effort runtime readback 为 Unknown")
-    mode = plan.get("mode")
-    allowed_phases = {"starting", "execution"} if mode == "staged" else {"direct"}
-    if phase not in allowed_phases:
-        raise PreflightError(
-            f"phase 与 worker policy 不匹配: mode={mode}, phase={phase}"
-        )
-    pair = plan.get(phase) if mode == "staged" else plan
-    if not isinstance(pair, dict):
-        raise PreflightError(f"worker policy 缺少 phase: {phase}")
     expected = {
         "agent": plan["agent"],
-        "model": pair["model"],
-        "effort": pair["effort"],
+        "model": plan["model"],
+        "effort": plan["effort"],
     }
     if value.get("status") != "ready" or any(
         value.get(field) != candidate for field, candidate in expected.items()
@@ -416,18 +404,6 @@ def _matching_readback(
         **expected,
         "status": "ready",
         "source": _evidence_source(value.get("source"), "agent_readback.source"),
-    }
-
-
-def _same_session(value: object, agent: str) -> dict[str, str]:
-    if not isinstance(value, dict) or value.get("status") != "verified":
-        raise PreflightError("staged native same-session capability 为 Unknown")
-    if value.get("agent") != agent:
-        raise PreflightError("staged same-session agent identity 不匹配")
-    return {
-        "status": "verified",
-        "agent": agent,
-        "source": _evidence_source(value.get("source"), "same_session_readback.source"),
     }
 
 
@@ -470,11 +446,9 @@ def preflight(request: object, env: dict[str, str] | None = None) -> dict[str, A
             "model_evidence",
             "task",
             "output_mode",
-            "phase",
             "target_host",
             "owner",
             "agent_readback",
-            "same_session_readback",
         }
         optional = {"ticket_mode", "map_mode", "terminal_handle"}
         if not required <= set(request) or not set(request) <= required | optional:
@@ -565,18 +539,7 @@ def preflight(request: object, env: dict[str, str] | None = None) -> dict[str, A
             terminal_handle,
         )
         readback["terminal"] = terminal
-        phase = _text(request["phase"], "phase")
-        agent_readback = _matching_readback(request["agent_readback"], plan, phase)
-        same_session = None
-        if plan.get("mode") == "staged":
-            command = command_readback.get("orchestration worker-start")
-            if command is None or "terminal" not in command:
-                raise PreflightError(
-                    "staged native same-session command/--terminal capability 缺失"
-                )
-            same_session = _same_session(
-                request["same_session_readback"], plan["agent"]
-            )
+        agent_readback = _matching_readback(request["agent_readback"], plan)
         return {
             "ok": True,
             "status": "ready",
@@ -610,7 +573,6 @@ def preflight(request: object, env: dict[str, str] | None = None) -> dict[str, A
                 "plan": plan,
                 "frozen": frozen,
                 "runtime_readback": agent_readback,
-                "same_session": same_session,
             },
         }
     except (OSError, ValueError, json.JSONDecodeError) as error:
@@ -686,8 +648,6 @@ else:
         )
         agent_source = root / "agent-readback.json"
         agent_source.write_text("{}")
-        session_source = root / "same-session-readback.json"
-        session_source.write_text("{}")
         request = {
             "operation": "entry-preflight",
             "skill_name": "delivery-pipeline-orca",
@@ -698,7 +658,6 @@ else:
             "model_evidence": str(evidence_path),
             "task": "backend",
             "output_mode": "commit",
-            "phase": "starting",
             "terminal_handle": "term-test",
             "target_host": {"target": {"kind": "local"}, "runtimeId": "runtime-test"},
             "owner": {
@@ -712,11 +671,6 @@ else:
                 "model": "provider/model",
                 "effort": "high",
                 "source": str(agent_source),
-            },
-            "same_session_readback": {
-                "status": "verified",
-                "agent": "pi",
-                "source": str(session_source),
             },
         }
         request_path = root / "request.json"
@@ -816,11 +770,6 @@ else:
             )
             if inline_agent.get("status") != "blocked":
                 raise AssertionError(f"inline agent claim was accepted: {inline_agent}")
-            missing_session = preflight({**request, "same_session_readback": None})
-            if missing_session.get("status") != "blocked":
-                raise AssertionError(
-                    f"Unknown same-session capability was not blocked: {missing_session}"
-                )
             mismatched_identity = preflight(
                 {**request, "terminal_handle": "term-other"}
             )

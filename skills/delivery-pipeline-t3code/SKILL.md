@@ -22,8 +22,7 @@ T3 task 生命周期与 T3Code packet，其他 gate、owner、worktree、Integra
    `orchestrator_capabilities` 实时核对。
 3. 新 lane 使用本壳 `assets/T3CODE_ROLE_DISPATCH_PACKET.md`；worker 先把 T3 给的 worktree 对齐到
    packet 的 `base_sha`。完成唤醒、HITL、fan-in、恢复与 Cleanup 按 `references/t3code-lifecycle.md`。
-4. v1 只承载 direct 计划；staged 计划保持 `blocked`，直到 T3 staged adapter 落地。
-5. 当前会话明确选择 Herdr、Codex App 或 Orca 时退出本壳，改用对应入口；同一 map 不静默混合
+4. 当前会话明确选择 Herdr、Codex App 或 Orca 时退出本壳，改用对应入口；同一 map 不静默混合
    新 lane transport。existing lane 始终按 registry runtime 恢复。
 
 完成标准：每个 delegated gate 都有明确 T3 task transport 与 output mode；T3 task、Execution

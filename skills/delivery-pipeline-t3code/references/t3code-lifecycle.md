@@ -11,8 +11,7 @@ T3 在子任务终态或子任务提问时唤醒 `coordinator_thread_id` 对应�
 1. 原 coordinator 线程用 `task_status(task_id)`；其他线程用 `t3_thread_read(child_thread_id)`。
    `task_status` 只读本线程派发的任务。
 2. `hasPendingQuestion: true` 或 `pendingApproval` 非空 → 进入 §HITL。
-3. `status: completed` → 取 `summary`，首个独立行须为 `LANE_DONE <lane_id>`，其后为
-   `lane-registry.md` 终态模板；进入 §Fan-in。
+3. `status: completed` → 取 `summary`，首个独立行须为 `lane-registry.md` §终态行；进入 §Fan-in。
 4. `failed`、`interrupted`、`cancelled` → 写 `blocked` 并保留现场，原始 summary 作为失败证据。
 
 终态报告缺字段记 Unknown；Git、tracker、artifact 与 registry 是持久证据，不要求 worker 重显。

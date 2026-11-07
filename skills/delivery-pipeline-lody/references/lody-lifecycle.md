@@ -12,7 +12,7 @@ Lody 在 coordinator 轮次释放后或随下一条用户输入投递已完成 O
    `lody_operation_get(operation_id)`，其他 session 用 `lody_session_history(session_id)` 读最新页。
    `lody_operation_get` 只读本 session 拥有的 Operation。
 2. worker 最终回复首个独立行为 `LANE_WAITING <lane_id>` → 进入 §HITL。
-3. 首个独立行为 `LANE_DONE <lane_id>`，其后为 `lane-registry.md` 终态模板 → 进入 §Fan-in。
+3. 首个独立行为 `lane-registry.md` §终态行 → 进入 §Fan-in。
 4. Operation 为 failed、cancelled 或超过 deadline，或回复缺少锚点 → 写 `blocked` 并保留现场，
    原始结果作为失败证据。
 

@@ -1,6 +1,6 @@
 # ADR-0017: Review 预算
 
-**Status:** Accepted
+**Status:** Accepted（逐票 review 部分对 CLI 由 ADR-0020 取代）
 **Date:** 2026-11-05
 **Decider:** User (Dimon)
 

@@ -1,7 +1,7 @@
 # Codex App Role Dispatch Packet
 
-派发与 FINAL_REPORT 使用 `../../delivery-pipeline/references/lane-registry.md` §轻量交接的
-固定模板。仅展开当前分支，输入省略不适用项；本壳只追加三个回传字段：
+派发与恢复使用 `../../delivery-pipeline/references/lane-registry.md` §轻量交接的固定模板，
+终态用 `../references/codex-app-dispatch.md` 的 App 终态模板。仅展开当前分支，输入省略不适用项；本壳只追加三个回传字段：
 
 ```text
 Coordinator task：<原生 threadId>
@@ -22,7 +22,7 @@ worker 从本节进入，每次调用的执行核验按当前 role/output_mode �
 
 | 分支 | 必读章节 |
 |---|---|
-| 全部 | `../../delivery-pipeline/references/lane-registry.md` §Worker 共同行为；`../../delivery-pipeline/references/lane-registry.md` §终态模板；`../references/development-mode.md` §执行入口；`../references/development-mode.md` §参数与证据；`../references/codex-app-dispatch.md` §Terminal 回传 |
+| 全部 | `../../delivery-pipeline/references/lane-registry.md` §Worker 共同行为；`../references/development-mode.md` §执行入口；`../references/development-mode.md` §参数与证据；`../references/codex-app-dispatch.md` §Terminal 回传 |
 | commit | `../../delivery-pipeline/references/gate-state-machine.md` §实施前置检查 |
 | staged | `../references/development-mode.md` §Prewalk 接续；`../references/development-mode.md` §机械核验入口 |
 | planning | `../references/development-mode.md` §Planning 直接沟通与回传 |
@@ -53,5 +53,5 @@ kind: direct 使用 resolve 返回的 direct 请求，phase: executing，checkpo
 4. 实施 worker 只保存候选和修复证据；正式 reviewer 的取消、重派和放行归 coordinator。
    缺失、中断或待复核的独立 verdict 回传 blocked“实现已保存、审查待完成”，不写 completed；
    coordinator 按 Terminal 合同接手，不能把 blocked 当作无需处理。
-5. completed 与 blocked 都在最终回复前按 Terminal 回传合同发送公共终态模板。
+5. completed 与 blocked 都在最终回复前按 Terminal 回传合同发送 App 终态模板。
    工具成功后才声明 FINAL_REPORT 已回传；失败或 Unknown 保留报告、目标与恢复坐标。

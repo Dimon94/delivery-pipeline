@@ -22,10 +22,9 @@ Lody session 生命周期与 Lody packet，其他 gate、owner、worktree、Inte
    合同映射到 Lody agent config，并以 `lody_session_create_options` 的 runConfig 实时核对。
 3. 新 lane 使用本壳 `assets/LODY_ROLE_DISPATCH_PACKET.md`；worker 先把 Lody 给的 worktree 对齐到
    packet 的 `base_sha`。结果投递、HITL、fan-in、恢复与 Cleanup 按 `references/lody-lifecycle.md`。
-4. v1 只承载 direct 计划；staged 计划保持 `blocked`，直到 Lody staged adapter 落地。
-5. Integration 由 coordinator 在 Map Integration Worktree 亲自执行；testing 与 whole-change review
+4. Integration 由 coordinator 在 Map Integration Worktree 亲自执行；testing 与 whole-change review
    各为一条 Lody lane。
-6. 当前会话明确选择 Herdr、T3Code、Codex App 或 Orca 时退出本壳，改用对应入口；同一 map 不静默
+5. 当前会话明确选择 Herdr、T3Code、Codex App 或 Orca 时退出本壳，改用对应入口；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 
 完成标准：每个 delegated gate 都有明确 Lody session transport 与 output mode；Lody session、Execution

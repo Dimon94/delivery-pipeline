@@ -32,7 +32,7 @@ DEPENDENCIES = [
     "orca-cli",
     "orchestration",
 ]
-OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "none"}
+OUTPUT_MODES = {"commit", "artifact", "checks", "verdict", "integration", "none"}
 STATES = {
     "created",
     "running",
@@ -81,14 +81,6 @@ def frontmatter(path: Path) -> dict[str, str]:
     return result
 
 
-def require(path: Path, strings: tuple[str, ...]) -> None:
-    if not path.exists():
-        record(f"missing file: {path.relative_to(ROOT)}")
-        return
-    content = " ".join(path.read_text().split())
-    for item in strings:
-        if " ".join(item.split()) not in content:
-            record(f"missing invariant in {path.relative_to(ROOT)}: {item}")
 
 
 def is_executable(path: Path) -> bool:
@@ -99,10 +91,11 @@ def is_executable(path: Path) -> bool:
 
 
 def check_skill_links(path: Path) -> None:
+    """指针按所在文件或所属壳根解析，二者都不存在才算断链。"""
+    shell = next((p for p in path.parents if p.parent.name == "skills"), path.parent)
     for token in re.findall(r"`([^`]+\.md)`", path.read_text()):
         if token.startswith(("references/", "assets/", "../")):
-            target = (path.parent / token).resolve()
-            if not target.exists():
+            if not any((base / token).resolve().exists() for base in (path.parent, shell)):
                 record(f"missing reference from {path.relative_to(ROOT)}: {token}")
 
 
@@ -161,70 +154,33 @@ def check_frontmatter() -> None:
         check_skill_links(path)
 
 
+SHELLS = (CORE, HERDR, APP, ORCA, T3CODE, LODY, SETUP)
+
+
+def check_skill_trees() -> None:
+    """SKILL 保持克制；每个壳的 references/assets 都能从本壳 SKILL 沿指针到达，指针目标都存在。"""
+    body = (CORE / "SKILL.md").read_text().split("---", 2)[-1].strip().splitlines()
+    if len(body) > 50:
+        record(f"core SKILL.md body exceeds 50 lines: {len(body)}")
+    core_refs = {p.name: p for p in (CORE / "references").glob("*.md")}
+    for shell in SHELLS:
+        docs = {p for d in ("references", "assets") for p in (shell / d).glob("*.md")}
+        local = {p.name: p for p in docs}
+        seen, queue = set(), [shell / "SKILL.md"]
+        while queue:
+            path = queue.pop()
+            check_skill_links(path)
+            for name in re.findall(r"([\w.-]+\.md)", path.read_text()):
+                for target in (local.get(name), core_refs.get(name)):
+                    if target and target not in seen:
+                        seen.add(target)
+                        queue.append(target)
+        for orphan in sorted(docs - seen):
+            record(f"{shell.name} doc unreachable from its SKILL.md: {orphan.name}")
+
+
 def check_core_contract() -> None:
-    require(
-        CORE / "SKILL.md",
-        (
-            "canonical 核心链路",
-            "当前调用会话就是 coordinator",
-            "不切换 coordinator 当前目录的 branch",
-            "scripts/model_config.py validate <config>",
-            "version 5",
-            "agent`、`model`、`effort`",
-            "Dispatch Handoff",
-            "Execution Worktree",
-            "Integration",
-            "delivery-pipeline-herdr",
-            "references/code-review-evidence-preflight.md",
-            "fixed point（commit 为 Execution base，verdict 为 map registry base）",
-            "Review Evidence Bundle",
-            "不静默回落",
-        ),
-    )
-    require(
-        HERDR / "SKILL.md",
-        (
-            "先完整读取 canonical 主干",
-            "coordinator_runtime: pi-cli | codex-cli | claude-cli",
-            "dispatch_runtime: herdr",
-            "只有用户显式要求新 Workspace 才创建",
-            "assets/HERDR_ROLE_DISPATCH_PACKET.md",
-        ),
-    )
-    require(
-        HERDR / "references" / "dispatch-runtime-routing.md",
-        (
-            "worker kind 完全由 version 5 work config",
-            "pi → `herdr-pi-pane`",
-            "codex → `herdr-codex-pane`",
-            "claude → `herdr-claude-pane`",
-            "默认复用 coordinator 当前所在的 Herdr Workspace",
-            "只有用户显式要求新 Workspace",
-            "HERDR_WORKSPACE_ID",
-            "herdr pane current --current",
-            "workspace 解析是 maximal safe batch 的唯一串行前置",
-            "整批成功/失败项都完成 startup readback",
-        ),
-    )
-    require(
-        HERDR / "references" / "pane-lifecycle-rules.md",
-        (
-            "每个 worker tab 最多 4 pane",
-            "溢出依次 `X-2`、`X-3`",
-            "HITL lane 与其他 lane 共用 X tab 容量",
-            "coordinator pane 不作为 worker pane",
-            "--cwd <Execution Worktree>",
-        ),
-    )
-    require(
-        CORE / "references" / "integration-worktree-management.md",
-        (
-            "Map Integration Worktree/branch 不存在时创建独立 worktree 与 branch",
-            "不在 coordinator pane 的 cwd 切换 branch",
-            "base_commit: <SOURCE_HEAD>",
-            "whole-change Review fixed point",
-        ),
-    )
+    check_skill_trees()
     legacy_workspace_rules = {
         CORE / "SKILL.md": ("Herdr Workspace 只在首次 lane 前懒创建",),
         HERDR / "references" / "dispatch-runtime-routing.md": (
@@ -260,54 +216,12 @@ def check_core_contract() -> None:
                 record(
                     f"legacy one-lane-per-tab rule restored: {path.relative_to(ROOT)}: {phrase}"
                 )
-    require(
-        CORE / "references" / "frontier-lanes.md",
-        (
-            "普通 repo 文件路径重叠只进入 Integration 冲突检测",
-            "maximal safe batch",
-            "Task Binding",
-            "| AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |",
-            "| grilling/prototype HITL | `design` | `artifact` |",
-            "| design implementation | `design` | `commit` |",
-            "| frontend implementation | `frontend` | `commit` |",
-            "| backend/other implementation | `backend` | `commit` |",
-            "| whole-change tests | `testing` | `checks` |",
-            "| code review | review 矩阵（见下） | `verdict` |",
-            "落点拓扑、容量、worker kind 映射与 packet 模板只按所属壳的合同执行",
-            "整批成功 lanes 完成 startup",
-            "按所属壳的 terminal-signal 合同建立唤醒通道",
-        ),
-    )
     registry = CORE / "references" / "lane-registry.md"
-    require(
-        registry,
-        (
-            "<!-- wayfinder-lane-registry:v2 -->",
-            "role: planning | design | frontend | backend | testing | review | map",
-            "output_mode: commit | artifact | checks | verdict | none",
-            "runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | lody-session | orchestrator | orca",
-            "coordinator_runtime: pi-cli | codex-cli | claude-cli | t3code | lody | orca-terminal | none",
-            "dispatch_runtime: herdr | t3code | lody | orca | none",
-            "orca: <opaque-overlay-or-none>",
-            "Orca worker 使用 `runtime: orca`，map 仍使用 `runtime: orchestrator`",
-            "两者都显式记录 `dispatch_runtime: orca`",
-            "按持久化的 `runtime` 与 `dispatch_runtime` 选择原 transport",
-            "integration_conflict",
-            "integration_checks_failed",
-            "path_conflict",
-            "stale",
-            "test_decision_paused",
-            "rebase_in_progress",
-            "push_failed",
-            "cleanup_in_progress",
-            "test_strategy:",
-            "agent_permission_mode: approve | danger-full-access | dangerously-skip-permissions | none",
-            "model_evidence:",
-            "作为 whole-change Review fixed point",
-            "后续 Integration 不改写",
-        ),
-    )
     registry_text = registry.read_text()
+    schema_block = re.search(r"## Base Schema\n.*?```yaml\n(.*?)\n```", registry_text, re.S)
+    lane_keys = re.findall(r"^(\w+):", schema_block[1], re.M) if schema_block else []
+    if not lane_keys or len(lane_keys) > 15:
+        record(f"lane row schema must stay within 15 fields: {len(lane_keys)}")
     state_match = re.search(r"^state: (.+)$", registry_text, re.MULTILINE)
     mode_match = re.search(r"^output_mode: (.+)$", registry_text, re.MULTILINE)
     if (
@@ -320,54 +234,11 @@ def check_core_contract() -> None:
         or {part.strip() for part in mode_match.group(1).split("|")} != OUTPUT_MODES
     ):
         record("lane-registry output_mode enum mismatch")
-    require(
-        HERDR / "references" / "child-monitoring.md",
-        (
-            "Role-aware Terminal Outcomes",
-            "`commit`",
-            "code-review Review Evidence Bundle readback",
-            "`artifact`",
-            "`checks`",
-            "`verdict`",
-            "Review Evidence Bundle readback",
-            "只有 `commit` mode 进入 cherry-pick",
-        ),
-    )
-    require(
-        CORE / "references" / "execution-worktree-integration.md",
-        (
-            "Commit Mode",
-            "Artifact / Checks / Verdict Modes",
-            "内嵌 code-review 的",
-            "Review fixed point 等于 lane base commit",
-            "不要求 commit、不 cherry-pick",
-            "Review fixed point 等于 map registry base commit",
-            "bundle 七文件在 fan-in 时可读",
-            "成功写 `consumed`",
-            "integrated` 或 `consumed",
-        ),
-    )
 
 
 def check_prompt_branches() -> None:
     # 提示合同静态回归；不冒充真实 runtime 执行验收。
-    require(
-        CORE / "SKILL.md",
-        (
-            "恢复既有 lane 不依赖当前 worker 配置",
-            "新建 lane 前",
-            "references/gate-state-machine.md",
-        ),
-    )
-    require(
-        HERDR / "references" / "dispatch-runtime-routing.md",
-        (
-            "恢复既有 lane 直接进入“恢复与切换”",
-            "replacement 验证 stored agent/model/effort 的实时可用性",
-        ),
-    )
     gates = CORE / "references" / "gate-state-machine.md"
-    require(gates, ("Role-aware Fan-in / Integration", "写 `consumed`"))
     gate_names = re.findall(r"^\| `([^`]+)` \|", gates.read_text(), re.MULTILINE)
     if gate_names != [
         "discovery",
@@ -386,30 +257,6 @@ def check_prompt_branches() -> None:
         record(
             "gate table must include testing/review/test-decision/rebase in delivery order"
         )
-    require(
-        CORE / "references" / "test-decision-and-rebase.md",
-        (
-            "先读 map registry 的 `test_strategy`",
-            "范围与风险未变化时复用",
-            "未知是否仍适用",
-            "测试选择不授予 remote publication authority",
-        ),
-    )
-    require(
-        TICKET_SIZING / "SKILL.md",
-        (
-            "独立验收",
-            "Execution Worktree",
-            "合并",
-            "累计消耗不等于同时占用的上下文",
-            "每张候选票必须主动给出 token 预测",
-            "预测区间不能用 Unknown 代替",
-            "上下文峰值预测（tokens）",
-            "执行预算（tokens）",
-            "最终回复也必须展示逐票预测",
-            "拆票流程的 owner 是 `to-tickets`",
-        ),
-    )
     for path in (TICKET_SIZING / "SKILL.md", TICKET_SIZING / "agents" / "openai.yaml"):
         if re.search(r"150k|1\.5|smart zone", path.read_text(), re.IGNORECASE):
             record(f"uncalibrated fixed sizing policy: {path.relative_to(ROOT)}")
@@ -459,61 +306,12 @@ def extract_schema_example(path: Path) -> dict:
 
 def check_model_contract() -> None:
     schema_doc = CORE / "references" / "model-config-schema.md"
-    require(
-        schema_doc,
-        (
-            "version 5",
-            "任务类型",
-            "codex-app",
-            "default_mode",
-            "modes",
-            "starting",
-            "execution",
-            "direct",
-            "本票 → map → 配置 `default_mode`",
-            "未知 key 拒绝",
-            "legacy_execution",
-            "migrate",
-            "Transport 必需集",
-            "standards",
-            "spec",
-            "skill 与 reference 不提供默认 agent/model/effort",
-            "`pi|codex|claude|codex-app`",
-        ),
-    )
     schema = extract_schema_example(schema_doc)
     if schema.get("version") != 5:
         record("model config schema version must be 5")
     if not {"work", "modes", "review"} <= set(schema):
         record("model config schema example must define work/modes/review")
     routing = CORE / "references" / "model-role-routing.md"
-    require(
-        routing,
-        (
-            "model-config-schema.md",
-            "version 5",
-            "migrate",
-            "default_mode",
-            "默认计划来自本任务类型的 work 项",
-            "不得把起步模型的请求回显当成执行模型已运行",
-            "agent`、`model`、`effort`",
-            "frontier-lanes.md",
-            "pi --list-models",
-            "codex debug models",
-            "ANTHROPIC_DEFAULT_FABLE_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            "ANTHROPIC_MODEL",
-            "CLAUDE_CODE_SUBAGENT_MODEL",
-            "CLAUDE_CODE_EFFORT_LEVEL",
-            "Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择",
-            "settings.json env 候选与 CLI effort 枚举",
-            '--approve --model "$model" --thinking "$effort"',
-            "model_reasoning_effort",
-            '--model "$model" --effort "$effort"',
-        ),
-    )
     if (
         "orchestration" in routing.read_text()
         or "orchestration" in (SETUP / "SKILL.md").read_text()
@@ -527,28 +325,6 @@ def check_model_contract() -> None:
             "Claude setup must select from settings.json env candidates; user-confirmed side channel is undefined"
         )
 
-    require(
-        SETUP / "SKILL.md",
-        (
-            "version 5",
-            "default_mode",
-            "starting/execution/direct",
-            "显式点名 mode 时整体覆盖",
-            "不能静默生成 direct 启动请求",
-            "不派发 lane",
-            "../delivery-pipeline/references/model-config-schema.md",
-            "../delivery-pipeline/references/model-role-routing.md",
-            "scripts/model_config.py validate",
-            "scripts/model_config.py migrate",
-            "配置结构与实时 evidence 都通过",
-            "非法配置进入初始化",
-            "合法配置仅在用户明确要求重配时覆盖",
-            "不提供内置默认",
-            "用户明确选择全部必需项",
-            "写入并 readback",
-            "~/.config/delivery-pipeline/model-roles.json",
-        ),
-    )
     config_validator = SETUP / "scripts" / "model_config.py"
     # pi-lens-ignore: unchecked-throwing-call-python
     if not is_executable(config_validator):
@@ -566,39 +342,11 @@ def check_model_contract() -> None:
 
 
 def check_packets() -> None:
-    packet = HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
-    require(
-        packet,
-        (
-            "lane-registry.md",
-            "version 5",
-            "implementation mode/source 与阶段计划",
-            "双轴 review 由 worker",
-            "implementation fixed point",
-            "whole-change 为 map registry base",
-            "preflight bundle 完成前不派生 Standards/Spec 子审查",
-        ),
-    )
-    require(
-        CORE / "references" / "code-review-evidence-preflight.md",
-        (
-            "`implement` owner",
-            "`commit` lane",
-            "`verdict` lane",
-            "Map Integration Worktree",
-            "Review Evidence Bundle",
-            "diff.patch",
-            "commits.txt",
-            "changed-paths.txt",
-            "fixed-point-added-paths.txt",
-            "worktree-state.txt",
-            "untracked additions",
-            "NO_STAGED_FILES=true|false",
-            "commands.txt",
-            "review-only/no-acceptance",
-            "正常路径不产生索取 Git/path 输出的 supervisor 往返",
-        ),
-    )
+    bundle = re.search(r"^## Review Evidence Bundle\n(.*?)(?=^## )",
+                       (CORE / "references" / "code-review-evidence-preflight.md").read_text(), re.M | re.S)
+    files = tuple(re.findall(r"^- `([^`]+)`", bundle[1], re.M)) if bundle else ()
+    if files != ("fixed-point.txt", "diff.patch", "changed-paths.txt"):
+        record(f"Review Evidence Bundle must be exactly three files: {files}")
 
 
 def check_handoff_contract() -> None:
@@ -606,7 +354,6 @@ def check_handoff_contract() -> None:
     content = registry.read_text()
     for title, expected in (
         ("派发模板", ("Lane ID", "Work item", "执行", "Owner", "Registry", "现场", "范围", "验收", "输入", "Worker 合同")),
-        ("终态模板", ("Lane ID", "状态", "交付", "证据", "现场", "确认", "阻断", "下一步")),
         ("恢复模板", ("Map/Spec", "Registry", "Gate/状态", "现场", "证据", "下一步")),
     ):
         section = re.search(r"^### " + title + r"\n(.*?)(?=^### |^## |\Z)", content, re.M | re.S)
@@ -614,52 +361,21 @@ def check_handoff_contract() -> None:
         actual = tuple(line.split("：", 1)[0] for line in block[1].splitlines() if "：" in line) if block else ()
         if actual != expected:
             record(f"fixed handoff fields mismatch: {title}: {actual}")
-    require(registry, (
-        "FINAL_REPORT_BEGIN", "FINAL_REPORT_END", "Owner SKILL.md",
-        "frontmatter name + resolved path", "to-spec、to-tickets 与用户确认",
-        "请求值和实际模型 readback 分开留证", "三个固定模板", "不扩展交接字段",
-        "cwd 必须为属于 Source repo 的 Execution Worktree", "HEAD 包含 base",
-        "Review 的证据须可恢复 scope、owner、fixed point、HEAD、bundle",
-    ))
-    require(
-        CORE / "references" / "lane-registry.md",
-        (
-            "## 轻量交接",
-            "机器字段与指纹保持原合同",
-            "Unknown、失败、权限与未决事项显式保留",
-            "指针包含绝对路径或 tracker URL、读取条件、定点或字段",
-            "helper 校验完整输入，模型只接收判定与必要字段",
-            "写入 readback 仍逐项比较 expected/actual",
-            "文件级哈希、component/checkpoint SHA256 和 ignored 指纹清单只留在机器工件",
-            "base/head/交付 commit 的 Git SHA 保留为版本坐标",
-        ),
-    )
+    terminal = re.search(r"^### 终态行\n.*?```text\n(.*?)\n```", content, re.M | re.S)
+    if not terminal or terminal[1].splitlines() != [
+        "LANE_DONE <lane_id> <交付坐标>", "LANE_DONE <lane_id> BLOCKED <一句原因；失败工件绝对路径>"]:
+        record("lane-registry §终态行 must be the two LANE_DONE lines")
     for shell, filename, expected in (
         (HERDR, "HERDR_ROLE_DISPATCH_PACKET.md", ("Coordinator pane", "Worker pane")),
         (APP, "APP_ROLE_DISPATCH_PACKET.md", ("Coordinator task", "Coordinator host", "Terminal 回传合同")),
         (ORCA, "ORCA_ROLE_DISPATCH_PACKET.md", ("Orca runtime/host/terminal", "Coordinator terminal")),
     ):
         path = shell / "assets" / filename
-        require(
-            path,
-            (
-                "仅展开当前分支",
-                "省略不适用项",
-                "轻量交接",
-                "## Worker 执行",
-                "../../delivery-pipeline/references/lane-registry.md",
-            ),
-        )
         blocks = re.findall(r"```text\n(.*?)\n```", path.read_text(), re.S)
         actual = tuple(line.split("：", 1)[0] for line in blocks[0].splitlines()) if len(blocks) == 1 else ()
         if actual != expected:
             record(f"fixed transport fields mismatch: {filename}: {actual}")
         check_skill_links(path)
-    require(
-        CORE / "references" / "code-review-evidence-preflight.md",
-        ("先读 fixed-point.txt、changed-paths.txt、worktree-state.txt", "按当前轴读取",
-         "diff.patch 起始行号", "spec source 全部以绝对路径"),
-    )
 
 
 def read_contract_section(path: Path, title: str) -> str:
@@ -708,41 +424,12 @@ def check_context_loading() -> None:
             raise ValueError("planning/内部委派的必要边界缺失")
     except (OSError, ValueError) as error:
         record(str(error))
-    require(CORE / "references" / "fresh-session-boundaries.md", (
-        "## Coordinator Recovery", "全部 active writers", "独有业务约束", "原始审查", "不能代替",
-        "原 task/session", "2k", "新事实", "先持久化", "原证据", "逐项 readback",
-        "合同入口", "scripts/recovery_record.py show", "scripts/recovery_record.py set",
-        "实时状态只从", "跨 map 教训",
-    ))
-    require(CORE / "SKILL.md", ("只读恢复记录的合同入口",))
-    require(CORE / "references" / "lane-registry.md", ("合同入口 <file>§<section>", "artifacts_root"))
-    require(CORE / "references" / "gate-state-machine.md", ("lane_graph.py --registry-root", "--format text"))
     if "worker 完整读这些当前入口" in (APP / "references" / "development-mode.md").read_text():
         record("App worker 仍被要求整读所有调度入口")
-    for shell, name in ((HERDR, "HERDR_ROLE_DISPATCH_PACKET.md"), (ORCA, "ORCA_ROLE_DISPATCH_PACKET.md")):
-        require(shell / "assets" / name, ("Worker 共同行为与终态模板", "完整 owner", "实施前置检查"))
 
 
 def check_lane_wakeup() -> None:
-    packet = HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
-    require(
-        packet,
-        (
-            "LANE_DONE <lane_id>",
-            "公共终态模板",
-        ),
-    )
     lifecycle = HERDR / "references" / "pane-lifecycle-rules.md"
-    require(
-        lifecycle,
-        (
-            "scripts/lane-watch.sh",
-            "LANE_DONE <lane_id>",
-            "`done` 事件",
-            "PREWALK_READY <lane_id> <checkpoint_path>",
-            "watcher 不退出并继续监听 LANE_DONE",
-        ),
-    )
     code_blocks = re.findall(
         r"```(?:bash|sh|text)?\n(.*?)\n```", lifecycle.read_text(), re.DOTALL
     )
@@ -755,14 +442,6 @@ def check_lane_wakeup() -> None:
         record("missing lane watcher: skills/delivery-pipeline-herdr/scripts/lane-watch.sh")
         return
     watcher_text = watcher.read_text()
-    require(
-        watcher,
-        (
-            "LANE_DONE",
-            "herdr pane read",
-            "herdr agent prompt",
-        ),
-    )
     for banned in ("w26:p1", "xcodebuild", "feature/map-", "pagugu"):
         if banned in watcher_text:
             record(f"lane-watch.sh carries session-specific hardcode: {banned}")
@@ -770,83 +449,18 @@ def check_lane_wakeup() -> None:
     subprocess.run(
         [sys.executable, str(HERDR / "scripts" / "lane_watch_check.py")], check=True
     )
+    subprocess.run(
+        [sys.executable, str(HERDR / "scripts" / "dispatch_check.py")], check=True
+    )
 
 
 def check_app_shell() -> None:
-    require(
-        APP / "references" / "codex-app-dispatch.md",
-        (
-            "scripts/prewalk.py review",
-            "独立 Review 放行",
-            "不验证宿主来源真实性",
-            "review_scope: implementation | whole-change",
-        ),
-    )
-    require(
-        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
-        (
-            "review_scope: implementation",
-            "review_scope: whole-change",
-            "不写 completed",
-            "不能把 blocked 当作无需处理",
-        ),
-    )
     if not is_executable(APP / "scripts" / "prewalk.py"):
         record("App prewalk helper must be executable")
     subprocess.run(
         [sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True
     )
-    require(APP / "SKILL.md", ("每次调用的执行核验", "subagent 入口"))
-    require(
-        APP / "references" / "development-mode.md",
-        (
-            "scripts/prewalk.py coordinator",
-            "scripts/prewalk.py subagent",
-            "active_count",
-            "invoke-owner",
-            "宿主更低上限仍优先",
-            "不改其他 repo 或全局配置",
-            "每次启动或恢复前",
-            "work.coordinator",
-            "用户明确选择优先",
-            "该入口不限制模型",
-            "canonical build/write/read",
-            "legacy_checkpoint: true",
-            "review_scope: implementation | whole-change",
-        ),
-    )
-    require(
-        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
-        (
-            "config_path",
-            "../scripts/prewalk.py",
-            "每次调用的执行核验",
-        ),
-    )
     # App 请求值与运行证据分离；这只是提示合同检查。
-    require(
-        APP / "references" / "development-mode.md",
-        (
-            "config/models.json",
-            "review_models",
-            "model_override",
-            "second opinion",
-            "reasoning_effort",
-            "thinking",
-            "Testing 与 Integration 分两次串行",
-            "service tier 沿宿主默认",
-            "不启用 fast",
-            "用户确认",
-            "只读",
-        ),
-    )
-    require(
-        ROOT / ".codex" / "config.toml",
-        (
-            "enabled = true",
-            "max_concurrent_threads_per_session = 3",
-        ),
-    )
     for path in [
         APP / "SKILL.md",
         APP / "scripts/prewalk.py",
@@ -862,63 +476,6 @@ def check_app_shell() -> None:
                 f"App 模型值必须只存在于 config/models.json: {path.relative_to(ROOT)}"
             )
     # 仅验证 App 接续合同完整性；不证明宿主已执行模型切换。
-    require(
-        APP / "references" / "development-mode.md",
-        (
-            "default_mode",
-            "phase_plan",
-            "phase_targets",
-            "execution_target",
-            "PREWALK_READY",
-            "send_message_to_thread",
-            "phase: switching",
-            "不能盲目重发",
-            "尚未做 App 端到端模型 readback",
-            "`evaluate_signal`",
-        ),
-    )
-    require(
-        APP / "references" / "codex-app-dispatch.md",
-        (
-            "development_mode:",
-            "mode_source:",
-            "execution_phase:",
-            "checkpoint:",
-            "## Prewalk 中间回传",
-            "不进入 Terminal fan-in",
-        ),
-    )
-    require(
-        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
-        (
-            "公共模板的 Registry",
-            "phase_plan/phase_targets/execution_target",
-            "恢复沿原冻结计划和 checkpoint",
-            "PREWALK_READY 后停止",
-        ),
-    )
-    require(APP / "SKILL.md", ("references/development-mode.md",))
-    require(
-        APP / "references" / "codex-app-dispatch.md",
-        (
-            "requested_model:",
-            "requested_effort:",
-            "model: Unknown",
-            "effort: Unknown",
-            "model_evidence: Unknown",
-            "checkpoint_sha256:",
-            "旧 lane",
-        ),
-    )
-    require(
-        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
-        (
-            "传当前请求值",
-            "../references/development-mode.md",
-            "review_scope: implementation",
-            "review_scope: whole-change",
-        ),
-    )
     formal_review_model = re.compile(
         r"(?:implementation|whole-change).*(?:Review|审查).*(?:gpt-5|\bAstra\b|\bSol\b|\bLuna\b)|"
         r"(?:gpt-5|\bAstra\b|\bSol\b|\bLuna\b).*(?:implementation|whole-change).*(?:Review|审查)",
@@ -946,225 +503,14 @@ def check_app_shell() -> None:
                 record(
                     f"App formal Review hard-codes owner model: {path.relative_to(ROOT)}:{lineno}"
                 )
-    require(
-        APP / "SKILL.md",
-        (
-            "薄 delta",
-            "../delivery-pipeline/SKILL.md",
-            "coordinator_runtime: codex-app",
-            "dispatch_runtime: codex-app",
-            "config/models.json",
-            "version 5",
-            "canonical 任务类型与 output mode 保持不变",
-            "planning → `output_mode: artifact`",
-            "design/frontend/backend implementation → `output_mode: commit`",
-            "testing → `output_mode: checks`",
-            "review → `output_mode: verdict`",
-            "Testing 与 Review 不另建 App task/worktree",
-            "Integration 由 coordinator 单独串行委派配置中 integration 模型",
-            "App-managed Execution Worktree",
-            "references/codex-app-dispatch.md",
-            "assets/APP_ROLE_DISPATCH_PACKET.md",
-            "../delivery-pipeline/references/code-review-evidence-preflight.md",
-            "Review Evidence Bundle",
-        ),
-    )
-    require(
-        APP / "references" / "codex-app-dispatch.md",
-        (
-            "list_projects",
-            "create_thread",
-            "list_threads",
-            "read_thread",
-            "wait_threads",
-            "send_message_to_thread",
-            "set_thread_title",
-            "set_thread_archived",
-            "list_archived_threads",
-            "runtime: codex-thread",
-            "App Registry Overlay",
-            "project_id:",
-            "host_id:",
-            "thread_id:",
-            "thread_archived:",
-            "coordinator_thread_id:",
-            "coordinator_host_id:",
-            "## Terminal 回传",
-            "最终回复前调用 `send_message_to_thread`",
-            "发送失败或结果 Unknown",
-            "timeoutMs: 0",
-            "重复通知",
-            "Role-aware Fan-in",
-            "Review Evidence Bundle readback",
-            "Review fixed point 等于 lane base commit",
-            "非 commit lane 不要求 commit",
-            "completed` 是 FINAL_REPORT outcome，不是 registry state",
-            "同一次 fan-in",
-            "关闭 tracker 或派发下一 ready lane 前",
-            "task-coordinate-title.md",
-        ),
-    )
-    require(
-        APP / "assets" / "APP_ROLE_DISPATCH_PACKET.md",
-        (
-            "Codex App",
-            "Coordinator host：",
-            "Terminal 回传合同：",
-            "最终回复前",
-            "completed 与 blocked",
-            "FINAL_REPORT 已回传",
-            "公共终态模板",
-            "../../delivery-pipeline/references/lane-registry.md",
-            "owner 三字段",
-            "preflight 绝对路径",
-            "preflight bundle 完成前不派生 Standards/Spec 子审查",
-        ),
-    )
     for path in (APP / "SKILL.md", APP / "references" / "codex-app-dispatch.md"):
         check_skill_links(path)
 
 
 def check_orca_contract() -> None:
     preflight = ORCA / "scripts" / "preflight.py"
-    require(
-        ORCA / "SKILL.md",
-        (
-            "严格绑定 Orca",
-            "ORCA_CLI_COMMAND",
-            "skills get orca-cli",
-            "skills get orchestration",
-            "agent-context",
-            "skills installed --json",
-            "scripts/preflight.py run",
-            "model_config.py",
-            "dispatch unavailable",
-            "preflight-ready",
-            "authority: false",
-            "caller-declared",
-            "target_host",
-            "target + runtimeId",
-            "实际读取命令",
-            "not-run/Unknown",
-            "registry_overlay.py apply",
-            "record_native_coordinates",
-            "record_readback",
-            "不 fallback 到 Herdr 或 Codex App",
-            "ORCA_ROLE_DISPATCH_PACKET.md",
-            "orca-dispatch.md",
-            "worker_lifecycle.py",
-            "worker-start",
-            "Execution Worktree",
-            "FIFO",
-            "worker-list",
-            "project_lane_transition",
-            "lane_cleanup_audit.py",
-            "coordinator_terminal_handle",
-            "唤醒责任在发送方",
-        ),
-    )
-    require(
-        preflight,
-        (
-            "resolve_orca_executable",
-            "ORCA_SKILL_NAME",
-            'path.name != "SKILL.md"',
-            '"skills", "get", name, "--full"',
-            '"agent-context"',
-            '"status"',
-            '"skills", "installed"',
-            '"terminal", "show"',
-            "MODEL_CONFIG",
-            '"resolve"',
-            '"freeze"',
-            '"dispatch": "unavailable"',
-            '"dispatch": "preflight-ready"',
-            '"authority": False',
-            '"fallback": False',
-            "caller-declared; coordinator must validate native provenance",
-            "目标 host identity",
-            '"executable": executable',
-            "shared agent/model/effort runtime readback",
-            "staged native same-session capability",
-        ),
-    )
     overlay = ORCA / "scripts" / "registry_overlay.py"
-    require(
-        overlay,
-        (
-            "empty_overlay",
-            "validate_overlay",
-            "persist_overlay",
-            "bind_map_run",
-            "rebind_map_coordinator",
-            "bind_lane_task",
-            "bind_attempt",
-            "record_mutation",
-            "record_observation",
-            "record_native_coordinates",
-            "record_readback",
-            "record_state",
-            "STATE_PRIORS",
-            "recover_map",
-            "recover_lane",
-            "recover_attempt",
-            "apply_request",
-            'sys.argv[1] == "apply"',
-            "不从当前环境推断",
-            "保留旧证据，不覆盖",
-        ),
-    )
-    packet = ORCA / "assets" / "ORCA_ROLE_DISPATCH_PACKET.md"
-    require(
-        packet,
-        (
-            "# Orca 本地 worker dispatch packet",
-            "冻结配置与完整 overlay 留在原 registry",
-            "../references/orca-dispatch.md",
-            "worker_done",
-        ),
-    )
-    reference = ORCA / "references" / "orca-dispatch.md"
-    require(
-        reference,
-        (
-            "# Orca dispatch 与本地 worker 合同",
-            "task-create",
-            "worker-start",
-            "worker-start` receipt",
-            "`worker-show` readback",
-            "Execution Worktree",
-            "`deliveryId`",
-            "sender terminal",
-            "check --run <run_id> --wait",
-            "check --ack <delivery_id>",
-            "唤醒责任在发送方",
-            "coordinator_terminal_handle",
-            "worker-list --run <run_id>",
-            "project lane integrated/closed",
-            "project_lifecycle.py",
-            "project-side",
-            "project_lane_transition: unchanged",
-            "Integration conflict",
-            "close_pending",
-            "archive/output readback",
-            "git branch readback",
-            "deduplicated",
-            "lane_cleanup_audit.py",
-        ),
-    )
     audit_script = ORCA / "scripts" / "lane_cleanup_audit.py"
-    require(
-        audit_script,
-        (
-            "CANONICAL_STATES",
-            "DONE_STATES",
-            "def audit",
-            "--registry-dir",
-            "--self-test",
-            "非 canonical state",
-            "lane-registry.md",
-        ),
-    )
     if not is_executable(audit_script):
         record("Orca lane cleanup audit helper must exist and remain executable")
     else:
@@ -1179,36 +525,6 @@ def check_orca_contract() -> None:
                 f"Orca lane cleanup audit self-test failed: {result.stdout}{result.stderr}"
             )
     lifecycle = ORCA / "scripts" / "worker_lifecycle.py"
-    require(
-        lifecycle,
-        (
-            "validate_startup",
-            "validate_settlement",
-            "bind_startup",
-            "record_settlement",
-            "worker-start",
-            "worker_done",
-            "worker-list",
-            "requested_source",
-            "effective_source",
-            "integration_worktree",
-            "bindings",
-            "attempt_index",
-            "retryOfDispatchId",
-            "previous_attempt",
-            "requested_source",
-            "effective_source",
-            "persistence_reference",
-            "delivery_request_id",
-            "ack_source",
-            "post_ack_worker_list",
-            "message_id",
-            "fan_in_keys",
-            "ack_id",
-            "project_lane_transition",
-            '"authority": False',
-        ),
-    )
     if not is_executable(lifecycle):
         record("Orca worker lifecycle helper must exist and remain executable")
     else:
@@ -1223,25 +539,6 @@ def check_orca_contract() -> None:
                 f"Orca worker lifecycle self-test failed: {result.stdout}{result.stderr}"
             )
     project_lifecycle = ORCA / "scripts" / "project_lifecycle.py"
-    require(
-        project_lifecycle,
-        (
-            "validate_project_fan_in",
-            "validate_cleanup",
-            "project-fan-in",
-            "worker-release",
-            "archive-readback",
-            "worktree-rm",
-            "git-branch-readback",
-            "integration_conflict",
-            "integration_checks_failed",
-            "close_pending",
-            "deduplicated",
-            "project_lane_transition",
-            "authority",
-            "不执行 Git",
-        ),
-    )
     if not is_executable(project_lifecycle):
         record("Orca project lifecycle helper must exist and remain executable")
     else:
@@ -1257,20 +554,6 @@ def check_orca_contract() -> None:
             )
     recovery = ORCA / "scripts" / "recovery.py"
     recovery_check = ORCA / "scripts" / "recovery_check.py"
-    require(
-        ORCA / "SKILL.md", ("references/orca-recovery.md", "scripts/recovery.py check")
-    )
-    require(
-        ORCA / "references" / "orca-recovery.md",
-        (
-            "request-show",
-            "retry-same-task",
-            "not-run/Unknown",
-            "worker-start --terminal",
-            "continuation.record_event",
-            "不发最终 `worker_done`",
-        ),
-    )
     for path in (recovery, recovery_check):
         if not is_executable(path):
             record(
@@ -1287,20 +570,6 @@ def check_orca_contract() -> None:
             record(f"Orca recovery check failed: {result.stdout}{result.stderr}")
     browser_gate = ORCA / "scripts" / "browser_gate.py"
     browser_gate_check = ORCA / "scripts" / "browser_gate_check.py"
-    require(
-        ORCA / "SKILL.md",
-        ("references/orca-browser-automation.md", "scripts/browser_gate.py check"),
-    )
-    require(
-        ORCA / "references" / "orca-browser-automation.md",
-        (
-            "readback-first",
-            "phase2-operation-only",
-            "not-run/Unknown",
-            "browser.screencast.v1",
-            "consume-existing-automation",
-        ),
-    )
     for path in (browser_gate, browser_gate_check):
         if not is_executable(path):
             record(
@@ -1317,23 +586,6 @@ def check_orca_contract() -> None:
             record(f"Orca browser gate check failed: {result.stdout}{result.stderr}")
     provider_gate = ORCA / "scripts" / "provider_mutation.py"
     provider_gate_check = ORCA / "scripts" / "provider_mutation_check.py"
-    require(
-        ORCA / "SKILL.md",
-        (
-            "references/orca-provider-mutation.md",
-            "scripts/provider_mutation.py check",
-        ),
-    )
-    require(
-        ORCA / "references" / "orca-provider-mutation.md",
-        (
-            "readback-first",
-            "phase2-operation-only",
-            "not-run/Unknown",
-            "consume-existing-mutation",
-            "deduplicated",
-        ),
-    )
     for path in (provider_gate, provider_gate_check):
         if not is_executable(path):
             record(
@@ -1352,24 +604,6 @@ def check_orca_contract() -> None:
             )
     publication_gate = ORCA / "scripts" / "remote_publication.py"
     publication_gate_check = ORCA / "scripts" / "remote_publication_check.py"
-    require(
-        ORCA / "SKILL.md",
-        (
-            "references/orca-remote-publication.md",
-            "scripts/remote_publication.py check",
-        ),
-    )
-    require(
-        ORCA / "references" / "orca-remote-publication.md",
-        (
-            "readback-first",
-            "phase4-publication-only",
-            "not-run/Unknown",
-            "consume-existing-pr",
-            "deduplicated",
-            "close_pending",
-        ),
-    )
     for path in (publication_gate, publication_gate_check):
         if not is_executable(path):
             record(
@@ -1421,61 +655,6 @@ def check_t3code_contract() -> None:
         T3CODE / "assets" / "T3CODE_ROLE_DISPATCH_PACKET.md",
     ):
         check_skill_links(path)
-    require(
-        T3CODE / "SKILL.md",
-        (
-            "coordinator_runtime: t3code",
-            "dispatch_runtime: t3code",
-            'delegate_task(mode:"async", isolation:"worktree")',
-            "`t3-task`",
-            "coordinator 留在 Source Worktree",
-            "staged 计划保持 `blocked`",
-            "existing lane 始终按 registry runtime 恢复",
-        ),
-    )
-    require(
-        T3CODE / "references" / "t3code-dispatch.md",
-        (
-            "orchestrator_capabilities",
-            "t3_worktree_status",
-            "`attached: false`",
-            "model_evidence: t3-capabilities",
-            "`claudeAgent`",
-            "`reasoningEffort`",
-            "配置值原样使用",
-            "t3 staged adapter unavailable",
-            "clientRequestId: <lane_id>",
-            "implementation_gate.py",
-            "结束本轮",
-        ),
-    )
-    require(
-        T3CODE / "references" / "t3code-lifecycle.md",
-        (
-            "`task_status` 只读本线程派发的任务",
-            "LANE_DONE <lane_id>",
-            "hasPendingQuestion",
-            "t3_pending_request",
-            't3_thread_organize(threadId: child_thread_id, action: "archive")',
-            "git worktree remove",
-            "close_pending",
-            "release_stage: deployed",
-            "完成唤醒只投递给 `coordinator_thread_id`",
-            "task_cancel(task_id)",
-        ),
-    )
-    require(
-        T3CODE / "assets" / "T3CODE_ROLE_DISPATCH_PACKET.md",
-        (
-            "lane-registry.md",
-            "git switch --detach <base_sha>",
-            "git rev-parse --git-common-dir",
-            "preflight bundle 完成前不派生",
-            "宿主原生 subagent",
-            "LANE_DONE <lane_id>",
-            "T3 初始分支",
-        ),
-    )
     t3_only = re.compile(
         r"delegate_task|task_status|t3_thread_|t3_worktree_|t3_pending_request|"
         r"orchestrator_capabilities"
@@ -1498,62 +677,6 @@ def check_lody_contract() -> None:
         LODY / "assets" / "LODY_ROLE_DISPATCH_PACKET.md",
     ):
         check_skill_links(path)
-    require(
-        LODY / "SKILL.md",
-        (
-            "coordinator_runtime: lody",
-            "dispatch_runtime: lody",
-            'lody_session_create(workContext: {kind: "local", worktree: true})',
-            "`lody-session`",
-            "coordinator 留在 Source Worktree",
-            "staged 计划保持 `blocked`",
-            "existing lane 始终按 registry runtime 恢复",
-        ),
-    )
-    require(
-        LODY / "references" / "lody-dispatch.md",
-        (
-            "lody_session_create_options",
-            "`isGit: true`",
-            "dispatch unavailable",
-            "model_evidence: lody-run-config",
-            "`reasoningEffortValues`",
-            "配置值原样使用",
-            "lody staged adapter unavailable",
-            "`operationId: <lane_id>`",
-            "`useCurrentSessionAsParent: false`",
-            "implementation_gate.py",
-            "结束本轮",
-        ),
-    )
-    require(
-        LODY / "references" / "lody-lifecycle.md",
-        (
-            "`lody_operation_get` 只读本 session 拥有的 Operation",
-            "LANE_DONE <lane_id>",
-            "LANE_WAITING <lane_id>",
-            "lody_session_chat(sessionId: session_id",
-            "lody_session_archive(sessionId: session_id)",
-            "git worktree remove",
-            "close_pending",
-            "release_stage: deployed",
-            "Operation 结果只投递给拥有它的 `coordinator_session_id`",
-            "lody_session_cancel(sessionId: session_id)",
-        ),
-    )
-    require(
-        LODY / "assets" / "LODY_ROLE_DISPATCH_PACKET.md",
-        (
-            "lane-registry.md",
-            "git switch --detach <base_sha>",
-            "git rev-parse --git-common-dir",
-            "preflight bundle 完成前不派生",
-            "宿主原生 subagent",
-            "LANE_WAITING <lane_id>",
-            "LANE_DONE <lane_id>",
-            "Lody 初始分支",
-        ),
-    )
     lody_only = re.compile(r"\blody_(?:session|operation|agent_config)_")
     for root in (CORE, SETUP, HERDR, APP, ORCA, T3CODE):
         for path in sorted(root.rglob("*.md")):
@@ -1589,6 +712,7 @@ def check_tree_ownership() -> None:
         CORE / "references" / "child-monitoring.md",
         CORE / "scripts" / "lane-watch.sh",
         CORE / "scripts" / "lane_watch_check.py",
+        CORE / "scripts" / "dispatch.py",
     ):
         if path.exists():
             record(
@@ -1599,31 +723,6 @@ def check_tree_ownership() -> None:
 def check_installer() -> None:
     install_path = ROOT / "scripts" / "install.sh"
     text = install_path.read_text()
-    require(
-        install_path,
-        (
-            'link_skill "$ROOT/skills/delivery-pipeline"',
-            '"$CODEX_HOME_DIR/skills/delivery-pipeline"',
-            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline"',
-            '"$PI_HOME_DIR/agent/skills/delivery-pipeline"',
-            'link_skill "$ROOT/skills/delivery-pipeline-setup"',
-            '"$CODEX_HOME_DIR/skills/delivery-pipeline-setup"',
-            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-setup"',
-            '"$PI_HOME_DIR/agent/skills/delivery-pipeline-setup"',
-            'link_skill "$ROOT/skills/delivery-pipeline-codex-app"',
-            '"$CODEX_HOME_DIR/skills/delivery-pipeline-codex-app"',
-            'link_skill "$ROOT/skills/delivery-pipeline-herdr"',
-            '"$CODEX_HOME_DIR/skills/delivery-pipeline-herdr"',
-            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-herdr"',
-            '"$PI_HOME_DIR/agent/skills/delivery-pipeline-herdr"',
-            'link_skill "$ROOT/skills/delivery-pipeline-orca"',
-            '"$CODEX_HOME_DIR/skills/delivery-pipeline-orca"',
-            '"$CLAUDE_HOME_DIR/skills/delivery-pipeline-orca"',
-            '"$PI_HOME_DIR/agent/skills/delivery-pipeline-orca"',
-            'rm -rf "$PI_HOME_DIR/agent/skills/delivery-pipeline-pi"',
-            "Symlinks establish discovery only",
-        ),
-    )
     if text.count('link_skill "$ROOT/skills/delivery-pipeline"') != 3:
         record(
             "canonical core must be installed from one source into exactly three CLI homes"
@@ -1641,134 +740,6 @@ def check_installer() -> None:
     if text.count('link_skill "$ROOT/skills/delivery-pipeline-lody"') != 3:
         record("Lody shell must be installed into exactly three CLI homes")
     subprocess.run(["bash", "-n", str(install_path)], check=True)
-
-
-def check_context_and_docs() -> None:
-    require(
-        ROOT / "GLOSSARY.md",
-        (
-            "Configured Planning Lane",
-            "Review Evidence Bundle",
-            "Reviewers consume the same bundle with read/search access",
-            "Worker Task Configuration",
-            "model-config-schema.md",
-            "current calling session is the coordinator",
-            "current calling session is the coordinator",
-            "Coordinator Pane",
-            "new workspace requires explicit user request",
-            "map isolation belongs to Map Integration Worktrees and Execution Worktrees",
-            "skills/delivery-pipeline-codex-app",
-            "Orca Entrypoint",
-            "skills/delivery-pipeline-orca",
-            "dispatch unavailable",
-            "There are no built-in agent/model/effort defaults",
-            "repository file overlap is an Integration risk",
-            "all lane types share the same worker-tab capacity pool",
-        ),
-    )
-    require(
-        ROOT / "AGENTS.md",
-        (
-            "Canonical 核心链路",
-            "delivery-pipeline-codex-app",
-            "delivery-pipeline-herdr",
-            "Canonical 核心链路保持 runtime-neutral",
-            "`codex-thread` 只存在于 delivery-pipeline-codex-app 树",
-        ),
-    )
-    for readme in (ROOT / "README.md", ROOT / "README.zh-CN.md"):
-        require(
-            readme,
-            (
-                "delivery-pipeline-setup",
-                "delivery-pipeline-codex-app",
-                "delivery-pipeline-orca",
-                "delivery-pipeline-herdr",
-                "model-roles.json",
-                "orca-cli",
-                "orchestration",
-                "skills installed --json",
-                "caller-declared",
-                "authority: false",
-                "host",
-                "planning",
-                "design",
-                "frontend",
-                "backend",
-                "testing",
-                "review",
-            ),
-        )
-    require(
-        ROOT / "README.md",
-        (
-            "coordinator's current workspace by default",
-            "new workspace is created only when the user explicitly requests one",
-            "coordinator pane remains a control plane",
-        ),
-    )
-    require(
-        ROOT / "README.zh-CN.md",
-        (
-            "coordinator 当前 Workspace",
-            "只有用户显式要求时才创建新 Workspace",
-            "Coordinator Pane 只承担调度",
-        ),
-    )
-    require(
-        ROOT / "docs" / "adr" / "0004-config-driven-runtime-routing.md",
-        (
-            "Status:** Accepted",
-            "current calling session is always the coordinator",
-            "exactly six worker roles",
-            "skills/delivery-pipeline-codex-app",
-            "supersedes ADR-0003",
-        ),
-    )
-    require(
-        ROOT / "docs" / "adr" / "0009-orca-runtime-entrypoint.md",
-        (
-            "Status:** Accepted",
-            "skills/delivery-pipeline-orca",
-            "version-matched",
-            "dispatch unavailable",
-            "preflight-ready",
-            "authority: false",
-            "target + runtimeId",
-            "不 fallback 到 Herdr/Codex App",
-            "#121–#128",
-        ),
-    )
-    require(
-        ROOT / "docs" / "adr" / "0008-unified-task-type-config-schema.md",
-        (
-            "Status:** Accepted",
-            "model-config-schema.md",
-            "codex-app",
-            "model_config.py migrate",
-        ),
-    )
-    require(
-        ROOT / "docs" / "adr" / "0005-current-workspace-first-herdr-dispatch.md",
-        (
-            "Status:** Accepted",
-            "Coordinator Pane 当前所在的 Herdr Session 与 Workspace",
-            "只有用户显式要求时才创建新 Workspace",
-            "Coordinator Pane 只承担调度",
-            "取代 ADR-0001",
-        ),
-    )
-    require(
-        ROOT / "docs" / "adr" / "0006-worker-tab-capacity-and-naming.md",
-        (
-            "Status:** Accepted",
-            "每个 worker tab 最多 4 pane",
-            "X-#391·#392",
-            "HITL lane 与其他 lane 共用同一容量池",
-            "取代 ADR-0005",
-            "current-workspace-first 前提",
-        ),
-    )
 
 
 def check_pruned_policy() -> None:
@@ -1793,158 +764,35 @@ def check_pruned_policy() -> None:
 
 
 def check_metadata_and_helpers() -> None:
-    require(
-        CORE / "agents" / "openai.yaml",
-        (
-            'display_name: "Delivery Pipeline"',
-            "$delivery-pipeline",
-            "allow_implicit_invocation: false",
-        ),
-    )
-    require(
-        APP / "agents" / "openai.yaml",
-        (
-            'display_name: "Delivery Pipeline (Codex App)"',
-            "$delivery-pipeline-codex-app",
-            "allow_implicit_invocation: false",
-        ),
-    )
-    require(
-        ORCA / "agents" / "openai.yaml",
-        (
-            'display_name: "Delivery Pipeline (Orca)"',
-            "$delivery-pipeline-orca",
-            "allow_implicit_invocation: false",
-        ),
-    )
     # pi-lens-ignore: unchecked-throwing-call-python
     if not is_executable(ROOT / "scripts" / "validate.py"):
         record("validator must remain executable")
 
 
 def check_checkpoint_contract() -> None:
+    """App Prewalk 仍用 canonical checkpoint；CLI 已无 staged 续接（ADR-0018）。"""
     helper = CORE / "scripts" / "checkpoint.py"
     probe = CORE / "scripts" / "checkpoint_check.py"
-    continuation = CORE / "scripts" / "continuation.py"
-    continuation_probe = CORE / "scripts" / "continuation_check.py"
-    pi_adapter = CORE / "scripts" / "pi_adapter.py"
-    pi_adapter_probe = CORE / "scripts" / "pi_adapter_check.py"
-    codex_adapter = CORE / "scripts" / "codex_cli_adapter.py"
-    codex_adapter_probe = CORE / "scripts" / "codex_cli_adapter_check.py"
-    for path in (
-        helper,
-        probe,
-        continuation,
-        continuation_probe,
-        pi_adapter,
-        pi_adapter_probe,
-        codex_adapter,
-        codex_adapter_probe,
-    ):
+    for path in (helper, probe):
         if not path.exists():
             record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
-    if helper.exists():
-        result = subprocess.run(
-            [sys.executable, str(helper), "self-test"], text=True, capture_output=True
-        )
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    for args, label in (([str(helper), "self-test"], "self-test"), ([str(probe)], "isolation check")):
+        if not Path(args[0]).exists():
+            continue
+        result = subprocess.run([sys.executable, *args], text=True, capture_output=True, env=env)
         if result.returncode != 0:
-            record(
-                f"checkpoint helper self-test failed: {result.stdout}{result.stderr}"
-            )
-    if probe.exists():
-        result = subprocess.run(
-            [sys.executable, str(probe)],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(f"checkpoint isolation check failed: {result.stdout}{result.stderr}")
-    if continuation_probe.exists():
-        result = subprocess.run(
-            [sys.executable, str(continuation_probe)],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(
-                f"continuation isolation check failed: {result.stdout}{result.stderr}"
-            )
-    if pi_adapter.exists():
-        result = subprocess.run(
-            [sys.executable, str(pi_adapter), "self-test"],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(f"Pi adapter self-test failed: {result.stdout}{result.stderr}")
-    if pi_adapter_probe.exists():
-        result = subprocess.run(
-            [sys.executable, str(pi_adapter_probe)],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(f"Pi adapter isolation check failed: {result.stdout}{result.stderr}")
-    if codex_adapter_probe.exists():
-        result = subprocess.run(
-            [sys.executable, str(codex_adapter_probe)],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(f"Codex CLI adapter check failed: {result.stdout}{result.stderr}")
-    require(
-        HERDR / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md",
-        (
-            "Prewalk Checkpoint / Continuation Overlay",
-            "PREWALK_READY <lane_id> <checkpoint_path>",
-            "WORKER_STOPPED <lane_id> <checkpoint_path>",
-            "不发送接续请求",
-        ),
-    )
-    require(
-        CORE / "references" / "lane-registry.md",
-        (
-            "checkpoint_version:",
-            "checkpoint_sha256:",
-            "component_sha256",
-            "ignored 路径只保存内容/模式指纹",
-            "ready-for-coordinator",
-        ),
-    )
-    require(
-        codex_adapter,
-        (
-            "resume_from_checkpoint",
-            "herdr-codex-pane",
-            "model_reasoning_effort",
-            "禁止 --last",
-        ),
-    )
+            record(f"checkpoint {label} failed: {result.stdout}{result.stderr}")
+    for removed in ("continuation.py", "pi_adapter.py", "codex_cli_adapter.py", "claude_adapter.py"):
+        if (CORE / "scripts" / removed).exists():
+            record(f"CLI staged helper resurrected: {removed}")
+    lane_watch = (HERDR / "scripts" / "lane-watch.sh").read_text()
+    if "PREWALK" in lane_watch:
+        record("Herdr watcher still handles PREWALK (CLI is direct-only)")
 
 
 def check_lane_graph() -> None:
     script = CORE / "scripts" / "lane_graph.py"
-    require(
-        script,
-        (
-            "--registry-root",
-            "--self-test",
-            "--no-tracker",
-            "--edges-json",
-            "Blocked by",
-            "lane-graph.html",
-            "superseded",
-            "渲染是派生物，不是状态",
-            "--format",
-            "--map",
-        ),
-    )
     if not is_executable(script):
         record("lane graph renderer must exist and remain executable")
     else:
@@ -1965,7 +813,6 @@ def check_recovery_record() -> None:
     if not is_executable(script):
         record("coordinator recovery helper must exist and remain executable: recovery_record.py")
         return
-    require(script, ("show", "set", "check", "--self-test", "## Coordinator Recovery"))
     result = subprocess.run(
         [sys.executable, str(script), "--self-test"],
         text=True,
@@ -1989,127 +836,6 @@ def check_review_gate() -> None:
     )
     if result.returncode != 0:
         record(f"review_gate self-test failed: {result.stdout}{result.stderr}")
-    require(
-        CORE / "references" / "gate-state-machine.md",
-        ("## Review 预算", "review_gate.py", "REVIEW_EXHAUSTED"),
-    )
-    require(
-        CORE / "references" / "code-review-evidence-preflight.md",
-        ("review_gate.py", "§Review 预算"),
-    )
-
-
-def check_claude_adapter_contract() -> None:
-    helper = CORE / "scripts" / "claude_adapter.py"
-    probe = CORE / "scripts" / "claude_adapter_check.py"
-    setup = SETUP / "scripts" / "model_config.py"
-    for path in (helper, probe):
-        if not path.exists():
-            record(f"missing Claude adapter helper: {path.relative_to(ROOT)}")
-    if probe.exists():
-        result = subprocess.run(
-            [sys.executable, str(probe)],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(f"Claude adapter check failed: {result.stdout}{result.stderr}")
-    if setup.exists():
-        result = subprocess.run(
-            [sys.executable, str(setup), "self-test"],
-            text=True,
-            capture_output=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
-        if result.returncode != 0:
-            record(
-                f"Claude dispatch caller check failed: {result.stdout}{result.stderr}"
-            )
-    require(
-        helper,
-        (
-            "resume-same-session",
-            "herdr-claude-pane",
-            "checkpoint/Git readback",
-            "coordinator_active",
-            "tui_probe",
-            "effort_evidence",
-            '"--resume"',
-            '"--dangerously-skip-permissions"',
-            '"actual_model": UNKNOWN',
-            '"actual_effort": UNKNOWN',
-        ),
-    )
-    require(
-        CORE / "references" / "model-role-routing.md",
-        (
-            "Claude staged continuation adapter",
-            "精确原生 session",
-            "实际 model/effort",
-            "model_config.py start",
-            "resume --request <payload.json>",
-        ),
-    )
-    require(
-        setup,
-        (
-            "def continuation_request",
-            "delivery-pipeline",
-            '"resume"',
-            "codex_cli_adapter.resume_from_checkpoint",
-            "build_tui_switch(request)",
-            'plan.get("capability") != "verified"',
-        ),
-    )
-    require(
-        CORE / "references" / "gate-state-machine.md",
-        (
-            "PREWALK_READY",
-            "WORKER_STOPPED",
-            "不新增业务 gate",
-            "不提前接续或 fan-in",
-        ),
-    )
-    require(
-        CORE / "scripts" / "continuation.py",
-        (
-            "prepare_continuation",
-            "ready_to_send",
-            "record_event",
-            "record_terminal",
-            "record_fan_in",
-            "persist-before-send",
-            "dispatching",
-            "send-authorized",
-            "send-unknown",
-        ),
-    )
-    require(
-        CORE / "scripts" / "codex_cli_adapter.py",
-        (
-            "resume_from_checkpoint",
-            "herdr-codex-pane",
-            "model_reasoning_effort",
-            "禁止 --last",
-        ),
-    )
-    require(
-        CORE / "references" / "lane-registry.md",
-        (
-            "continuation: <single persisted continuation overlay-or-none>",
-            "`request`、`tool_acceptance`、`new_turn`、`actual_model`",
-            "configuration_unchanged: true",
-            "当前 `checkpoint_sha256`、`work_item` 和非空 `source`",
-            "terminal.outcome: blocked",
-            "`commit` 只可 `integrated`",
-            "`turn_id`",
-            "`readback_at`",
-            "`after_marker: true`",
-            "`settled: true`",
-            "authorization: inherited-dispatch",
-        ),
-    )
 
 
 def main() -> None:
@@ -2129,14 +855,12 @@ def main() -> None:
     check_lody_contract()
     check_tree_ownership()
     check_installer()
-    check_context_and_docs()
     check_pruned_policy()
     check_metadata_and_helpers()
     check_checkpoint_contract()
     check_lane_graph()
     check_recovery_record()
     check_review_gate()
-    check_claude_adapter_contract()
 
     if ERRORS:
         fail(

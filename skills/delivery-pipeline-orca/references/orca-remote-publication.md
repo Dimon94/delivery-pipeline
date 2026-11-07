@@ -3,7 +3,7 @@
 本文件是 remote publication 的只读门禁合同，覆盖已证实且获授权的 operation：
 git push、PR/MR 创建/更新、merge（merge/squash/rebase）与 remote closeout
 （remote branch 删除等收尾）。Phase 4 失败不破坏 Phase 1-3 已有证据；共享
-registry、checkpoint、overlay、FIFO、项目 authority、provider mutation 与
+registry、overlay、FIFO、项目 authority、provider mutation 与
 fan-in/cleanup 合同仍由既有 owner 持有，本门禁不新建第二套。
 
 ## 只读门禁
@@ -109,5 +109,5 @@ DRY record:
   结构与 provider 命令闭集模式；`consume-existing-*`、`deduplicated`、
   `readback-first` 语义沿用 Phase 2B。
 - remaining duplication：publication 命令闭集与 fan-in/parity/closeout
-  输入是本 transport 边界的显式声明；不复制共享 registry/FIFO/continuation
+  输入是本 transport 边界的显式声明；不复制共享 registry/FIFO
   状态机，不重复 provider mutation 的 tracker/artifact 合同。

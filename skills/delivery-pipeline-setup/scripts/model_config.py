@@ -1,23 +1,10 @@
 #!/usr/bin/env python3
 import argparse
-import importlib.util
 import json
 import os
 import sys
 import tempfile
 from pathlib import Path
-
-CORE_SCRIPTS = Path(__file__).resolve().parents[2] / "delivery-pipeline" / "scripts"
-sys.path.insert(0, str(CORE_SCRIPTS))
-# 以下 import 由上方 sys.path.insert 在运行时解析，静态分析不可见。
-# pi-lens-ignore: reportMissingImports
-import checkpoint
-
-# pi-lens-ignore: reportMissingImports
-import codex_cli_adapter
-
-# pi-lens-ignore: reportMissingImports
-from pi_adapter import build_start_command, build_tui_switch
 
 TASK_TYPES = {
     "coordinator",
@@ -67,25 +54,12 @@ def _pair_errors(prefix: str, value: object) -> list[str]:
     return errors
 
 
-def _entry_errors(
-    prefix: str, value: object, agents: set[str], *, allow_execution: bool = False
-) -> list[str]:
-    required = {"agent", "model", "effort"}
-    allowed = required | ({"execution"} if allow_execution else set())
-    if (
-        not isinstance(value, dict)
-        or not required <= set(value)
-        or not set(value) <= allowed
-    ):
-        shape = "agent, model, effort" + (
-            " plus optional execution" if allow_execution else ""
-        )
-        return [f"{prefix} must define exactly {shape}"]
+def _entry_errors(prefix: str, value: object, agents: set[str]) -> list[str]:
+    if not isinstance(value, dict) or set(value) != {"agent", "model", "effort"}:
+        return [f"{prefix} must define exactly agent, model, effort"]
     errors = _pair_errors(prefix, {k: value[k] for k in ("model", "effort")})
     if value.get("agent") not in agents:
         errors.append(f"{prefix}.agent must be one of {sorted(agents)}")
-    if "execution" in value:
-        errors.extend(_pair_errors(f"{prefix}.execution", value["execution"]))
     return errors
 
 
@@ -126,14 +100,7 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                 f"{transport} config must define task types {sorted(required)}"
             )
         for task in sorted(set(work) & TASK_TYPES):
-            errors.extend(
-                _entry_errors(
-                    f"work.{task}",
-                    work[task],
-                    agents,
-                    allow_execution=task in IMPLEMENTATION_TASKS,
-                )
-            )
+            errors.extend(_entry_errors(f"work.{task}", work[task], agents))
     modes = document.get("modes")
     if not isinstance(modes, dict):
         errors.append("modes must be an object")
@@ -149,6 +116,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                 continue
             if mode["kind"] not in KINDS:
                 errors.append(f"{prefix}.kind must equal staged or direct")
+            elif transport == "cli" and mode["kind"] != "direct":
+                errors.append(f"{prefix}.kind must equal direct; CLI 只跑 direct")
             plans = mode["agents"]
             if not isinstance(plans, dict) or not plans:
                 errors.append(f"{prefix}.agents must be a non-empty object")
@@ -317,7 +286,7 @@ def _validate_legacy_app(document: object) -> list[str]:
 
 
 def _migrate_v4_cli(document: dict) -> tuple[dict, str]:
-    """CLI v4 → v5：work 项收回 starting 权威，execution 不同才携带。"""
+    """CLI v4 → v5：work 项收回模型权威；starting≠execution 的 staged 计划无法直跑，报错。"""
     modes = document.get("modes")
     default_mode = document.get("default_mode")
     if not isinstance(modes, dict) or not isinstance(modes.get(default_mode), dict):
@@ -346,7 +315,10 @@ def _migrate_v4_cli(document: dict) -> tuple[dict, str]:
                         "delivery-pipeline-setup"
                     )
                 if plan.get("execution") != pair:
-                    entry["execution"] = dict(plan["execution"])
+                    raise ValueError(
+                        f"v4 work.{task} 的 staged execution 已移除（CLI 只跑 direct）；"
+                        "rerun delivery-pipeline-setup"
+                    )
             elif plan.get("direct") != pair:
                 raise ValueError(
                     f"v4 work.{task} 与 default_mode direct 冲突；rerun "
@@ -356,7 +328,9 @@ def _migrate_v4_cli(document: dict) -> tuple[dict, str]:
     migrated = {
         "version": 5,
         "work": work,
-        "modes": modes,
+        "modes": {
+            name: {**mode, "kind": "direct"} for name, mode in modes.items()
+        },
         "review": document.get("review"),
     }
     errors = validate_document(migrated, "cli")
@@ -415,7 +389,10 @@ def migrate_document(document: dict) -> tuple[dict, str]:
                             "delivery-pipeline-setup"
                         )
                     if plan["execution"] != pair:
-                        entry["execution"] = dict(plan["execution"])
+                        raise ValueError(
+                            f"legacy roles.{task} 的 staged execution 已移除（CLI 只跑 direct）；"
+                            "rerun delivery-pipeline-setup"
+                        )
                 elif plan["direct"] != pair:
                     raise ValueError(
                         f"legacy roles.{task} 与 direct 计划冲突；rerun "
@@ -513,20 +490,6 @@ def capability_errors(
     return errors
 
 
-def plan_capability_errors(plan: dict, evidence: object) -> list[str]:
-    if plan.get("mode") == "staged":
-        errors: list[str] = []
-        for stage in STAGES:
-            pair = plan.get(stage, {})
-            errors.extend(
-                capability_errors(
-                    plan["agent"], pair.get("model"), pair.get("effort"), evidence
-                )
-            )
-        return errors
-    return capability_errors(plan["agent"], plan["model"], plan["effort"], evidence)
-
-
 def resolve_plan(
     document: dict,
     task: str,
@@ -579,31 +542,9 @@ def resolve_plan(
         if map_mode is not None
         else "user-config"
     )
-    if requested is None:
-        # 默认路径：work 项即 starting；可选 execution 决定是否 staged 续接。
-        execution = entry.get("execution")
-        if execution is None:
-            resolved = {
-                **plan,
-                "mode": "direct",
-                "mode_name": None,
-                "phase": "direct",
-                "source": source,
-            }
-        else:
-            pair = {"model": entry["model"], "effort": entry["effort"]}
-            resolved = {
-                **plan,
-                "mode": "staged",
-                "mode_name": None,
-                "phase": "starting",
-                "source": source,
-                "starting": dict(pair),
-                "execution": dict(execution),
-                "direct": dict(pair),
-            }
-    else:
-        # 票/map 显式点名：命名 mode 的 per-agent 三段计划整体覆盖。
+    resolved = {**plan, "mode": "direct", "mode_name": None, "phase": "direct", "source": source}
+    if requested is not None:
+        # 票/map 显式点名：命名 mode 的 per-agent direct 计划整体覆盖。
         mode = document["modes"].get(requested)
         if mode is None:
             raise ValueError(
@@ -614,30 +555,12 @@ def resolve_plan(
             raise ValueError(
                 f"mode {requested} has no agents plan for {entry['agent']}"
             )
-        kind = mode["kind"]
-        if kind == "staged":
-            resolved = {
-                **plan,
-                "model": agent_plan["starting"]["model"],
-                "effort": agent_plan["starting"]["effort"],
-                "mode": "staged",
-                "mode_name": requested,
-                "phase": "starting",
-                "source": source,
-                **{stage: dict(agent_plan[stage]) for stage in STAGES},
-            }
-        else:
-            resolved = {
-                **plan,
-                "mode": "direct",
-                "mode_name": requested,
-                "phase": "direct",
-                "source": source,
-                **agent_plan["direct"],
-            }
+        resolved = {**resolved, "mode_name": requested, **agent_plan["direct"]}
     if evidence is None:
         return {**resolved, "capability": "unknown"}
-    errors = plan_capability_errors(resolved, evidence)
+    errors = capability_errors(
+        resolved["agent"], resolved["model"], resolved["effort"], evidence
+    )
     if errors:
         raise ValueError("; ".join(errors))
     return {**resolved, "capability": "verified"}
@@ -645,40 +568,11 @@ def resolve_plan(
 
 def freeze_overlay(plan: dict) -> dict:
     """返回 coordinator 写入 packet 与 registry 的唯一计划 overlay。"""
-    if plan.get("mode") == "staged":
-        for stage in STAGES:
-            pair = plan.get(stage)
-            if (
-                not isinstance(pair, dict)
-                or set(pair) != {"model", "effort"}
-                or any(
-                    not isinstance(value, str)
-                    or not value.strip()
-                    or value.strip().lower() == "unknown"
-                    for value in pair.values()
-                )
-            ):
-                raise ValueError(f"staged plan missing {stage} model/effort")
-        starting = plan["starting"]
-        execution = plan["execution"]
-        direct = plan["direct"]
-    else:
-        starting = execution = None
-        direct = plan
     return {
-        "execution_mode": plan["mode"],
-        "execution_mode_name": plan.get("mode_name"),
-        "execution_source": plan["source"],
+        "mode": plan.get("mode_name"),
         "agent": plan["agent"],
         "model": plan.get("model"),
         "effort": plan.get("effort"),
-        "starting_model": starting["model"] if starting else None,
-        "starting_effort": starting["effort"] if starting else None,
-        "execution_model": execution["model"] if execution else None,
-        "execution_effort": execution["effort"] if execution else None,
-        "direct_model": direct["model"],
-        "direct_effort": direct["effort"],
-        "execution_phase": plan["phase"],
     }
 
 
@@ -689,110 +583,12 @@ def verify_overlay(plan: dict, overlay: object) -> dict:
     return expected
 
 
-def continuation_request(payload: dict) -> dict:
-    """调用既有 native adapter；只生成计划，不替代 registry、lease 或发送。"""
-    if isinstance(payload, dict) and payload.get("runtime") in {
-        "herdr-pi-pane",
-        "herdr-codex-pane",
-    }:
-        if set(payload) != {
-            "runtime",
-            "checkpoint_path",
-            "request",
-            "observation",
-            "evidence",
-        }:
-            raise ValueError("continuation payload 字段不匹配")
-        path = payload["checkpoint_path"]
-        if not isinstance(path, str) or not Path(path).is_absolute():
-            raise ValueError("checkpoint_path 必须是绝对路径")
-        document = codex_cli_adapter._load_checkpoint(path)
-        if document["runtime"] != payload["runtime"]:
-            raise ValueError("checkpoint runtime 不匹配")
-        observation = payload["observation"]
-        ready = checkpoint.evaluate_signal(
-            document,
-            f"WORKER_STOPPED {document['lane_id']} {document['checkpoint_path']}",
-            observation,
-        )
-        if (
-            not ready["can_continue"]
-            or observation.get("coordinator_active") is not False
-            or observation.get("session_resumable") is not True
-        ):
-            raise ValueError("原 session 停止或接续证据不足")
-        request = payload["request"]
-        if not isinstance(request, dict) or set(request) != {
-            "request_id",
-            "intent_sha256",
-            "target_request",
-        }:
-            raise ValueError("canonical continuation request 字段不匹配")
-        intent = checkpoint.build_continuation_intent(
-            document, target_request=request["target_request"]
-        )
-        if (
-            request["intent_sha256"] != intent[checkpoint.INTENT_FINGERPRINT_FIELD]
-            or request["request_id"] != "request-" + request["intent_sha256"]
-        ):
-            raise ValueError("continuation intent 与 checkpoint 不匹配")
-        agent = "pi" if payload["runtime"] == "herdr-pi-pane" else "codex"
-        target = request["target_request"]
-        errors = capability_errors(
-            agent, target["model"], target["effort"], payload["evidence"]
-        )
-        if errors:
-            raise ValueError("; ".join(errors))
-        if agent == "codex":
-            return codex_cli_adapter.resume_from_checkpoint(document, request)
-        return {
-            **build_tui_switch(request),
-            "session_id": document["session_id"],
-            "worktree": document["execution_worktree"],
-            "checkpoint_sha256": document[checkpoint.FINGERPRINT_FIELD],
-        }
-
-    if not isinstance(payload, dict) or payload.get("runtime") != "herdr-claude-pane":
-        raise ValueError("Claude continuation caller 只接受 herdr-claude-pane")
-    adapter_path = (
-        Path(__file__).resolve().parents[2]
-        / "delivery-pipeline"
-        / "scripts"
-        / "claude_adapter.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "delivery_pipeline_claude_adapter", adapter_path
-    )
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Claude adapter 不可加载: {adapter_path}")
-    adapter = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(adapter)
-    try:
-        return adapter.resume_plan(payload)
-    except (adapter.ClaudeAdapterError, OSError, TypeError) as error:
-        raise ValueError(f"Claude continuation adapter rejected: {error}") from error
-
-
 def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
     """构造 Herdr 原生请求；所有 startup 都要求当前 capability evidence。"""
-    if plan.get("mode") not in {"none", "direct", "staged"}:
+    if plan.get("mode") not in {"none", "direct"}:
         raise ValueError("execution plan is not runnable")
     if plan.get("capability") != "verified":
         raise ValueError("capability evidence is required before startup")
-    if plan.get("mode") == "staged":
-        freeze_overlay(plan)
-        if (plan.get("model"), plan.get("effort")) != (
-            plan["starting"]["model"],
-            plan["starting"]["effort"],
-        ):
-            raise ValueError("staged startup 与冻结 starting 不匹配")
-        if plan.get("agent") == "pi":
-            return build_start_command(
-                worker_name=worker_name,
-                pane_id=pane_id,
-                model=plan["model"],
-                effort=plan["effort"],
-            )
     agent, model, effort = plan.get("agent"), plan.get("model"), plan.get("effort")
     if agent not in CLI_AGENTS or not all(
         isinstance(value, str) and value.strip()
@@ -837,14 +633,12 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
 def valid_fixture() -> dict:
     pair = {"model": "provider/model", "effort": "high"}
     work = {task: {"agent": "pi", **pair} for task in sorted(CLI_REQUIRED_WORK)}
-    # backend 设了与 starting 不同的 execution → 默认 staged；其余任务类型直跑。
-    work["backend"]["execution"] = {"model": "provider/model", "effort": "medium"}
     return {
         "version": 5,
         "work": work,
         "modes": {
             "standard": {
-                "kind": "staged",
+                "kind": "direct",
                 "agents": {
                     agent: {
                         stage: {"model": "provider/model", "effort": effort}
@@ -909,10 +703,6 @@ def self_test() -> list[str]:
     case["default_mode"] = "standard"
     if not validate_document(case):
         failures.append("CLI config with default_mode was accepted")
-    case = valid_fixture()
-    case["work"]["planning"]["execution"] = {"model": "provider/model", "effort": "high"}
-    if not validate_document(case):
-        failures.append("execution on a non-implementation task type was accepted")
     case = valid_app_fixture()
     case["modes"] = {}
     if not validate_document(case, "app"):
@@ -922,21 +712,6 @@ def self_test() -> list[str]:
         agent: {"binary": True, "models": {"provider/model": ["low", "high", "medium"]}}
         for agent in sorted(CLI_AGENTS)
     }
-    default_staged = resolve_plan(fixture, "backend", output_mode="commit")
-    if default_staged["source"] != "user-config":
-        failures.append("user execution mode was not selected")
-    if (
-        default_staged["mode"] != "staged"
-        or default_staged["mode_name"] is not None
-        or default_staged["starting"]
-        != {"model": "provider/model", "effort": "high"}
-        or default_staged["execution"]
-        != {"model": "provider/model", "effort": "medium"}
-        or default_staged["direct"] != {"model": "provider/model", "effort": "high"}
-        or (default_staged["model"], default_staged["effort"])
-        != ("provider/model", "high")
-    ):
-        failures.append("default staged plan did not come from the work entry")
     default_direct = resolve_plan(fixture, "frontend", output_mode="commit")
     if (
         default_direct["mode"] != "direct"
@@ -953,9 +728,9 @@ def self_test() -> list[str]:
         failures.append("missing output mode enabled implementation phases")
     if (
         resolve_plan(fixture, "backend", map_mode="standard", output_mode="commit")[
-            "mode"
+            "mode_name"
         ]
-        != "staged"
+        != "standard"
     ):
         failures.append("map execution mode was not selected")
     selected = resolve_plan(
@@ -966,7 +741,8 @@ def self_test() -> list[str]:
         output_mode="commit",
     )
     if (
-        selected["mode"] != "staged"
+        selected["mode"] != "direct"
+        or selected["effort"] != "low"
         or selected["source"] != "ticket"
         or selected["mode_name"] != "standard"
     ):
@@ -1079,70 +855,6 @@ def self_test() -> list[str]:
         pass
     else:
         failures.append("startup accepted missing capability evidence")
-    staged = resolve_plan(fixture, "backend", evidence=evidence, output_mode="commit")
-    frozen = freeze_overlay(staged)
-    verify_overlay(staged, json.loads(json.dumps(frozen)))
-    if frozen["execution_mode_name"] is not None:
-        failures.append("default staged overlay gained a mode name")
-    expected_stages = {
-        "starting": {"model": "provider/model", "effort": "high"},
-        "execution": {"model": "provider/model", "effort": "medium"},
-        "direct": {"model": "provider/model", "effort": "high"},
-    }
-    for stage in STAGES:
-        for field in ("model", "effort"):
-            key = f"{stage}_{field}"
-            if frozen[key] != expected_stages[stage][field]:
-                failures.append(f"staged overlay lost {key}")
-            for changed in (None, "mismatch", "missing"):
-                edited = {**frozen, key: changed}
-                if changed == "missing":
-                    del edited[key]
-                try:
-                    verify_overlay(staged, edited)
-                except ValueError:
-                    pass
-                else:
-                    failures.append(f"staged overlay accepted invalid {key}")
-    staged_pi = resolve_plan(
-        fixture, "backend", evidence=evidence, output_mode="commit"
-    )
-    try:
-        command = startup_request(staged_pi, worker_name="worker", pane_id="pane")
-    except ValueError:
-        failures.append("Pi staged mode did not use its native adapter")
-    else:
-        if command[5] != "pi" or "--thinking" not in command:
-            failures.append(
-                "Pi staged startup omitted its native model/thinking arguments"
-            )
-    case = json.loads(json.dumps(fixture))
-    case["work"]["backend"]["agent"] = "codex"
-    try:
-        plan = resolve_plan(case, "backend", evidence=evidence, output_mode="commit")
-        startup_request(plan, worker_name="worker", pane_id="pane")
-    except ValueError:
-        failures.append("codex staged mode did not enter native startup caller")
-    claude_case = json.loads(json.dumps(fixture))
-    claude_case["work"]["backend"]["agent"] = "claude"
-    claude_staged = resolve_plan(
-        claude_case, "backend", evidence=evidence, output_mode="commit"
-    )
-    claude_command = startup_request(
-        claude_staged, worker_name="worker", pane_id="pane"
-    )
-    if (
-        claude_command[5] != "claude"
-        or "--model" not in claude_command
-        or "--effort" not in claude_command
-    ):
-        failures.append("Claude staged plan did not enter the existing startup caller")
-    try:
-        continuation_request({"runtime": "herdr-codex-pane"})
-    except ValueError:
-        pass
-    else:
-        failures.append("non-Claude continuation was accepted by Claude caller")
     for agent in sorted(CLI_AGENTS):
         plan = {
             "mode": "direct",
@@ -1160,80 +872,6 @@ def self_test() -> list[str]:
             failures.append("codex startup mapping omitted reasoning effort")
         if agent == "claude" and "--effort" not in command:
             failures.append("claude startup mapping omitted effort")
-    # 复用 checkpoint fixture；生产入口必须绑定持久现场，且不发送任何请求。
-    # pi-lens-ignore: reportMissingImports
-    import checkpoint_check as fixture_module
-
-    with tempfile.TemporaryDirectory() as folder:
-        root = Path(folder) / "execution"
-        root.mkdir()
-        fixture_module.git(root, "init", "-b", "check")
-        fixture_module.git(
-            root,
-            "-c",
-            "user.name=check",
-            "-c",
-            "user.email=check@example.invalid",
-            "commit",
-            "--allow-empty",
-            "--no-verify",
-            "-m",
-            "base",
-        )
-        (root / "worker.py").write_text("first edit\n")
-        path = Path(folder) / "checkpoint.json"
-        base = fixture_module.document_for(checkpoint.snapshot_worktree(root), path)
-        for agent in ("pi", "codex"):
-            path = Path(folder) / f"{agent}-checkpoint.json"
-            document = fixture_module.with_update(
-                base,
-                checkpoint_path=str(path),
-                runtime=f"herdr-{agent}-pane",
-                session_id="018f47a0-1b2c-7d3e-8f40-123456789abc",
-            )
-            checkpoint.write_checkpoint(path, document, worktree=root)
-            intent = checkpoint.build_continuation_intent(
-                document, target_request={"model": "provider/model", "effort": "high"}
-            )
-            payload = {
-                "runtime": document["runtime"],
-                "checkpoint_path": str(path),
-                "request": {
-                    "request_id": "request-"
-                    + intent[checkpoint.INTENT_FINGERPRINT_FIELD],
-                    "intent_sha256": intent[checkpoint.INTENT_FINGERPRINT_FIELD],
-                    "target_request": intent["target_request"],
-                },
-                "observation": fixture_module.observation(
-                    document,
-                    status="stopped",
-                    writer_active=False,
-                    coordinator_active=False,
-                    ready_seen=True,
-                    stop_evidence=True,
-                    session_resumable=True,
-                ),
-                "evidence": evidence,
-            }
-            result = continuation_request(payload)
-            assert result["session_id"] == document["session_id"]
-            assert result["checkpoint_sha256"] == document["checkpoint_sha256"]
-            if agent == "pi":
-                assert result["commands"][0]["text"] == "/model provider/model"
-            else:
-                assert result["native_args"][:2] == ["resume", document["session_id"]]
-            for field, value in (
-                ("evidence", {}),
-                ("runtime", "herdr-claude-pane"),
-                ("observation", {**payload["observation"], "writer_active": True}),
-                ("request", {**payload["request"], "intent_sha256": "b" * 64}),
-            ):
-                try:
-                    continuation_request({**payload, field: value})
-                except ValueError:
-                    pass
-                else:
-                    failures.append(f"{agent} continuation accepted invalid {field}")
 
     cases: dict[str, dict] = {}
     case = valid_fixture()
@@ -1278,6 +916,12 @@ def self_test() -> list[str]:
     case = valid_fixture()
     case["modes"]["standard"]["kind"] = "bogus"
     cases["bogus-kind"] = case
+    case = valid_fixture()
+    case["modes"]["standard"]["kind"] = "staged"
+    cases["staged-in-cli"] = case
+    case = valid_fixture()
+    case["work"]["backend"]["execution"] = {"model": "provider/model", "effort": "medium"}
+    cases["work-execution-in-cli"] = case
     case = valid_app_fixture()
     case["work"]["planning"]["agent"] = "pi"
     cases["cli-agent-in-app"] = case
@@ -1329,6 +973,14 @@ def self_test() -> list[str]:
         or "execution" in migrated["work"]["backend"]
     ):
         failures.append("v3 migration did not produce a valid v5 config")
+    split_v3 = json.loads(json.dumps(legacy_v3))
+    split_v3["execution"]["pi"]["execution"] = {"model": "provider/model", "effort": "low"}
+    try:
+        migrate_document(split_v3)
+    except ValueError:
+        pass
+    else:
+        failures.append("legacy staged execution was migrated instead of rejected")
     mixed = json.loads(json.dumps(legacy_v3))
     mixed["execution"]["codex"]["default_mode"] = "direct"
     migrated, _ = migrate_document(mixed)
@@ -1357,33 +1009,36 @@ def self_test() -> list[str]:
     legacy_v4 = valid_fixture()
     legacy_v4["version"] = 4
     legacy_v4["default_mode"] = "standard"
-    del legacy_v4["work"]["backend"]["execution"]
+    legacy_v4["modes"]["standard"]["kind"] = "staged"
+    for agent_plan in legacy_v4["modes"]["standard"]["agents"].values():
+        agent_plan["starting"] = {"model": "provider/model", "effort": "high"}
+        agent_plan["execution"] = {"model": "provider/model", "effort": "high"}
     migrated, transport = migrate_document(json.loads(json.dumps(legacy_v4)))
     if (
         transport != "cli"
         or migrated["version"] != 5
         or "default_mode" in migrated
         or validate_document(migrated)
-        or migrated["work"]["backend"].get("execution")
-        != {"model": "provider/model", "effort": "medium"}
-        or "execution" in migrated["work"]["planning"]
-        or "standard" not in migrated["modes"]
+        or "execution" in migrated["work"]["backend"]
+        or migrated["modes"]["standard"]["kind"] != "direct"
     ):
-        failures.append("v4 CLI migration did not preserve effective plans")
-    conflict_v4 = json.loads(json.dumps(legacy_v4))
-    conflict_v4["work"]["backend"]["model"] = "other/model"
-    try:
-        migrate_document(conflict_v4)
-    except ValueError:
-        pass
-    else:
-        failures.append("v4 work/mode starting conflict was silently migrated")
-    same_pair_v4 = json.loads(json.dumps(legacy_v4))
-    for agent_plan in same_pair_v4["modes"]["standard"]["agents"].values():
-        agent_plan["execution"] = dict(agent_plan["starting"])
-    migrated, _ = migrate_document(same_pair_v4)
-    if "execution" in migrated["work"]["backend"]:
-        failures.append("same starting/execution pair was not migrated to direct")
+        failures.append("v4 CLI migration did not produce a direct-only v5 config")
+    for field, value in (
+        ("model", "other/model"),
+        ("execution", {"model": "provider/model", "effort": "medium"}),
+    ):
+        conflict_v4 = json.loads(json.dumps(legacy_v4))
+        if field == "model":
+            conflict_v4["work"]["backend"]["model"] = value
+        else:
+            for agent_plan in conflict_v4["modes"]["standard"]["agents"].values():
+                agent_plan["execution"] = value
+        try:
+            migrate_document(conflict_v4)
+        except ValueError:
+            pass
+        else:
+            failures.append(f"v4 staged {field} conflict was silently migrated")
     legacy_app = {
         "version": 1,
         "default_mode": "astra-sol",
@@ -1455,7 +1110,6 @@ def main() -> int:
             "resolve",
             "freeze",
             "start",
-            "resume",
             "migrate",
         ),
     )
@@ -1469,7 +1123,6 @@ def main() -> int:
     parser.add_argument("--evidence", help="归一化实时能力 evidence JSON")
     parser.add_argument("--worker-name", default="worker")
     parser.add_argument("--pane-id", default="pane")
-    parser.add_argument("--request", help="persisted native continuation payload JSON")
     args = parser.parse_args()
 
     if args.command == "self-test":
@@ -1491,23 +1144,6 @@ def main() -> int:
     if args.command == "migrate":
         try:
             result = migrate_path(Path(args.path))
-        except (OSError, ValueError, json.JSONDecodeError) as error:
-            print(
-                json.dumps(
-                    {"valid": False, "errors": [str(error)]},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 1
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0
-    if args.command == "resume":
-        if not args.request:
-            parser.error("resume 需要 --request PAYLOAD_JSON")
-        try:
-            payload = json.loads(Path(args.request).expanduser().read_text())
-            result = continuation_request(payload)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             print(
                 json.dumps(

@@ -110,14 +110,31 @@ wait_threads（每次最多 60000 ms，沿用 cursor），读到停止后重新�
 
 worker 对 completed 与 blocked 都执行，所有 output mode 共用：
 
-1. 完成持久交付证据，按 canonical `../../delivery-pipeline/references/lane-registry.md` §轻量交接
-   组装完整 `FINAL_REPORT_BEGIN` / `FINAL_REPORT_END` 报告；完整指当前分支必需信息与可读证据，
-   不复制 packet、检查日志或已知坐标。
+1. 完成持久交付证据，按下方 App 终态模板组装完整 `FINAL_REPORT_BEGIN` / `FINAL_REPORT_END`
+   报告；完整指当前分支必需信息与可读证据，不复制 packet、检查日志或已知坐标。
 2. 最终回复前调用 `send_message_to_thread`，`threadId` / `hostId` 使用 packet 的 Coordinator
    task / Coordinator host，`prompt` 携带完整报告并要求 coordinator 按 registry 验证后执行
    role-aware fan-in。子任务的最终回复本身不构成已发送通知的证据。
 3. 工具确认发送成功后，在最终回复保留同一报告并声明已回传。发送失败或结果 Unknown 时，
    保留报告和目标坐标，明确“回传受阻”；不把工作完成冒充通知成功。
+
+App 终态模板（CLI 壳用 canonical `lane-registry.md` §终态行）：
+
+```text
+FINAL_REPORT_BEGIN
+Lane ID：<原 lane_id>
+状态：completed | blocked
+交付：<commit SHA 或 artifact/checks/verdict 坐标>
+证据：<完整命令/结果、模型实际 readback、独立审查结论的来源/字段>
+现场：<HEAD；实际 dirty 状态；dirty/untracked 精确路径>
+确认：<本次用户决定与来源、未决事项；无新增确认写无>
+阻断：<原因与失败工件；无阻断写无>
+下一步：<coordinator 应执行的动作>
+FINAL_REPORT_END
+```
+
+Review 的证据须可恢复 scope、owner、fixed point、HEAD 与 bundle 目录；clean commit 的 touched
+paths 从 `git diff <base> <commit> --name-status` 恢复。
 
 coordinator 收到报告后按 registry 核对 worker task、work item 与 output mode。通知可能早于
 worker 最终回复：此时直接核验消息中的报告与 Git/artifact 持久证据。重复通知以 registry 的

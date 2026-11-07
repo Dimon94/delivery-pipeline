@@ -42,7 +42,7 @@ python3 scripts/preflight.py run --payload <json>
     "agent": "pi|codex|claude",
     "model": "<configured>",
     "effort": "<configured>",
-    "evidence": "<same-session probe>",
+    "evidence": "<capability probe>",
     "config_source": "<absolute config path>",
     "validation_command": "<exact model_config.py command>"
   },

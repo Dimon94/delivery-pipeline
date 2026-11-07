@@ -6,125 +6,50 @@ disable-model-invocation: true
 
 # Delivery Pipeline（核心链路）
 
-本 skill 是 canonical 核心链路：gate 顺序、lane registry、配置 schema、owner 解析、prereq check
-与验收修复语义（ADR-0011/0012）与 Integration 不变量的唯一住所，由三个平级 transport 壳读取（`delivery-pipeline-herdr`、
-`delivery-pipeline-codex-app`、`delivery-pipeline-orca`）。依赖方向只允许壳 → 本链路。
-直接调用本 skill 时按目标 transport 改用对应壳：CLI/Herdr 交付调用 `delivery-pipeline-herdr`。
-当前调用会话就是 coordinator；调度归所属壳，产物质量归各 owner，Integration 不变量归本链路。
-worker 从所属壳 packet 的执行/加载章节进入，完整读 owner 与当前分支输入。
+本 skill 是 canonical 核心链路，由平级 transport 壳读取（`delivery-pipeline-herdr`、`delivery-pipeline-codex-app`、
+`delivery-pipeline-orca`、`delivery-pipeline-t3code`、`delivery-pipeline-lody`）；直接调用时改用对应壳，
+CLI 交付用 `delivery-pipeline-herdr`。当前调用会话就是 coordinator：调度归壳，产物质量归 owner，
+Integration 不变量归本链路。
+
+目标是整张 map 交付到一条 **Integration** branch，每张 ticket 按 tracker 的方式关闭。tickets 是带阻塞
+关系的任务图，始终有一个 ready **frontier**。
 
 ## 调度职责
 
-- **DRI（Directly Responsible Individual）。** coordinator 对当前交付目标的 gate、owner 路由、
-  持久验收与下一动作负责，闭环职责沿用既有 authority。
-- **Tactical（战术）。** 从持久证据推进最早未完成 gate，分派 ready frontier 给 configured
-  owner worker；worker 按所属壳在后台执行，当前会话保持用户对话，整批完成后按 Dispatch Handoff 交接。
-- **Strategic（战略）/ pit of success。** 派发前核对本项所需的现有配置、接口约束、校验规则与
-  数据源（日志、测试数据或浏览器证据），让 worker 有明确边界与可复验输入。当前验收或前置失败时
-  加载 `references/gate-state-machine.md` 的验收失败修复、prereq check 与 to-tickets
-  分支；非阻塞改善只记录建议，保持当前 scope 并继续 ready frontier。
-- **No workarounds。** 恢复、重试、replacement 与 supersede 由既有合同判定；保留失败证据，
-  经对应 owner 修复并按原判据复验，工具或证据缺口按所属 gate 报告。
-- **Context pointers。** 用绝对路径或 tracker URL 引用现有真相源，说明何时读取、所需章节或
-  commit 定点、期望返回的证据；保留本项目标、范围与验收，不复制整份背景。消息只传变化、
-  blocker、待确认决策与产物坐标，接收方按指针读取。
-- **Schedules。** 用户明确要求定时工作时才使用 runtime 原生调度能力；日常等待按所属壳的
-  真实唤醒合同执行。
+- coordinator 只推进最早未完成 gate、派发 frontier、读终态行；coordinator 不亲自实现或 fan-in。
+- 沟通走 **context pointers**：绝对路径或 tracker URL 加章节或 commit 定点，不复制 spec、ticket 与日志正文。
+- 失败交对应 owner 修复并按原判据复验，保留失败证据；证据缺失写 Unknown 并停在所属 gate。
+- 用户明确要求定时工作时才用 runtime 原生调度；日常等待按所属壳的真实唤醒合同。
 
-## 启动或恢复
+## Steps
 
-1. **识别输入与 gate。** 读取 repo instructions、tracker operations 与输入 artifact。
-   输入可以是松散想法、Wayfinder map、spec 或 implementation ticket；裸编号须能从当前
-   repo tracker 唯一解析。加载 `references/gate-state-machine.md`，按持久证据选择最早未完成 gate。
-2. **恢复坐标。** 新 coordinator 或恢复 map 时加载 `references/fresh-session-boundaries.md`
-   的 Coordinator Recovery 与 Recovery、`references/lane-registry.md` 的恢复模板与 Recovery，
-   先读原 map registry 的短记录并枚举 active writers。恢复既有 lane 不依赖当前 worker 配置；
-   按 stored runtime 与持久证据继续 fan-in/cleanup。创建或恢复 worktree 时加载
-   `references/integration-worktree-management.md`；复用已登记的 Map Integration Worktree/branch，
-   不存在时才创建（独立票模式不建 Integration，见该文件 §独立票模式）。所有 Git 操作显式指向隔离 worktree，不切换 coordinator 当前目录的 branch。
-3. **确认 Coordinator Runtime 与 transport。** 记录 `coordinator_runtime`；新建 lane 前
-   由所属壳核验 dispatch transport（CLI 会话经 `delivery-pipeline-herdr`，其余 transport
-   各有对应壳）。同一 map 不静默混合新
-   lane transport；existing lane 始终按 registry runtime 恢复。
+1. **识别 gate。** 读 repo instructions、tracker 与输入（想法、map、spec 或 ticket；裸编号须唯一解析），
+   按 `references/gate-state-machine.md` 从持久证据选最早未完成 gate；discovery 走
+   `references/wayfinder-frontier-loop.md`。
+2. **恢复坐标。** 新会话或压缩后按 `references/fresh-session-boundaries.md` §Coordinator Recovery，
+   只读恢复记录的合同入口所指章节并枚举 active writers。恢复既有 lane 不依赖当前 worker 配置，按 registry
+   runtime 续跑。按 `references/integration-worktree-management.md` 复用或创建 Map Integration Worktree；
+   Git 操作都指向隔离 worktree，不切换 coordinator 当前目录的 branch。
+3. **校验配置。** 新建 lane 前从 setup skill realpath 运行 `scripts/model_config.py validate <config>`
+   （version 5，见 `references/model-config-schema.md`）并验证本机 evidence；旧版本先 `migrate`；
+   缺失或非法时执行 `../delivery-pipeline-setup/SKILL.md`，不静默回落。
+4. **派发 frontier。** 每张 ready ticket 一个 lane、一个 owner（name + 绝对 SKILL.md path + invocation
+   label）、一个从 Integration HEAD 建的 Execution Worktree。lane 单轮直跑任务类型的 `{agent, model, effort}`
+   （ticket/map 点名 mode 时用其 `direct` 组），冻结进 packet 与 registry。按 `references/frontier-lanes.md`、
+   `references/owner-skill-resolution.md`、`references/model-role-routing.md` 与所属壳 dispatch 合同落位；
+   registry 先于 worker，packet 用 `references/lane-registry.md` §轻量交接。整批启动后到达 Dispatch Handoff。
+5. **收口。** 终态行到达后派 integration lane（merger）按 `references/execution-worktree-integration.md`
+   收口到 `closed`；merger 终态后重算 frontier，回到第 4 步。
+6. **Testing 与 Review。** frontier 清空后派 testing lane，再派一个 review lane：输入给出
+   fixed point（map registry base）与 `references/code-review-evidence-preflight.md`，worker 先生成
+   Review Evidence Bundle。轮次与 FIX 按 gate-state-machine §Review 预算，finding 交给同一个 implementer lane。
+7. **收尾。** 按 `references/test-decision-and-rebase.md` 处理测试选择、rebase 与 remote gate。
 
-完成标准：输入、当前 gate、Map Integration Worktree 与全部 active writers 已有可恢复坐标；
-缺失或矛盾证据记 Unknown，保留现场并报告受阻动作。
+## 边界
 
-## 当前 gate 的执行入口
+- 本地 worktree、修改与 commit 用 local execution authority；named-map tracker 迁移用 Map Run Authority；
+  push、PR/MR、merge 与 publication 需要 remote publication authority。
+- 面向用户、worker、tracker 与 PR/MR 的自然语言用中文；skill/tool/status/path/hash 保持原样。
 
-Gate 顺序、owner 与通过证据统一在 `references/gate-state-machine.md`。仅加载当前分支：
-
-| 分支 | 必读合同 | 完成后 |
-| --- | --- | --- |
-| discovery | `references/wayfinder-frontier-loop.md` | 重算 ready frontier 或进入 spec |
-| 新建 lane | `references/model-role-routing.md`、`references/owner-skill-resolution.md`、`references/frontier-lanes.md`，以及所属壳的 dispatch、packet 与 worker 生命周期合同 | 整批 Dispatch Handoff |
-| terminal/user completion signal 或显式 monitor | 所属壳的 monitoring 合同、`references/execution-worktree-integration.md`、`references/frontier-lanes.md` | 验证交付，按 Cleanup 六步收口到 `closed`，自动推进下一 ready frontier |
-| testing/review 后收尾 | `references/test-decision-and-rebase.md` | 复用适用的测试选择，按授权收尾或报告剩余 gate |
-
-Terminal fan-in 以 `references/execution-worktree-integration.md` §Cleanup 六步走到 `closed`
-为完成标准；cleanup 失败写 `close_pending` 并保留坐标。未走 Cleanup 不算收口，未关闭 worker
-transport 不算完成。
-
-同一 coordinator task 不因下一 lane 重读未变化的合同。
-gate/批级交接时按 `references/fresh-session-boundaries.md` §Coordinator Recovery 更新既有 map
-registry 的六项短记录；压缩后只读恢复记录的合同入口所指章节，历史已读标记不能替代当前输入。
-
-`starting` implementation lane 还必须先完成首处有意义修改与最小检查，再由
-`scripts/checkpoint.py` 将 Execution Worktree 的 Git/dirty/index snapshot 写入 repo 外 checkpoint；
-`PREWALK_READY <lane_id> <checkpoint_path>` 后立即结束本回合并保留 dirty，只触发 coordinator 读回，
-不是继续实现、审查、commit、接续或 fan-in。只有原 runtime 返回 `WORKER_STOPPED <lane_id> <checkpoint_path>`，
-且 observation 身份与 checkpoint 的 runtime/session/coordinator 坐标一致、停止证据可读回、单写者为
-false、没有 ignored 路径时，才允许 coordinator 进入下一阶段；active、Unknown、身份不匹配、关键设计
-Unknown、工具拒绝、过期或不完整 checkpoint 均保留现场。checkpoint 入口不发送接续请求，也不触发
-Terminal fan-in。
-
-Pi/Codex/Claude staged lane 在上述 registry persist/readback 后，调用 setup 的
-`model_config.py resume --request <payload.json>` 取得原生接续计划；payload 见
-`references/model-role-routing.md`。该 caller 只做既有 adapter 核验与计划翻译，不替代 registry、
-send lease 或 runtime readback。所属 transport 的 gate 不可用时保留 blocked 现场。
-
-## 新建 lane 的配置与 Packet
-
-按 `references/model-config-schema.md` 验证所属 runtime 的 version 5 配置实例：从 setup
-skill realpath 运行 `scripts/model_config.py validate <config>`，再验证本机实时 evidence。
-旧 version 2/3/4 文件先运行 `scripts/model_config.py migrate <config>` 机械迁移；缺失或非法时
-完整读取 `../delivery-pipeline-setup/SKILL.md` 并在当前会话执行初始化；通过后才创建新 lane，
-不静默回落。已有 lane 的恢复按 registry；replacement 的条件与验证见所属壳的 dispatch 合同。
-
-新 implementation lane 默认从本任务类型的 work 项解析阶段参数：`{model, effort}` 为
-starting；设了可选 `execution` 则 staged（起步 → checkpoint → execution 续接），未设则
-direct 单轮直跑。ticket/map 显式点名 `modes` 中的命名预设时，该 lane 三段计划整体由 mode
-覆盖。将 mode 名（默认路径为 none）、source、starting/execution/direct model 与 effort
-冻结到 packet 和 lane registry。只有
-`output_mode: commit` 的 implementation lane 有阶段计划，其他 output mode 直接用 work 项。
-staged adapter 尚未具备时必须保持 blocked，不静默退回 direct。
-
-从 work 项配置解析 `agent`、`model`、`effort`，使用所属壳的 dispatch packet 模板。
-生成与回读时只用 `references/lane-registry.md` §轻量交接的派发、终态、恢复固定模板；
-所属壳仅追加 transport 坐标。输入按当前分支给证据指针，完整机器工件由 helper 校验；
-派发前核对指针可读，缺失或矛盾记 Unknown 并沿原 gate 处理。
-commit/review lane 创建 packet 时加载 `references/code-review-evidence-preflight.md`：
-在输入中指定 fixed point（commit 为 Execution base，verdict 为 map registry base）与 preflight
-绝对路径；worker 在派生子审查前生成 Review Evidence Bundle。Review 轮次与处置按
-`references/gate-state-machine.md` §Review 预算执行。
-
-完成标准：配置与 owner 已验证，registry 先于 worker，packet 的 work item、role/output mode、
-隔离坐标和必要 review evidence 输入完整；启动与 bounded retry 按所属壳的 worker 生命周期合同执行。
-
-## 权限与交付边界
-
-- 每张 work item 一个 lane、一个 owner、一个 Execution Worktree/branch、一个 active writer；
-  worker 只处理本项，coordinator 不亲自实现。Execution Worktree 从当前 Integration HEAD 创建；
-  map registry 为 `delivery_mode: ticket_release` 时改从刚 fetch 的远端默认分支创建，逐票 MR、
-  部署读回后才关票，见 `references/integration-worktree-management.md` §独立票模式。
-- owner 使用 name、绝对 SKILL.md path、runtime-specific invocation label 三字段；绝对路径是
-  执行真相源，label 只作说明。
-- 本地 worktree、文件修改与 commit 使用 local execution authority；named-map tracker transitions
-  使用 Map Run Authority；push、main、PR/MR、merge 与最终 publication 需要 remote publication authority。
-- 运行中或 fan-in 发现 worker 模型变化时，读取 `references/model-role-routing.md` 的启动绑定
-  边界，继续按持久交付证据验收。
-- 自然语言面向用户、workers、tracker 和 PR/MR 时使用中文；skill/tool/status/path/hash 保持原样。
-
-完成标准：map/spec/tickets 与各 lane 交付可追溯，execution graph 为空，whole-change testing/review
-通过；远程获授权时 CI/CD、remote review 与 closeout 通过，否则报告唯一剩余 remote gate。
-Dispatch Handoff 是等待真实唤醒的批级交接，不代表整个 map 完成。
+完成标准：map/spec/tickets 与各 lane 交付可追溯，execution graph 为空，whole-change testing/review 通过；
+远程获授权时 CI/CD 与 closeout 通过，否则报告唯一剩余 remote gate。

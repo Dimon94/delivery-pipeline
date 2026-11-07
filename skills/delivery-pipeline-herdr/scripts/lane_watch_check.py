@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 fake Herdr 复跑阶段唤醒、去重和终态监听，不等待真实轮询间隔。"""
+"""用 fake Herdr 复跑终态监听与去重，不等待真实轮询间隔。"""
 import json
 import os
 from pathlib import Path
@@ -23,10 +23,11 @@ if args[:2] == ['pane', 'read']:
     if (root / 'jsonl_after').exists():
         k = int((root / 'jsonl_after').read_text())
         markers = 1 if count < k else 2
+        marker = (root / 'marker').read_text() if (root / 'marker').exists() else 'LANE_DONE lane'
         lines = [
             json.dumps({'type': 'message', 'timestamp': '2026-01-01T00:00:0%dZ' % i,
                         'message': {'role': 'assistant',
-                                    'content': [{'type': 'text', 'text': 'LANE_DONE lane'}]}})
+                                    'content': [{'type': 'text', 'text': marker}]}})
             for i in range(markers)
         ]
         (root / 'session.jsonl').write_text('\\n'.join(lines) + '\\n')
@@ -36,11 +37,6 @@ elif args[:2] == ['pane', 'get']:
         print(json.dumps({'result': {'pane': {'agent_session': {'value': str(root / 'session.jsonl')}}}}))
 elif args[:2] == ['agent', 'prompt']:
     assert args[2] == 'coordinator'
-    if '/tmp/a.json' in args[3]:
-        attempts = int((root / 'a-attempts').read_text())
-        (root / 'a-attempts').write_text(str(attempts + 1))
-        if attempts == 0:
-            raise SystemExit(1)
     with (root / 'prompts.jsonl').open('a') as stream:
         stream.write(json.dumps([int((root / 'count').read_text()), args[3]]) + '\\n')
 else:
@@ -51,7 +47,6 @@ else:
 def setup_case(root: Path, frames, jsonl_after=None):
     (root / 'frames.json').write_text(json.dumps(frames))
     (root / 'count').write_text('0')
-    (root / 'a-attempts').write_text('0')
     if jsonl_after is not None:
         (root / 'jsonl_after').write_text(str(jsonl_after))
         (root / 'session.jsonl').write_text('')
@@ -75,35 +70,6 @@ def run(root: Path):
              'LANE_WATCH_STATE_DIR': str(root)},
         capture_output=True, text=True, timeout=10,
     )
-
-
-def case_prewalk_and_done(root: Path):
-    frames = [
-        ' 说明 PREWALK_READY lane /tmp/a.json\n PREWALK_READY lane-other /tmp/a.json\n'
-        ' PREWALK_READY lane relative.json\n PREWALK_READY lane\n'
-        ' `PREWALK_READY lane /tmp/a.json`',
-        ' PREWALK_READY lane /tmp/a.json',
-        'worker idle',
-        '\t  PREWALK_READY lane /tmp/a.json',
-        '  PREWALK_READY lane /tmp/b checkpoint.json',
-        'PREWALK_READY lane /tmp/b checkpoint.json',
-        'worker idle',
-        'LANE_DONE lane',
-    ]
-    setup_case(root, frames)
-    result = run(root)
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    prompts = prompts_of(root)
-    assert int((root / 'a-attempts').read_text()) == 2, 'failed PREWALK_READY must be retried'
-    assert sum('/tmp/a.json' in item[1] for item in prompts) == 1, f'a callbacks: {prompts}'
-    assert sum('/tmp/b checkpoint.json' in item[1] for item in prompts) == 1, f'b callbacks: {prompts}'
-    for (_, message), path in zip(prompts[:2], ('/tmp/a.json', '/tmp/b checkpoint.json')):
-        assert f'PREWALK_READY lane {path}' in message, message
-        assert 'checkpoint' in message and '停止证据' in message, message
-        assert 'terminal fan-in:' not in message, message
-    assert 'terminal fan-in:' in prompts[-1][1], prompts
-    assert int((root / 'count').read_text()) == len(frames)
-    print('lane watcher: pass (exact marker, once per marker, continued LANE_DONE)')
 
 
 def case_stale_visible_no_false_wake(root: Path):
@@ -142,14 +108,43 @@ def case_jsonl_count_increase_wakes(root: Path):
     print('lane watcher: pass (jsonl count increase wakes once, replay silent)')
 
 
+def case_jsonl_commit_suffix_wakes(root: Path):
+    """终态 `LANE_DONE <lane> <commit>` 带 commit 后缀仍计数唤醒。"""
+    setup_case(root, ['worker idle'] * 6, jsonl_after=3)
+    (root / 'marker').write_text('LANE_DONE lane abc1234')
+    result = run(root)
+    assert result.returncode == 0, (result.returncode, result.stderr)
+    prompts = prompts_of(root)
+    assert len(prompts) == 1 and 'session jsonl 实证' in prompts[0][1], prompts
+    print('lane watcher: pass (commit-suffixed marker wakes once)')
+
+
+def case_jsonl_sibling_lane_silent(root: Path):
+    """`LANE_DONE lane-2` 不得唤醒 lane `lane` 的 watcher。"""
+    setup_case(root, ['worker idle'] * 6, jsonl_after=3)
+    (root / 'marker').write_text('LANE_DONE lane-2 abc1234')
+    proc = subprocess.Popen(
+        ['bash', str(SCRIPT), 'worker', 'coordinator', 'lane', '测试 lane'],
+        env={**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}',
+             'LANE_WATCH_STATE_DIR': str(root)},
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    time.sleep(0.8)
+    proc.terminate()
+    proc.wait(timeout=5)
+    assert prompts_of(root) == [], prompts_of(root)
+    print('lane watcher: pass (sibling lane marker silent)')
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
         for i, case in enumerate((
-            case_prewalk_and_done,
             case_stale_visible_no_false_wake,
             case_second_round_visible_wakes,
             case_jsonl_count_increase_wakes,
+            case_jsonl_commit_suffix_wakes,
+            case_jsonl_sibling_lane_silent,
         )):
             root = base / f'case{i}'
             root.mkdir()

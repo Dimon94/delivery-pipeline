@@ -7,7 +7,6 @@ import copy
 import importlib
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -114,73 +113,17 @@ def main() -> None:
         lost["lane"]["orca"]["mutation"]["request_id"] = None
         assert recovery.validate(lost)["action"] == "inspect"
         assert recovery.validate({"operation": "restart", "lane": lane})["status"] == "blocked"
-        assert recovery.validate({"operation": "staged", "lane": lane})["status"] == "blocked"
-        # 复用共享 continuation 的 Git/checkpoint fixture，不复制其状态机。
-        fixture = importlib.import_module("continuation_check")
-        worktree = root / "worktree"
-        worktree.mkdir()
-        for args in (("init",), ("config", "user.email", "probe@example.invalid"),
-                     ("config", "user.name", "probe"), ("commit", "--allow-empty", "-m", "base")):
-            # git hook 会导出 GIT_DIR/GIT_INDEX_FILE 等变量；fixture 是新 repo，必须剥离。
-            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-            subprocess.run(["git", "-C", str(worktree), *args], check=True,
-                           capture_output=True, env=env)
-        document = fixture.document_for(worktree, root / "checkpoint.json")
-        document["runtime"] = "orca"
-        stage_lane = fixture.lane_for(document)
-        stage_lane.update(dispatch_runtime="orca", coordinator_runtime="orca-terminal", agent="pi",
-                          orca=copy.deepcopy(lane["orca"]))
-        stage_lane["orca"]["worktree_selector"] = "path:" + str(worktree)
-        binding = {field: stage_lane["orca"][field] for field in (
-            "run_id", "task_id", "dispatch_id", "terminal_handle", "worktree_selector", "execution_host")}
-        binding.update(lane_id=document["lane_id"], work_item=document["work_item"],
-                       worktree=str(worktree), provider_session_id=document["session_id"],
-                       provider_session_source=request["worker_show"])
-        binding_path = root / "binding.json"
-        binding_path.write_text(json.dumps(binding))
-        document["evidence"].append(str(root) + "/./binding.json")
-        document["checkpoint_sha256"] = recovery.CHECKPOINT.checkpoint_sha256(document)
-        recovery.CHECKPOINT.write_checkpoint(root / "checkpoint.json", document, worktree=worktree)
-        stage_lane["checkpoint_sha256"] = document["checkpoint_sha256"]
-        stage_show = copy.deepcopy(show)
-        stage_show["terminal"].update(worktreePath=str(worktree), branch=document["execution_branch"])
-        stage_show["worker"]["state"] = "ready"
-        stage_fleet = copy.deepcopy(fleet)
-        stage_fleet["workers"][0]["workerState"] = "ready"
-        provider = {"status": "verified", "same_session": True, "agent": "pi",
-                    "session_id": document["session_id"], "worktree": str(worktree),
-                    "transport": "simulated-same-session", "source": request["worker_show"],
-                    "observation": fixture.observation(document)}
-        provider_path = root / "provider.json"
-        provider_path.write_text(json.dumps(provider))
-        staged = {"operation": "staged", "lane": stage_lane, "binding": str(binding_path),
-                  "worker_show": native("stage-show", stage_show), "worker_list": native("stage-fleet", stage_fleet),
-                  "provider_readback": str(provider_path), "signal": "WORKER_STOPPED",
-                  "gate_evidence": fixture.gate(document), "user_override": fixture.override(document)}
-        result = recovery.validate(staged)
-        assert result["action"] == "persist-before-send", result
-        stage_lane.update(result["overlay"])
-        result = recovery.validate(staged)
-        assert result["action"] == "persist-request-before-send", result
-        stage_lane.update(result["overlay"])
-        provider["observation"] = fixture.post_marker_observation(document, stage_lane)
-        provider_path.write_text(json.dumps(provider))
-        result = recovery.validate(staged)
-        assert result["action"] == "persist-send-lease", result
-        stage_lane.update(result["overlay"])
-        replay = recovery.validate(staged)
-        assert replay["action"] == "readback-after-lease" and replay["status"] == "blocked", replay
-        assert replay["mutations"] == [] and not replay["authority"]
-        provider["transport"] = "orca orchestration worker-start --terminal"
-        provider_path.write_text(json.dumps(provider))
-        assert recovery.validate(staged)["status"] == "blocked"
+        ready_show, ready_fleet = copy.deepcopy(show), copy.deepcopy(fleet)
+        ready_show["worker"]["state"] = "ready"
+        ready_fleet["workers"][0]["workerState"] = "ready"
 
-        context = {"taskId": "task-1", "dispatchId": "dispatch-1", "lane_id": document["lane_id"],
-                   "work_item": document["work_item"], "checkpoint_sha256": document["checkpoint_sha256"]}
+        context = {"taskId": "task-1", "dispatchId": "dispatch-1", "lane_id": lane["lane_id"],
+                   "work_item": lane["work_item"]}
         message = {"id": "msg-1", "run_id": "run-1", "from_handle": "dispatch:dispatch-1", "type": "question",
                    "body": json.dumps({**context, "question": "批准接续？"})}
-        question = {"operation": "question", "lane": stage_lane, "binding": str(binding_path),
-                    "worker_show": staged["worker_show"], "worker_list": staged["worker_list"],
+        question = {"operation": "question", "lane": lane,
+                    "worker_show": native("ready-show", ready_show),
+                    "worker_list": native("ready-fleet", ready_fleet),
                     "delivery": native("delivery", {"runId": "run-1", "messages": [message]}),
                     "message_id": "msg-1"}
         assert recovery.validate(question)["action"] == "awaiting-human"
@@ -198,9 +141,6 @@ def main() -> None:
         message["body"] = json.dumps({**context, "dispatchId": "stale-dispatch"})
         question["delivery"] = native("stale-delivery", {"runId": "run-1", "messages": [message]})
         assert recovery.validate(question)["status"] == "blocked"
-        # checkpoint 过期与误用 Task ID 都不能触发 transport。
-        (worktree / "worker.py").write_text("changed after checkpoint")
-        assert recovery.validate(staged)["status"] == "blocked"
         parent = {"runtime": "orchestrator", "dispatch_runtime": "orca", "coordinator_runtime": "orca-terminal",
                   "orca": empty_overlay()}
         parent["orca"].update(run_id="run-1", coordinator_terminal_handle="coord-1", coordinator_host_id="local")

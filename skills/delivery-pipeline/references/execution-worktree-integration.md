@@ -1,6 +1,6 @@
 # Role-aware Execution Worktree Fan-in
 
-Configured Herdr lane terminal 后读取。WAKE/final report只负责唤醒；Git、tracker、artifact、registry、
+integration lane（merger）对每条待收口 lane 执行；coordinator 不亲自执行。WAKE/final report只负责唤醒；Git、tracker、artifact、registry、
 checks与 verdict 是执行真相源。
 
 ## Common Preflight
@@ -15,9 +15,8 @@ checks与 verdict 是执行真相源。
 适用于 design/frontend/backend implementation。
 先按 `gate-state-machine.md` 回读实施前置证据；越过 gate 的旧 lane 保留现场并阻塞 Integration。
 
-1. 要求 terminal commit包含 base commit，且只承载 packet work item；验证内嵌 code-review 的
-   Review fixed point 等于 lane base commit、bundle 七文件 readback存在；无 commit、review evidence
-   或 dirty未说明时阻塞。
+1. 要求 terminal commit包含 base commit，且只承载 packet work item；无 commit 或 dirty 未说明时阻塞。
+   所属壳仍启用逐票 review 时另验其 verdict 与 bundle。
 2. 在 Map Integration Worktree按 dependency order执行 `git cherry-pick "$TERMINAL_COMMIT"`。
    独立票模式不 cherry-pick，按 `integration-worktree-management.md` §独立票模式走本票 MR 与状态分段。
 3. 冲突时先判定能否语义合并（跨 lane 双实现按 spec/合同取舍）；解冲突后、`--continue` 前跑
@@ -31,8 +30,9 @@ checks与 verdict 是执行真相源。
 
 - `artifact`：验证 tracker/artifact URL/ID/body与 expected work item一致。
 - `checks`：验证完整命令、结果与失败细节；失败写 `blocked`并阻止 review。
-- `verdict`：验证 Review fixed point 等于 map registry base commit、bundle 七文件在 fan-in 时可读、
-  verdict/findings完整；blocking finding写 `blocked`并阻止 closeout。
+- `verdict`：验证 Review fixed point 等于 map registry base commit、bundle 三文件在 fan-in 时可读、
+  verdict/findings完整；`review_gate.py` 为 `FIX` 时把 findings 交给同一个 implementer lane 修复后
+  开下一轮，`REVIEW_EXHAUSTED` 写 `blocked`并阻止 closeout。
 
 三类都不要求 commit、不 cherry-pick。worktree必须 clean；若 owner确实需要 repo 变更，packet应改成
 `commit` mode并重派，不能把 dirty state当 artifact。成功写 `consumed`。
@@ -45,8 +45,7 @@ checks与 verdict 是执行真相源。
 `integrated` 或 `consumed` 后统一。Herdr pane lane 执行下列步骤；其他 runtime 的 lane 按所属壳的
 fan-in/cleanup 合同完成等价的 transport release，并同样执行 worktree/branch 删除与 readback：
 
-1. 关闭本 lane pane并同步 tab label:从 X tab label 移除该 work item 编号;X tab 空后 label
-   还原并保留 tab。
+1. 关闭本 lane pane；空 worker tab 保留复用。
 2. 删除 clean Execution Worktree。
 3. 删除对应 agent-prefixed branch。
 4. readback pane/worktree registration/branch均不存在。
