@@ -855,6 +855,31 @@ def check_artifact_gc() -> None:
         record(f"artifact_gc self-test failed: {result.stdout}{result.stderr}")
 
 
+def check_closeout() -> None:
+    script = CORE / "scripts" / "closeout.py"
+    if not is_executable(script):
+        record("closeout helper must exist and remain executable: closeout.py")
+        return
+    result = subprocess.run(
+        [sys.executable, str(script), "self-test"],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if result.returncode != 0:
+        record(f"closeout self-test failed: {result.stdout}{result.stderr}")
+    for shell_doc in (
+        CORE / "references" / "execution-worktree-integration.md",
+        CORE / "references" / "test-decision-and-rebase.md",
+        T3CODE / "references" / "t3code-lifecycle.md",
+        LODY / "references" / "lody-lifecycle.md",
+        APP / "references" / "codex-app-dispatch.md",
+    ):
+        text = shell_doc.read_text()
+        if "closeout.py" not in text and "§Cleanup" not in text:
+            record(f"cleanup must route through closeout.py: {shell_doc.relative_to(ROOT)}")
+
+
 def main() -> None:
     check_manifest()
     check_frontmatter()
@@ -879,6 +904,7 @@ def main() -> None:
     check_recovery_record()
     check_review_gate()
     check_artifact_gc()
+    check_closeout()
 
     if ERRORS:
         fail(

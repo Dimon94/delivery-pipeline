@@ -195,8 +195,8 @@ whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接
 - active lane 用 project_id/host_id/thread_id恢复；task 消失但持久 evidence存在时沿 evidence fan-in。
 - integrated/consumed 不是 Codex task 的停靠状态：在同一次 fan-in 内立即调用
   `set_thread_archived({threadId, hostId, archived: true})`，再用 `list_archived_threads` readback。
-  成功写 closed；archive失败写 close_pending并保留坐标。独立票模式下 archive 只释放 transport，
-  lane 停在 `terminal`，关票与删树等 `release_stage: deployed` 读回。关闭 tracker 或派发下一 ready lane 前，
+  这是 canonical `execution-worktree-integration.md` §Cleanup 第 1 步，随后照其第 2–3 步删树删分支；
+  archive 失败写 close_pending 并保留坐标。关闭 tracker 或派发下一 ready lane 前，
   必须已完成该 archive readback，或已持久化 close_pending 与失败证据；不得静默留下已验收的
   live task。
 - commit lane focused checks失败时 task保持未归档；artifact/checks/verdict lane证据失败同样保留 task。

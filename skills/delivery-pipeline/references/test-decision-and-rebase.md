@@ -47,9 +47,10 @@ provider-native review verdict。
 
 ## Cleanup
 
-远程成功后按 lane registry关闭全部 map tabs/panes，删除 clean Execution Worktrees/branches与
-Map Integration Worktree/branch；保留 Coordinator Pane及所有承载 Workspace。任何 dirty/Unknown
-坐标 fail closed并报告。
+summary PR/MR 合入后（可隔天，可重入）释放全部 map transport，保留 Coordinator Pane 及承载
+Workspace，再运行 `scripts/closeout.py map <map registry 目录>`：lane 全部 closed 且 Integration
+branch 已合入远端默认分支（含 squash）才删 Map Integration Worktree/branch；获 remote authority 时加
+`--delete-remote`。首行 `closed` 后写 map `closed`，否则按原因停在本 gate。
 
 完成标准：测试、review、rebase、remote readback与 tracker close一致；或在无 remote authority 时
 给出唯一可恢复本地坐标。

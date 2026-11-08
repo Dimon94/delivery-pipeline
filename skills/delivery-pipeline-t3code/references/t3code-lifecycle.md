@@ -36,17 +36,9 @@ lane 写 `awaiting_human`，在对话里给出 `link`，由用户进入子线程
 
 ## Cleanup
 
-`integrated` 或 `consumed` 后，等价落实 `execution-worktree-integration.md` §Cleanup 六步：
-
-1. `t3_thread_organize(threadId: child_thread_id, action: "archive")` 释放 transport。
-2. 在 Source repo `git worktree remove <worktree>`；worktree 不 clean 时停在这一步。
-3. 删除 `branch`（commit mode）与 `t3_branch`。
-4. readback：`t3_thread_read` 显示 `archived: true`；`git worktree list --porcelain` 无该路径；
-   两个分支 `git branch --list` 为空。T3 自动清理已先删掉的 worktree，以 Git readback 为准。
-5. 任一步失败写 `close_pending` 并保留坐标；已完成的 Integration 或 consumption 不回滚。
-6. readback 成功写 `closed`，完成 tracker resolution 并重算 ready frontier。
-
-独立票模式下 2–6 步推迟到 `release_stage: deployed` 读回之后，之前只做第 1 步。
+按 `execution-worktree-integration.md` §Cleanup；第 1 步为
+`t3_thread_organize(threadId: child_thread_id, action: "archive")` 并读回 `archived: true`，
+第 2 步加 `--branch <t3_branch>`。T3 已先删的 worktree 由脚本按 Git readback 收口。
 
 ## 恢复
 

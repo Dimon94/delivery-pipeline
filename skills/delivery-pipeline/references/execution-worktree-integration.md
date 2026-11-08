@@ -42,16 +42,14 @@ checks与 verdict 是执行真相源。
 
 ## Cleanup
 
-`integrated` 或 `consumed` 后统一。Herdr pane lane 执行下列步骤；其他 runtime 的 lane 按所属壳的
-fan-in/cleanup 合同完成等价的 transport release，并同样执行 worktree/branch 删除与 readback：
+`integrated` 或 `consumed` 后统一，各壳只换第 1 步：
 
-1. 关闭本 lane pane；空 worker tab 保留复用。
-2. 删除 clean Execution Worktree。
-3. 删除对应 agent-prefixed branch。
-4. readback pane/worktree registration/branch均不存在。
-5. cleanup失败写 `close_pending`并保留坐标；已完成的 Integration/consumption不回滚。
-6. cleanup readback成功写 `closed`，完成 tracker resolution并自动重算 ready frontier。
-   独立票模式下，第 2–6 步与 tracker resolution 推迟到 `release_stage: deployed` 读回之后；之前只释放 transport。
+1. 所属壳释放 transport（Herdr：关闭本 lane pane，空 worker tab 保留复用）。
+2. 运行 `scripts/closeout.py lane <本 lane registry 文件>`，壳登记的额外 branch 用 `--branch` 传入；
+   它删 clean worktree 与 branch 并 readback，dirty 或被 Integration/未结束 lane 占用时不动。
+3. 按首行写回 `closed` 或 `close_pending`（保留坐标，恢复时重跑；已完成的 Integration/consumption
+   不回滚）；`closed` 后完成 tracker resolution 并重算 ready frontier。
+   独立票模式下第 2–3 步推迟到 `release_stage: deployed` 读回之后。
 
-完成标准：output-mode evidence已验证，状态为 integrated/consumed/closed，transport/worktree/branch
-cleanup一致；失败时现场与精确 blocker被保留。
+完成标准：output-mode evidence 已验证，状态为 integrated/consumed/closed，closeout 首行与 registry
+一致；失败时现场与精确 blocker 被保留。

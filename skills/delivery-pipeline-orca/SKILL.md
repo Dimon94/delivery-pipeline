@@ -96,7 +96,7 @@ registry 写 `close_pending`。不代用户发起 push/PR/MR/merge/publication�
 Lane 状态读取经 `scripts/worker_lifecycle.py`（`worker-start` / `worker-status` /
 `worker-stop` / `worker-wait` / `worker-list`），不存在时记 Unknown。整批 lanes 完成
 startup 后 FIFO 处理 terminal signal；fan-in 的 Execution Worktree、packet、registry、
-receipt 与 cleanup 六步口径一致，worker 退出/丢失不自动重试。worker packet 必须携带
+receipt 与 canonical cleanup 口径一致，worker 退出/丢失不自动重试。worker packet 必须携带
 `coordinator_terminal_handle`：worker 每条发向 coordinator 的 orchestration 消息后必须紧跟
 `terminal send` nudge 唤醒 coordinator（唤醒责任在发送方，runtime 不注入到达消息），详见
 `references/orca-dispatch.md`「FIFO wait/ack 与 settlement」。registry 最终 transition 经
