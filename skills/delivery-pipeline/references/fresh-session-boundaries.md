@@ -26,8 +26,8 @@ worker role config。恢复只依赖 repo instructions、tracker、Git、latest 
    停止/活动判定及观测来源。证据保留有效权限、未决决定、当前阻断和审查 scope/fixed point/head。
    已消费 lane、过期请求与旧检查只留原证据指针，下一步写一个动作及其前置条件。
 
-普通正文目标 2k tokens；超出时先移动已持久化的历史背景，必要约束保留并说明超出原因。
-当前 gate 的必读证据另计，预算不构成放行或截断条件。
+长度上限由 `recovery_record.py` 机械执行（每项与整节字数见脚本 `FIELD_MAX`/`BODY_MAX`）：超出时把
+已持久化的历史与已消费 lane 写进 `artifacts_root`，本节只留一句与证据指针。当前 gate 的必读证据另计。
 
 ### 恢复
 

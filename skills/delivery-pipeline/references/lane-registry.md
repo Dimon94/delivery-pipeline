@@ -148,6 +148,10 @@ running -> test_decision_paused -> rebase_in_progress
 rebase_in_progress -> push_failed -> rebase_in_progress | closed
 ```
 
+map registry 只含 map row 与唯一 `## Coordinator Recovery` 节：批次结果、lane 清单与交付边界写进
+`artifacts_root` 或原 tracker，恢复节用证据指针引用。`recovery_record.py check` 机械执行此形状与字段长度，
+派发 helper 在落位前调用它；存量 registry 用 `recovery_record.py compact` 一次性迁移。
+
 map row使用 `role: map`、`output_mode: none`、`runtime: orchestrator`，并持久化 Integration
 Worktree/branch、Map Run Authority与 test strategy；测试选择是否仍适用及额外测试证据按
 `test-decision-and-rebase.md` 核对，只有需要询问时进入 `test_decision_paused`。
