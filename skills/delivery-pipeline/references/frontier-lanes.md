@@ -64,7 +64,8 @@ coordinator 不亲自 fan-in。terminal event（HITL 为用户完成信号）到
    merger 运行中到达的 terminal 累积到下一批；Map Integration Worktree 同时只有一个 merger。
 2. merger 按 dependency order 对每条 lane 执行 `execution-worktree-integration.md`（验证、
    cherry-pick 或 `consumed`、focused checks、Cleanup、tracker transitions），逐条写 registry，
-   刷新 `lane_graph.py`，终态只回 `LANE_DONE <merger_lane> <integration HEAD>`。
+   终态只回 `LANE_DONE <merger_lane> <integration HEAD>`。lane 静态页由 coordinator 在下一次
+   Dispatch Handoff 刷新；刷新失败只影响该派生页，下次 handoff 重跑即可。
    worker transport 由所属壳指定的一方释放：壳未指定时由 coordinator 在 merger 终态后按壳
    Cleanup 第 1 步释放。
 3. merger 终态后 coordinator 只读 registry state：重算 ready frontier 并派发下一批，

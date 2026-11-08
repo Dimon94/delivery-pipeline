@@ -49,6 +49,7 @@ GROUP_LABEL = {"done": "已完成", "active": "进行中", "review": "待 fan-in
 
 GH_ISSUE_RE = re.compile(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)")
 GITLAB_ISSUE_RE = re.compile(r"https?://([^/]+)/(.+?)/-/(?:issues|work_items)/(\d+)")
+LINEAR_ISSUE_RE = re.compile(r"https://linear\.app/([^/]+)/issue/([A-Z][A-Z0-9]*-\d+)")
 MAP_BRANCH_RE = re.compile(r"(?:^|/)map-(\d+)(?:\b|-)")
 # 机器合同：正文唯一一行 `Blocked by: #a, #b` 或 `Blocked by: None`；容忍 `：` 与 `,，、` 空格分隔。
 BLOCKED_BY_LINE_RE = re.compile(r"^[ \t>*-]*(#{1,6}[ \t]*)?Blocked by[ \t]*([:：]?)(.*)$",
@@ -122,7 +123,8 @@ def read_local_issue(path: Path) -> dict | None:
 
 def issue_ref(url: str | None) -> tuple[str, str, str] | None:
     """work_item URL -> (kind, project_key, number)。
-    GitHub: ("gh", "owner/repo", n)；GitLab(含自建): ("gl", "host:group/proj", n)。"""
+    GitHub: ("gh", "owner/repo", n)；GitLab(含自建): ("gl", "host:group/proj", n)；
+    Linear: ("linear", "linear:<workspace>", "KEY-N")，不拉 tracker，边记 Unknown。"""
     if not url:
         return None
     m = GH_ISSUE_RE.search(url)
@@ -131,6 +133,9 @@ def issue_ref(url: str | None) -> tuple[str, str, str] | None:
     m = GITLAB_ISSUE_RE.search(url)
     if m:
         return "gl", f"{m.group(1)}:{m.group(2)}", m.group(3)
+    m = LINEAR_ISSUE_RE.search(url)
+    if m:
+        return "linear", f"linear:{m.group(1)}", m.group(2)
     return None
 
 
@@ -318,6 +323,8 @@ def fetch_issues(kind: str, key: str, detail_numbers: set[str],
                  cfg: dict | None = None, lean: bool = False) -> dict[str, dict] | None:
     if kind == "gh":
         return fetch_github_issues(key)
+    if kind == "linear":
+        return None
     return fetch_gitlab_issues(key, detail_numbers, cfg, lean)
 
 
@@ -375,13 +382,11 @@ def build(roots: list[Path], edges_override: dict[str, dict[str, dict]] | None,
         if ref:
             seen[ref[1]] = ref[0]
 
-    maps_by_key: dict[tuple[str, str], dict] = {}
-    lanes: list[dict] = []
-    for row in rows:
+    def locate(row):
         ref = issue_ref(row.get("work_item"))
         lref = None if ref else local_ref(row.get("work_item"))
         if not ref and not lref:
-            continue
+            return None
         if ref:
             project, issue_id = ref[1], ref[2]
         else:
@@ -393,6 +398,24 @@ def build(roots: list[Path], edges_override: dict[str, dict[str, dict]] | None,
             map_key = branch_m.group(1)
         else:
             map_key = issue_id if row.get("role") == "map" else None
+        return lref, project, issue_id, map_key
+
+    # lane 的 `map` 字段 = map row lane_id，优先于分支名推断（Linear 等分支不含 map-<n>）
+    map_home: dict[str, tuple[str, str]] = {}
+    for row in rows:
+        loc = locate(row) if row.get("role") == "map" else None
+        if loc and row.get("lane_id"):
+            map_home[row["lane_id"]] = (loc[1], loc[3] or row["lane_id"])
+
+    maps_by_key: dict[tuple[str, str], dict] = {}
+    lanes: list[dict] = []
+    for row in rows:
+        loc = locate(row)
+        if not loc:
+            continue
+        lref, project, issue_id, map_key = loc
+        if row.get("role") != "map" and row.get("map") in map_home:
+            project, map_key = map_home[row["map"]]
         proj = projects.setdefault(project, {"name": project, "maps": {}})
         if row.get("role") == "map":
             key = map_key or row.get("lane_id") or "unknown-map"
@@ -918,7 +941,40 @@ updated_at: 2026-09-28T10:00:00
         out = root / "lane-graph.html"
         out.write_text(html, encoding="utf-8")
         assert "Blocked by" in html
-    print("lane_graph self-test: pass (parse, group, topo layers, counts, issue info, text, html)")
+
+        # Linear work_item：识别为 linear 项目、不发网络请求、边为 Unknown；
+        # lane 的 `map` 字段（= map row lane_id）优先于分支名归组。
+        lin = root / "linear"
+        (lin / "proj-d").mkdir(parents=True)
+
+        def row(work_item, role, lane_id, extra=""):
+            return (f"<!-- wayfinder-lane-registry:v2 -->\n\n```yaml\nwork_item: {work_item}\n"
+                    f"role: {role}\nlane_id: {lane_id}\nstate: running\n"
+                    f"integration_branch: feature/dd-289\n{extra}updated_at: 2026-11-08T10:00:00\n```\n")
+        (lin / "proj-d" / "lane-registry.md").write_text(
+            row("https://linear.app/acme/issue/DD-289/oauth", "map", "map-dd-289")
+            + row("https://linear.app/acme/issue/DD-290", "backend", "dd-290-r1", "map: map-dd-289\n")
+            + row("https://github.com/acme/app/issues/7", "backend", "gh-7-r1", "map: map-dd-289\n"),
+            encoding="utf-8")
+        assert issue_ref("https://linear.app/acme/issue/DD-290") == ("linear", "linear:acme", "DD-290")
+        g = globals()
+        saved = g["fetch_github_issues"], g["fetch_gitlab_issues"]
+
+        def no_net(*_a, **_k):
+            raise AssertionError("tracker fetch attempted")
+        g["fetch_github_issues"] = g["fetch_gitlab_issues"] = no_net
+        try:
+            ldata = build([lin], {"acme/app": {}}, no_tracker=False)
+        finally:
+            g["fetch_github_issues"], g["fetch_gitlab_issues"] = saved
+        lproj = {p["name"]: p for p in ldata["projects"]}
+        assert set(lproj) == {"linear:acme"}, list(lproj)
+        lmaps = lproj["linear:acme"]["maps"]
+        assert [m["key"] for m in lmaps] == ["DD-289"], [m["key"] for m in lmaps]
+        assert sorted(l["lane_id"] for l in lmaps[0]["lanes"]) == ["dd-290-r1", "gh-7-r1"]
+        assert lmaps[0]["edges_unknown"] is True
+    print("lane_graph self-test: pass (parse, group, topo layers, counts, issue info, text, html, "
+          "linear, map field)")
     return 0
 
 
