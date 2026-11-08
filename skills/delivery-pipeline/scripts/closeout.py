@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Lane / map 的 Git 收尾：删 worktree 与 branch 并 readback，打印应写回 registry 的状态。
+lane branch 删除前先归档到 refs/archive/<lane_id>/<branch>。
 
 transport 释放归所属壳；本脚本只做 runtime 无关的 Git 部分，不改 registry、不 force。
 
@@ -129,12 +130,19 @@ def remove_worktree(repo: str, path: str | None) -> str | None:
     return None if r.returncode == 0 else f"worktree remove 失败: {r.stderr.strip()}"
 
 
-def delete_branch(repo: str, branch: str | None) -> str | None:
+def delete_branch(repo: str, branch: str | None, archive: str | None = None) -> str | None:
+    """archive 为 ref 前缀时先归档再删：cherry-pick 合入的 lane 分支不是 ancestor，无法机械证明零损失。"""
     if not branch or not branch_exists(repo, branch):
         return None
     holders = [p for p, b in worktrees(repo).items() if b == branch]
     if holders:
         return f"branch {branch} 仍被 worktree 检出: {holders[0]}"
+    if archive:
+        sha = git(repo, "rev-parse", f"refs/heads/{branch}").stdout.strip()
+        ref = f"{archive}{branch}"
+        git(repo, "update-ref", ref, sha)
+        if git(repo, "rev-parse", ref).stdout.strip() != sha:
+            return f"归档 {ref} 读回失败"
     r = git(repo, "branch", "-D", branch)
     return None if r.returncode == 0 else f"branch -D 失败: {r.stderr.strip()}"
 
@@ -219,8 +227,9 @@ def cmd_lane(a) -> int:
         return report(ident, None, ["worktree 被 Integration 或未结束 lane 占用，本 lane 不删"])
     reason = remove_worktree(repo, row.get("worktree"))
     for b in branches:
-        reason = reason or delete_branch(repo, b)
-    return report(ident, reason or readback(repo, row.get("worktree"), branches))
+        reason = reason or delete_branch(repo, b, archive=f"refs/archive/{ident}/")
+    notes = [f"branch 已归档于 refs/archive/{ident}/"] if branches else []
+    return report(ident, reason or readback(repo, row.get("worktree"), branches), notes)
 
 
 def merged(repo: str, branch: str, target: str) -> bool:
@@ -361,6 +370,10 @@ def self_test() -> int:
         checks.append(("audit 红: done lane 残留树+侧分支", code == 1 and "pi/issue-2-before-rebase" in out))
         code, out = run("lane", str(reg / "registry-2.md"), "--branch", "pi/issue-2-before-rebase")
         checks.append(("lane 清理 closed", code == 0 and "l2 closed" in out and not lane.exists()))
+        archived = subprocess.run(["git", "for-each-ref", "--format=%(refname)", "refs/archive/l2/"],
+                                  cwd=src, text=True, capture_output=True, env=ENV).stdout.split()
+        checks.append(("lane 删分支前归档", sorted(archived) == ["refs/archive/l2/pi/issue-2",
+                                                       "refs/archive/l2/pi/issue-2-before-rebase"]))
         code, out = run("lane", str(reg / "registry-3.md"))
         checks.append(("dirty fail closed", code == 1 and "dirty" in out and dirty.exists()))
         code, out = run("lane", str(reg / "registry-4.md"))
