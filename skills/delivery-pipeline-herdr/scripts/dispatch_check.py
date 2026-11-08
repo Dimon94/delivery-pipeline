@@ -64,12 +64,20 @@ def fixture_config(root: Path) -> tuple[Path, Path]:
     return config, evidence
 
 
-def run(root: Path, lane: str, state: dict, *, env_extra=None):
+GOOD_MAP = ("<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: map-demo\nrole: map\n```\n\n"
+            "## Coordinator Recovery\n\nMap/Spec：x\nRegistry：x\nGate/状态：x\n现场：x\n证据：x\n"
+            "下一步：fan-in；合同入口: a.md§B\n")
+
+
+def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", map_text=GOOD_MAP,
+        extra=()):
     (root / "state.json").write_text(json.dumps(state))
     (root / "calls.jsonl").write_text("")
     config, evidence = fixture_config(root)
-    (root / "packet.md").write_text("packet")
+    (root / "packet.md").write_text(packet)
     registry = root / f"registry-{lane}.md"
+    map_registry = root / "registry-map-demo.md"
+    map_registry.write_text(map_text)
     env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
            "HERDR_WORKSPACE_ID": "w1", "HERDR_TAB_ID": "w1:t1", "HERDR_PANE_ID": "w1:p1",
            "DP_LANE_WATCH": str(root / "watch"), **(env_extra or {})}
@@ -77,7 +85,8 @@ def run(root: Path, lane: str, state: dict, *, env_extra=None):
         [sys.executable, str(SCRIPT), "--config", str(config), "--evidence", str(evidence),
          "--task", "backend", "--output-mode", "commit", "--lane", lane, "--work-item", "https://x/1",
          "--title", "#1 demo", "--worktree", str(root), "--branch", "b", "--base", "abc",
-         "--packet", str(root / "packet.md"), "--registry", str(registry)],
+         "--packet", str(root / "packet.md"), "--registry", str(registry),
+         "--map-registry", str(map_registry), *extra],
         env=env, capture_output=True, text=True)
     calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
     return result, registry, calls
@@ -103,6 +112,12 @@ def main() -> int:
         text = registry.read_text() if registry.exists() else ""
         if "state: running" not in text or "  pane_id: w1:p2" not in text or "agent: pi" not in text:
             failures.append("registry missing running state, herdr overlay or frozen plan")
+        rev = subprocess.run(["git", "-C", str(HERE), "rev-parse", "HEAD"], capture_output=True,
+                             text=True).stdout.strip() or "Unknown"  # 无 .git（如 pre-commit 导出树）
+        if f"contract_rev: {rev}" not in text:
+            failures.append("registry missing contract_rev = skill repo HEAD at dispatch")
+        if "map: map-demo" not in text:
+            failures.append("registry missing map = map registry lane_id")
         if not any(c[:2] == ["tab", "create"] and "X" in c for c in calls):
             failures.append("first lane did not open worker tab X")
         start = next((c for c in calls if c[:2] == ["agent", "start"]), [])
@@ -150,6 +165,29 @@ def main() -> int:
         result, registry, calls = run(root, "lane-e", json.loads(json.dumps(base)), env_extra={"HERDR_ENV": ""})
         if result.returncode == 0 or registry.exists():
             failures.append("dispatch outside Herdr wrote registry or succeeded")
+
+        # 7. lane 名超过 Herdr agent 名 32 字符上限 → herdr 调用前拒绝，不写 registry。
+        long_lane = "refresh-dd-289-oauth-repair-tickets-r1"
+        result, registry, calls = run(root, long_lane, json.loads(json.dumps(base)))
+        if result.returncode == 0 or calls or registry.exists() or "32" not in result.stdout:
+            failures.append("over-long lane name was not rejected before herdr")
+
+        # 8. packet owner 已移出交付链路（ticket-sizing）→ 无 --off-chain-reason 时拒绝；
+        #    给出理由时派发并把理由写入 registry。
+        sizing = "Owner：ticket-sizing；/x/skills/ticket-sizing/SKILL.md；pi file-based owner invocation\n"
+        result, registry, calls = run(root, "lane-f", json.loads(json.dumps(base)), packet=sizing)
+        if result.returncode == 0 or calls or registry.exists():
+            failures.append("off-chain owner dispatched without --off-chain-reason")
+        result, registry, _ = run(root, "lane-g", json.loads(json.dumps(base)), packet=sizing,
+                                  extra=("--off-chain-reason", "用户要求单独校准预算"))
+        if result.returncode != 0 or "off_chain_reason: 用户要求单独校准预算" not in registry.read_text():
+            failures.append("off-chain owner with reason was not dispatched/recorded")
+
+        # 9. map registry 不合格（模板外章节）→ herdr 调用前拒绝并指向 recovery_record.py。
+        bad_map = GOOD_MAP + "\n## 批次 01 结果\n\n- 长篇结果\n"
+        result, registry, calls = run(root, "lane-h", json.loads(json.dumps(base)), map_text=bad_map)
+        if result.returncode == 0 or calls or registry.exists() or "recovery_record.py" not in result.stdout:
+            failures.append("non-conforming map registry did not block dispatch")
 
     for failure in failures:
         print(f"FAIL {failure}")

@@ -108,6 +108,10 @@ updated_at: <ISO-8601>
 
 - `head_commit` / `integrated_commit`：commit lane 终态与 Integration 后写入。
 - `prereq_check` / `prereq_check_result`：ticket 声明前提能力时（ADR-0011）。
+- `map`：所属 map registry 的 `lane_id`；`lane_graph.py` 据此把 lane 归入地图。
+- `contract_rev`：派发时 skill 仓 HEAD。恢复或收口时与当前 HEAD 不同，就按
+  `git -C <skill 仓> show <contract_rev>:<合同路径>` 读该 lane 冻结时的合同。
+- `off_chain_reason`：packet owner 已移出交付链路（如 ticket-sizing）仍在链路内派发时的用户决定或 gate。
 - transport overlay 槽位 `herdr` / `orca` / `t3code` / `lody`：opaque，内部字段归写入方壳。
 - `coordinator_runtime` / `dispatch_runtime`：非 Herdr transport 的 markers。
 - map row：`integration_worktree_path`、`integration_branch`、`map_run_authority`、`test_strategy`、

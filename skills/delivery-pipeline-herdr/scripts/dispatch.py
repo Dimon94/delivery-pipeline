@@ -6,7 +6,12 @@
   dispatch.py --config <model-roles.json> --evidence <capability.json> --task <task type>
               --output-mode <mode> --lane <lane_id> --work-item <url> --title <pane label>
               --worktree <abs> --branch <branch> --base <sha> --packet <abs> --registry <abs .md>
-              [--ticket-mode NAME] [--map-mode NAME] [--tab-prefix X]
+              --map-registry <abs map registry .md | none>
+              [--ticket-mode NAME] [--map-mode NAME] [--tab-prefix X] [--off-chain-reason TEXT]
+
+派发前（任何 herdr 调用前）拒绝：lane 名超过 Herdr agent 名上限、map registry 未通过
+recovery_record.py check、packet owner 已移出交付链路且未给 --off-chain-reason。
+registry 记录 contract_rev（派发时 skill 仓 HEAD）与 map（map registry 的 lane_id）。
 """
 from __future__ import annotations
 
@@ -23,6 +28,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MODEL_CONFIG = HERE.parents[1] / "delivery-pipeline-setup" / "scripts" / "model_config.py"
+RECOVERY_RECORD = HERE.parents[1] / "delivery-pipeline" / "scripts" / "recovery_record.py"
+HERDR_NAME_MAX = 32
+# 已移出交付链路、只作独立 skill 保留的 owner（5ecd9ce）；链路内派发须显式写理由。
+OFF_CHAIN_OWNERS = {"ticket-sizing"}
+OWNER_RE = re.compile(r"^Owner[：:]\s*([^；;\s]+)", re.M)
 WATCHER = Path(os.environ.get("DP_LANE_WATCH", HERE / "lane-watch.sh"))
 TAB_CAPACITY = 4
 RUNTIME = {"pi": "herdr-pi-pane", "codex": "herdr-codex-pane", "claude": "herdr-claude-pane"}
@@ -32,11 +42,46 @@ class DispatchError(Exception):
     pass
 
 
-def load_model_config():
-    spec = importlib.util.spec_from_file_location("model_config", MODEL_CONFIG)
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_model_config():
+    return load_module("model_config", MODEL_CONFIG)
+
+
+def agent_name(lane: str) -> str:
+    return re.sub(r"[^a-z0-9-]+", "-", lane.lower()).strip("-") or "lane"
+
+
+def contract_rev() -> str:
+    result = subprocess.run(["git", "-C", str(HERE), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "Unknown"
+
+
+def preflight(args) -> str | None:
+    """herdr 调用前的确定性拒绝；返回 map lane_id（--map-registry none 时为 None）。"""
+    name = agent_name(args.lane)
+    if len(name) > HERDR_NAME_MAX:
+        raise DispatchError(f"lane name {name!r} is {len(name)} chars; Herdr agent names allow "
+                            f"{HERDR_NAME_MAX}: shorten to {name[:HERDR_NAME_MAX].rstrip('-')!r} or similar")
+    owner = OWNER_RE.search(Path(args.packet).read_text(encoding="utf-8"))
+    if owner and owner.group(1) in OFF_CHAIN_OWNERS and not args.off_chain_reason:
+        raise DispatchError(f"packet owner {owner.group(1)} is off the delivery chain; "
+                            "pass --off-chain-reason with the user decision or gate that requires it")
+    if args.map_registry == "none":
+        return None
+    map_path = Path(args.map_registry)
+    if not map_path.is_absolute() or not map_path.exists():
+        raise DispatchError(f"map-registry must be an existing absolute path or none: {map_path}")
+    problems = load_module("recovery_record", RECOVERY_RECORD).check(map_path)
+    if problems:
+        raise DispatchError("map registry fails recovery_record.py check: " + " ; ".join(problems))
+    lane_id = re.search(r"^lane_id: (.+)$", map_path.read_text(encoding="utf-8"), re.M)
+    return lane_id.group(1).strip() if lane_id else "Unknown"
 
 
 def herdr(*args: str) -> dict:
@@ -134,8 +179,9 @@ def wait_working(name: str) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser()
     for flag in ("config", "evidence", "task", "output-mode", "lane", "work-item", "title",
-                 "worktree", "branch", "base", "packet", "registry"):
+                 "worktree", "branch", "base", "packet", "registry", "map-registry"):
         parser.add_argument(f"--{flag}", required=True)
+    parser.add_argument("--off-chain-reason")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
     parser.add_argument("--tab-prefix", default="X")
@@ -147,6 +193,7 @@ def main() -> int:
         for label, value in (("worktree", args.worktree), ("packet", args.packet)):
             if not Path(value).is_absolute() or not Path(value).exists():
                 raise DispatchError(f"{label} must be an existing absolute path: {value}")
+        map_lane = preflight(args)
         if registry.exists() and re.search(r"^state: (running|awaiting_human|created)$",
                                            registry.read_text(encoding="utf-8"), re.M):
             raise DispatchError(f"registry already has an active writer: {registry}")
@@ -162,15 +209,18 @@ def main() -> int:
             "output_mode": args.output_mode, "runtime": RUNTIME[plan["agent"]], "state": "created",
             "agent": frozen["agent"], "model": frozen["model"], "effort": frozen["effort"],
             "mode": frozen["mode"], "worktree": args.worktree, "branch": args.branch,
-            "base_commit": args.base, "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "base_commit": args.base, "map": map_lane, "contract_rev": contract_rev(),
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+        if args.off_chain_reason:
+            row["off_chain_reason"] = args.off_chain_reason.replace("\n", " ")
         write_registry(registry, row)
         # 同批并发 dispatch 时串行化落位，避免同时 split 同一 tab 或重复开 X。
         lock_path = Path(os.environ.get("TMPDIR", "/tmp")) / f"dp-dispatch-{coord['workspace_id'].replace(':', '_')}.lock"
         with open(lock_path, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             pane = place(coord, args.worktree, args.tab_prefix)
-        name = re.sub(r"[^a-z0-9-]+", "-", args.lane.lower()).strip("-") or "lane"
+        name = agent_name(args.lane)
         row["herdr"] = {**pane, "agent_name": name, "coordinator_pane_id": coord["pane_id"]}
         write_registry(registry, row)
         herdr(*mc.startup_request(plan, worker_name=name, pane_id=pane["pane_id"])[1:])

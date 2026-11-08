@@ -18,7 +18,8 @@ implementation lane 先按 `gate-state-machine.md` 实施前置检查运行 `scr
    `HERDR_WORKSPACE_ID`/`HERDR_TAB_ID`/`HERDR_PANE_ID` 一致）、计划解析与冻结、registry
    先于 worker 写入、worker tab 落位与 readback、agent start、packet 单行投递、working 确认
    （重投一次）、lane watcher、registry `running`。成功只回一行 JSON 坐标；失败写 `setup_blocked`
-   并回原因。
+   并回原因。落位前的拒绝（lane 名超 32 字符、map registry 未过 `recovery_record.py check`、
+   链路外 owner 缺 `--off-chain-reason`）不写 registry、不开 pane：按报错修正后重跑。
 3. 同批 lane 并发运行 dispatch；默认复用 coordinator 当前所在的 Herdr Workspace，
    只有用户显式要求新 Workspace 才创建。整批成功/失败项都完成 startup readback 后才到达 Dispatch Handoff。
 
