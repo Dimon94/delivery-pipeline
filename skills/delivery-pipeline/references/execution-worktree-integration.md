@@ -23,8 +23,10 @@ checks与 verdict 是执行真相源。
    `git diff --check` 并 `grep -rn '<<<<<<<' <touched-files>`，确认零冲突标记残留；无法合并才
    `git cherry-pick --abort`，写 `integration_conflict`，保留 pane/worktree/branch并解析
    `resolving-merge-conflicts` owner。
-4. cherry-pick 后运行 focused checks；失败写 `integration_checks_failed`并保留现场；通过写
-   `integrated`。
+4. cherry-pick 后比较 `git rev-parse HEAD^{tree}` 与 `"$TERMINAL_COMMIT^{tree}"`：相同说明 Integration
+   内容就是 worker 已验证的树，沿用其 checks 证据并在 registry 记该 tree SHA；不同时运行 focused checks，
+   失败写 `integration_checks_failed`并保留现场。通过写 `integrated`。检查用的依赖树与数据库副本
+   按路径引用原位置。
 
 ## Artifact / Checks / Verdict Modes
 
