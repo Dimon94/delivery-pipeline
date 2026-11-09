@@ -174,7 +174,8 @@ session/workspace/tab/pane是 lane坐标；
    当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。replacement 按中断原因选做法：
-   连接中断、工具或模型报错、原因 Unknown，用同一 packet 与原配置，不换模型；上下文耗尽不重派，
+   连接中断、工具或模型报错、原因 Unknown，用原 packet 与原配置，不换模型；packet 末尾追加上次失败
+   说明：原 `lane_id`、中断原因、最后的持久证据坐标与失败位置。上下文耗尽不重派，
    按 `gate-state-machine.md` §证据触发的运行中补票 拆小。
    原 lane 写 `blocked` 并记原因，replacement 用新 `lane_id`、同一 `work_item`。同一 `work_item`
    已有两次 replacement 仍中断时不再重派：原票置 `superseded`，经同一通道重拆。
