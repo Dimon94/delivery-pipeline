@@ -17,6 +17,9 @@ open 且无 blocker 不等于 ready：候选、不再推进项由票面标签或
 或用户明确要求串行时排除。普通 repo 文件路径重叠只进入 Integration 冲突检测，不构成
 Dispatch blocker。
 
+本 map 的 registry 中尚无 lane 到达 `closed` 时，本批只取排序第一项；任一 lane `closed` 后
+恢复 maximal safe batch。
+
 ## Task Binding
 
 | 工作 | Task type | Output mode |

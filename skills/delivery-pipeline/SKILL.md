@@ -37,7 +37,8 @@ Integration 不变量归本链路。
    label）、一个从 Integration HEAD 建的 Execution Worktree。lane 单轮直跑任务类型的 `{agent, model, effort}`
    （ticket/map 点名 mode 时用其 `direct` 组），冻结进 packet 与 registry。按 `references/frontier-lanes.md`、
    `references/owner-skill-resolution.md`、`references/model-role-routing.md` 与所属壳 dispatch 合同落位；
-   registry 先于 worker，packet 用 `references/lane-registry.md` §轻量交接。整批启动后到达 Dispatch Handoff。
+   registry 先于 worker，packet 用 `references/lane-registry.md` §轻量交接。本批启动后到达 Dispatch Handoff；
+   本 map 尚无 lane `closed` 时本批只有一项。
 5. **收口。** 终态行到达后派 integration lane（merger）按 `references/execution-worktree-integration.md`
    收口到 `closed`；merger 终态后重算 frontier，回到第 4 步。
 6. **Testing 与 Review。** frontier 清空后派 testing lane，再派一个 review lane：输入给出
