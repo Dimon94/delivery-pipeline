@@ -1,6 +1,6 @@
 # ADR-0022: 按原因重试，两次后重拆
 
-**Status:** Accepted
+**Status:** Accepted（§1“工具或模型报错换模型”被 ADR-0023 取代）
 **Date:** 2026-11-08
 **Decider:** User (Dimon)
 **Supersedes:** ADR-0012 §3「不设修复轮次上限」；Herdr replacement「沿原 lane runtime/model/effort」

@@ -30,7 +30,7 @@ bootstrap 覆盖已配置 worker 在精确 Execution Worktree 内的 kind-specif
 ## 恢复与切换
 
 - 各 kind 按 registry 的 agent/model/effort 与 `herdr` overlay 恢复；配置变化不迁移 running lane。
-- replacement 先按 `lane-registry.md` 排除 active writer，再按其 §Recovery 的中断原因选配置：
-  原样重派沿原 lane runtime/model/effort，换模型取配置中的对应项。两种都验证实时可用性，
-  不要求当前配置与 stored 一致；失败时保留 `setup_blocked`。
+- replacement 先按 `lane-registry.md` 排除 active writer，再按其 §Recovery 的中断原因处理：
+  重派沿原 lane runtime/model/effort，验证实时可用性，不要求当前配置与 stored 一致；
+  失败时保留 `setup_blocked`。
 - cleanup 只关闭本 lane pane 与本 lane Execution Worktree/branch；保留 Coordinator Pane 及其 Workspace。
