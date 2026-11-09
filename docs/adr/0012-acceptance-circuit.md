@@ -1,6 +1,6 @@
 # ADR-0012: 验收失败的诊断-修复-复验回路
 
-**Status:** Accepted
+**Status:** Accepted（§3 不设轮次上限由 ADR-0022 取代）
 **Date:** 2026-09-28
 **Decider:** User (Dimon)
 

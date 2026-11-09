@@ -173,7 +173,11 @@ session/workspace/tab/pane是 lane坐标；
    运行中模型对账。existing lane 不应用新 config 也不迁移 Workspace，新 lane 重新解析 Coordinator Pane
    当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
-   output_mode fan-in；两者都不存在且排除 active writer后才 replacement。
+   output_mode fan-in；两者都不存在且排除 active writer后才 replacement。replacement 按中断原因选做法：
+   连接中断或原因 Unknown，用同一 packet 与原配置；工具或模型报错，按配置 `work` 的 key 顺序取第一个
+   model 与原 lane 不同的项；上下文耗尽不重派，按 `gate-state-machine.md` §证据触发的运行中补票 拆小。
+   原 lane 写 `blocked` 并记原因，replacement 用新 `lane_id`、同一 `work_item`。同一 `work_item`
+   已有两次 replacement 仍中断时不再重派：原票置 `superseded`，经同一通道重拆。
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
 5. `integrated` / `consumed` / `close_pending` 按 cleanup contract readback或重试。
 6. registry 与现实不一致时写 `stale`并保留证据，不覆盖可能存在的 writer。

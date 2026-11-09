@@ -147,10 +147,12 @@ dispatch circuit-break 只数派发失败，验收失败不占用其计数。诊
 1. 每轮先产出诊断 artifact，归因一类：实现 / 环境 / 判据 / 前置（ADR-0011 prereq check）。
    无诊断 artifact 不得发起下一轮，不原地重跑。
 2. 复验使用与首次失败同一套机器证据，不换更宽松的判据。
-3. checks 与 prereq check 失败的实现问题由 implementation owner 持续修复，直到原验收通过；
-   不设修复轮次上限，不因历史失败次数暂停。Review finding 不走本回路，按 §Review 预算处理。
+3. checks 与 prereq check 失败的实现问题由 implementation owner 修复，按原判据复验。轮次按该
+   work item 的诊断 artifact 计；两轮修复后原验收仍不过，停止修复：原票置 `superseded`，经
+   §证据触发的运行中补票 重拆。Review finding 不走本回路，按 §Review 预算处理。
    环境或判据问题交对应 owner 修复；证据指向上游前提才动图（ADR-0011 supersede / ADR-0013 补票）。
-4. 只有当前授权内无法解除的权限、外部依赖或用户决策阻塞才上浮用户，附失败证据与恢复条件。
+4. 只有当前授权内无法解除的权限、外部依赖或用户决策阻塞，或重拆后仍走不通，才上浮用户，
+   附失败证据与恢复条件。
 
 ## Review 预算（ADR-0017）
 
@@ -201,7 +203,9 @@ tickets gate 之外唯一的运行中增票/改依赖通道，触发条件穷尽
 
 - ADR-0011 prereq check 失败；
 - ADR-0012 验收修复诊断证明当前 spec 的上游前提缺失或错误；
-- spec 禁止项命中。
+- spec 禁止项命中；
+- worker 因上下文耗尽中断，或同一 work item 两次重试仍失败（验收修复两轮未过、两次
+  replacement 仍中断）。
 
 补票仍经 to-tickets owner 创建，标 P0，body 引用触发证据坐标；依赖重连只发生在受影响子图内。
 用户确认从逐票事前批准降为下一次 Dispatch Handoff 报告时批量追认；追认前可派发，拒绝则按

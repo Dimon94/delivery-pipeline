@@ -1,6 +1,6 @@
 # ADR-0013: 运行中证据触发的补票与依赖重连
 
-**Status:** Accepted
+**Status:** Accepted（§1 触发条件经 ADR-0022 增一类）
 **Date:** 2026-09-28
 **Decider:** User (Dimon)
 

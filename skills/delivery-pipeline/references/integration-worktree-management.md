@@ -86,7 +86,8 @@ git -C "$INTEGRATION_ROOT" worktree add -b "$EXECUTION_BRANCH" "$EXECUTION_PATH"
 ## Recovery
 
 逐 lane 验证 path/common dir/branch/base/head/dirty state及 kind-matched pane。transport 消失但
-commit 存在时沿 Git 证据 fan-in；两者都不存在且排除 active writer 后才 replacement。
+commit 存在时沿 Git 证据 fan-in；两者都不存在且排除 active writer 后才 replacement，按
+`lane-registry.md` §Recovery 的中断原因选做法与次数上限。
 `integrated` lane 的残留 worktree clean 时重试 cleanup，dirty 时保留并报告。
 
 任一验证失败均报告 expected/actual，不使用 force add、不覆盖目录、不创建第二 writer。
