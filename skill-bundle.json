@@ -51,6 +51,16 @@
       "reason": "Publish the implementation spec after discovery."
     },
     {
+      "name": "vertical-slicing",
+      "source": "dimon94-skills",
+      "reason": "Cut the spec into candidate tickets and report the MMF total before publishing."
+    },
+    {
+      "name": "ticket-split-100k",
+      "source": "dimon94-skills",
+      "reason": "Split a candidate ticket that exceeds the split line along an acceptance boundary."
+    },
+    {
       "name": "to-tickets",
       "source": "mattpocock-skills",
       "reason": "Create linked implementation tickets when a spec has no existing ticket chain."

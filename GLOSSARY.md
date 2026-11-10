@@ -2,23 +2,29 @@
 
 ## Core Concepts
 
+**Epic**
+A goal that does not fit in one **MMF**. `to-epic`, outside this orchestrator, cuts it into multiple MMFs. Each MMF runs on its own map. A map is not an Epic.
+
+**MMF**
+Minimal Marketable Feature. The unit of acceptance, merge, and release: one Spec, one MR, and zero or more tickets. One map delivers one MMF. Boundary test: a cut that lets each half ship alone, and that someone would use alone, is multiple MMFs. Spec-gate action: `skills/delivery-pipeline/references/gate-state-machine.md` §tickets 前链路.
+
 **Source Worktree**
 The user's primary working directory, typically checked out to `main` branch. This worktree remains stable during orchestration — the user can continue working here while maps run in parallel. Never modified by orchestrator automation.
 
 **Map Integration Worktree**
-A dedicated Git worktree created for one Wayfinder map's entire lifecycle (discovery → spec → tickets → implementation → integration). Lives at `<source-parent>/worktrees/<repo-name>-map-<issue-number>/` on branch `feature/map-<issue-number>`. Serves as the integration point for all implementation tickets belonging to that map. Automatically created when a map is launched from source worktree. Deleted after successful merge to main.
+A dedicated Git worktree created for one Wayfinder map's entire lifecycle (discovery → spec → tickets → implementation → integration). Lives at `<source-parent>/worktrees/<repo-name>-map-<issue-number>/` on branch `feature/map-<issue-number>`. It carries that map's one **MMF** and is the single summary-MR branch. Tickets are execution units inside this branch; they integrate here by cherry-pick and do not merge to main alone. In the default mode, automatically created when a map is launched from source worktree. Deleted after successful merge to main.
 
 **Execution Worktree**
-A dedicated Git worktree created for one implementation ticket's work. It is based on the Map Integration Worktree branch, not main, and contains one ticket's changes. Codex App native Dispatch lets Codex App own the worktree path and initial checkout; Herdr Dispatch uses `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/`; T3Code Dispatch uses `~/.t3/worktrees/<two-segments>/` via `delegate_task(isolation:"worktree")`; Lody Dispatch uses the Lody-managed worktree from `lody_session_create(workContext: {worktree: true})`. The worker creates or verifies `codex/issue-<ticket-number>` (Codex App/Codex CLI), `claude/issue-<ticket-number>` (Claude Code), or `pi/issue-<ticket-number>` (pi) before writing. The terminal commit is cherry-picked to the Map Integration Worktree, then the worktree is deleted.
+A dedicated Git worktree created for one implementation ticket's work. In the default mode it is based on the Map Integration Worktree branch, not main, and contains one ticket's changes. Codex App native Dispatch lets Codex App own the worktree path and initial checkout; Herdr Dispatch uses `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/`; T3Code Dispatch uses `~/.t3/worktrees/<two-segments>/` via `delegate_task(isolation:"worktree")`; Lody Dispatch uses the Lody-managed worktree from `lody_session_create(workContext: {worktree: true})`. The worker creates or verifies `codex/issue-<ticket-number>` (Codex App/Codex CLI), `claude/issue-<ticket-number>` (Claude Code), or `pi/issue-<ticket-number>` (pi) before writing. In the default mode the terminal commit is cherry-picked to the Map Integration Worktree, then the worktree is deleted.
 
 **Integration**
-The process of collecting completed execution worktree commits into the map integration worktree via `git cherry-pick`. Happens incrementally as tickets complete. Distinct from merging to main.
+The default-mode process of collecting completed execution worktree commits into the map integration worktree via `git cherry-pick`. Happens incrementally as tickets complete. Distinct from merging to main and from **Ticket Release Mode**. See **Map Integration Worktree**.
 
 **Merge to Main**
-The final step where a map integration worktree's branch is rebased onto main and pushed. Only happens after all tickets complete, whole-change checks pass, and user confirms test strategy.
+The final step that lands the one **MMF** from **Map Integration Worktree**: rebase that branch onto main and push. Only happens after that MMF's tickets complete, whole-change checks pass, and the user confirms the test strategy.
 
 **Ticket Release Mode（独立票模式）**
-Opt-in per map (`delivery_mode: ticket_release` in the map registry) for per-ticket release: each Execution Worktree starts from the freshly fetched remote default branch instead of the Map Integration Worktree, each ticket ships through its own MR, and the ticket closes only after `release_stage` reaches `deployed`. No Integration, cherry-pick, or summary MR. Rules live in `skills/delivery-pipeline/references/integration-worktree-management.md` §独立票模式.
+Exception mode. The trigger lives only in `skills/delivery-pipeline/references/integration-worktree-management.md` §独立票模式. When that section has written `delivery_mode: ticket_release`, each Execution Worktree starts from the freshly fetched remote default branch instead of the Map Integration Worktree, each ticket ships through its own MR, and the ticket closes only after `release_stage` reaches `deployed`. No Integration, cherry-pick, or summary MR.
 
 **Test Decision Point**
 完成 whole-change testing/review 后确认用户额外测试策略的 gate。已有仍适用的明确选择可复用；
@@ -29,7 +35,7 @@ Opt-in per map (`delivery_mode: ticket_release` in the map registry) for per-tic
 Multiple Wayfinder maps running simultaneously, each with its own integration worktree and execution worktrees. Each orchestrator session owns one map and ignores others. No global resource coordination — each map independently creates worktrees and panes.
 
 **Worktree Lifecycle**
-Creation → work → integration/merge → deletion. Execution worktrees: created at dispatch, deleted after cherry-pick. Integration worktrees: created at map start, deleted after push to main. Empty setup-failed worktrees are deleted after the bounded retry; active, awaiting-human, or recoverable blocked lanes retain their worktrees.
+Creation → work → integration/merge → deletion. Execution worktrees: created at dispatch, deleted after cherry-pick in the default mode. Integration worktrees: created at map start, deleted after push to main. Empty setup-failed worktrees are deleted after the bounded retry; active, awaiting-human, or recoverable blocked lanes retain their worktrees.
 
 **Herdr Session Target**
 The running Herdr session containing the Coordinator Pane. New lanes remain in this session; an explicit request for a new workspace still creates it inside this session.
@@ -113,11 +119,11 @@ The rule that arranges the entry skills. `skills/delivery-pipeline` is the Core 
 - One running Herdr session → many Herdr workspaces
 - One Herdr workspace → many coordinator and worker panes across maps
 - One Coordinator Pane → one current Herdr workspace → new lanes default to capacity-managed worker tabs in that workspace (max 4 panes per tab, four-corner splits, overflow tabs `X-2`/`X-3`; all lane types share the same worker-tab capacity pool)
-- One map → one integration worktree → many execution worktrees and runtime-owned lanes
+- One map → one MMF → one integration worktree → many execution worktrees and runtime-owned lanes
 - One map → many discovery tickets → configured planning/design lanes → many Herdr panes
 - One execution worktree → one Codex App task or one Herdr-hosted Codex CLI/Claude Code/pi pane; future Orca Task/Dispatch ownership is not introduced by the #120 preflight entrypoint
 - One Orca entry invocation → one fixed executable + one current terminal identity + one operation-scoped capability verdict
-- Execution worktrees branch from integration worktree, not from main
+- Default mode: execution worktrees branch from the integration worktree, not from main. **Ticket Release Mode** is the exception.
 - Integration worktree eventually rebases to main (not merge)
 - Multiple maps run concurrently, isolated by separate integration worktrees
 

@@ -11,8 +11,8 @@ disable-model-invocation: true
 CLI 交付用 `delivery-pipeline-herdr`。当前调用会话就是 coordinator：调度归壳，产物质量归 owner，
 Integration 不变量归本链路。
 
-目标是整张 map 交付到一条 **Integration** branch，每张 ticket 按 tracker 的方式关闭。tickets 是带阻塞
-关系的任务图，始终有一个 ready **frontier**。
+目标是一张 map 交付一个 MMF 到一条 **Integration** branch。判定与拆票链见 `references/gate-state-machine.md`。
+tickets 是带阻塞关系的任务图，始终有一个 ready **frontier**。
 
 ## 调度职责
 
@@ -34,7 +34,7 @@ Integration 不变量归本链路。
    （version 5，见 `references/model-config-schema.md`）并验证本机 evidence；旧版本先 `migrate`；
    缺失或非法时执行 `../delivery-pipeline-setup/SKILL.md`，不静默回落。
 4. **派发 frontier。** 每张 ready ticket 一个 lane、一个 owner（name + 绝对 SKILL.md path + invocation
-   label）、一个从 Integration HEAD 建的 Execution Worktree。lane 单轮直跑任务类型的 `{agent, model, effort}`
+   label）、一个 Execution Worktree（默认从 Integration HEAD 建，例外见 `references/integration-worktree-management.md`）。lane 单轮直跑任务类型的 `{agent, model, effort}`
    （ticket/map 点名 mode 时用其 `direct` 组），冻结进 packet 与 registry。按 `references/frontier-lanes.md`、
    `references/owner-skill-resolution.md`、`references/model-role-routing.md` 与所属壳 dispatch 合同落位；
    registry 先于 worker，packet 用 `references/lane-registry.md` §轻量交接。本批启动后到达 Dispatch Handoff；

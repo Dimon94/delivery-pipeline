@@ -15,8 +15,9 @@ tracker relationships、Git、lane registry 和 PR/MR 是状态，聊天不是�
    - Spec：含 spec label/模板，并链接 source map。
    - Implementation ticket：含 implementation label，并通过 native parent 或 `Parent`
      字段链接 spec。
-3. 向上追踪 parent 直到 map/spec 根坐标，向下读取所有 linked spec/tickets；按 issue ID
-   去重。closed items 也必须读取，它们是已完成 gate 的证据。
+3. 向上追踪 parent 直到 map/spec 根坐标，向下读取当前已链接的 spec 与 tickets。旧 map
+   已有多份 spec 时读这份现状，不据此再发布 Spec。按 issue ID 去重。closed items 也必须读取，
+   它们是已完成 gate 的证据。
 4. 选择最早未完成的 gate并继续。用户不需要说明当前阶段。
 
 ## Gates
@@ -58,28 +59,39 @@ whole-map `testing/review`、`test-decision`、`rebase` 与 summary MR。
 
 - `wayfinder owner` 负责 map 与 decision tickets。松散想法的建图留在当前交互会话；
   decision work 按 `wayfinder-frontier-loop.md` 进入 configured lanes。
-- 链路没有已批准 spec 时，由 `to-spec owner` 负责 spec 内容与发布。
-- 没有通过 tickets gate 的 linked implementation tickets 时，由 `to-tickets owner` 负责内容、依赖和发布。
+- 链路没有已批准 spec 时，由 `to-spec owner` 按 §tickets 前链路 负责判定、内容与发布。
+- 没有通过 tickets gate 的 linked implementation tickets 时，先走 §tickets 前链路，再由 `to-tickets owner` 发布已选定的票、依赖和回链。
 - `implement owner` 负责单张 ticket 的实现、验证、review 和 commit。
 - `code-review owner` 负责 whole-change verdict；testing lane 负责 whole-change checks。
 - 以上 delegated work 的 role/output mode 由 `frontier-lanes.md` 的 Role Binding 唯一定义。
   orchestrator 只验证持久坐标与状态转换，然后自动分配下一 ready batch。
 
 如果 linked implementation tickets 已存在且前置 gate 证据齐全，直接复用。只有精确 parent/backlink 关系算 linked；
-宽关键词或相似标题不算。无票或缺 owner/确认执行证据时调用 `to-tickets owner`，复用既有票坐标，发布后重新 readback。
-不得因 ticket 大小、拆分方式、描述详细度、验收内容或主观”合理性”阻止 dispatch；
-这些都属于 `to-tickets owner` 的产物所有权。
+宽关键词或相似标题不算。无票或缺 owner/确认执行证据时回到 §tickets 前链路；已有票坐标则复用，发布后重新 readback。
+不得因 ticket 大小、拆分方式、描述详细度、验收内容或主观”合理性”阻止 dispatch。
+拆分信号的使用边界见 `../../ticket-sizing/SKILL.md`。
+
+## tickets 前链路
+
+discovery 收口后、发布实施票之前只按本节。一张 map 交付一个 MMF：验收、合入、上线的单位，一份 Spec、一张 summary MR、零到多张 ticket。
+切分测试：存在一种切法，使每半都能单独上线且单独有人用，就是多个 MMF。
+
+1. `to-spec` 按 **MMF** 的切分测试判定。多个 MMF：停在 spec gate，向用户报告，并请其在编排器外跑 `to-epic`。每个 MMF 另开一张 map。不在本 map 再发布 Spec。切不开且这一整体有人用：发布这一份 Spec。整体没人用：不足一个 MMF，是某个 MMF 里的 ticket，不在本 map 发布 Spec。
+2. `vertical-slicing` 接着判定。一个上下文装得下：不拆票，交 `to-tickets` 发布单票。本节到此结束。
+3. 装不下：`vertical-slicing` 切候选票，并调用 `ticket-sizing` 给出逐票拆分信号、票数、拆分信号合计与推荐。估算口径只在 `../../ticket-sizing/SKILL.md`。
+4. 向用户报告合计与推荐。用户三选一：照此执行；回 `to-epic` 重切，落点同第 1 步；确认切不开则转入 Ticket Release Mode。启用条件只按 `integration-worktree-management.md` §独立票模式。
+5. 照此执行且单票超过拆分线：先经 `ticket-split-100k`，再由 `to-tickets` 发布。先估算，后发布。
 
 ## 实施前置检查
 
 每次选 frontier、发布实施票、创建或接续 implementation lane 前，先重建最早未完成 gate。
-`to-spec → to-tickets → dispatch` 是必经流程；两个 skill 都须有执行证据。
+`to-spec → to-tickets → dispatch` 是实施证据要求；`spec` 与 `ticket` 两段执行证据缺一不可。证据怎么产生只按 §tickets 前链路。
 已有且仍适用的执行证据可以复用；只读过 skill、存在票或补齐字段不算已执行。
 Map Run Authority 的 follow-up decision ticket 只扩展 discovery；原型报告里的实施建议是
 规划输入，不是 Spec、获批拆票或实施授权。coordinator 将输入交给对应 owner：
 
-- 缺 Spec：调用 resolved `to-spec`，按 owner 核验测试切入点等用户确认并发布 Spec。
-- Spec 已通过但缺获批拆票：调用 resolved `to-tickets`，owner 展示拆分与依赖，用户批准后发布。
+- 缺 Spec：调用 resolved `to-spec`，按 §tickets 前链路 做 MMF 判定；通过后核验测试切入点等用户确认，并发布这一份 Spec。
+- Spec 已通过但缺获批拆票：按 §tickets 前链路 完成估算与用户选定，再调用 resolved `to-tickets` 发布。
 - 既有票缺上述证据：保留票与 worktree，阻塞实施，回到最早缺失 gate；不靠补标签或只补 Parent 放行。
 - discovery 原型需要尚未实现的生产功能：保留 blocked 和缺口，回到 decision owner 收窄为可独立验证的
   原型，或由用户明确调整 discovery 验收范围并记录延期事项；满足 discovery 后才进入 Spec。

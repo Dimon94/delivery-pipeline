@@ -24,6 +24,8 @@ DEPENDENCIES = [
     "prototype",
     "research",
     "to-spec",
+    "vertical-slicing",
+    "ticket-split-100k",
     "to-tickets",
     "implement",
     "code-review",

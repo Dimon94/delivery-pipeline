@@ -20,7 +20,7 @@ active writer。
 
 ## 独立票模式（Ticket Release Mode）
 
-map 或用户明确要求逐票上线时启用，写入 map registry `delivery_mode: ticket_release` 并 readback；
+用户已看到本 MMF 的票数与拆分信号合计，并确认切不开时，才写入 map registry `delivery_mode: ticket_release` 并 readback。
 未写明时沿用 Map 集成模式。本节是该模式的唯一规则，其他合同只指向这里。
 
 - **建树。** 每票 dispatch 前 `git fetch` 目标仓远端，从远端默认分支（如 `origin/main`）当时 SHA
