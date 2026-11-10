@@ -20,7 +20,10 @@ STAGED_TREE="$(mktemp -d)"
 trap 'rm -rf "$STAGED_TREE"' EXIT
 git checkout-index --all --prefix="$STAGED_TREE/"
 
-if ! python3 "$STAGED_TREE/scripts/validate.py"; then
+# Git exports GIT_DIR / GIT_INDEX_FILE to hooks. The validator's self-tests create
+# scratch repositories; with those variables inherited, their `git init` re-initializes
+# this repository instead and flips core.bare. Clear them for the validator only.
+if ! (unset $(git rev-parse --local-env-vars); python3 "$STAGED_TREE/scripts/validate.py"); then
   cat >&2 <<'MSG'
 
 pre-commit: bundle validator failed on the staged tree. Commit refused.
