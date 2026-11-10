@@ -9,9 +9,12 @@
 T3 在子任务终态或子任务提问时唤醒 `coordinator_thread_id` 对应线程。被唤醒后对每个相关 lane：
 
 1. 原 coordinator 线程用 `task_status(task_id)`；其他线程用 `t3_thread_read(child_thread_id)`。
-   `task_status` 只读本线程派发的任务。
+   `task_status` 只读本线程派发的任务；`t3_thread_read` 不含 `workState` 与 `executedModel`，二者记 Unknown。
 2. `hasPendingQuestion: true` 或 `pendingApproval` 非空 → 进入 §HITL。
-3. `status: completed` → 取 `summary`，首个独立行须为 `lane-registry.md` §终态行；进入 §Fan-in。
+3. `status: completed` 且 `workState` 为 `result_available` 或 Unknown → 取 `summary`，首个独立行须为
+   `lane-registry.md` §终态行；`executedModel` 写入 overlay `executed_model`，null 记 Unknown，
+   非 null 且不等于 registry model 时写 `blocked`，附两值并保留现场；一致或 Unknown 进入 §Fan-in。
+   `workState` 为 `working | waiting_for_children` 时该 task 仍有后续工作，状态不变，等下次唤醒。
 4. `failed`、`interrupted`、`cancelled` → 写 `blocked` 并保留现场，原始 summary 作为失败证据。
 
 终态报告缺字段记 Unknown；Git、tracker、artifact 与 registry 是持久证据，不要求 worker 重显。

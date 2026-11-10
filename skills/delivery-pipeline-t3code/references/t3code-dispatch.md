@@ -12,9 +12,9 @@ canonical 合同位于 `../../delivery-pipeline/references/`，下文以文件�
 
 1. `orchestrator_capabilities` 读回 `parentThreadId`、`inheritedProviderInstanceId`，目标 provider
    `canRunChildTask: true`；跨 provider 时还要 `canRunCrossProviderChildTask: true`。
-2. `t3_worktree_status` 读回 `attached: false`，且 `projectWorkspaceRoot` 的
-   `git rev-parse --git-common-dir` 等于 Source repo 的 common dir。T3 在该 project 根下建子
-   worktree；coordinator 绑定在其他 worktree 或其他 project 时报告 `dispatch unavailable`。
+2. `t3_worktree_status` 读回 `projectWorkspaceRoot`；它与 coordinator 当前 checkout（`attached: true`
+   时为 `worktreePath`）的 `git rev-parse --git-common-dir` 都等于 Source repo 的 common dir。T3 从
+   coordinator HEAD 在该 project 根下建子 worktree；任一 common dir 不同时报告 `dispatch unavailable`。
 3. 按 `integration-worktree-management.md` 核对 Integration branch 与 clean state，冻结本批
    `base_sha`：普通 map 为当前 Integration HEAD；`delivery_mode: ticket_release` 为刚 fetch 的
    远端默认分支 SHA。
@@ -51,6 +51,7 @@ t3code:
   child_thread_id: <childThreadId-or-none>
   link: <link-or-none>
   t3_branch: <T3 临时分支-or-none>
+  executed_model: <executedModel-or-Unknown>
 ```
 
 base 字段：`runtime: t3-task`；`worktree` 取子线程 `worktreePath`；`branch` 在 commit mode 为
@@ -64,7 +65,8 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
 1. registry 写 Base Schema 字段与 overlay intent，精确 readback。
 2. 填写 `../assets/T3CODE_ROLE_DISPATCH_PACKET.md`，写入 `~/.config/delivery-pipeline/packets/<lane_id>.md`。
 3. 调用 `delegate_task`：`task` 为 packet 全文；`title` 为 `map-<map> <role> #<coordinate>`；
-   `target` 按上表映射，`options` 只含 effort option；`isolation: "worktree"`；`mode: "async"`；
+   `target` 按上表映射，`options` 只含 effort option，不带 `environmentId`（linked environment
+   不在本壳范围）；`isolation: "worktree"`；`mode: "async"`；
    `clientRequestId: <lane_id>`；`role` 取 commit→`implementation`、checks→`test`、
    verdict→`review`、artifact→`research`（design HITL 用 `design`）。`runtimeMode` 与
    `interactionMode` 继承 coordinator。
@@ -74,7 +76,8 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
 
 ## Startup Readback
 
-对每个 `child_thread_id` 调 `t3_thread_read`，要求 `relationshipToParent: subagent`、`worktreePath`
+receipt 的 `childThreadId` 为 null 时，任务落在 linked environment：`task_cancel(task_id)` 后写
+`setup_blocked`。其余对每个 `child_thread_id` 调 `t3_thread_read`，要求 `relationshipToParent: subagent`、`worktreePath`
 非空、`status` 属于 `preparing | queued | starting | running | waiting`，且 worktree 的
 common dir 等于 Source repo。写 `worktree` 与 `t3_branch` 并 readback。不一致写 `setup_blocked`
 并保留现场。
