@@ -17,6 +17,11 @@ assert p['request_id'] == 'acceptance' and p['observed_at']
 assert p['capabilities']['pi']['models'] == {'magpie/vendor/model@large':['low','high']}
 assert p['capabilities']['codex']['models'] == {'vendor/model@large':['high']}
 assert p['sources']['pi']['status'] == 'ok' and p['sources']['claude']['status'] == 'unknown'
+unmapped = json.loads(json.dumps(raw))
+unmapped['harnesses']['codex']['models'] = [{'native_id':'gpt-native-only','efforts':['high']}]
+p = probe(unmapped)
+assert p['capabilities']['codex']['models'] == {}, '原生 catalog 不能绕过 magpie 来源边界'
+assert p['sources']['codex']['status'] == 'unknown'
 raw['harnesses']['codex']['route'] = False
 p = probe(raw)
 assert p['capabilities']['codex']['models'] == {} and p['sources']['pi']['status'] == 'ok'

@@ -687,10 +687,9 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
                 native = model.get('native_id')
                 if not isinstance(native, str) or not native:
                     continue
-                allowed = model.get('efforts', [])
-                if model.get('gateway_id') is not None:
-                    allowed = ([e for e in allowed if e in catalog.get(model['gateway_id'], [])]
-                               if gateway.get('status') == 'ok' else [])
+                allowed = ([e for e in model.get('efforts', [])
+                            if e in catalog.get(model.get('gateway_id'), [])]
+                           if gateway.get('status') == 'ok' else [])
                 if allowed:
                     models[native] = list(dict.fromkeys(allowed))
         capabilities[agent] = {'binary': harness.get('binary') is True, 'models': models}
@@ -725,17 +724,26 @@ def collect_harnesses() -> dict:
         except (OSError, subprocess.TimeoutExpired):
             return None
     result = {}
-    # Codex bundled catalog 不刷新远端；原生 provider 直接使用其精确 slug。
+    # 精确 slug 只有在当前路由指向 magpie、且命中网关清单时才能成为候选。
     output = command('codex', ['debug', 'models', '--bundled'])
     try:
         import tomllib
         config = tomllib.loads((home/'.codex/config.toml').read_text())
         data = json.loads(output) if output else {}
         entries = data if isinstance(data, list) else data.get('models', [])
-        native_route = not config.get('model_provider') and not config.get('openai_base_url') and not os.environ.get('OPENAI_BASE_URL')
-        result['codex'] = {'binary': output is not None, 'route': native_route,
-            'origin': 'Codex 本机 bundled catalog（不代表账户权限）',
-            'models': [{'native_id': m['slug'], 'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
+        provider = config.get('model_provider', 'openai')
+        endpoint = (os.environ.get('OPENAI_BASE_URL') or config.get('openai_base_url', '')
+                    if provider == 'openai' else
+                    config.get('model_providers', {}).get(provider, {}).get('base_url', ''))
+        routed = endpoint.rstrip('/') in ('http://127.0.0.1:3425/v1',
+                                         'http://127.0.0.1:3425/backend-api/codex')
+        catalog_path = config.get('model_catalog_json')
+        if routed and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
+            data = json.loads(Path(catalog_path).expanduser().read_text())
+            entries = data if isinstance(data, list) else data.get('models', [])
+        result['codex'] = {'binary': output is not None, 'route': routed,
+            'origin': 'Codex 当前路由、精确 catalog 与 magpie 网关清单交集',
+            'models': [{'native_id': m['slug'], 'gateway_id': m['slug'], 'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
                         if e['effort'] not in ('ultra', 'persistent')]} for m in entries]}
     except (OSError, ValueError, KeyError, ImportError):
         result['codex'] = {'binary': output is not None}
