@@ -16,7 +16,7 @@ python = Path(args.python).resolve()
 subprocess.run([str(python), '-c', 'import sys; assert sys.version_info >= (3,10), "需要 Python >= 3.10"'], check=True)
 subprocess.run(['bun', 'run', 'build', '-skip-dmg'], cwd=root, env={**os.environ, 'MYGO_LDFLAGS': '-X main.pythonPath='+str(python)}, check=True)
 app = next((root / 'build').glob('darwin-*/*.app'))
-shutil.copy2(root.parent / 'skills/delivery-pipeline-setup/scripts/model_config.py', app / 'Contents/Resources/model_config.py')
+shutil.copy2(root.parents[1] / 'skills/delivery-pipeline-setup/scripts/model_config.py', app / 'Contents/Resources/model_config.py')
 subprocess.run(['codesign','--force','--deep','--sign','-',str(app)], check=True)
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)], check=True)
 if args.install:

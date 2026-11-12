@@ -5,7 +5,7 @@ MyGo 0.7.4 的网页窗口，当前只读。数据来自 setup 的 canonical `mo
 构建依赖 Go（模块要求 ≥1.27.3）、Bun、Python ≥3.10：
 
 ```sh
-cd config-desktop
+cd apps/delivery-config
 bun install --frozen-lockfile
 python3 build.py --python /absolute/path/to/python3 --install
 ```

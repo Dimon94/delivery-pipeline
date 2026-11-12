@@ -16,7 +16,7 @@ func TestReadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, _ := filepath.Abs("../skills/delivery-pipeline-setup/scripts/model_config.py")
+	tool, _ := filepath.Abs("../../skills/delivery-pipeline-setup/scripts/model_config.py")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	host := Host{Python: python, Tool: tool, Config: path}
