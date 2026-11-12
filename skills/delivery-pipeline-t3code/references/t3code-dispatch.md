@@ -84,3 +84,11 @@ common dir 等于 Source repo。写 `worktree` 与 `t3_branch` 并 readback。�
 
 整批每项都已 `running`/`awaiting_human` 或 `setup_blocked` 后到达 Dispatch Handoff：逐条报告
 lane 的 `link`，结束本轮。T3 完成唤醒接管后续，coordinator 不轮询。
+
+## CLI 冻结计划
+
+创建新五 work lane 前使用 canonical `model_config.py resolve` / `freeze_overlay`；packet 与
+Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSON flow value），
+写入 intent、真实 receipt、startup readback 后均用 `verify_overlay` 对账，不另造计划形状。
+恢复先运行 `model_config.py recover <registry.md> [lane_id]`；错误/legacy 识别与字段语义
+统一见 `../../delivery-pipeline/references/lane-registry.md`，不从当前配置补读。

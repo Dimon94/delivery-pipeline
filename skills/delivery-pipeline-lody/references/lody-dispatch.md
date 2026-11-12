@@ -86,3 +86,11 @@ session 与 overlay 不一致写 `setup_blocked` 并保留现场。
 
 整批每项都已 `running`/`awaiting_human` 或 `setup_blocked` 后到达 Dispatch Handoff：逐条报告
 lane 的 `session_link`，结束本轮。Lody 在下一个输入边界投递 Operation 结果，coordinator 不轮询。
+
+## CLI 冻结计划
+
+创建新五 work lane 前使用 canonical `model_config.py resolve` / `freeze_overlay`；packet 与
+Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSON flow value），
+写入 intent、真实 receipt、startup readback 后均用 `verify_overlay` 对账，不另造计划形状。
+恢复先运行 `model_config.py recover <registry.md> [lane_id]`；错误/legacy 识别与字段语义
+统一见 `../../delivery-pipeline/references/lane-registry.md`，不从当前配置补读。

@@ -156,7 +156,9 @@ def place(coord: dict, worktree: str, prefix: str) -> dict:
 def write_registry(path: Path, row: dict) -> None:
     lines = ["<!-- wayfinder-lane-registry:v2 -->", "```yaml"]
     for key, value in row.items():
-        if isinstance(value, dict):
+        if key in {"recovery_plan", "recovery_progress"}:
+            lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
+        elif isinstance(value, dict):
             lines.append(f"{key}:")
             lines += [f"  {k}: {'none' if v is None else v}" for k, v in value.items()]
         else:
@@ -207,8 +209,7 @@ def main() -> int:
         row = {
             "lane_id": args.lane, "work_item": args.work_item, "role": args.task,
             "output_mode": args.output_mode, "runtime": RUNTIME[plan["agent"]], "state": "created",
-            "agent": frozen["agent"], "model": frozen["model"], "effort": frozen["effort"],
-            "mode": frozen["mode"], "worktree": args.worktree, "branch": args.branch,
+            **frozen, "worktree": args.worktree, "branch": args.branch,
             "base_commit": args.base, "map": map_lane, "contract_rev": contract_rev(),
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }

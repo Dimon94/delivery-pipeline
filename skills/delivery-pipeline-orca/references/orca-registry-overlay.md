@@ -51,3 +51,11 @@ registry 与 native 身份一致且旧 writer 已排除。不满足即失败，�
 terminal → integrated/consumed → cleanup_in_progress/close_pending → closed 缺 hop 即拒绝；
 integrated/consumed 另要求 `orca.observation`（settlement readback）已记录。`worker_lifecycle.py` 与
 `project_lifecycle.py` 承载 settlement/cleanup 的内容门禁，`record_state` 在其通过后落写 state。
+
+## CLI 冻结计划
+
+创建新五 work lane 前使用 canonical `model_config.py resolve` / `freeze_overlay`；packet 与
+Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSON flow value），
+写入 intent、真实 receipt、startup readback 后均用 `verify_overlay` 对账，不另造计划形状。
+恢复先运行 `model_config.py recover <registry.md> [lane_id]`；错误/legacy 识别与字段语义
+统一见 `../../delivery-pipeline/references/lane-registry.md`，不从当前配置补读。

@@ -47,6 +47,12 @@ setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude": { "binary": 
 registry 后必须用 `verify_overlay` 精确 readback 校验，缺项、空值或不匹配 fail-closed；它不是
 第二套配置或 registry truth。
 
+CLI 五 work 的 freeze 同时携带 `lane-registry.md` 定义的不可变 recovery_plan 与独立 progress。
+默认 source=work，完整复制 fallbacks；既有实现任务且 output_mode=commit 的显式 mode 路径
+source=explicit_mode，primary 取实际 direct triple、fallbacks=[]；ticket 优先 map，不扩大适用范围。
+resolve 的旧 source 仍表示 mode 选择来源；备用来源只看 recovery_plan.source。
+恢复使用 `model_config.py recover <registry.md> [lane_id]`，无配置参数。
+
 ## Capability Evidence
 
 | agent | evidence 来源 |

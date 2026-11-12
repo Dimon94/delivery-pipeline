@@ -106,6 +106,17 @@ updated_at: <ISO-8601>
 
 按需字段，只在适用时出现：
 
+- `recovery_plan` / `recovery_progress`：CLI 五 work 新 lane 使用 canonical `model_config.py freeze` 的值拷贝；
+  两字段在 YAML 块中分别写成单行 JSON flow value，所有 transport 原样保存，不自行解析配置。
+  `recovery_plan` 为不可变 `{plan_version: 1, source: work|explicit_mode, primary: ModelTriple, fallbacks: ModelTriple[]}`；
+  保留完整顺序及重复位置。`recovery_progress` 为可变 `{current_index: 0, next_cursor: 0}` 初值。
+  current_index 是 `[primary, *fallbacks]` 中当前项位置；next_cursor 是已消费备用数，二者必须相等，
+  范围为 0..len(fallbacks)。重复 triple 仍必须显式存位置，禁止按值寻找。
+  读回/恢复运行 `model_config.py recover <registry.md> [lane_id]`（或 `recover_overlay(row)`），
+  沿共享 Registry parser 返回 `status: frozen` 与计划/进度/当前 triple；失败返回非零、`invalid_recovery_plan`，
+  不重 resolve。两字段都缺返回 `status: legacy` 及原 triple，沿 ADR-0023；部分缺失、版本错误、越界、
+  mode/source 或当前 triple 不一致均拒绝，不能降级 legacy。replacement 保留原计划、显式推进位置；
+  本接口不选择备用、不 claim、不启动 replacement、不计失败预算。
 - `head_commit` / `integrated_commit`：commit lane 终态与 Integration 后写入。
 - `prereq_check` / `prereq_check_result`：ticket 声明前提能力时（ADR-0011）。
 - `map`：所属 map registry 的 `lane_id`；`lane_graph.py` 据此把 lane 归入地图。
@@ -166,7 +177,8 @@ session/workspace/tab/pane是 lane坐标；
 
 ## Recovery
 
-1. 枚举 map/spec/ticket items，读取每个 lane_id latest registry；按持久化的 `runtime` 与 `dispatch_runtime` 选择原 transport。
+1. 先对原 row 运行 canonical `recover` 读取冻结计划或识别 legacy；不读取当前配置补计划。
+   枚举 map/spec/ticket items，读取每个 lane_id latest registry；按持久化的 `runtime` 与 `dispatch_runtime` 选择原 transport。
    Orca markers 缺失或互相矛盾时保留现场并 blocked/stale，不从当前 coordinator、配置或环境推断。
 2. Herdr runtime 验证 `herdr` overlay 的 workspace/tab/pane、kind、role/output_mode、
    agent/model/effort/mode 与 worktree；agent/model/effort 是 stored 启动坐标，不与 pane 的

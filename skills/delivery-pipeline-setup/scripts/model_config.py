@@ -919,7 +919,14 @@ def resolve_plan(
     if task not in document["work"]:
         raise ValueError(f"task type not defined in config: {task}")
     entry = document["work"][task]
+    recovery = {}
+    if document.get("version") == 6 and task in CLI_REQUIRED_WORK:
+        explicit = task in IMPLEMENTATION_TASKS and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
+        recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
+                    "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
+                    "recovery_progress": {"current_index": 0, "next_cursor": 0}}
     plan = {
+        **recovery,
         "version": 5,
         "task": task,
         "agent": entry["agent"],
@@ -967,6 +974,8 @@ def resolve_plan(
                 f"mode {requested} has no agents plan for {entry['agent']}"
             )
         resolved = {**resolved, "mode_name": requested, **agent_plan["direct"]}
+        if recovery:
+            resolved["recovery_plan"]["primary"] = triple(resolved)
     if evidence is None:
         return {**resolved, "capability": "unknown"}
     errors = capability_errors(
@@ -979,12 +988,17 @@ def resolve_plan(
 
 def freeze_overlay(plan: dict) -> dict:
     """返回 coordinator 写入 packet 与 registry 的唯一计划 overlay。"""
-    return {
+    recovery = {k: json.loads(json.dumps(plan[k])) for k in ("recovery_plan", "recovery_progress") if k in plan}
+    overlay = {
+        **recovery,
         "mode": plan.get("mode_name"),
         "agent": plan["agent"],
         "model": plan.get("model"),
         "effort": plan.get("effort"),
     }
+
+    recover_overlay(overlay)
+    return overlay
 
 
 def verify_overlay(plan: dict, overlay: object) -> dict:
@@ -992,6 +1006,56 @@ def verify_overlay(plan: dict, overlay: object) -> dict:
     if overlay != expected:
         raise ValueError("packet/registry execution plan readback mismatch")
     return expected
+
+
+def recover_overlay(row: dict) -> dict:
+    """只验证持久计划与位置；无计划旧 row 沿 ADR-0023，不解析配置。"""
+    if "recovery_plan" not in row:
+        if "recovery_progress" in row:
+            raise ValueError("invalid_recovery_plan: progress without plan")
+        return {"status": "legacy", **{k: row.get(k) for k in ("mode", "agent", "model", "effort")}}
+    plan, progress = row["recovery_plan"], row.get("recovery_progress")
+    if not isinstance(plan, dict) or set(plan) != {"plan_version", "source", "primary", "fallbacks"}:
+        raise ValueError("invalid_recovery_plan: shape")
+    if type(plan["plan_version"]) is not int or plan["plan_version"] != 1:
+        raise ValueError("invalid_recovery_plan: version")
+    if plan["source"] not in {"work", "explicit_mode"} or not isinstance(plan["fallbacks"], list):
+        raise ValueError("invalid_recovery_plan: source/list")
+    if plan["source"] == "explicit_mode" and plan["fallbacks"]:
+        raise ValueError("invalid_recovery_plan: explicit mode fallbacks")
+    if (plan["source"] == "explicit_mode") != (row.get("mode") not in (None, "none")):
+        raise ValueError("invalid_recovery_plan: mode/source mismatch")
+    entries = [plan["primary"], *plan["fallbacks"]]
+    for entry in entries:
+        if _entry_errors("recovery triple", entry, CLI_AGENTS):
+            raise ValueError("invalid_recovery_plan: triple")
+    if not isinstance(progress, dict) or set(progress) != {"current_index", "next_cursor"}:
+        raise ValueError("invalid_recovery_plan: progress")
+    current, cursor = progress["current_index"], progress["next_cursor"]
+    if type(current) is not int or type(cursor) is not int or not 0 <= current < len(entries) or cursor != current:
+        raise ValueError("invalid_recovery_plan: position")
+    if {k: row.get(k) for k in ("agent", "model", "effort")} != entries[current]:
+        raise ValueError("invalid_recovery_plan: current triple mismatch")
+    return json.loads(json.dumps({"status": "frozen", "recovery_plan": plan, "recovery_progress": progress,
+                                 **{k: row.get(k) for k in ("mode", "agent", "model", "effort")}}))
+
+
+def recover_registry(path: Path, lane_id: str | None = None) -> dict:
+    # 沿用共享 Registry 的块解析；计划字段采用 JSON flow value。
+    import importlib.util
+    parser_path = Path(__file__).resolve().parents[2] / "delivery-pipeline/scripts/lane_graph.py"
+    spec = importlib.util.spec_from_file_location("lane_graph", parser_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rows = module.parse_registry_file(path)
+    rows = [row for row in rows if lane_id is None or row["lane_id"] == lane_id]
+    if len(rows) != 1:
+        raise ValueError("registry recovery requires exactly one matching lane")
+    row = rows[0]
+    for key in ("recovery_plan", "recovery_progress"):
+        if key in row and isinstance(row[key], str):
+            row[key] = json.loads(row[key])
+    return recover_overlay(row)
 
 
 def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
@@ -1520,6 +1584,7 @@ def main() -> int:
             "self-test",
             "resolve",
             "freeze",
+            "recover",
             "start",
             "migrate",
             "configure",
@@ -1541,6 +1606,13 @@ def main() -> int:
     parser.add_argument("--pane-id", default="pane")
     args = parser.parse_args()
 
+    if args.command == "recover":
+        try:
+            print(json.dumps(recover_registry(Path(args.path).expanduser(), args.task), ensure_ascii=False))
+            return 0
+        except (OSError, ValueError) as error:
+            print(json.dumps({"valid": False, "errors": [str(error)]}))
+            return 1
     if args.command == "probe":
         raw = json.load(sys.stdin)
         print(json.dumps({"api_version": 1, **probe(raw, args.request_id or "")}, ensure_ascii=False))
