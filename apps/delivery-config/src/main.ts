@@ -95,7 +95,7 @@ async function save(){
  const pending=editor.save((candidate,hash)=>mygo.call<Outcome>('Host.Apply',candidate,hash));
  message='正在保存，请等待结果…';render();
  const result=await pending;diagnostic=result;draft=editor.state.draft;snapshot=editor.state.base;
- message=result?.status==='applied'?'当前设置已保存并读回；仅影响新任务。':editor.state.kind==='uncertain'?'保存结果待确认。请显式检查当前设置。':editor.state.kind==='conflict'?'设置已在别处更新。请读取最新设置并人工核对。':'保存前检查未通过，草稿已保留。请刷新能力或让 AI 助手检查环境，再重新核对并确认保存。';render();
+ message=result?.status==='applied'?'当前设置已保存并读回。主设置用于新任务；显式指定的预设仍按原规则覆盖，正在进行的任务保持原设置。':editor.state.kind==='uncertain'?'保存结果待确认。请显式检查当前设置。':editor.state.kind==='conflict'?'设置已在别处更新。请读取最新设置并人工核对。':'保存前检查未通过，草稿已保留。请刷新能力或让 AI 助手检查环境，再重新核对并确认保存。';render();
 }
 async function recover(){
  if(!editor||reading)return;

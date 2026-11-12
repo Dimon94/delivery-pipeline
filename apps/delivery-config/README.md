@@ -21,3 +21,5 @@ python3 build.py --python /absolute/path/to/python3 --install
 `bun test src/draft.test.ts` 覆盖受控延迟与草稿行为，`go test ./...` 穿过真实 Python 公开入口。可重复的来源归一化合同由根 `scripts/check_config_probe.py` 进入 validate；真实 MyGo 证据独立记录。
 
 保存经 Host.Apply 在明确确认后刷新 probe，再调用 canonical apply；Host 不暴露 setup 权限。冲突重读以最新完整文档为起点，旧草稿仅供人工核对，必须重新选择与预览。保存结果待确认时只允许显式检查当前设置，不自动重试或回滚。独立诊断页可查看机器结果。
+
+保存成功的主设置由新 lane 的默认 work 路径读取；显式点名的 mode 继续覆盖模型与思考程度，已有 lane 按原 registry 恢复。`python3 scripts/check_config_lane.py` 穿过公开 apply → resolve/start，检查默认精确身份（含 @ 后缀）、ticket/map 预设优先级和只读区保持；该检查不证明 transport 启动、旧 lane 恢复或模型实际执行，三者仍需独立运行证据。
