@@ -23,7 +23,7 @@ def main():
     p.add_argument('--task',default='frontend')
     p.add_argument('--source')
     p.add_argument('--failure-id')
-    p.add_argument('--category',choices=['tool_or_model','startup_failed'])
+    p.add_argument('--category',choices=['tool_or_model','startup_failed','unknown','connection_interrupted','outcome_unknown','cancelled','context_exhausted'])
     args=p.parse_args()
     # 必须先验证真正的受管 caller；在此之前不读配置或写任何产物。
     coord=m.dispatch.coordinator()

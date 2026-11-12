@@ -221,3 +221,5 @@ recover_launch 只对账原 request_id，completed/failed 消费原 receipt；Un
 只 inspect，context_exhausted 交重拆、cancelled 停止。本票对非空 work 清单实现；空/mode/legacy
 返回 existing_policy，由 DD-415 闭环。耗尽或两次预算返回 exhausted/budget，不启动第三次。
 Herdr Adapter 只执行已认领 triple，不能调用 resolve_plan 或自行选择备用。
+
+DD-415 Recovery 分类：`unknown` 表示失败原因 Unknown，`connection_interrupted` 表示断连；只有 Adapter 正面排除原 writer 后，二者沿当前冻结 triple 原样 claim，游标不变，仍消耗共享预算。`outcome_unknown` 表示运行结果本身不明，只 inspect；launching 仍只能 recover 原请求。空 work 备用及 explicit_mode 同样原样 claim，不读当前配置。非空耗尽返回 exhausted 并保留源 blocked；budget 优先于耗尽与剩余项，交既有 superseded/运行中补票重拆路径，不再启动。cancelled 返回 stop，context_exhausted 返回 resplit，均不产生 successor。此处不代替 coordinator 修改 Tracker。

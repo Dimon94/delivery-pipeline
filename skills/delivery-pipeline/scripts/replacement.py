@@ -11,21 +11,23 @@ spec.loader.exec_module(mc)
 
 def decide(row, category, accepted_count):
     frozen = mc.recover_overlay(row)
-    if category in {'unknown', 'connection_interrupted'}:
+    if category == 'outcome_unknown':
         return {'action': 'inspect'}
     if category == 'cancelled':
         return {'action': 'stop'}
     if category == 'context_exhausted':
         return {'action': 'resplit'}
-    if category not in {'tool_or_model', 'startup_failed'}:
+    if category not in {'tool_or_model', 'startup_failed', 'unknown', 'connection_interrupted'}:
         raise ValueError('invalid failure category')
     if accepted_count >= 2:
         return {'action': 'budget'}
     if frozen['status'] == 'legacy':
         return {'action': 'existing_policy'}
     plan = frozen['recovery_plan']
-    if plan['source'] != 'work' or not plan['fallbacks']:
-        return {'action': 'existing_policy'}
+    if (not plan['fallbacks'] or plan['source'] == 'explicit_mode'
+            or category in {'unknown', 'connection_interrupted'}):
+        return deepcopy({'action': 'replace', **{k: row[k] for k in ('agent','model','effort')},
+                         'recovery_plan': plan, 'recovery_progress': frozen['recovery_progress']})
     i = frozen['recovery_progress']['next_cursor']
     if i >= len(plan['fallbacks']):
         return {'action': 'exhausted'}

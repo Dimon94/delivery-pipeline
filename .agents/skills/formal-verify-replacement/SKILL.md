@@ -13,11 +13,12 @@ description: 修改 Registry claim、launch、recover 或冻结备用选序时�
 ```bash
 python3 scripts/replacement_model.py
 python3 scripts/check_replacement.py
+python3 scripts/check_replacement_branches.py
 ```
 
 模型枚举一个 work_item、0/1/2/3 备用、两个通知者、两次 accepted claim，以及 claim→launch 标记→receipt
 之间崩溃与 Unknown 的持久前缀。状态中的 count 对应 Registry 血缘行数，不是实现中的独立计数器。
-预算、跳游标、重复 launch、active writer、双 successor 五个破坏模型必须被拒绝。列表内容与重复位置由真实公开 decide/claim
+预算（含空清单）、跳游标、重复 launch、active writer、双 successor、耗尽和停止分类共十个破坏变体必须被拒绝。列表内容与重复位置由真实公开 decide/claim
 检查承担；模型仅抽象位置，不验证模型身份。active writer 与 native gate 的有限真假输入同时进入模型和真实 Registry 检查。
 
 真实联系：`skills/delivery-pipeline/scripts/replacement.py decide` 是纯决定面；`lane_registry.py`
@@ -31,7 +32,9 @@ claim/launch/recover_launch 分别对应原子 claim、持久 launching、原 re
 未启动时只 inspect；此模型不证明原生 exactly-once、原生去重、断电、NFS、外部编辑器或实际模型响应。
 配置事务另运行既有 formal-verify-config-transaction，不能用其锁模型代替本检查。
 
-同步基线：6f7099b06499ad5bac80ab05a054ff9012562550，本技能与 DD-414 接口同批引入。
+同步基线：e9d9d88cb4914dc2cd7b41dacf1e460d04eb8d0e 上的 DD-415 特殊失败扩展。
 该批代码坐标用 `git log -1 --format=%H -- skills/delivery-pipeline/scripts/lane_registry.py` 读回。
-修改覆盖函数时先核对步骤、原子性和崩溃假设，重跑两条命令及真实近似错误探针，确认代码联系后再更新同步记录。
+修改覆盖函数时先核对步骤、原子性和崩溃假设，重跑上述命令及真实近似错误探针，确认代码联系后再更新同步记录。
 反例先落公开接口回归；不得削弱不变量迁就实现。维护入口：maintain-formal-verification-skill。
+
+DD-415 同步：增加空 work/explicit_mode、原因 Unknown/断连原样分支，及 outcome_unknown inspect、取消 stop、上下文 resplit。模型枚举这些分类与 0..3 位置，10 个破坏变体必须拒绝；真实 Registry 分支检查承担模型反例回归。两次预算优先于下一备用，耗尽保留 blocked。预算返回 budget，由既有 coordinator 执行 superseded/重拆；本模块不写 Tracker。

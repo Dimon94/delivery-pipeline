@@ -191,11 +191,11 @@ r.launch(Path(sys.argv[2]),sys.argv[3],lambda _:dict(writer='exited',identity='m
                 initial={**row,'recovery_plan':{**row['recovery_plan'],'fallbacks':fallbacks}}
                 registry.write(bounded,initial)
                 lane='initial'
-                for i in range(min(length,2)):
+                for i in range(min(length or 2,2)):
                     _,revision=registry.read(bounded,lane)
                     nxt=registry.claim(bounded,lane,revision,'event-'+str(i),'tool_or_model',observation)
-                    assert {k:nxt[k] for k in ('agent','model','effort')}==fallbacks[i]
-                    assert nxt['recovery_progress']==dict(current_index=i,next_cursor=i+1)
+                    assert {k:nxt[k] for k in ('agent','model','effort')}==(fallbacks[i] if length else a)
+                    assert nxt['recovery_progress']==(dict(current_index=i,next_cursor=i+1) if length else dict(current_index=None,next_cursor=0))
                     launch(bounded,nxt['lane_id'],observation,lambda _:dict(status='failed',receipt={'native':'failed'}))
                     lane=nxt['lane_id']
                 _,revision=registry.read(bounded,lane)
@@ -206,7 +206,9 @@ r.launch(Path(sys.argv[2]),sys.argv[3],lambda _:dict(writer='exited',identity='m
                     assert str(e) in {'budget','exhausted','existing_policy'}
                 else:
                     raise AssertionError('out of bounds claim')
-                assert bounded.read_bytes()==before
+                assert len(registry.rows(bounded))==1+min(length or 2,2)
+                if length==1: assert registry.read(bounded,lane)[0]['state']=='blocked'
+                else: assert bounded.read_bytes()==before
     print('replacement real Registry/process checks: pass')
 
 if __name__=='__main__':

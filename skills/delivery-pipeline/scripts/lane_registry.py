@@ -110,6 +110,8 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
             return successors[0]
         if revision(source)!=expected_revision:
             raise ValueError('row revision conflict')
+        if category in {'outcome_unknown', 'cancelled', 'context_exhausted'}:
+            raise ValueError(decide(source,category,0)['action'])
         safe(observe(deepcopy(source)))
         related=[r for r in all_rows.values() if r.get('work_item')==source['work_item']]
         if sum(not r.get('replacement_of') for r in related)>1:
@@ -124,6 +126,9 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
             raise ValueError('inspect: positive original startup rejection required')
         decision=decide(source,category,sum(bool(r.get('replacement_of')) for r in related))
         if decision['action']!='replace':
+            if decision['action']=='exhausted':
+                source['state']='blocked'
+                persist(path,[source])
             raise ValueError(decision['action'])
         identity=hashlib.sha256((source_id+'\0'+failure_id).encode()).hexdigest()[:24]
         lane='r-'+identity
