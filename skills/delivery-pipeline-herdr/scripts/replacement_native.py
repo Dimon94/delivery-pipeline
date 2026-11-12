@@ -44,7 +44,7 @@ def main():
     if args.stage=='probe':
         # 供 root 校准尚未采集的 agent 字段；本阶段完全只读。
         result=dict(pane=sample[0],process_info=sample[1],agents=sample[2],
-                    schema=native.read_cli('api','schema','--json'))
+                    schema=native.read_cli('api','schema','--json'),version=native.read_cli('--version'))
     elif args.stage=='init':
         if registry.exists():
             raise ValueError('registry already exists; inspect rather than reinitialize')

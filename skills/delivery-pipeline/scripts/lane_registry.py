@@ -144,6 +144,10 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
 
 
 def finish(path,row,result):
+    if result.get('status')=='unknown' and result.get('receipt'):
+        row['replacement_intent']['receipt']=result['receipt']
+        persist(path,[row])
+        return read(path,row['lane_id'])[0]
     if result.get('status') not in {'completed','failed'} or not result.get('receipt'):
         return row
     row['replacement_intent'].update(status=result['status'],receipt=result['receipt'])

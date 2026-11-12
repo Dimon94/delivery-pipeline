@@ -55,10 +55,30 @@ def execute(path, lane, observe, pane_id, evidence, verify_target, native_start=
     return lane_registry.launch(path,lane,native_observation,start)
 
 
-def start_result(returncode, stdout, stderr):
-    """CLI 返回只是请求回执；非零可能是已启动但未 ready，不能当正面拒绝。"""
-    return dict(status='unknown', native_reply=dict(returncode=returncode, stdout=stdout, stderr=stderr),
-                gap='需要原 pane/name 的独立 agent 读回；无历史请求账本时缺席不能证明未启动')
+def start_result(returncode, stdout, stderr, *, version=None, request=None, request_id=None):
+    """只识别 v0.9.5 wait_for_named_agent 的精确退出分支；坐标来自本次调用。"""
+    raw=dict(returncode=returncode,stdout=stdout,stderr=stderr)
+    receipt=dict(start_reply=raw,version=version,native_request=request,request_id=request_id)
+    unknown=dict(status='unknown',native_reply=raw,receipt=receipt,
+                 gap='原请求结果 Unknown；缺席不证明未启动，不重发')
+    if version != 'herdr 0.9.5' or returncode != 1 or not request or not request_id:
+        return unknown
+    argv=request.get('argv',[])
+    scope=request.get('scope',{})
+    if (request.get('agent_name')!=request_id or not scope.get('terminal_id')
+            or request.get('pane_id')!=scope.get('pane_id')
+            or argv[:4]!=['herdr','agent','start',request_id]
+            or '--pane' not in argv or argv[argv.index('--pane')+1:argv.index('--pane')+2]!=[scope.get('pane_id')]):
+        return unknown
+    try:
+        # 官方 print_response 将 error envelope 写到 stderr；不搜索任意子串。
+        error=json.loads(stderr)
+    except (ValueError,TypeError):
+        return unknown
+    if stdout.strip() or error != dict(id='cli:agent:start',error=dict(
+            code='agent_start_failed',message='agent process exited before becoming interactive')):
+        return unknown
+    return dict(status='failed',native_reply=raw,receipt=receipt)
 
 
 class NativeReplacement:
@@ -82,6 +102,8 @@ class NativeReplacement:
         if args[:2] == ('pane', 'read'):
             # pane read 的公开 CLI 输出是文本，不作为运行态身份 JSON 解码。
             return {'result': {'text': result.stdout}}
+        if args == ('--version',):
+            return result.stdout.strip()
         value = json.loads(result.stdout)
         # schema 是 CLI 的静态 JSON Schema 文档，不使用运行态 result envelope。
         if args == ('api', 'schema', '--json') and isinstance(value.get('schemas'), dict):
@@ -115,9 +137,9 @@ class NativeReplacement:
         _, process, agents = self.sample(scope)
         receipt=source.get('replacement_intent',{}).get('receipt',{})
         writer_pids=receipt.get('writer_pids') or source.get('herdr',{}).get('writer_pids')
-        if not writer_pids:
+        if not writer_pids and not self.failed_start(source):
             raise ValueError('inspect: original writer PID evidence Unknown')
-        for pid in writer_pids:
+        for pid in writer_pids or []:
             if not isinstance(pid,int) or pid<=0:
                 raise ValueError('inspect: invalid original writer PID')
             try:
@@ -129,6 +151,18 @@ class NativeReplacement:
         if errors or not self.available(scope,process,agents):
             raise ValueError('inspect: source writer active or capability Unknown')
         return dict(writer='exited',identity='match',capability='verified',gate='allowed')
+
+    @staticmethod
+    def failed_start(row):
+        intent=row.get('replacement_intent',{})
+        receipt=intent.get('receipt',{})
+        request=intent.get('native_request')
+        if (intent.get('status')!='failed' or not request
+                or receipt.get('native_request')!=request or receipt.get('request_id')!=row['lane_id']):
+            return False
+        raw=receipt.get('start_reply',{})
+        return start_result(raw.get('returncode'),raw.get('stdout',''),raw.get('stderr',''),
+                            version=receipt.get('version'),request=request,request_id=row['lane_id'])['status']=='failed'
 
     def verify_target(self, pane_id, claimed):
         if pane_id!=self.scope['pane_id']:
@@ -144,10 +178,18 @@ class NativeReplacement:
         if not scope or scope!=self.scope:
             return dict(status='unknown',gap='原请求缺少或不匹配 terminal scope')
         _, process, agents = self.sample(scope)
+        saved=row['replacement_intent'].get('receipt',{})
+        if saved.get('native_request')==request and saved.get('request_id')==row['lane_id']:
+            raw=saved.get('start_reply',{})
+            reply=start_result(raw.get('returncode'),raw.get('stdout',''),raw.get('stderr',''),
+                               version=saved.get('version'),request=request,request_id=row['lane_id'])
+            if reply['status']=='failed' and self.available(scope,process,agents):
+                return reply
         named = [a for a in agents if a.get('name')==request['agent_name']]
         occupants = [a for a in agents if a.get('pane_id')==scope['pane_id']]
         if (len(named)==len(occupants)==1 and named==occupants
                 and named[0].get('agent')==row['agent']
+                and named[0].get('terminal_id')==scope['terminal_id']
                 and named[0].get('agent_status') in {'idle','done','working'}
                 and named[0].get('interactive_ready') is True):
             foreground=process.get('foreground_processes',[])
@@ -167,11 +209,27 @@ class NativeReplacement:
         if row['replacement_intent']['status']!='accepted':
             return row
         def start(argv, claimed):
-            result = subprocess.run(argv,capture_output=True,text=True,timeout=45)
-            reply = start_result(result.returncode,result.stdout,result.stderr)
-            reconciled = self.reconcile(claimed)
+            version=self.read_cli('--version')
+            try:
+                result = subprocess.run(argv,capture_output=True,text=True,timeout=45)
+                reply = start_result(result.returncode,result.stdout,result.stderr,version=version,
+                                     request=claimed['replacement_intent']['native_request'],request_id=lane)
+            except subprocess.TimeoutExpired as error:
+                def decoded(value):
+                    return value.decode(errors='replace') if isinstance(value,bytes) else value or ''
+                reply=start_result(None,decoded(error.stdout),decoded(error.stderr),version=version,
+                                   request=claimed['replacement_intent']['native_request'],request_id=lane)
+            claimed['replacement_intent']['receipt']=reply['receipt']
+            try:
+                reconciled = self.reconcile(claimed)
+            except (ValueError,KeyError,OSError,subprocess.TimeoutExpired) as error:
+                return dict(status='unknown',receipt=reply['receipt'],gap=str(error))
             if reconciled['status']=='completed':
                 reconciled['receipt']['start_reply']=reply['native_reply']
-            return reconciled
+                return reconciled
+            # 原始回执即使 Unknown 也留在唯一 intent，响应丢失只能对账原坐标。
+            if reconciled['status']=='failed':
+                return reconciled
+            return dict(status='unknown',receipt=reply['receipt'],gap=reconciled.get('gap'))
         return execute(path,lane,self.observe,self.scope['pane_id'],self.evidence,
                        self.verify_target,start,native_scope=self.scope)
