@@ -1,4 +1,4 @@
-# 模型配置 Schema（version 5）
+# 模型配置 Schema（CLI version 6 / App version 5）
 
 本文件是 worker 模型配置的唯一定义点，核心链路与各 transport 壳共用同一份格式。
 各 transport 的调度逻辑在其壳内实现，配置 schema 只有这一份。
@@ -15,10 +15,10 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 
 ```json
 {
-  "version": 5,
+  "version": 6,
   "work": {
-    "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" },
-    "backend":  { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" }
+    "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] },
+    "backend":  { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] }
   },
   "modes": {
     "<name>": {
@@ -34,19 +34,19 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
   },
   "review": {
     "implementation": {
-      "standards": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" },
-      "spec":      { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" }
+      "standards": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "candidates": [] },
+      "spec":      { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "candidates": [] }
     },
     "whole-change": {
-      "standards": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" },
-      "spec":      { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>" }
+      "standards": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "candidates": [] },
+      "spec":      { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "candidates": [] }
     }
   }
 }
 ```
 
 CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实例额外必需
-`default_mode`，并允许可选 `legacy_execution`（见下文）。`version` 必须等于 5。
+`default_mode`，并允许可选 `legacy_execution`（见下文）。CLI `version` 必须等于 6；App 保持 5。
 
 ## work：任务类型
 
@@ -66,7 +66,7 @@ CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实
 
 每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
 `pi|codex|claude|codex-app`：agent 值决定 worker kind，前三个由所选 CLI transport 壳（Herdr pane、T3Code task 或 Lody session）承载，
-`codex-app` 经 App task。work 项精确为这三个字段，额外字段（含旧 `execution`）拒绝。
+`codex-app` 经 App task。App 与非编辑 work 项精确为这三个字段；CLI 五 work 另必需 `fallbacks`，见 v6 条款。其他字段（含旧 `execution`）拒绝。
 配置文件可以只定义已知 key 的子集；每个 transport 声明自己的必需集（见下文），缺必需项
 阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。
 
@@ -89,7 +89,7 @@ App 实例的 `modes` 必须非空，`agents` key 精确为 `codex-app`，`kind:
 ## review：双轴矩阵
 
 `review` 精确为 `implementation` 与 `whole-change` 两个 scope，每个 scope 精确为
-`standards` 与 `spec` 两轴，每轴为 `{agent, model, effort}`。CLI review lane 用
+`standards` 与 `spec` 两轴，App 每轴为 `{agent, model, effort}`；CLI 另必需 `candidates`（M2 只保留）。CLI review lane 用
 `standards` 轴的 `{agent, model, effort}` 启动 pane，packet 携带该 scope 的两轴配置交给
 resolved code-review owner；App 由 coordinator 的 subagent 入口解析两轴模型传给 owner。
 两轴独立性与 verdict 放行规则不变，模型配置不构成豁免。
@@ -124,3 +124,10 @@ App 实例允许可选的 `legacy_execution`，key 精确为 `astra-luna` 与 `a
   `agents: {"codex-app": ...}`；`default_mode` 与 `legacy_execution` 原样保留；版本号升为 5。
 
 迁移只改配置格式；已有 lane 沿 registry 恢复的老规则不变，不受配置版本影响。
+
+## CLI v6 有序列表（DD-407 / DD-411 已确认 Spec）
+
+五个必需 work 项精确为 `{agent, model, effort, fallbacks}`，fallbacks 为不限长、允许重复的精确 `{agent, model, effort}` 列表。按位置保存，不排序、去重或截断。非编辑 work 仍精确三字段。
+review 四格精确为 `{agent, model, effort, candidates}`，candidates 同形列表；M2 桌面只保留，不编辑或消费。
+AI setup 显式 migrate 将 CLI v5 升 v6，仅补空列表；更旧版本先沿既有转换，同一事务保存。重复迁移零写入。App 不使用 CLI 迁移。
+新增或改值以及增加重复次数需本次精确能力证据；未改值排序和删除可保留 Unknown 原值。桌面与 setup 共用原有锁/hash/replace/readback 事务。列表消费由后续票实现。

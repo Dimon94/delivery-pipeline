@@ -157,7 +157,7 @@ s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.modul
 	os.WriteFile(path, raw, 0600)
 	var candidate map[string]any
 	json.Unmarshal(raw, &candidate)
-	candidate["work"].(map[string]any)["planning"] = map[string]string{"agent": "pi", "model": model, "effort": effort}
+	candidate["work"].(map[string]any)["planning"] = map[string]any{"agent": "pi", "model": model, "effort": effort, "fallbacks": []any{}}
 	payload, _ := json.Marshal(candidate)
 	sum := sha256.Sum256(raw)
 	wrapper := filepath.Join(dir, "tool.py")

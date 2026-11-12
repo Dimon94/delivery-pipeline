@@ -13,3 +13,13 @@ test('旧请求不能覆盖新选择；失效档位重选；只读值与撤销�
  expect(d.config.work.research).toEqual(original.work.research);expect(d.config.modes).toEqual(original.modes);
  d.undo();expect(d.changes()).toEqual([]);expect(original.work.frontend!.model).toBe('exact@native');
 });
+test('完整有序备用含重复位置，经编辑、差异和撤销保留',()=>{
+ const initial=structuredClone(original);for(const n of ['planning','design','frontend','backend','testing'])initial.work[n]!.fallbacks=[];
+ const d=new Draft(initial),a={agent:'pi',model:'native',effort:'high'},b={...a,effort:'low'};
+ d.beginProbe('list');d.acceptProbe({request_id:'list',observed_at:'now',sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{native:['high','low']}}}});
+ for(const item of [b,a,b,a])d.editFallbacks('planning',{kind:'add',item});
+ expect(d.config.work.planning!.fallbacks).toEqual([b,a,b,a]);expect(d.valid()).toBe(true);
+ d.editFallbacks('planning',{kind:'move',index:3,to:0});d.editFallbacks('planning',{kind:'remove',index:3});
+ expect(d.config.work.planning!.fallbacks).toEqual([a,b,a]);expect(d.changes()).toContain('work.planning');
+ d.undo();expect(d.config.work.planning!.fallbacks).toEqual([]);
+});

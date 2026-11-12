@@ -13,7 +13,7 @@ def check():
         path = Path(directory) / 'config.json'
         evidence_path = Path(directory) / 'evidence.json'
         original = m.valid_fixture()
-        original['work']['frontend'] = {'agent': 'pi', 'model': 'magpie/codex/gpt-6.1-sol@100k', 'effort': 'high'}
+        original['work']['frontend'] = {'agent': 'pi', 'model': 'magpie/codex/gpt-6.1-sol@100k', 'effort': 'high', 'fallbacks': []}
         original['modes']['standard']['agents']['pi']['direct'] = {'model': 'provider/model', 'effort': 'high'}
         path.write_text(json.dumps(original))
         candidate = copy.deepcopy(original)

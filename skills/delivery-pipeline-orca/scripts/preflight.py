@@ -314,7 +314,7 @@ def _model_command(
 def _test_config() -> dict[str, Any]:
     pair = {"model": "provider/model", "effort": "high"}
     work = {
-        task: {"agent": "pi", **pair}
+        task: {"agent": "pi", **pair, "fallbacks": []}
         for task in ("planning", "design", "frontend", "backend", "testing")
     }
     stages = {
@@ -326,7 +326,7 @@ def _test_config() -> dict[str, Any]:
         )
     }
     return {
-        "version": 5,
+        "version": 6,
         "work": work,
         "modes": {
             "standard": {
@@ -335,7 +335,7 @@ def _test_config() -> dict[str, Any]:
             }
         },
         "review": {
-            scope: {axis: {"agent": "pi", **pair} for axis in ("standards", "spec")}
+            scope: {axis: {"agent": "pi", **pair, "candidates": []} for axis in ("standards", "spec")}
             for scope in ("implementation", "whole-change")
         },
     }

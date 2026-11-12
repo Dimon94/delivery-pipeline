@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Delivery Pipeline Setup
 
 初始化或重配 `~/.config/delivery-pipeline/model-roles.json`。先完整读取
-`../delivery-pipeline/references/model-config-schema.md`；它是 version 5 schema（任务类型、
+`../delivery-pipeline/references/model-config-schema.md`；它是 CLI version 6 / App version 5 schema（任务类型、
 命名 mode 覆盖预设、review 矩阵、transport 必需集）的唯一来源。再读取
 `../delivery-pipeline/references/model-role-routing.md` 获取 agent adapter 与 evidence 规则。
 本流程在当前会话交互执行，不派发 lane。
@@ -27,9 +27,9 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
 
 1. **探测并严格验证现状。** 从本 SKILL.md realpath 解析并运行
    `scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json`，同时执行第 2 步的
-   本机 evidence probe。旧 version 2/3/4 文件先运行 `scripts/model_config.py migrate <config>`
+   本机 evidence probe。旧 CLI version 2/3/4/5 文件经用户明确确认后运行 `scripts/model_config.py migrate <config>`
    机械迁移并 readback；迁移提交前拒绝后，经用户明确授权才进入重配流程；退出 3 时先显式读取核对，不进入初始化。
-   只有 version 5 配置结构与实时 evidence 都通过才报告当前表并结束：
+   只有 version 6 CLI 配置结构与实时 evidence 都通过才报告当前表并结束：
    顶层 key、任务类型全集与 CLI 必需集、review 矩阵与命名 mode 覆盖预设按 schema 文档逐项核对；每个 entry 的 `agent/model/effort` 非空、binary 存在、model/effort 命中
    对应实时 evidence。任何非法配置给出修复引导，用户明确授权后才按实际 hash 重配；合法配置仅在用户明确要求重配时覆盖。
    迁移或重配不会迁移已有 lane；已有 lane 继续按 registry 恢复。
@@ -45,7 +45,7 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    （`implementation`/`whole-change` × `standards`/`spec`）。展示任务管辖工作、候选来源与当前
    选择。Claude 同样只从统一 probe 的有效候选选择；无候选时不能新增 Claude 选择。Skill 不提供
    内置默认，由用户明确选择全部必需项。每个任务类型的 work 项就是该 lane 单轮直跑的
-   `{agent, model, effort}`。`modes` 命名覆盖预设可选维护：只在 ticket/map 显式点名时用其
+   `{agent, model, effort, fallbacks}`；初始化 `fallbacks: []`，review 四格补 `candidates: []`，已有列表按位置保留，不截断或去重。`modes` 命名覆盖预设可选维护：只在 ticket/map 显式点名时用其
    `direct` 组覆盖，默认路径不消费。
 4. **验证选择。** 复用配置 Module 的 `capability_errors` / `validate_selection`，
    检查精确 agent/model/effort 命中本轮证据。失败只重新选择对应项。

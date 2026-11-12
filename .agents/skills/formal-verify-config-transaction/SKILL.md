@@ -25,3 +25,5 @@ python3 scripts/check_config_transaction.py
 反例处置：用代码词汇叙述获取锁→核对基线→replace→读回顺序；分清模型假设错误与真实实现错误。真实缺陷先落公开 CLI 回归再修复，不能削弱不变量。维护入口为 maintain-formal-verification-skill。
 
 DD-381：桌面 apply 的 prepare 复用同一个 configuration_transaction，增加九格/只读区限制，不改变锁与提交点模型。`python3 scripts/check_config_apply.py` 补 apply/configure 独立进程同基线竞争和相同 pre/post/no-op 真实回归；没有新增 formal owner。
+
+DD-411：CLI v6 的 fallbacks 与主配置共用原 prepare/锁/hash/replace/readback 步骤；迁移转换仅在 prepare 内补列表，模型步骤与假设不变。公开 check_config_fallbacks.py 补有序重复、计数证据与只读 candidates；沿用真实进程事务及既有三个反例。

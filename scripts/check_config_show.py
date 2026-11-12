@@ -33,9 +33,9 @@ def main():
         assert read('missing')['config'] is None
         assert read('invalid_json', b'{broken')['config'] is None
         assert read('unsupported_version', b'{"version":4}')['validation']['valid'] is False
-        read('invalid_schema', b'{"version":5}')
+        read('invalid_schema', b'{"version":6}')
         cell = {'agent': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high'}
-        config = {'version': 5, 'work': {name: dict(cell) for name in ['planning','design','frontend','backend','testing']}, 'modes': {}, 'review': {scope: {axis: dict(cell) for axis in ['standards','spec']} for scope in ['implementation','whole-change']}}
+        config = {'version': 6, 'work': {name: {**cell,"fallbacks":[]} for name in ['planning','design','frontend','backend','testing']}, 'modes': {}, 'review': {scope: {axis: {**cell,"candidates":[]} for axis in ['standards','spec']} for scope in ['implementation','whole-change']}}
         raw = (json.dumps(config, indent=3)+'\n').encode()
         snapshot = read('ready', raw)
         assert snapshot['config'] == config

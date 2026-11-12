@@ -134,9 +134,9 @@ def check():
         assert process.returncode == 0, process.stdout
         assert json.loads(process.stdout) == {'migrated': str(path), 'transport': 'cli', 'default_mode': None}
         actual = json.loads(path.read_bytes())
-        assert actual['version'] == 5 and actual['modes'] == {}
-        assert actual['work']['planning'] == legacy['roles']['planning']
-        assert actual['review']['whole-change']['spec'] == legacy['roles']['review']
+        assert actual['version'] == 6 and actual['modes'] == {}
+        assert actual['work']['planning'] == {**legacy['roles']['planning'], 'fallbacks': []}
+        assert actual['review']['whole-change']['spec'] == {**legacy['roles']['review'], 'candidates': []}
         # migrate 与 configure 共享协议；不是仅同一入口自测。
         path.write_text(json.dumps(legacy))
         legacy_base = hashlib.sha256(path.read_bytes()).hexdigest()

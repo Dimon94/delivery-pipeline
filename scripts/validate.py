@@ -306,8 +306,8 @@ def extract_schema_example(path: Path) -> dict:
 def check_model_contract() -> None:
     schema_doc = CORE / "references" / "model-config-schema.md"
     schema = extract_schema_example(schema_doc)
-    if schema.get("version") != 5:
-        record("model config schema version must be 5")
+    if schema.get("version") != 6:
+        record("model config schema version must be 6")
     if not {"work", "modes", "review"} <= set(schema):
         record("model config schema example must define work/modes/review")
     routing = CORE / "references" / "model-role-routing.md"
@@ -338,7 +338,7 @@ def check_model_contract() -> None:
             record(
                 f"model config fixture self-test failed: {result.stdout}{result.stderr}"
             )
-    for check in ("check_config_lane.py", "check_config_apply.py", "check_config_probe.py", "check_config_toml.py", "check_config_transaction.py", "model_config_transaction_model.py"):
+    for check in ("check_config_fallbacks.py", "check_config_lane.py", "check_config_apply.py", "check_config_probe.py", "check_config_toml.py", "check_config_transaction.py", "model_config_transaction_model.py"):
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / check)],
                                 text=True, capture_output=True)
         if result.returncode != 0:
