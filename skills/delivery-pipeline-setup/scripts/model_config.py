@@ -186,6 +186,42 @@ def validate_path(path: Path) -> list[str]:
         return [f"invalid JSON: {error}"]
 
 
+def show(path: Path) -> dict:
+    """离线快照：只读原字节，不采集能力，不初始化或迁移。"""
+    path = path.expanduser().absolute()
+    result = {"api_version": 1, "path": str(path), "file_state": "ready",
+              "base_hash": None, "config": None,
+              "validation": {"valid": False, "errors": []}, "cells": {}}
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        result["file_state"] = "missing"
+        return result
+    except OSError:
+        result["file_state"] = "unreadable"
+        return result
+    result["base_hash"] = hashlib.sha256(raw).hexdigest()
+    try:
+        document = json.loads(raw)
+    except (ValueError, UnicodeError):
+        result["file_state"] = "invalid_json"
+        return result
+    result["config"] = document
+    errors = validate_document(document)
+    result["validation"] = {"valid": not errors, "errors": errors}
+    if isinstance(document, dict) and document.get("version") != 5:
+        result["file_state"] = "unsupported_version"
+    elif errors:
+        result["file_state"] = "invalid_schema"
+    else:
+        result["cells"] = {
+            **{f"work.{task}": {"status": "unknown"} for task in sorted(CLI_REQUIRED_WORK)},
+            **{f"review.{scope}.{axis}": {"status": "unknown"}
+               for scope in REVIEW_SCOPES for axis in REVIEW_AXES},
+        }
+    return result
+
+
 def load_document(path: Path) -> dict:
     document = json.loads(path.expanduser().read_text())
     errors = validate_document(document)
@@ -1271,6 +1307,7 @@ def main() -> int:
         "command",
         choices=(
             "validate",
+            "show",
             "self-test",
             "resolve",
             "freeze",
@@ -1293,6 +1330,9 @@ def main() -> int:
     parser.add_argument("--pane-id", default="pane")
     args = parser.parse_args()
 
+    if args.command == "show":
+        print(json.dumps(show(Path(args.path)), ensure_ascii=False))
+        return 0
     if args.command == "self-test":
         errors = self_test()
         print(

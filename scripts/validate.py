@@ -344,6 +344,13 @@ def check_model_contract() -> None:
         if result.returncode != 0:
             record(f"config transaction {check} failed: {result.stdout}{result.stderr}")
 
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/check_config_show.py")],
+        text=True, capture_output=True,
+    )
+    if result.returncode:
+        record(f"config show contract failed: {result.stdout}{result.stderr}")
+
 
 def check_packets() -> None:
     bundle = re.search(r"^## Review Evidence Bundle\n(.*?)(?=^## )",
