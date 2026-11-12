@@ -110,7 +110,10 @@ def main() -> int:
         if result.returncode != 0 or len(lines) != 1 or out.get("state") != "running":
             failures.append(f"happy path failed: {result.stdout} {result.stderr}")
         text = registry.read_text() if registry.exists() else ""
-        if "state: running" not in text or "  pane_id: w1:p2" not in text or "agent: pi" not in text:
+        sys.path.insert(0,str(HERE.parents[1]/"delivery-pipeline/scripts"))
+        import lane_registry
+        actual,_ = lane_registry.read(registry,"lane-a")
+        if actual.get("state") != "running" or actual.get("herdr",{}).get("pane_id") != "w1:p2" or actual.get("agent") != "pi":
             failures.append("registry missing running state, herdr overlay or frozen plan")
         rev = subprocess.run(["git", "-C", str(HERE), "rev-parse", "HEAD"], capture_output=True,
                              text=True).stdout.strip() or "Unknown"  # 无 .git（如 pre-commit 导出树）

@@ -1050,7 +1050,7 @@ def recover_registry(path: Path, lane_id: str | None = None) -> dict:
     spec = importlib.util.spec_from_file_location("lane_graph", parser_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    rows = module.parse_registry_file(path)
+    rows = list({row["lane_id"]: row for row in module.parse_registry_file(path)}.values())
     rows = [row for row in rows if lane_id is None or row["lane_id"] == lane_id]
     if len(rows) != 1:
         raise ValueError("registry recovery requires exactly one matching lane")

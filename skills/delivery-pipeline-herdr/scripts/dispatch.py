@@ -154,23 +154,11 @@ def place(coord: dict, worktree: str, prefix: str) -> dict:
 
 
 def write_registry(path: Path, row: dict) -> None:
-    lines = ["<!-- wayfinder-lane-registry:v2 -->", "```yaml"]
-    for key, value in row.items():
-        if key in {"recovery_plan", "recovery_progress"}:
-            lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
-        elif isinstance(value, dict):
-            lines.append(f"{key}:")
-            lines += [f"  {k}: {'none' if v is None else v}" for k, v in value.items()]
-        else:
-            lines.append(f"{key}: {'none' if value is None else value}")
-    lines.append("```")
-    text = "\n".join(lines) + "\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
-    if path.read_text(encoding="utf-8") != text:
-        raise DispatchError(f"registry readback mismatch: {path}")
+    core = HERE.parents[1] / "delivery-pipeline" / "scripts"
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import lane_registry
+    lane_registry.write(path, row)
 
 
 def wait_working(name: str) -> bool:
@@ -196,8 +184,10 @@ def main() -> int:
             if not Path(value).is_absolute() or not Path(value).exists():
                 raise DispatchError(f"{label} must be an existing absolute path: {value}")
         map_lane = preflight(args)
-        if registry.exists() and re.search(r"^state: (running|awaiting_human|created)$",
-                                           registry.read_text(encoding="utf-8"), re.M):
+        sys.path.insert(0,str(HERE.parents[1]/"delivery-pipeline/scripts"))
+        import lane_registry
+        existing = lane_registry.rows(registry).values()
+        if any(row.get("state") in {"running","awaiting_human","created"} for row in existing):
             raise DispatchError(f"registry already has an active writer: {registry}")
         mc = load_model_config()
         plan = mc.resolve_plan(mc.load_document(Path(args.config).expanduser()), args.task,

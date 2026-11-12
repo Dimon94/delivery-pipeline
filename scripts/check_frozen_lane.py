@@ -41,13 +41,16 @@ def check():
         path.unlink()  # 恢复不依赖配置存在
         assert run('recover', registry) == expected
         for change in [ {'recovery_plan': {**overlay['recovery_plan'], 'plan_version': 2}}, {'recovery_progress': {'current_index': 0, 'next_cursor': 4}}, {'recovery_progress': {'current_index': 2, 'next_cursor': 0}}, {'model': 'wrong/model'}, {'recovery_progress': None}, {'recovery_progress': {'current_index': 0, 'next_cursor': 0}} ]:
+            registry.unlink()  # 各损坏输入是独立临时 Registry，不修改已冻结计划。
             dispatch.write_registry(registry, {**row, **change})
             run('recover', registry, ok=False)
         # 备用下标1与primary值相同，位置身份仍须保留。
         positioned = {**row, 'recovery_progress': {'current_index': 1, 'next_cursor': 2}}
+        registry.unlink()
         dispatch.write_registry(registry, positioned)
         assert run('recover', registry)['recovery_progress']['current_index'] == 1
         legacy = {k: v for k, v in row.items() if not k.startswith('recovery_')}
+        registry.unlink()
         dispatch.write_registry(registry, legacy)
         assert run('recover', registry)['status'] == 'legacy'
         path.write_text(json.dumps(doc))

@@ -1,0 +1,37 @@
+---
+name: formal-verify-replacement
+description: 修改 Registry claim、launch、recover 或冻结备用选序时，检查有界 replacement 安全性。
+---
+
+# Replacement 安全性
+
+用户承诺：一次源失败只能有一个 successor，accepted replacement 最多两次，未知启动不能再启动。
+违反会消耗用户未授权的模型额度或产生两个 writer。
+
+运行（Python 3.11 标准库，无新增依赖）：
+
+```bash
+python3 scripts/replacement_model.py
+python3 scripts/check_replacement.py
+```
+
+模型枚举一个 work_item、0/1/2/3 备用、两个通知者、两次 accepted claim，以及 claim→launch 标记→receipt
+之间崩溃与 Unknown 的持久前缀。状态中的 count 对应 Registry 血缘行数，不是实现中的独立计数器。
+预算、跳游标、重复 launch、active writer、双 successor 五个破坏模型必须被拒绝。列表内容与重复位置由真实公开 decide/claim
+检查承担；模型仅抽象位置，不验证模型身份。active writer 与 native gate 的有限真假输入同时进入模型和真实 Registry 检查。
+
+真实联系：`skills/delivery-pipeline/scripts/replacement.py decide` 是纯决定面；`lane_registry.py`
+claim/launch/recover_launch 分别对应原子 claim、持久 launching、原 receipt adoption。
+公开检查用真实临时 v2 Registry、两个独立 Python 进程竞争，以及进程在 start 回调 os._exit(23) 崩溃。
+检查长度及重复、第三次、writer 活跃、revision 冲突、response lost 不重发。
+`model_config.py recover_registry` 沿既有块 parser 取 latest row，不能建立另一 ledger。
+
+本地 resolved path 的永久 flock、合作写者、原子 replace 是假设。observe 是 Adapter 提供的实时原生
+只读边界；检查里的观察替身不证明真实 native 能力。外部调用与本地事务不原子，launching 后不能证明
+未启动时只 inspect；此模型不证明原生 exactly-once、原生去重、断电、NFS、外部编辑器或实际模型响应。
+配置事务另运行既有 formal-verify-config-transaction，不能用其锁模型代替本检查。
+
+同步基线：6f7099b06499ad5bac80ab05a054ff9012562550，本技能与 DD-414 接口同批引入。
+该批代码坐标用 `git log -1 --format=%H -- skills/delivery-pipeline/scripts/lane_registry.py` 读回。
+修改覆盖函数时先核对步骤、原子性和崩溃假设，重跑两条命令及真实近似错误探针，确认代码联系后再更新同步记录。
+反例先落公开接口回归；不得削弱不变量迁就实现。维护入口：maintain-formal-verification-skill。

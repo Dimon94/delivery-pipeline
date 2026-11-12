@@ -117,7 +117,7 @@ updated_at: <ISO-8601>
   沿共享 Registry parser 返回 `status: frozen` 与计划/进度/当前 triple；失败返回非零、`invalid_recovery_plan`，
   不重 resolve。两字段都缺返回 `status: legacy` 及原 triple，沿 ADR-0023；部分缺失、版本错误、越界、
   mode/source 或当前 triple 不一致均拒绝，不能降级 legacy。replacement 保留原计划、显式推进位置；
-  本接口不选择备用、不 claim、不启动 replacement、不计失败预算。
+  冻结接口本身不选择备用；replacement 见下文 Replacement Registry Interface。
 - `head_commit` / `integrated_commit`：commit lane 终态与 Integration 后写入。
 - `prereq_check` / `prereq_check_result`：ticket 声明前提能力时（ADR-0011）。
 - `map`：所属 map registry 的 `lane_id`；`lane_graph.py` 据此把 lane 归入地图。
@@ -187,7 +187,9 @@ session/workspace/tab/pane是 lane坐标；
    当前坐标。
 3. 用 Git验证 worktree、branch、commits与 dirty state。pane消失但持久 evidence存在时按
    output_mode fan-in；两者都不存在且排除 active writer后才 replacement。replacement 按中断原因选做法：
-   连接中断、工具或模型报错、原因 Unknown，用原 packet 与原配置，不换模型；packet 末尾追加上次失败
+   冻结的非空 work 计划的正面失败先进入下文 Replacement Registry Interface，按位置认领；
+   legacy、空清单、显式 mode 沿原政策。连接中断或原因 Unknown 先核实原调用，不明时 inspect；
+   原样重派使用原 packet 与原配置；packet 末尾追加上次失败
    说明：原 `lane_id`、中断原因、最后的持久证据坐标与失败位置。上下文耗尽不重派，
    按 `gate-state-machine.md` §证据触发的运行中补票 拆小。
    原 lane 写 `blocked` 并记原因，replacement 用新 `lane_id`、同一 `work_item`。同一 `work_item`
@@ -195,3 +197,27 @@ session/workspace/tab/pane是 lane坐标；
 4. `awaiting_human` 只在用户返回时 fan-in；恢复不挂 watcher、不定时 wait。
 5. `integrated` / `consumed` / `close_pending` 按 cleanup contract readback或重试。
 6. registry 与现实不一致时写 `stale`并保留证据，不覆盖可能存在的 writer。
+
+## Replacement Registry Interface（DD-414）
+
+唯一持久 owner 为本 Registry 的 `scripts/lane_registry.py`；Recovery 纯决定面为
+`scripts/replacement.py decide`。同一 map 的全部源与 successor 放在同一个 Registry 文件，
+所有合作写者使用 resolved path 的永久 sidecar flock；不支持跨文件预算、外部编辑器并写、NFS 或断电保证。
+沿已有 v2 块保存快照，latest row 为当前状态；不建事件表、receipt 库或重试计数器。
+
+claim(path, source_id, revision, failure_id, category, observe) 在锁内调用原生只读 observe(source)：
+必须返回 writer=exited、identity=match、capability=verified、gate=allowed；证据必须来自原生状态，
+不能由 metadata 猜测。source/failure 为稳定身份，同源最多一个 successor，冲突事件拒绝。
+source revision 来自 read()；已存在相同 intent 则返回原值，不再次消费游标。预算按同 work_item
+所有不同 replacement_of lane 数计，含 accepted/launching/failed；已有非终态 writer 或未决 intent 拒绝。
+
+successor 保留冻结计划、work_item、replacement_of、failure_id、failure_category；replacement_intent
+保存 request_id（等于 lane_id）、status=accepted|launching|completed|failed、原 receipt。
+launch 只接受已认领 intent，锁内先写 launching 并读回，再调用 Adapter；崩溃/异常保留 launching。
+recover_launch 只对账原 request_id，completed/failed 消费原 receipt；Unknown/absent 保留 inspect，
+本版本不在 launching 后重发。native readback 不可证明安全时牺牲进展，不能声称 exactly-once。
+
+六类 category 接口：tool_or_model/startup_failed 为正面失败；connection_interrupted/unknown
+只 inspect，context_exhausted 交重拆、cancelled 停止。本票对非空 work 清单实现；空/mode/legacy
+返回 existing_policy，由 DD-415 闭环。耗尽或两次预算返回 exhausted/budget，不启动第三次。
+Herdr Adapter 只执行已认领 triple，不能调用 resolve_plan 或自行选择备用。

@@ -338,7 +338,7 @@ def check_model_contract() -> None:
             record(
                 f"model config fixture self-test failed: {result.stdout}{result.stderr}"
             )
-    for check in ("check_frozen_lane.py", "check_config_fallbacks.py", "check_config_lane.py", "check_config_apply.py", "check_config_probe.py", "check_config_toml.py", "check_config_transaction.py", "model_config_transaction_model.py"):
+    for check in ("check_replacement.py", "replacement_model.py", "check_frozen_lane.py", "check_config_fallbacks.py", "check_config_lane.py", "check_config_apply.py", "check_config_probe.py", "check_config_toml.py", "check_config_transaction.py", "model_config_transaction_model.py"):
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / check)],
                                 text=True, capture_output=True)
         if result.returncode != 0:

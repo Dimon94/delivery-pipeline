@@ -69,13 +69,20 @@ def parse_registry_file(path: Path) -> list[dict]:
     rows: list[dict] = []
     for m in BLOCK_RE.finditer(text):
         row: dict = {"_file": str(path)}
+        parent = None
         for line in m.group(1).splitlines():
             if line[:1] in (" ", "\t"):
+                nested = KEY_RE.match(line.strip())
+                if parent and nested:
+                    value = nested.group(2).strip()
+                    row[parent][nested.group(1)] = None if value in ("", "none") else value
                 continue
             km = KEY_RE.match(line)
             if km:
                 v = km.group(2).strip()
-                row[km.group(1)] = None if v in ("", "none") else v
+                key = km.group(1)
+                parent = key if not v and key in {"herdr", "orca", "t3code", "lody"} else None
+                row[key] = {} if parent else (None if v in ("", "none") else v)
         if row.get("lane_id") and "<" not in (row.get("work_item") or "<"):
             rows.append(row)
     return rows

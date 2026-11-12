@@ -34,3 +34,15 @@ bootstrap 覆盖已配置 worker 在精确 Execution Worktree 内的 kind-specif
   重派沿原 lane runtime/model/effort，验证实时可用性，不要求当前配置与 stored 一致；
   失败时保留 `setup_blocked`。
 - cleanup 只关闭本 lane pane 与本 lane Execution Worktree/branch；保留 Coordinator Pane 及其 Workspace。
+
+### 冻结 work replacement（DD-414）
+
+非空冻结计划的正面失败走 canonical `lane_registry.claim`，参数与门禁见
+`lane-registry.md` §Replacement Registry Interface；不得调用新 lane 的 resolve_plan。
+本壳 `scripts/replacement.py execute` 仅消费已认领 lane，复用 canonical startup_request；
+observe 必须在 Registry 锁内真实读取旧 writer/identity/能力/原生 gate。
+verify_target 必须真实核验本 lane 隔离 pane 的身份、可用 shell 与作用域；Unknown 时不绑定、不启动。
+原生 argv/pane/name 在 launch 前绑定到同 intent；响应丢失沿 native_request 对账后调用
+recover_launch，不换 pane/name、不新建 successor、不重发原生启动。
+当前 T3 宿主不满足 HERDR_ENV=1 时禁止控制用户 focused pane；不修改实施 map 的 transport。
+本 helper 的接口检查不等于已完成真实 Herdr 模型验收，实际模型和 effort 必须独立留证。
