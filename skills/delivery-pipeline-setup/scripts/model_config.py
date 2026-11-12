@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import copy
 import argparse
 import fcntl
 import hashlib
@@ -646,6 +647,38 @@ def configure(path: Path, candidate: dict, base_hash: str | None,
         if snapshot["base_hash"] != base_hash:
             raise ConfigRejected("base_conflict", "配置已变化，请读取最新配置后人工核对")
         validate_selection(candidate, snapshot["config"], evidence, request_id)
+        return candidate
+    return configuration_transaction(path, prepare)
+
+
+DESKTOP_CELLS = [*("work." + n for n in ("planning", "design", "frontend", "backend", "testing")),
+                 *(f"review.{scope}.{axis}" for scope in ("implementation", "whole-change")
+                   for axis in ("standards", "spec"))]
+
+
+def apply(path: Path, candidate: dict, base_hash: str,
+          evidence: ProbeEvidence, request_id: str) -> CommitResult:
+    def prepare(snapshot: Snapshot) -> dict:
+        previous = snapshot["config"]
+        if (snapshot["raw"] is None or validate_document(previous)):
+            raise ConfigRejected("unsupported_config", "请让 AI setup 处理当前配置")
+        if not base_hash or snapshot["base_hash"] != base_hash:
+            raise ConfigRejected("base_conflict", "请显式读取最新设置并人工核对草稿")
+        errors = validate_document(candidate)
+        if errors:
+            raise ConfigRejected("invalid_candidate", "; ".join(errors))
+        # 仅替换九格的三元组；同一格的其他合法字段也属于只读区。
+        permitted = copy.deepcopy(previous)
+        for key in DESKTOP_CELLS:
+            parts = key.split(".")
+            old, new = permitted, candidate
+            for part in parts:
+                old, new = old[part], new[part]
+            for field in ("agent", "model", "effort"):
+                old[field] = new[field]
+        if permitted != candidate:
+            raise ConfigRejected("invalid_candidate", "桌面不能修改只读设置")
+        validate_selection(candidate, previous, evidence, request_id)
         return candidate
     return configuration_transaction(path, prepare)
 
@@ -1418,6 +1451,7 @@ def main() -> int:
             "start",
             "migrate",
             "configure",
+            "apply",
             "probe",
         ),
     )
@@ -1458,13 +1492,13 @@ def main() -> int:
             )
         )
         return 0 if not errors else 1
-    if args.command == "configure":
+    if args.command in ("configure", "apply"):
         if not args.request_id or not args.evidence:
             parser.error("configure 需要 --request-id 与 --evidence")
         try:
             candidate = json.load(sys.stdin)
             evidence = json.loads(Path(args.evidence).expanduser().read_text())
-            result = configure(Path(args.path), candidate, args.base_hash, evidence, args.request_id)
+            result = (apply if args.command == "apply" else configure)(Path(args.path), candidate, args.base_hash, evidence, args.request_id)
         except (OSError, ValueError) as error:
             result = {"status": "rejected", "error": {"code": "invalid_candidate", "message": str(error)}}
         print(json.dumps({"api_version": 1, **result}, ensure_ascii=False))

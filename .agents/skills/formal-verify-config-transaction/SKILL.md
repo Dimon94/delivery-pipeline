@@ -23,3 +23,5 @@ python3 scripts/check_config_transaction.py
 同步基线为 5ebf537d6f9437dbce9ff254ac5f7eff6646b88c，本文件与共享事务实现同批引入；该批实际提交坐标见仓库外 DD-379/result.md。可用 `git log -1 --format=%H -- skills/delivery-pipeline-setup/scripts/model_config.py` 定位最新代码提交。以后修改覆盖函数时，先读 diff 核对步骤、失败与崩溃假设，再运行上面两条命令，确认真实代码联系后更新同步记录；仅改模型至绿不算验证。
 
 反例处置：用代码词汇叙述获取锁→核对基线→replace→读回顺序；分清模型假设错误与真实实现错误。真实缺陷先落公开 CLI 回归再修复，不能削弱不变量。维护入口为 maintain-formal-verification-skill。
+
+DD-381：桌面 apply 的 prepare 复用同一个 configuration_transaction，增加九格/只读区限制，不改变锁与提交点模型。`python3 scripts/check_config_apply.py` 补 apply/configure 独立进程同基线竞争和相同 pre/post/no-op 真实回归；没有新增 formal owner。

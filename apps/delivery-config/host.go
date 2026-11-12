@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -70,4 +72,51 @@ func (h *Host) ProbeCapabilities(requestID string) (json.RawMessage, error) {
 		return nil, errors.New("无法刷新能力。请让 AI 助手检查本机工具与模型来源，再重试。")
 	}
 	return json.RawMessage(output), nil
+}
+
+// Apply 只暴露桌面权限；确认之后生成身份并重新采集，证据文件仅存本次调用。
+func (h *Host) Apply(candidate json.RawMessage, baseHash string) (json.RawMessage, error) {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return nil, err
+	}
+	requestID := hex.EncodeToString(id)
+	evidence, err := h.ProbeCapabilities(requestID)
+	if err != nil {
+		return json.RawMessage(`{"status":"rejected","error":{"code":"capability_unavailable"}}`), nil
+	}
+	file, err := os.CreateTemp("", "delivery-save-*.json")
+	if err != nil {
+		return json.RawMessage(`{"status":"rejected","error":{"code":"io_error"}}`), nil
+	}
+	defer os.Remove(file.Name())
+	_, writeErr := file.Write(evidence)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		return json.RawMessage(`{"status":"rejected","error":{"code":"io_error"}}`), nil
+	}
+	cmd := exec.CommandContext(context.Background(), h.Python, h.Tool, "apply", h.Config, "--base-hash", baseHash, "--request-id", requestID, "--evidence", file.Name())
+	cmd.Stdin = bytes.NewReader(candidate)
+	output, runErr := cmd.Output()
+	var result struct {
+		Status string `json:"status"`
+	}
+	if json.Unmarshal(output, &result) == nil {
+		expected := map[string]int{"applied": 0, "rejected": 1, "commit_unverified": 3}
+		code, ok := expected[result.Status]
+		actual := 0
+		if runErr != nil {
+			var exit *exec.ExitError
+			if errors.As(runErr, &exit) {
+				actual = exit.ExitCode()
+			} else {
+				actual = -1
+			}
+		}
+		if ok && code == actual {
+			return output, nil
+		}
+	}
+	// 进程异常可能越过提交点；不可声称未写入。
+	return json.RawMessage(`{"status":"commit_unverified","error":{"code":"commit_unverified"},"expected_hash":null}`), nil
 }
