@@ -23,8 +23,11 @@ fault = sys.argv.pop(1)
 original = os.replace
 def replace(src, dst):
     if fault == 'pre': raise OSError('受控替换前失败')
-    if fault == 'delay': time.sleep(0.15)
+    if fault in ('delay', 'trace-delay'): time.sleep(0.15)
     original(src, dst)
+    if fault == 'trace-delay':
+        marker = pathlib.Path(str(dst) + '.' + str(os.getpid()) + '.replaced')
+        with marker.open('a') as stream: stream.write('1')
     if fault == 'post':
         def unreadable(self): raise OSError('受控替换后读回失败')
         pathlib.Path.read_bytes = unreadable
@@ -137,18 +140,45 @@ def check():
         assert actual['version'] == 6 and actual['modes'] == {}
         assert actual['work']['planning'] == {**legacy['roles']['planning'], 'fallbacks': []}
         assert actual['review']['whole-change']['spec'] == {**legacy['roles']['review'], 'candidates': []}
-        # migrate 与 configure 共享协议；不是仅同一入口自测。
-        path.write_text(json.dumps(legacy))
-        legacy_base = hashlib.sha256(path.read_bytes()).hexdigest()
-        migrate = subprocess.Popen([sys.executable, '-c', FAULT_RUNNER, str(SCRIPT), 'delay', 'migrate', str(path)],
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        configure = subprocess.Popen(command(path, ev, legacy_base, 'delay'), stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        configure_out = configure.communicate(json.dumps(candidate), timeout=10)[0]
-        migrate_out = migrate.communicate(timeout=10)[0]
-        assert sorted([configure.returncode, migrate.returncode]) == [0, 1], (configure_out, migrate_out)
-        final = json.loads(path.read_bytes())
-        assert final == (candidate if configure.returncode == 0 else actual)
+        # 并发及两种锁内顺序；迁移后读到新版允许零写入成功。
+        for order in ('race', 'configure-first', 'migrate-first'):
+            path.write_text(json.dumps(legacy))
+            legacy_base = hashlib.sha256(path.read_bytes()).hexdigest()
+            def start_migrate():
+                return subprocess.Popen([sys.executable, '-c', FAULT_RUNNER, str(SCRIPT), 'trace-delay', 'migrate', str(path)],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            def start_configure():
+                return subprocess.Popen(command(path, ev, legacy_base, 'trace-delay'), stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if order == 'configure-first':
+                configure = start_configure()
+                configure_out = configure.communicate(json.dumps(candidate), timeout=10)[0]
+                migrate = start_migrate()
+                migrate_out = migrate.communicate(timeout=10)[0]
+            else:
+                migrate = start_migrate()
+                if order == 'migrate-first':
+                    migrate_out = migrate.communicate(timeout=10)[0]
+                configure = start_configure()
+                configure_out = configure.communicate(json.dumps(candidate), timeout=10)[0]
+                if order == 'race':
+                    migrate_out = migrate.communicate(timeout=10)[0]
+            assert migrate.returncode == 0, migrate_out
+            result = json.loads(configure_out)
+            assert configure.returncode in (0, 1), configure_out
+            if configure.returncode == 0:
+                assert result['status'] == 'applied' and result['changed'] is True
+                assert json.loads(path.read_bytes()) == candidate
+                expected_writes = (1, 0)
+            else:
+                assert result['status'] == 'rejected' and result['error']['code'] == 'base_conflict'
+                assert json.loads(path.read_bytes()) == actual
+                expected_writes = (0, 1)
+            writes = []
+            for process in (configure, migrate):
+                marker = Path(str(path) + '.' + str(process.pid) + '.replaced')
+                writes.append(len(marker.read_text()) if marker.exists() else 0)
+            assert tuple(writes) == expected_writes, (order, writes, configure_out, migrate_out)
         for fault, expected_code in (('pre', 1), ('post', 3)):
             path.write_text(json.dumps(legacy)); before = path.read_bytes()
             process = subprocess.run([sys.executable, '-c', FAULT_RUNNER, str(SCRIPT), fault, 'migrate', str(path)],
