@@ -83,14 +83,25 @@ def main():
         result=r.claim(registry,args.source,rev,args.failure_id,args.category,native.observe)
     elif args.stage in {'execute','reconcile'}:
         row,_=r.read(registry,args.lane)
-        result=(native.execute(registry,args.lane) if args.stage=='execute'
-                else r.recover_launch(registry,args.lane,native.reconcile))
+        if args.stage=='reconcile' and not row.get('replacement_of'):
+            # 主 lane 的响应丢失也只读回原 name/terminal，不再发起 start。
+            request=dict(scope={k:row['herdr'][k] for k in scope},agent_name=row['herdr']['agent_name'])
+            accepted=native.reconcile({**row,'replacement_intent':dict(native_request=request)})
+            if accepted['status']=='completed':
+                row['herdr'].update(startup_state='completed',writer_pids=accepted['receipt']['writer_pids'],receipt=accepted['receipt'])
+                row['state']='running'
+                r.write(registry,row)
+            result=dict(row=row,reconciliation=accepted)
+        else:
+            result=(native.execute(registry,args.lane) if args.stage=='execute'
+                    else r.recover_launch(registry,args.lane,native.reconcile))
     elif args.stage in {'nonce','fault'}:
         row,_=r.read(registry,args.lane)
         request=row.get('replacement_intent',{}).get('native_request') or dict(
             scope=row['herdr'],agent_name=row['herdr']['agent_name'])
         # primary scope overlay 含额外字段，校验仍使用精确授权坐标。
-        synthetic={**row,'replacement_intent':dict(native_request={**request,'scope':scope})}
+        original_scope=request['scope']
+        synthetic={**row,'replacement_intent':dict(native_request={**request,'scope':{k:original_scope[k] for k in scope}})}
         if native.reconcile(synthetic)['status']!='completed':
             raise ValueError('agent identity/ready Unknown; no prompt sent')
         nonce='DD414-'+uuid.uuid4().hex

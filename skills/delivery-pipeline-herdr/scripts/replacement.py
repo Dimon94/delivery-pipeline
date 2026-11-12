@@ -79,7 +79,13 @@ class NativeReplacement:
         result = subprocess.run(['herdr', *args], capture_output=True, text=True, timeout=45)
         if result.returncode:
             raise ValueError('native read Unknown: '+result.stderr.strip())
+        if args[:2] == ('pane', 'read'):
+            # pane read 的公开 CLI 输出是文本，不作为运行态身份 JSON 解码。
+            return {'result': {'text': result.stdout}}
         value = json.loads(result.stdout)
+        # schema 是 CLI 的静态 JSON Schema 文档，不使用运行态 result envelope。
+        if args == ('api', 'schema', '--json') and isinstance(value.get('schemas'), dict):
+            return value
         if not isinstance(value.get('result'), dict):
             raise ValueError('native result schema Unknown')
         return value
@@ -141,8 +147,9 @@ class NativeReplacement:
         named = [a for a in agents if a.get('name')==request['agent_name']]
         occupants = [a for a in agents if a.get('pane_id')==scope['pane_id']]
         if (len(named)==len(occupants)==1 and named==occupants
-                and named[0].get('kind')==row['agent']
-                and named[0].get('status') in {'idle','done','working'}):
+                and named[0].get('agent')==row['agent']
+                and named[0].get('agent_status') in {'idle','done','working'}
+                and named[0].get('interactive_ready') is True):
             foreground=process.get('foreground_processes',[])
             writer_pids=[p.get('pid') for p in foreground if p.get('pid')!=process.get('shell_pid')]
             if not writer_pids or not all(isinstance(pid,int) and pid>0 for pid in writer_pids):

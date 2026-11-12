@@ -43,7 +43,9 @@ def check():
     claimed={**row,'lane_id':'r-test','replacement_intent':dict(native_request=request)}
     assert native.reconcile(claimed)['status']=='unknown', 'absent agent is not negative request receipt'
     busy=True
-    agents.append(dict(name='r-test',pane_id='w1:p2',kind='pi',status='idle'))
+    # 来自 Herdr 0.9.5 api schema 的 AgentInfo 字段，不能用自造 kind/status。
+    agents.append(dict(name='r-test',pane_id='w1:p2',agent='pi',agent_status='idle',
+                       interactive_ready=True))
     assert native.reconcile(claimed)['status']=='completed'
     agents[0]['name']='other'
     assert native.reconcile(claimed)['status']=='unknown'
