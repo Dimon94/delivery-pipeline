@@ -71,8 +71,9 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
    verdict→`review`、artifact→`research`（design HITL 用 `design`）。`runtimeMode` 与
    `interactionMode` 继承 coordinator。
 4. receipt 写 `task_id`、`child_thread_id`、`link`；HITL lane 写 `awaiting_human`，其余写 `running`。
-   调用报错或回复丢失时用同一 `clientRequestId` 重试一次，T3 按该 key 去重；仍失败写
-   `setup_blocked`，同批其余 lane 继续。
+   调用报错或回复丢失时保留原请求；原生请求键还受 provider session namespace 约束，
+   不以 `clientRequestId` 相同推断跨 session 可安全重试。先沿原 receipt 读回；没有原坐标则
+   保持 Unknown/blocked，不重发。同批其余 lane 继续。
 
 ## Startup Readback
 
@@ -92,3 +93,36 @@ Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSO
 写入 intent、真实 receipt、startup readback 后均用 `verify_overlay` 对账，不另造计划形状。
 恢复先运行 `model_config.py recover <registry.md> [lane_id]`；错误/legacy 识别与字段语义
 统一见 `../../delivery-pipeline/references/lane-registry.md`，不从当前配置补读。
+
+## 已认领 replacement 的生产调用
+
+有冻结计划的 replacement 不走上面的新 lane 配置解析。唯一执行入口为
+`../scripts/native_replacement.py::NativeReplacement.execute`，宿主调用方为
+`../scripts/native_host.js::runNativeReplacement(command, invocation, processIO, native)`。
+`native` 绑定当前线程官方 `task_status`、`t3_thread_read`、`delegate_task`；
+`processIO.exec/write` 分别绑定宿主终端执行/标准输入接口。它只转发 Python 发出的工具请求，
+不能把观察替换成固定 writer/capability 真值。
+
+`command` 是当前独立 checkout 中 `python3 <绝对路径>/native_replacement.py`；
+`invocation` 含 `action: execute`、`registry` 绝对路径、已认领的 `lane`、完整 `task` packet、
+本线程最近一次官方 `orchestrator_capabilities` 原始 `structuredContent`（`capabilities`）。
+原生版本/合同须在本批 preflight 留证：稳定键、隔离和原请求读回缺证据时不启动。
+先核对本机版本匹配合同，再用该入口，不能把 payload 构造视为已派发。
+
+认领仍归 canonical `lane_registry.claim`；`action: claim` 仅将该接口与 Adapter 的实时
+`observe` 接线，参数为原 `source/revision/failure_id/category`，不另选模型或计数。
+先有 source 终态通知再认领：读取原 task/thread，要求原父线程、provider/model 一致，
+无 active run 或待子任务。没有原生 task/thread 坐标时拒绝，不用别的 transport 回执代替。
+
+执行使用冻结 triple、`isolation: worktree` 和 successor `lane_id` 作为 `clientRequestId`。
+唯一 intent 在 I/O 前写 launching，原生 receipt 仍存在同一字段。收到 async `next` 后只做
+本地持久化并结束本轮；完成唤醒后再次 execute，沿原 receipt 的 child thread 独立读回，
+核对父线程/target/worktree 同仓与 executedModel；请求值不能当 applied effort。
+同一 receipt 的 task/thread/link/worktree/临时 branch/executedModel 同步投影到既有
+`t3code` overlay，供生命周期直接消费；不另存一份 receipt。`completed` intent 表示启动已对账，
+lane 的最终结果继续由既有 fan-in 负责。
+
+receipt 缺失、原生拒绝、读回失败或身份冲突保留 launching/Unknown；不再 delegate，不换键，
+不推进游标，不声称未启动。已完成 intent 重放直接返回原行；启动失败的正面分类若无原生
+绑定证据仍 Unknown，不能凭工具异常把后项消费掉。跨 provider session 的无回执对账能力
+当前 Unknown。普通无冻结计划 lane 继续走原合同，不由本入口重建计划。

@@ -9,7 +9,7 @@
 T3 在子任务终态或子任务提问时唤醒 `coordinator_thread_id` 对应线程。被唤醒后对每个相关 lane：
 
 1. 原 coordinator 线程用 `task_status(task_id)`；其他线程用 `t3_thread_read(child_thread_id)`。
-   `task_status` 只读本线程派发的任务；`t3_thread_read` 不含 `workState` 与 `executedModel`，二者记 Unknown。
+   `task_status` 只读本线程派发的任务；`t3_thread_read` 不含 `workState`，记 Unknown；独立 `executedModel` 取 recentRuns，缺失记 Unknown。
 2. `hasPendingQuestion: true` 或 `pendingApproval` 非空 → 进入 §HITL。
 3. `status: completed` 且 `workState` 为 `result_available` 或 Unknown → 取 `summary`，首个独立行须为
    `lane-registry.md` §终态行；`executedModel` 写入 overlay `executed_model`，null 记 Unknown，
@@ -59,5 +59,6 @@ fan-in。
 ## 取消与 Replacement
 
 停止 lane 用 `task_cancel(task_id)`，它连带停止该 task 的后续 run。Replacement 先按
-`lane-registry.md` 排除 active writer，再沿原 registry agent/model/effort 走 `t3code-dispatch.md`
-派发关键路径；旧 lane 的 cleanup 照 §Cleanup 执行。
+`lane-registry.md` 排除 active writer；冻结计划的已认领 intent 走 `t3code-dispatch.md`
+§已认领 replacement 的生产调用，保留共享血缘/预算与原请求；legacy lane 仍沿既有原配置合同。
+旧 lane 的 cleanup 照 §Cleanup 执行。

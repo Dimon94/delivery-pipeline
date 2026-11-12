@@ -55,7 +55,7 @@ MAP_BRANCH_RE = re.compile(r"(?:^|/)map-(\d+)(?:\b|-)")
 BLOCKED_BY_LINE_RE = re.compile(r"^[ \t>*-]*(#{1,6}[ \t]*)?Blocked by[ \t]*([:：]?)(.*)$",
                                 re.MULTILINE | re.IGNORECASE)
 BLOCKED_BY_ITEM_RE = re.compile(r"#?([0-9A-Za-z][\w-]*)")
-KEY_RE = re.compile(r"^([a-z_]+):\s*(.*)$")
+KEY_RE = re.compile(r"^([a-z_][a-z0-9_]*):\s*(.*)$")
 
 
 BLOCK_RE = re.compile(r"<!-- wayfinder-lane-registry:v2 -->\s*```yaml\n(.*?)```", re.DOTALL)
