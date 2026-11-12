@@ -26,7 +26,7 @@ def check():
         for task in sorted(m.CLI_REQUIRED_WORK):
             frozen = run('freeze', path, task, '--output-mode', 'checks')
             assert frozen['recovery_plan'] == {'plan_version': 1, 'source': 'work', 'primary': a, 'fallbacks': [b, a, b]}
-            assert frozen['recovery_progress'] == {'current_index': 0, 'next_cursor': 0}
+            assert frozen['recovery_progress'] == {'current_index': None, 'next_cursor': 0}
         plan = m.resolve_plan(doc, 'frontend', output_mode='commit')
         overlay = m.freeze_overlay(plan)
         doc['work']['frontend']['fallbacks'][0]['effort'] = 'high'
@@ -40,13 +40,13 @@ def check():
         assert expected['status'] == 'frozen' and expected['recovery_plan'] == overlay['recovery_plan']
         path.unlink()  # 恢复不依赖配置存在
         assert run('recover', registry) == expected
-        for change in [ {'recovery_plan': {**overlay['recovery_plan'], 'plan_version': 2}}, {'recovery_progress': {'current_index': 0, 'next_cursor': 4}}, {'recovery_progress': {'current_index': 2, 'next_cursor': 0}}, {'model': 'wrong/model'}, {'recovery_progress': None} ]:
+        for change in [ {'recovery_plan': {**overlay['recovery_plan'], 'plan_version': 2}}, {'recovery_progress': {'current_index': 0, 'next_cursor': 4}}, {'recovery_progress': {'current_index': 2, 'next_cursor': 0}}, {'model': 'wrong/model'}, {'recovery_progress': None}, {'recovery_progress': {'current_index': 0, 'next_cursor': 0}} ]:
             dispatch.write_registry(registry, {**row, **change})
             run('recover', registry, ok=False)
-        # 重复 primary 在位置 2；不得靠值回推为 0。
-        positioned = {**row, 'recovery_progress': {'current_index': 2, 'next_cursor': 2}}
+        # 备用下标1与primary值相同，位置身份仍须保留。
+        positioned = {**row, 'recovery_progress': {'current_index': 1, 'next_cursor': 2}}
         dispatch.write_registry(registry, positioned)
-        assert run('recover', registry)['recovery_progress']['current_index'] == 2
+        assert run('recover', registry)['recovery_progress']['current_index'] == 1
         legacy = {k: v for k, v in row.items() if not k.startswith('recovery_')}
         dispatch.write_registry(registry, legacy)
         assert run('recover', registry)['status'] == 'legacy'

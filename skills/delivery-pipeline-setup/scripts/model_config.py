@@ -924,7 +924,7 @@ def resolve_plan(
         explicit = task in IMPLEMENTATION_TASKS and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
         recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
                     "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
-                    "recovery_progress": {"current_index": 0, "next_cursor": 0}}
+                    "recovery_progress": {"current_index": None, "next_cursor": 0}}
     plan = {
         **recovery,
         "version": 5,
@@ -1032,9 +1032,12 @@ def recover_overlay(row: dict) -> dict:
     if not isinstance(progress, dict) or set(progress) != {"current_index", "next_cursor"}:
         raise ValueError("invalid_recovery_plan: progress")
     current, cursor = progress["current_index"], progress["next_cursor"]
-    if type(current) is not int or type(cursor) is not int or not 0 <= current < len(entries) or cursor != current:
+    valid_position = ((current is None and cursor == 0) or
+                      (type(current) is int and 0 <= current < len(plan["fallbacks"]) and cursor == current + 1))
+    if type(cursor) is not int or not valid_position:
         raise ValueError("invalid_recovery_plan: position")
-    if {k: row.get(k) for k in ("agent", "model", "effort")} != entries[current]:
+    selected = plan["primary"] if current is None else plan["fallbacks"][current]
+    if {k: row.get(k) for k in ("agent", "model", "effort")} != selected:
         raise ValueError("invalid_recovery_plan: current triple mismatch")
     return json.loads(json.dumps({"status": "frozen", "recovery_plan": plan, "recovery_progress": progress,
                                  **{k: row.get(k) for k in ("mode", "agent", "model", "effort")}}))

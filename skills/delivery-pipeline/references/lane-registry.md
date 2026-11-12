@@ -109,9 +109,10 @@ updated_at: <ISO-8601>
 - `recovery_plan` / `recovery_progress`：CLI 五 work 新 lane 使用 canonical `model_config.py freeze` 的值拷贝；
   两字段在 YAML 块中分别写成单行 JSON flow value，所有 transport 原样保存，不自行解析配置。
   `recovery_plan` 为不可变 `{plan_version: 1, source: work|explicit_mode, primary: ModelTriple, fallbacks: ModelTriple[]}`；
-  保留完整顺序及重复位置。`recovery_progress` 为可变 `{current_index: 0, next_cursor: 0}` 初值。
-  current_index 是 `[primary, *fallbacks]` 中当前项位置；next_cursor 是已消费备用数，二者必须相等，
-  范围为 0..len(fallbacks)。重复 triple 仍必须显式存位置，禁止按值寻找。
+  保留完整顺序及重复位置。`recovery_progress` 初值为 `{current_index: null, next_cursor: 0}`。
+  current_index 为 null 表示 primary，否则是 fallbacks 的零基下标；next_cursor 是已消费备用数，
+  primary 时必须为 0，备用时必须等于 current_index + 1，
+  next_cursor 范围为 0..len(fallbacks)。重复 triple 仍必须显式存位置，禁止按值寻找。
   读回/恢复运行 `model_config.py recover <registry.md> [lane_id]`（或 `recover_overlay(row)`），
   沿共享 Registry parser 返回 `status: frozen` 与计划/进度/当前 triple；失败返回非零、`invalid_recovery_plan`，
   不重 resolve。两字段都缺返回 `status: legacy` 及原 triple，沿 ADR-0023；部分缺失、版本错误、越界、
