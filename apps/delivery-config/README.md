@@ -15,3 +15,7 @@ python3 build.py --python /absolute/path/to/python3 --install
 配置默认读取 `~/.config/delivery-pipeline/model-roles.json`，从不初始化、修复、迁移或保存。缺失、损坏、旧版、非法结构、不可读分别引导助手处理，处理后点击“重新读取”。能力状态 Unknown，读取成功不代表模型运行或额度验证成功。显式预设和旧 lane 的既有规则保持。
 
 检查：根目录 `python3 scripts/check_config_show.py` 已接入 `scripts/validate.py`；本目录 `go test ./...` 穿过公开 Host 到真实 Python 进程。`DELIVERY_CONFIG_TEST_PATH` 可让受控独立测试进程读取临时配置，不能用它改写真实配置。Finder、窗口交互和异常恢复须另留本机证据，不能由这些命令替代。桌面保存与 setup 事务兼容验收由后续票接入。
+
+九格可编辑为窗口草稿，支持能力刷新、差异核对、返回与撤销；安全保存尚未开放，不调用 configure。草稿完整保留 v5 文档及只读区。能力经 Host 的本机网关 GET 与 canonical `model_config.py probe` 归一化，三种工具独立报告；Unknown 保留原配置，只阻止缺证据的新选择。Probe 不验证认证、额度或模型执行。
+
+`bun test src/draft.test.ts` 覆盖受控延迟与草稿行为，`go test ./...` 穿过真实 Python 公开入口。可重复的来源归一化合同由根 `scripts/check_config_probe.py` 进入 validate；真实 MyGo 证据独立记录。

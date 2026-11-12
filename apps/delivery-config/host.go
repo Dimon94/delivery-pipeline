@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 // 构建时绑定；运行时不搜索 shell PATH。
@@ -43,4 +47,27 @@ func installedHost() *Host {
 		config = override
 	}
 	return &Host{Python: pythonPath, Tool: filepath.Join(filepath.Dir(executable), "..", "Resources", "model_config.py"), Config: config}
+}
+
+// ProbeCapabilities 的唯一网络操作为现有本机网关的模型清单 GET。
+// 原始来源仅沿 stdin 交给 canonical Python，绝不返回凭据或远端错误正文。
+func (h *Host) ProbeCapabilities(requestID string) (json.RawMessage, error) {
+	gateway := map[string]any{"status": "unknown"}
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 4 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Get("http://127.0.0.1:3425/v1/models")
+	if err == nil {
+		defer response.Body.Close()
+		var body map[string]any
+		if response.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&body) == nil {
+			gateway = map[string]any{"status": "ok", "data": body["data"]}
+		}
+	}
+	input, _ := json.Marshal(map[string]any{"gateway": gateway})
+	cmd := exec.CommandContext(context.Background(), h.Python, h.Tool, "probe", "--request-id", requestID)
+	cmd.Stdin = bytes.NewReader(input)
+	output, err := cmd.Output()
+	if err != nil || !json.Valid(output) {
+		return nil, errors.New("无法刷新能力。请让 AI 助手检查本机工具与模型来源，再重试。")
+	}
+	return json.RawMessage(output), nil
 }

@@ -12,3 +12,6 @@ dialog{color:var(--ink);background:var(--card);padding:0;border:1px solid var(--
 @media(max-width:560px){.column-help svg{display:none}.help-panel{padding:14px}.dialog-foot{align-items:flex-start}.dialog-foot .recovery-actions{max-width:70%}.footer-status{max-width:48%}.footer-actions{max-width:52%}}
 
 .pill{height:auto;min-height:29px;overflow-wrap:anywhere;white-space:normal}.fields{align-items:center}.model-label{min-width:0;overflow-wrap:anywhere}.notice{margin-bottom:14px}.footer-status{max-width:75%}
+select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appearance:auto}select:focus-visible{outline:2px solid var(--accent)}.diff-panel{position:fixed;inset:72px max(24px,calc((100vw - 850px)/2)) 28px;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:auto;box-shadow:0 0 0 100vmax #0008;z-index:10}.diff-panel article{padding:14px 0;border-bottom:1px solid var(--line)}.diff-panel p{margin:8px 0;color:var(--fg-2)}.diff-panel button{margin:12px 12px 0 0}.footer{gap:8px;flex-wrap:wrap}.footer-status{flex:1;min-width:220px}
+
+.plain{background:var(--pill);color:var(--ink)}

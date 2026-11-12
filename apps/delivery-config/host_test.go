@@ -51,3 +51,33 @@ func TestReadConfig(t *testing.T) {
 		t.Fatal("缺少解释器必须有处理引导")
 	}
 }
+
+func TestProbeCapabilities(t *testing.T) {
+	python, _ := exec.LookPath("python3")
+	tool, _ := filepath.Abs("../../skills/delivery-pipeline-setup/scripts/model_config.py")
+	path := filepath.Join(t.TempDir(), "untouched")
+	if err := os.WriteFile(path, []byte("protected"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := Host{Python: python, Tool: tool, Config: path}
+	output, err := h.ProbeCapabilities("host-read-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		RequestID string `json:"request_id"`
+		Sources   map[string]struct {
+			Status string `json:"status"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.RequestID != "host-read-only" || len(result.Sources) != 3 {
+		t.Fatal("probe 未贯穿请求身份与三工具来源")
+	}
+	raw, _ := os.ReadFile(path)
+	if string(raw) != "protected" {
+		t.Fatal("probe 改写配置")
+	}
+}

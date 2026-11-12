@@ -668,6 +668,102 @@ def migrate_path(path: Path) -> dict:
             "default_mode": migrated.get("default_mode")}
 
 
+def probe(raw: dict, request_id: str) -> ProbeEvidence:
+    """只归一化 metadata；逐工具独立，不把 gateway 声明当 harness 能力。"""
+    from datetime import datetime, timezone
+    if "harnesses" not in raw:
+        raw = {**raw, "harnesses": collect_harnesses()}
+    observed = datetime.now(timezone.utc).isoformat()
+    gateway = raw.get('gateway', {})
+    catalog = {m['id']: [v['effort'] for v in m.get('supported_reasoning_levels', [])
+                         if isinstance(v.get('effort'), str)]
+               for m in (gateway.get('data') or []) if isinstance(m.get('id'), str)}
+    capabilities, sources = {}, {}
+    for agent in sorted(CLI_AGENTS):
+        harness = raw.get('harnesses', {}).get(agent, {})
+        models = {}
+        if harness.get('binary') is True and harness.get('route') is True:
+            for model in harness.get('models', []):
+                native = model.get('native_id')
+                if not isinstance(native, str) or not native:
+                    continue
+                allowed = model.get('efforts', [])
+                if model.get('gateway_id') is not None:
+                    allowed = ([e for e in allowed if e in catalog.get(model['gateway_id'], [])]
+                               if gateway.get('status') == 'ok' else [])
+                if allowed:
+                    models[native] = list(dict.fromkeys(allowed))
+        capabilities[agent] = {'binary': harness.get('binary') is True, 'models': models}
+        sources[agent] = {'status': 'ok' if models else 'unknown',
+                          'observed_at': observed, 'reason': '' if models else '未取得精确模型与有效档位的完整证据链', 'origin': harness.get('origin', '本机工具元数据'),
+                          'next_step': '能力仅核验配置与元数据；认证、额度和实际执行为 Unknown。' if models else
+                          '请让 AI 助手核对该工具的接入、精确模型清单和思考档位，再刷新能力。'}
+    return {'request_id': request_id, 'observed_at': observed,
+            'capabilities': capabilities, 'sources': sources}
+
+
+def collect_harnesses() -> dict:
+    """仅本机元数据命令/配置；不打印原始来源或凭据，不发推理。"""
+    import shutil
+    import subprocess
+    home = Path.home()
+    def command(agent, args):
+        binary = shutil.which(agent)
+        if not binary:
+            candidates = {'codex': home/'.local/bin/codex', 'claude': home/'.bun/bin/claude',
+                          'pi': home/'.local/bin/pi'}
+            binary = str(candidates[agent]) if candidates[agent].exists() else None
+            if agent == 'pi' and not binary:
+                installed = list((home/'.nvm/versions/node').glob('*/bin/pi'))
+                binary = str(installed[0]) if len(installed) == 1 else None
+        if not binary:
+            return None
+        try:
+            result = subprocess.run([binary, *args], capture_output=True, text=True, timeout=15,
+                env={**os.environ, 'PATH': str(Path(binary).parent) + os.pathsep + os.environ.get('PATH', '')})
+            return result.stdout if result.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    result = {}
+    # Codex bundled catalog 不刷新远端；原生 provider 直接使用其精确 slug。
+    output = command('codex', ['debug', 'models', '--bundled'])
+    try:
+        import tomllib
+        config = tomllib.loads((home/'.codex/config.toml').read_text())
+        data = json.loads(output) if output else {}
+        entries = data if isinstance(data, list) else data.get('models', [])
+        native_route = not config.get('model_provider') and not config.get('openai_base_url') and not os.environ.get('OPENAI_BASE_URL')
+        result['codex'] = {'binary': output is not None, 'route': native_route,
+            'origin': 'Codex 本机 bundled catalog（不代表账户权限）',
+            'models': [{'native_id': m['slug'], 'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
+                        if e['effort'] not in ('ultra', 'persistent')]} for m in entries]}
+    except (OSError, ValueError, KeyError, ImportError):
+        result['codex'] = {'binary': output is not None}
+    output = command('pi', ['--list-models', 'magpie'])
+    try:
+        config = json.loads((home/'.pi/agent/models.json').read_text())
+        provider = config.get('providers', {}).get('magpie', {})
+        models = []
+        if provider.get('baseUrl', '').rstrip('/') == 'http://127.0.0.1:3425/v1':
+            for m in provider.get('models', []):
+                if not output or m['id'] not in output:
+                    continue
+                mapping = m.get('thinkingLevelMap', {})
+                efforts = [e for e, value in mapping.items() if value == e and e not in ('off','ultra')]
+                api = m.get('api', provider.get('api'))
+                if api == 'anthropic-messages' and not m.get('compat', {}).get('forceAdaptiveThinking'):
+                    efforts = [e for e in efforts if e not in ('xhigh','max')]
+                models.append({'native_id': 'magpie/'+m['id'], 'gateway_id': m['id'], 'efforts': efforts})
+        result['pi'] = {'binary': output is not None,'route': bool(models), 'models': models,
+                        'origin': 'Pi 注册清单、模型映射与网关清单交集'}
+    except (OSError, ValueError, KeyError):
+        result['pi'] = {'binary': output is not None}
+    # Claude 无稳定无推理逐模型 catalog 命令；help 五档不构成逐模型证据。
+    result['claude'] = {'binary': command('claude', ['--version']) is not None,
+                        'route': False, 'origin': 'Claude 逐模型有效能力尚缺可核验来源'}
+    return result
+
+
 def capability_errors(
     agent: str, model: str, effort: str, evidence: object
 ) -> list[str]:
@@ -1314,6 +1410,7 @@ def main() -> int:
             "start",
             "migrate",
             "configure",
+            "probe",
         ),
     )
     parser.add_argument(
@@ -1330,6 +1427,10 @@ def main() -> int:
     parser.add_argument("--pane-id", default="pane")
     args = parser.parse_args()
 
+    if args.command == "probe":
+        raw = json.load(sys.stdin)
+        print(json.dumps({"api_version": 1, **probe(raw, args.request_id or "")}, ensure_ascii=False))
+        return 0
     if args.command == "show":
         print(json.dumps(show(Path(args.path)), ensure_ascii=False))
         return 0
