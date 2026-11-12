@@ -1,0 +1,15 @@
+{
+  "name": "tomli",
+  "version": "2.2.1",
+  "license": "MIT",
+  "source": "https://github.com/hukkin/tomli/tree/2.2.1",
+  "copied_from": "installed pip._vendor.tomli; byte-verified against upstream tag",
+  "sha256": {
+    "_types.py": "f864c6d9552a929c7032ace654ee05ef26ca75d21b027b801d77e65907138b74",
+    "__init__.py": "3e1370fdec8b81d9fb31c27a9eb00df32226ddd5c2ef9bebd6c546555c034a90",
+    "_parser.py": "f70f0b1b48c1edfc26659581d2f5576de7a30c7725e00348271076b1c1270e50",
+    "_re.py": "b21e2c0434603bde0a259c0d22b81d73257fa906acb79d18bf3380506a510ca0",
+    "py.typed": "f0f8f2675695a10a5156fb7bd66bafbaae6a13e8d315990af862c792175e6e67",
+    "LICENSE": "b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe"
+  }
+}

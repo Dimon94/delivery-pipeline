@@ -16,7 +16,14 @@ python = Path(args.python).resolve()
 subprocess.run([str(python), '-c', 'import sys; assert sys.version_info >= (3,10), "需要 Python >= 3.10"'], check=True)
 subprocess.run(['bun', 'run', 'build', '-skip-dmg'], cwd=root, env={**os.environ, 'MYGO_LDFLAGS': '-X main.pythonPath='+str(python)}, check=True)
 app = next((root / 'build').glob('darwin-*/*.app'))
-shutil.copy2(root.parents[1] / 'skills/delivery-pipeline-setup/scripts/model_config.py', app / 'Contents/Resources/model_config.py')
+canonical = root.parents[1] / 'skills/delivery-pipeline-setup/scripts'
+resources = app / 'Contents/Resources'
+shutil.copy2(canonical / 'model_config.py', resources / 'model_config.py')
+shutil.copytree(canonical / '_vendor', resources / '_vendor', dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+# 对最终资源执行隔离 probe，防止源码可用但应用漏带依赖。
+subprocess.run([str(python), str(root.parents[1] / 'scripts/check_config_toml.py'),
+                '--python', str(python), '--tool', str(resources / 'model_config.py')], check=True)
 subprocess.run(['codesign','--force','--deep','--sign','-',str(app)], check=True)
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)], check=True)
 if args.install:

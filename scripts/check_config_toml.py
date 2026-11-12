@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""隔离 HOME，通过公开 probe 验证 TOML fallback 与可搬迁的应用资源。"""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--tool', type=Path, default=Path(__file__).resolve().parents[1] / 'skills/delivery-pipeline-setup/scripts/model_config.py')
+parser.add_argument('--python', default=sys.executable)
+args = parser.parse_args()
+# 禁用 site packages，且强制缺少 tomllib；3.11+ CI 也必须走随包 fallback。
+runner = '''import sys, runpy, importlib.abc
+class NoTomllib(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'tomllib':
+            raise ModuleNotFoundError('controlled missing tomllib')
+sys.meta_path.insert(0, NoTomllib())
+sys.path.insert(0, sys.argv[1])
+sys.argv = sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
+with tempfile.TemporaryDirectory(prefix='config-toml-') as tmp:
+    home = Path(tmp)
+    (home / '.codex').mkdir()
+    binary = home / 'bin'
+    binary.mkdir()
+    codex = binary / 'codex'
+    codex.write_text('#!/bin/sh\n/bin/echo \'{"models": []}\'\n')
+    codex.chmod(0o755)
+    catalog = home / 'catalog.json'
+    catalog.write_text(json.dumps({'models': [{'slug': 'vendor/model@large', 'supported_reasoning_levels': [{'effort': e} for e in ['high', 'xhigh', 'ultra']]}]}))
+    config = home / '.codex/config.toml'
+    valid = ('model_provider = "local.magpie"\nmodel_catalog_json = ' + json.dumps(str(catalog)) + '\n'
+             '# 完整 TOML：带点的 quoted key、inline table、multiline string\n'
+             'note = """isolated\nfixture"""\n'
+             '[model_providers]\n"local.magpie" = {base_url = "http://127.0.0.1:3425/backend-api/codex"}\n')
+    gateway = {'gateway': {'status': 'ok', 'data': [{'id': 'vendor/model@large', 'supported_reasoning_levels': [{'effort': 'low'}, {'effort': 'high'}, {'effort': 'ultra'}]}]}}
+    env = {'HOME': str(home), 'PATH': str(binary), 'PYTHONDONTWRITEBYTECODE': '1'}
+    def probe():
+        p = subprocess.run([args.python, '-S', '-c', runner, str(args.tool.resolve().parent), str(args.tool.resolve()), 'probe', '--request-id', 'toml-contract'], input=json.dumps(gateway), text=True, capture_output=True, cwd=home, env=env)
+        assert p.returncode == 0, p.stderr
+        return json.loads(p.stdout)
+    config.write_text(valid)
+    p = probe()
+    assert p['capabilities']['codex']['models'] == {'vendor/model@large': ['high']}, '有效 magpie 路由/catalog 应保留 native 身份与 effort 交集'
+    assert p['sources']['codex']['status'] == 'ok'
+    for invalid in (valid.replace('127.0.0.1:3425', '127.0.0.1:9999'), valid.replace('"local.magpie" =', '"unmapped" ='), 'model_provider = [broken'):
+        config.write_text(invalid)
+        p = probe()
+        assert p['capabilities']['codex']['models'] == {} and p['sources']['codex']['status'] == 'unknown'
+    config.write_text(valid)
+    catalog.write_text(json.dumps({'models': [{'slug': 'unmapped-native', 'supported_reasoning_levels': [{'effort': 'high'}]}]}))
+    p = probe()
+    assert p['capabilities']['codex']['models'] == {} and p['sources']['codex']['status'] == 'unknown'
+print('TOML public probe: pass (isolated HOME, no site packages, no tomllib)')

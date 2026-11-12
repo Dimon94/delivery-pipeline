@@ -760,7 +760,10 @@ def collect_harnesses() -> dict:
     # 精确 slug 只有在当前路由指向 magpie、且命中网关清单时才能成为候选。
     output = command('codex', ['debug', 'models', '--bundled'])
     try:
-        import tomllib
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            from _vendor import tomli as tomllib
         config = tomllib.loads((home/'.codex/config.toml').read_text())
         data = json.loads(output) if output else {}
         entries = data if isinstance(data, list) else data.get('models', [])
