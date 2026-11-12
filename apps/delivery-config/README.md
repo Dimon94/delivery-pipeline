@@ -25,3 +25,5 @@ python3 build.py --python /absolute/path/to/python3 --install
 保存成功的主设置由新 lane 的默认 work 路径读取；显式点名的 mode 继续覆盖模型与思考程度，已有 lane 按原 registry 恢复。`python3 scripts/check_config_lane.py` 穿过公开 apply → resolve/start，检查默认精确身份（含 @ 后缀）、ticket/map 预设优先级和只读区保持；该检查不证明 transport 启动、旧 lane 恢复或模型实际执行，三者仍需独立运行证据。
 
 DD-411：五 work 的备用列表不限长、允许重复，按编号位置编辑；差异显示完整顺序，确认后与主配置同事务保存。旧 CLI 配置必须先由 AI setup 显式迁移 v6；App 保持 v5。Host Interface 不变；备用消费与完整列表异常恢复扩展归后续票。
+
+DD-412：返回与外观切换保留完整有序草稿，撤销恢复完整读取快照。冲突或待核实时禁止再次保存，显式 ReadConfig 失败继续保留；当前等于候选只陈述当前观察。另一有效文档作为新基线，页面展示旧草稿九格完整顺序供参考，重新选择、预览、确认；再次提交前拒绝仍保留参考。Host 不增加 Recover；`bun test src/recovery.test.ts` 验证完整列表恢复合同。

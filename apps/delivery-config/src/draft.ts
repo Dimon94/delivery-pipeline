@@ -7,7 +7,7 @@ export const work = ['planning','design','frontend','backend','testing'];
 export const paths = [...work.map(n=>`work.${n}`), ...['implementation','whole-change'].flatMap(s=>['standards','spec'].map(a=>`review.${s}.${a}`))];
 export function cell(config: Config, path:string):Cell {const p=path.split('.'); return p[0]==='work'?(p[2]==='fallbacks'?config.work[p[1]!]!.fallbacks![Number(p[3])]!:config.work[p[1]!]!):config.review[p[1]!]![p[2]!]!;}
 export class Draft {
- readonly config:Config;
+ config:Config;
  evidence?:Evidence;
  private request='';
  constructor(readonly snapshot:Config) {this.config=structuredClone(snapshot);}
@@ -38,5 +38,5 @@ export class Draft {
  return (c.fallbacks||[]).every(item=>{const k=key(item),n=remaining.get(k)||0;if(n){remaining.set(k,n-1);return true;}return this.options(item).includes(item.effort);});
  });
  }
- undo() {for(const p of paths)Object.assign(cell(this.config,p),structuredClone(cell(this.snapshot,p)));}
+ undo() {this.config=structuredClone(this.snapshot);}
 }
