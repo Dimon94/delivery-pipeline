@@ -58,6 +58,15 @@ def main() -> None:
         original = copy.deepcopy(request)
         assert recovery.validate(request)["action"] == "retry-same-task"
         assert request == original
+        # DD-407 T17/R8：未证明 selected 能力时不能静默降为原样 retry。
+        for selected in ({"agent": "codex", "model": "unverified", "effort": "high"},
+                         {"agent": "pi", "model": "same-request", "effort": "high"}, None):
+            changed = copy.deepcopy(request)
+            changed["selected"] = selected
+            before = copy.deepcopy(changed)
+            result = recovery.validate(changed)
+            assert result["status"] == "blocked" and result["action"] == "inspect", result
+            assert result["mutations"] == [] and changed == before
         stopped_show, stopped_fleet = copy.deepcopy(show), copy.deepcopy(fleet)
         stopped_show["worker"]["state"] = stopped_fleet["workers"][0]["workerState"] = "stopped"
         assert recovery.validate(dict(request, worker_show=native("stopped-show", stopped_show),

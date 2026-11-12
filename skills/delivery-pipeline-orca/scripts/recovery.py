@@ -137,6 +137,8 @@ def settled_mutation(lane: dict) -> None:
 
 
 def retry(request: dict[str, Any]) -> dict[str, Any]:
+    require("selected" not in request,
+            "selected 原生能力与同 Task 映射尚未验证；保留原请求并 inspect，不消费游标")
     lane = lane_row(request)
     show, worker, _ = attempt(request, lane)
     no_writer(show, worker)

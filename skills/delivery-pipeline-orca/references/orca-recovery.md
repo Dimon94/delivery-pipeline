@@ -54,6 +54,34 @@ loss 不自动 stop、abandon、retry 或 release。
 `--spec`。之后仍走 `worker_lifecycle.bind_startup`，验证 native `retryOfDispatchId` 和完整
 requested/effective readback，才能推进同 Task 的 attempt；恢复 gate 不替代 startup gate。
 
+### DD-418：旧身份与所选请求的边界
+
+依据 [DD-407](https://linear.app/erplus/issue/DD-407) T14/T17/T18、R3/R4/R5/R7/R8/R9
+及用户 2026-11-12 已批准的 M2 行为，本节定点修订 recovery 合同，不宣布新 ADR Accepted。
+
+上文 `lane.agent`、`placement.agent` 和完整 placement 核验的是**旧 Dispatch**：
+不能将它们改成备用 agent 来通过原身份检查，也不能删除旧 agent 一致性检查。
+新 attempt 的已选 `{agent, model, effort}` 是另一请求值，应来自共享 Registry 已认领
+successor 的冻结位置；不能从当前配置或静态 guide 字段推断动态可用性。
+
+当前 helper 尚无经原生证据验证的 selected 映射；`retry` 请求只要显式携带 `selected`
+就返回 blocked/inspect（包括空值及与旧值相同的 triple），保持 mutations 为空。
+这不表示原生拒绝该模型，也不消费共享游标。旧版不带 selected 的原样 retry 仍沿原合同核验；
+`ready` 依旧不授予 mutation 权限。本节不宣称 M2 Adapter 已完成。
+
+后续放行必须先取得固定 executable 的版本匹配能力证据，证明至少一种 selected 变化。
+共享 claim/bind_request/launch/recover_launch 仍是唯一 intent、successor 与两次 accepted 预算 owner；
+Adapter 须在 claim 前完成原生拒绝门禁，不能先消费游标再检查能力。
+逻辑 successor 必须继承同一 work_item、Run、Task、Execution Worktree/host，并保留旧 Dispatch
+和 previous_attempt；新 native attempt 的 retry_of 指向当前旧 Dispatch，attempt_index 连续。
+不得以 successor 为由创建新 Task/Run、独立计数器或清零 failureCount；原生 circuit-break
+与共享预算取最严格限制。failureCount/能力/旧 writer/request outcome 任一 Unknown 均不得 mutation。
+
+响应丢失只沿持久化的原 mutation/request ID 使用本文件 `response-lost` 合同；completed 采用
+原 receipt，pending 仅原调用退出且匹配原生恢复合同时 join，absent/歧义保持 inspect。
+requested、receipt、独立 actual model、runtime thinking/provider applied effort、nonce 响应
+分别留证；缺项写 Unknown，静态字段与启动成功不能证明 inference。
+
 取消必须是明确决策，作用域只到已证明且仍 owned 的 Dispatch；user-owned、retained、released
 或 ownership 已转移不授权 stop。stop 后重新回读 host/fleet。
 `worker-abandon` 只 fence orchestration，不证明旧进程已停。保留 dirty 现场，release 与
