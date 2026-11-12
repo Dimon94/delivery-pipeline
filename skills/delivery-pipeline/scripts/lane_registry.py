@@ -119,6 +119,9 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
             raise ValueError('inspect: other active writer or pending intent')
         if source.get('replacement_intent',{}).get('status') in {'accepted','launching'}:
             raise ValueError('inspect: original launch unresolved')
+        if (category=='startup_failed' and source.get('replacement_intent')
+                and source['replacement_intent'].get('status')!='failed'):
+            raise ValueError('inspect: positive original startup rejection required')
         decision=decide(source,category,sum(bool(r.get('replacement_of')) for r in related))
         if decision['action']!='replace':
             raise ValueError(decision['action'])

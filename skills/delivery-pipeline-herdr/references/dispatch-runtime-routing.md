@@ -46,3 +46,16 @@ verify_target 必须真实核验本 lane 隔离 pane 的身份、可用 shell �
 recover_launch，不换 pane/name、不新建 successor、不重发原生启动。
 当前 T3 宿主不满足 HERDR_ENV=1 时禁止控制用户 focused pane；不修改实施 map 的 transport。
 本 helper 的接口检查不等于已完成真实 Herdr 模型验收，实际模型和 effort 必须独立留证。
+
+生产调用入口为 `scripts/replacement_native.py`（`--help` 列出精确 scope/文件参数）。
+`probe` 先采集 pane identity、process-info、agent list 和 schema；`claim`/`execute`/
+`reconcile` 复用唯一 Registry，不用固定观察字典。原 pane 的 terminal_id/cwd 缺失时
+必须先由可信原生采样形成完整 overlay，不猜测或借用当前目标坐标。
+`init`/`primary` 是隔离 checks lane 的有界验收入口；nonce/fault 仅发只读提示，sample
+独立采集响应，均不生成实际模型或 effort 的断言。验收过程不启动 watcher。
+
+Herdr 0.9.5 已采集的帮助未提供持久历史请求账本。当前 Adapter 只在原 name/pane/kind
+唯一且 ready 的独立读回后消费启动 receipt；CLI 非零（包括 agent_not_ready）不等于正面
+startup_failed，shell 空闲和 agent 缺席也不等于原请求未启动。不能独立对账时保持
+launching 并 blocked，不重发、不推进 C；需补版本匹配的原请求正面拒绝/历史账本证据。
+尚无这样的原生证据时，不把 A→B→C 的 seam 检查当作原生验收通过。
