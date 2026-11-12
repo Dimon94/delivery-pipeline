@@ -28,10 +28,10 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
 1. **探测并严格验证现状。** 从本 SKILL.md realpath 解析并运行
    `scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json`，同时执行第 2 步的
    本机 evidence probe。旧 version 2/3/4 文件先运行 `scripts/model_config.py migrate <config>`
-   机械迁移并 readback；迁移报错（旧配置含与 work 项不同的 staged 计划）时进入初始化流程。
+   机械迁移并 readback；迁移提交前拒绝后，经用户明确授权才进入重配流程；退出 3 时先显式读取核对，不进入初始化。
    只有 version 5 配置结构与实时 evidence 都通过才报告当前表并结束：
    顶层 key、任务类型全集与 CLI 必需集、review 矩阵与命名 mode 覆盖预设按 schema 文档逐项核对；每个 entry 的 `agent/model/effort` 非空、binary 存在、model/effort 命中
-   对应实时 evidence。任何非法配置进入初始化；合法配置仅在用户明确要求重配时覆盖。
+   对应实时 evidence。任何非法配置给出修复引导，用户明确授权后才按实际 hash 重配；合法配置仅在用户明确要求重配时覆盖。
    迁移或重配不会迁移已有 lane；已有 lane 继续按 registry 恢复。
 2. **探测本机 evidence。** 并行运行：
    - pi：`pi --list-models`，记录 provider/model 与 thinking 支持；
@@ -53,8 +53,21 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    `direct` 组覆盖，默认路径不消费。
 4. **验证选择。** 每个 agent binary 可用；pi/Codex model+effort 命中权威 catalog；Claude
    model 命中 env 候选且 effort 命中 CLI 枚举。失败只重问对应项，不重跑稳定选择。
-5. **写入并 readback。** 创建父目录，只写目标 config；写完再次运行
-   `scripts/model_config.py validate <config>`，再验证 binary 与实时 evidence。两层都通过后报告最终
+5. **共享事务提交并 readback。** 禁止用 shell 重定向、编辑器或临时脚本直接写目标。
+   用户确认本次候选后生成唯一 request-id，重新采集本轮能力，按配置 Module 的
+   `ProbeEvidence` 交接（request_id、observed_at、capabilities、sources；来源状态 ok 才可用于改动格）。
+   能力判断复用 Python `capability_errors` / `validate_selection`，不在 Skill 复制规则。
+   候选写入独立临时文件，证据也只放临时文件，不能写进用户配置。
+   从实际原字节读取 SHA-256 基线（包括坏 JSON 的显式修复）；缺失才省略 --base-hash。
+   用户明确重配或修复授权后运行：
+   `python3 <setup-realpath>/scripts/model_config.py configure <config> --base-hash <实际hash> --request-id <本次id> --evidence <本轮证据文件>`，
+   stdin 接完整候选（例如 `< <候选临时文件>`）。目标缺失时去掉 --base-hash；
+   父目录、稳定 sidecar 锁、原子写入及精确 readback 全由该入口负责。
+   退出 0 且 status=applied 才报告成功，返回 config 与 base_hash 是实际读回值。
+   退出 1 / rejected 保留候选；base_conflict 必须重新读取、人工核对再确认，不自动合并或重提。
+   退出 3 / commit_unverified 表示已越过替换点但待确认；仅显式读取实际结果供用户核对，
+   不自动回滚、重试，也不能宣称未写入。migrate 同样遵守 1/3 分类；迁移失败不可自动接着初始化。
+   无语义改动 changed=false 保留原字节。两层都通过后报告最终
    任务类型 → agent/model/effort 表。之后新 lane 默认按 work 项解析并冻结计划；ticket/map
    显式点名 mode 时用其 `direct` 组覆盖。不能把计划选择写进 coordinator 配置。
 

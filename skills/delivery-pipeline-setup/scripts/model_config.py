@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 import argparse
+import fcntl
+import hashlib
+from contextlib import contextmanager
+from typing import TypedDict, Literal, Callable
 import json
 import os
 import sys
@@ -444,27 +448,188 @@ def migrate_document(document: dict) -> tuple[dict, str]:
     )
 
 
-def migrate_path(path: Path) -> dict:
-    """迁移并原子写回同一路径，写后立即 readback 验证。"""
-    path = path.expanduser()
-    migrated, transport = migrate_document(json.loads(path.read_text()))
-    handle, temp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".")
+class Snapshot(TypedDict):
+    raw: bytes | None
+    base_hash: str | None
+    config: object
+
+
+class ProbeEvidence(TypedDict):
+    request_id: str
+    observed_at: str
+    capabilities: dict
+    sources: dict
+
+
+class Applied(TypedDict):
+    status: Literal["applied"]
+    changed: bool
+    base_hash: str
+    config: dict
+
+
+class Rejected(TypedDict):
+    status: Literal["rejected"]
+    error: dict
+
+
+class Unverified(TypedDict):
+    status: Literal["commit_unverified"]
+    error: dict
+    expected_hash: str | None
+
+
+CommitResult = Applied | Rejected | Unverified
+
+
+class ConfigRejected(ValueError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class CommitUnverified(OSError):
+    def __init__(self, result: Unverified):
+        super().__init__(result["error"]["message"])
+        self.result = result
+
+
+def read_snapshot(path: Path) -> Snapshot:
+    """hash 只来自实际原字节；坏 JSON 仍可绑定显式修复的基线。"""
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as temp:
-            json.dump(migrated, temp, ensure_ascii=False, indent=2)
-            temp.write("\n")
-        os.replace(temp_name, path)
-    except BaseException:
-        os.unlink(temp_name)
-        raise
-    errors = validate_document(json.loads(path.read_text()), transport)
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return {"raw": None, "base_hash": None, "config": None}
+    try:
+        config = json.loads(raw)
+    except (ValueError, UnicodeError):
+        config = None
+    return {"raw": raw, "base_hash": hashlib.sha256(raw).hexdigest(), "config": config}
+
+
+@contextmanager
+def config_lock(path: Path):
+    # sidecar 永不删除；锁住被 replace 的 inode 会让合作进程失去互斥。
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_name(path.name + ".lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def configuration_transaction(
+    path: Path, prepare: Callable[[Snapshot], dict]
+) -> CommitResult:
+    """共享写入 Interface：prepare 在锁内核对基线/权限，返回完整合法候选。
+
+    仅供 canonical configure/migrate/apply 调用；Host 不传 prepare。
+    不重试、不回滚；replace 返回后所有读回失败均为待确认。
+    """
+    path = path.expanduser().resolve()
+    committed = False
+    expected_hash = None
+    temp_name = None
+    try:
+        with config_lock(path):
+            snapshot = read_snapshot(path)
+            candidate = prepare(snapshot)
+            if snapshot["raw"] is not None and snapshot["config"] == candidate:
+                return {"status": "applied", "changed": False,
+                        "base_hash": snapshot["base_hash"], "config": snapshot["config"]}
+            payload = (json.dumps(candidate, ensure_ascii=False, indent=2) + "\n").encode()
+            expected_hash = hashlib.sha256(payload).hexdigest()
+            handle, temp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+            with os.fdopen(handle, "wb") as temp:
+                temp.write(payload)
+                temp.flush()
+                os.fsync(temp.fileno())
+            os.replace(temp_name, path)
+            committed = True
+            temp_name = None
+            actual = read_snapshot(path)
+            if actual["raw"] != payload:
+                raise OSError("提交后精确读回不一致")
+            return {"status": "applied", "changed": True,
+                    "base_hash": actual["base_hash"], "config": actual["config"]}
+    except (OSError, ValueError, TypeError) as error:
+        if committed:
+            return {"status": "commit_unverified", "expected_hash": expected_hash,
+                    "error": {"code": "commit_unverified", "message": str(error)}}
+        return {"status": "rejected", "error": {
+            "code": error.code if isinstance(error, ConfigRejected) else "io_error",
+            "message": str(error)}}
+    finally:
+        if temp_name is not None:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+
+
+def _config_entries(document: dict) -> dict:
+    entries = {"work." + key: value for key, value in document["work"].items()}
+    for scope, axes in document["review"].items():
+        entries.update({f"review.{scope}.{axis}": value for axis, value in axes.items()})
+    for name, mode in document["modes"].items():
+        for agent, plan in mode["agents"].items():
+            # CLI 只消费 direct；保留的 starting/execution 不恢复执行语义。
+            entries[f"modes.{name}.{agent}.direct"] = {"agent": agent, **plan["direct"]}
+    return entries
+
+
+def validate_selection(candidate: dict, previous: object,
+                       evidence: ProbeEvidence, request_id: str) -> None:
+    errors = validate_document(candidate)
     if errors:
-        raise ValueError("migration readback failed: " + "; ".join(errors))
-    return {
-        "migrated": str(path),
-        "transport": transport,
-        "default_mode": migrated.get("default_mode"),
-    }
+        raise ConfigRejected("invalid_candidate", "; ".join(errors))
+    if (not isinstance(evidence, dict) or not request_id
+            or evidence.get("request_id") != request_id
+            or not isinstance(evidence.get("observed_at"), str)
+            or not evidence["observed_at"].strip()
+            or not isinstance(evidence.get("sources"), dict)):
+        raise ConfigRejected("capability_unavailable", "需要本次 request-id 的能力证据")
+    old_entries = (_config_entries(previous) if not validate_document(previous) else {})
+    for key, entry in _config_entries(candidate).items():
+        if old_entries.get(key) == entry:
+            continue
+        source = evidence["sources"].get(entry["agent"], {})
+        errors = capability_errors(entry["agent"], entry["model"], entry["effort"],
+                                   evidence.get("capabilities"))
+        if not isinstance(source, dict) or source.get("status") != "ok":
+            errors.append("能力来源未成功")
+        if errors:
+            raise ConfigRejected("capability_unavailable", key + ": " + "; ".join(errors))
+
+
+def configure(path: Path, candidate: dict, base_hash: str | None,
+              evidence: ProbeEvidence, request_id: str) -> CommitResult:
+    """setup 的完整编辑权限；桌面 apply 必须另检查只读区，再复用本事务。"""
+    def prepare(snapshot: Snapshot) -> dict:
+        if snapshot["base_hash"] != base_hash:
+            raise ConfigRejected("base_conflict", "配置已变化，请读取最新配置后人工核对")
+        validate_selection(candidate, snapshot["config"], evidence, request_id)
+        return candidate
+    return configuration_transaction(path, prepare)
+
+
+def migrate_path(path: Path) -> dict:
+    """迁移范围与成功返回不变；读取、转换、替换、读回均在共享锁内。"""
+    path = path.expanduser()
+    transport = None
+    migrated = None
+    def prepare(snapshot: Snapshot) -> dict:
+        nonlocal transport, migrated
+        migrated, transport = migrate_document(snapshot["config"])
+        return migrated
+    result = configuration_transaction(path, prepare)
+    if result["status"] == "commit_unverified":
+        raise CommitUnverified(result)
+    if result["status"] == "rejected":
+        raise ConfigRejected(result["error"]["code"], result["error"]["message"])
+    return {"migrated": str(path), "transport": transport,
+            "default_mode": migrated.get("default_mode")}
 
 
 def capability_errors(
@@ -1111,12 +1276,15 @@ def main() -> int:
             "freeze",
             "start",
             "migrate",
+            "configure",
         ),
     )
     parser.add_argument(
         "path", nargs="?", default="~/.config/delivery-pipeline/model-roles.json"
     )
     parser.add_argument("task", nargs="?")
+    parser.add_argument("--base-hash")
+    parser.add_argument("--request-id")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
     parser.add_argument("--output-mode")
@@ -1141,9 +1309,23 @@ def main() -> int:
             )
         )
         return 0 if not errors else 1
+    if args.command == "configure":
+        if not args.request_id or not args.evidence:
+            parser.error("configure 需要 --request-id 与 --evidence")
+        try:
+            candidate = json.load(sys.stdin)
+            evidence = json.loads(Path(args.evidence).expanduser().read_text())
+            result = configure(Path(args.path), candidate, args.base_hash, evidence, args.request_id)
+        except (OSError, ValueError) as error:
+            result = {"status": "rejected", "error": {"code": "invalid_candidate", "message": str(error)}}
+        print(json.dumps({"api_version": 1, **result}, ensure_ascii=False))
+        return {"applied": 0, "rejected": 1, "commit_unverified": 3}[result["status"]]
     if args.command == "migrate":
         try:
             result = migrate_path(Path(args.path))
+        except CommitUnverified as error:
+            print(json.dumps({"api_version": 1, **error.result}, ensure_ascii=False))
+            return 3
         except (OSError, ValueError, json.JSONDecodeError) as error:
             print(
                 json.dumps(
