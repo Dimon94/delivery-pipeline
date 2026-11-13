@@ -18,7 +18,7 @@ python3 scripts/check_replacement_branches.py
 
 模型枚举一个 work_item、0/1/2/3 备用、两个通知者、两次 accepted claim，以及 claim→launch 标记→receipt
 之间崩溃与 Unknown 的持久前缀。状态中的 count 对应 Registry 血缘行数，不是实现中的独立计数器。
-预算（含空清单）、跳游标、重复 launch、active writer、双 successor、耗尽和停止分类共十个破坏变体必须被拒绝。列表内容与重复位置由真实公开 decide/claim
+预算（含空清单）、跳游标、重复 launch、active writer、双 successor、耗尽和停止分类共十一个破坏变体必须被拒绝。列表内容与重复位置由真实公开 decide/claim
 检查承担；模型仅抽象位置，不验证模型身份。active writer 与 native gate 的有限真假输入同时进入模型和真实 Registry 检查。
 
 真实联系：`skills/delivery-pipeline/scripts/replacement.py decide` 是纯决定面；`lane_registry.py`
@@ -37,4 +37,11 @@ claim/launch/recover_launch 分别对应原子 claim、持久 launching、原 re
 修改覆盖函数时先核对步骤、原子性和崩溃假设，重跑上述命令及真实近似错误探针，确认代码联系后再更新同步记录。
 反例先落公开接口回归；不得削弱不变量迁就实现。维护入口：maintain-formal-verification-skill。
 
-DD-415 同步：增加空 work/explicit_mode、原因 Unknown/断连原样分支，及 outcome_unknown inspect、取消 stop、上下文 resplit。模型枚举这些分类与 0..3 位置，10 个破坏变体必须拒绝；真实 Registry 分支检查承担模型反例回归。两次预算优先于下一备用，耗尽保留 blocked。预算返回 budget，由既有 coordinator 执行 superseded/重拆；本模块不写 Tracker。
+DD-415 同步：增加空 work/explicit_mode、原因 Unknown/断连原样分支，及 outcome_unknown inspect、取消 stop、上下文 resplit。模型枚举这些分类与 0..3 位置，11 个破坏变体必须拒绝；真实 Registry 分支检查承担模型反例回归。两次预算优先于下一备用，耗尽保留 blocked。预算返回 budget，由既有 coordinator 执行 superseded/重拆；本模块不写 Tracker。
+
+R1 同步（代码 32cd572，基线 8c42162，所选能力门禁）：claim 在同一 flock 内 decide → observe 双视图 → persist。
+observe 的 `_selected` 为共享选中的启动快照，顶层为旧身份；四壳必须核验所选能力，不以旧 A
+启动资格替代 B。bind/launch 重核；accepted 重放直接返回原 intent。模型新增 selected 可用/不可用
+输入及跳过该门禁的破坏变体（共 11 个）；不抽象能力目录的变化时刻，不能保证观察后远端能力不变化。
+真实对应回归为 `python3 scripts/check_r1_replacement.py` 及四壳 `check_*_native_replacement.py`；
+后者替身仅在原生 I/O 边界，selected 能力由生产解析器验证。并发仍由真实双进程检查承担。
