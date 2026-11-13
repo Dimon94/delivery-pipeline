@@ -64,12 +64,27 @@ requested/effective readback，才能推进同 Task 的 attempt；恢复 gate �
 新 attempt 的已选 `{agent, model, effort}` 是另一请求值，应来自共享 Registry 已认领
 successor 的冻结位置；不能从当前配置或静态 guide 字段推断动态可用性。
 
-当前 helper 尚无经原生证据验证的 selected 映射；`retry` 请求只要显式携带 `selected`
-就返回 blocked/inspect（包括空值及与旧值相同的 triple），保持 mutations 为空。
-这不表示原生拒绝该模型，也不消费共享游标。旧版不带 selected 的原样 retry 仍沿原合同核验；
-`ready` 依旧不授予 mutation 权限。本节不宣称 M2 Adapter 已完成。
+只读 `recovery.py` 仍拒绝显式 selected；生产入口为本壳
+`scripts/native_replacement.py::NativeReplacement`。`claim` 从冻结计划取下一位置，先核验
+原生 source 身份、完整 fleet、正面退出、failureCount 和精确 selected 动态读回，再进入唯一
+Registry。`execute` 先 bind 唯一 native_request，持久 launching 后才调用同 Task 的 worker-start。
+仅开放同 agent/model 的 effort 变化或重复 triple；跨 agent/model 保持 blocked。
+selected_dispatch 指向当前 runtime 的既有精确 launch requested/effective 读回；不是静态 schema。
+该字段不证明 actual model/provider applied effort，模型响应和独立执行信息仍需另留证。
 
-后续放行必须先取得固定 executable 的版本匹配能力证据，证明至少一种 selected 变化。
+Adapter 直接读取原生 Run 的 coordinator handle，并与当前 Orca 原生 terminal 身份核对；
+外部 T3 不传伪 requester。structured worker 使用原生 Dispatch、worker、resource、fleet 与
+独立 worktree readback 核对旧身份，不把 terminal=null 当 exited；旧 agent/model/effort
+仍须精确匹配旧 launch。旧 writer、其他同 worktree writer、分页、计数或旧 mutation Unknown
+均在 claim 前拒绝。原生 retryOf 与 Registry 连续 attempt_index 一起继承，不创建新 Task/Run。
+
+`recover(path,lane)` 对 launching 的原生 request UUID 只做 request-show/worker-show；
+原 UUID 必须与同 intent 的 native_request 一起保存。completed 的 receipt 还需验证同 Run/Task、
+retryOf、host/worktree、连续计数与 requested/effective 后才能采用。pending/absent 均保留 launching；
+本入口尚不自动 join pending。UUID 尚未返回时同样保持 Unknown，不拿 lane_id 冒充原生 UUID。
+恢复后将同一 receipt 的新 attempt 身份投影到既有 orca overlay，不增加 receipt 库或计数器。
+
+任何扩大放行范围必须先取得固定 executable 的版本匹配能力证据，证明至少一种 selected 变化。
 共享 claim/bind_request/launch/recover_launch 仍是唯一 intent、successor 与两次 accepted 预算 owner；
 Adapter 须在 claim 前完成原生拒绝门禁，不能先消费游标再检查能力。
 逻辑 successor 必须继承同一 work_item、Run、Task、Execution Worktree/host，并保留旧 Dispatch
