@@ -58,8 +58,8 @@ lane 调一次 `lody_session_status_many`：
 - busy → 保持 active writer，状态沿 registry。
 - session 缺失 → 按 `integration-worktree-management.md` §Recovery 以 Git 证据判定 fan-in 或 replacement。
 
-Operation 结果只投递给拥有它的 `coordinator_session_id`。新 coordinator session 接管时把 overlay
-`coordinator_session_id` 更新为当前 session 并报告：既有 lane 的终态由用户完成信号或显式 monitor 触发
+Operation 结果只投递给拥有它的 `coordinator_session_id`。新 coordinator session 接管时保留原 overlay
+`coordinator_session_id`（Operation 拥有者），另报告当前观察者：既有 lane 的终态由用户完成信号或显式 monitor 触发
 fan-in。
 
 ## 取消与 Replacement
@@ -68,3 +68,11 @@ fan-in。
 `lody_operation_cancel(operation_id)` 结束 Operation。Replacement 先按 `lane-registry.md` 排除
 active writer，以新 lane_id 沿原 registry agent/model/effort 走 `lody-dispatch.md` 派发关键路径；
 旧 lane 的 cleanup 照 §Cleanup 执行。
+
+## M2 未定 Operation
+
+replacement 入口见 `lody-dispatch.md` §M2 replacement 调用方。原 operation 的
+`coordinator_session_id` 是不可改写的 requester 证据；新 coordinator 不取得其 operation_get 权限。
+恢复既有 lane 时可以另记观察者，但不能用更新 overlay 冒充原 requester 或重发 create。
+当前 DD-417 候选 receipt 未做完 startup/execution 验收，保持 launching/Unknown；不按 finished
+推导退出，不把 succeeded 模型文字当独立 executedModel/effort，不触发新的 claim。

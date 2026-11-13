@@ -71,9 +71,9 @@ implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前
    `useCurrentSessionAsParent: false`；`workContext: {kind: "local", projectId, worktree: true}`。
    权限沿 agent config 默认：不传 `modeId` 与权限类 `configOptionValues`；不传 `branch`，基点由
    worker 对齐。
-4. 返回 Operation handle 后，HITL lane 写 `awaiting_human`，其余写 `running`。调用报错或超时时用
-   同一 `operationId` 重试，Lody 按该 id 去重；`SYNC_UNAVAILABLE` 按工具说明最多三次。仍失败写
-   `setup_blocked`，同批其余 lane 继续。
+4. 返回 Operation handle 后，HITL lane 写 `awaiting_human`，其余写 `running`。调用报错或超时时保留 `launching`，在原 requester 下先查原 Operation；
+   不重发 prompt、不将 NOT_FOUND 当 absent。create 返回采用的 id 时保留该 id，不能覆盖成 lane_id。
+   缺证据写 Unknown/blocked，同批其余 lane 继续。
 
 ## Startup Readback
 
@@ -94,3 +94,28 @@ Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSO
 写入 intent、真实 receipt、startup readback 后均用 `verify_overlay` 对账，不另造计划形状。
 恢复先运行 `model_config.py recover <registry.md> [lane_id]`；错误/legacy 识别与字段语义
 统一见 `../../delivery-pipeline/references/lane-registry.md`，不从当前配置补读。
+
+## M2 replacement 调用方（DD-417，本机原生验收 blocked）
+
+`../scripts/native_replacement.py` 消费 canonical Registry 已 claim 的 successor；
+`../scripts/native_host.js` 将 JSON lines 转发给**原 Lody requester** 的正式 MCP 工具绑定。
+不在 T3 里构造 LODY_SESSION_ID，不连内部 socket、不读原生 operation 数据库。
+调用前核对本机安装版本；本候选按 0.112.0 打包合同实现，跨版本须重新核对。
+
+调用输入为 `{action:"execute",registry:<绝对路径>,lane:<successor lane_id>,prompt:<完整packet>,
+binding:{sessionId,workspaceId,machineId,projectId,sourceRepo}}`。
+claim 输入使用同一 binding、`action:"claim"`、`source/revision/failure_id/category`；共享 owner
+决定选序、重复位置与两次预算。宿主以 `runNativeReplacement(command, invocation, processIO, native)`
+调用；command 是本脚本的 python3 命令，native 必须是当前 Lody 会话实际公开工具，不能使用静态回包。
+
+目标实时从 create-options 取得 agent config/runConfig/machine/project；不重读用户 work 配置。
+先绑定请求，再由共享 launch 持久 launching 后调用 session_create。worktree 由 Lody 创建，
+不传 Role、modeId 或权限扩展。packet 仍要求 worker 对齐冻结 base_commit。
+恢复只调用原 requester 的 operation_get；0.112 的 `session_create({operationId,resume:true})`
+也是只读快照入口，不是重新 join/启动授权。本候选只用 operation_get，不自动重发或轮询。
+
+当前候选仅正面接受原 Operation result 的 succeeded turn 加 fresh idle/no-active/no-queue
+状态作为旧 writer 退出；cancelled/error/timeout/idle 单独均阻塞。原生启动目录、独立模型和 effort
+尚未验收，receipt 保留 launching，不投影为 lifecycle 的成功 lane、不自动推进下一备用。
+这不是 DD-417 Done：完整 startup readback、产品 nonce、独立 actual model/runtime thinking/provider
+applied effort 分项证据仍待原生 caller；缺项均 Unknown。
