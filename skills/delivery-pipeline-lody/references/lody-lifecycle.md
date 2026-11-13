@@ -74,5 +74,7 @@ active writer，以新 lane_id 沿原 registry agent/model/effort 走 `lody-disp
 replacement 入口见 `lody-dispatch.md` §M2 replacement 调用方。原 operation 的
 `coordinator_session_id` 是不可改写的 requester 证据；新 coordinator 不取得其 operation_get 权限。
 恢复既有 lane 时可以另记观察者，但不能用更新 overlay 冒充原 requester 或重发 create。
-当前 DD-417 候选 receipt 未做完 startup/execution 验收，保持 launching/Unknown；不按 finished
-推导退出，不把 succeeded 模型文字当独立 executedModel/effort，不触发新的 claim。
+DD-417 先沿 canonical recover_launch 做 startup 对账，再以 canonical write 幂等投影
+lody/worktree；具体成功条件见 lody-dispatch.md。成功 running 只代表启动已证实。缺少 target、
+配置不符、stale、timeout 或历史轮次不符保留 launching/Unknown。不按 finished 推导退出，
+不把 succeeded 模型文字当独立 executedModel/effort，不由 Unknown 触发新的 claim。

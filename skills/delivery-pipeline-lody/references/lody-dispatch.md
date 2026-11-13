@@ -110,12 +110,33 @@ claim 输入使用同一 binding、`action:"claim"`、`source/revision/failure_i
 
 目标实时从 create-options 取得 agent config/runConfig/machine/project；不重读用户 work 配置。
 先绑定请求，再由共享 launch 持久 launching 后调用 session_create。worktree 由 Lody 创建，
-不传 Role、modeId 或权限扩展。packet 仍要求 worker 对齐冻结 base_commit。
+不传 Role、modeId 或权限扩展。local workContext.branch 是基线参数：从 canonical row
+继承的 worktree 读真实 Git symbolic HEAD，核对 common dir、HEAD 和该 local ref 均精确等于
+base_commit 后显式传入；不用 row.branch 显示名、caller 当前分支或 SHA 猜测支持。
+缺失、detached、异库或已漂移的 source 保留 Unknown，create 前停止；不能默认 main。
+claim 删除 lody overlay 但保留 worktree/base_commit，二者仍是唯一来源，不新增 base owner。
+branch 是可移动 ref，预检和原生创建之间的外部移动仍需 startup Git readback 检出。
+packet 仍要求 worker 对齐冻结 base_commit。
 恢复只调用原 requester 的 operation_get；0.112 的 `session_create({operationId,resume:true})`
 也是只读快照入口，不是重新 join/启动授权。本候选只用 operation_get，不自动重发或轮询。
 
-当前候选仅正面接受原 Operation result 的 succeeded turn 加 fresh idle/no-active/no-queue
-状态作为旧 writer 退出；cancelled/error/timeout/idle 单独均阻塞。原生启动目录、独立模型和 effort
-尚未验收，receipt 保留 launching，不投影为 lifecycle 的成功 lane、不自动推进下一备用。
-这不是 DD-417 Done：完整 startup readback、产品 nonce、独立 actual model/runtime thinking/provider
-applied effort 分项证据仍待原生 caller；缺项均 Unknown。
+startup 恢复用一次 operation_get，采用实际 id 与唯一 target.userTurnId；status 必须 fresh/online，
+匹配 requester、machine、agentConfigId、local project、worktree:true 与非 Tab。将原生 branch
+与 Git worktree list 的唯一路径对账，common dir 相同、独立目录且 HEAD 包含 base_commit。
+同一 target turn 正在 busy，或 Operation succeeded 且 fresh idle/no-queue 并在 history 找到精确
+assistantTurnId 时，canonical recover_launch 完成 startup，再以 canonical write 幂等补齐 lody
+坐标与 worktree。running 表示 startup 已证实，不表示模型/业务结果已经验收。重放不 create。
+
+原生 status/history 没有独立 executedModel/applied effort 字段；receipt 保留 requested、startup、
+history，executedModel/runtime_thinking/applied_effort/nonce 独立写 Unknown，不能从文本推定。
+旧 writer 仍须原 succeeded turn 加 fresh idle/no-active/no-queue；cancel/error/timeout 不放行。
+业务拒绝缺少可证明“没有 writer”的动态样本时仍 Unknown/launching，不能猜 failed 或自动 claim。
+本票原生验收仍 blocked，不代表 DD-417 Done。
+
+只读诊断输入 `{action:"inspect",operationId:<实际 adopted id>,binding:<同一 caller binding>}`
+输出原 operation 与自动提取的 target status/history，不修改 Registry，不创建 session。
+脚本可用 `--request <JSON绝对路径>` 读取输入；其余 stdout/stdin 仍为公开工具 JSON-lines 协议。
+`native_host.js` 可处理正式 MCP content/structuredContent 与宿主已解包的 JSON；在当前原生
+Codex 工具执行环境载入函数并显式绑定实际终端 exec/write 与五个正式工具。不要启动第二个
+Codex CLI 来取得 requester。宿主不可执行该函数时，直接由原 caller 驱动同一 JSON-lines
+协议，一行请求对应一次正式工具调用，一行原始结果回送；不要补造身份、结果或环境变量。
