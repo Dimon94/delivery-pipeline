@@ -61,8 +61,11 @@ class NativeReplacement:
                             agentConfigQuery=row['agent'], localProjectQuery=project))
         if configs['current'] != options['current']:
             raise ValueError('Unknown: requester changed')
+        # 0.112 create_options 的正常 discovery summary 省略 availability；
+        # 显式状态仍须 available，不能将 unknown/quota 当作可启动。
         matches = [c for c in configs['agentConfigs'] if c['agentType'] == row['agent']
-                   and c['machineId'] == machine and c.get('availability', {}).get('state') == 'available']
+                   and c['machineId'] == machine
+                   and ('availability' not in c or c['availability'].get('state') == 'available')]
         if len(matches) != 1:
             raise ValueError('Unknown: exact agent config ambiguous/unavailable')
         config = matches[0]

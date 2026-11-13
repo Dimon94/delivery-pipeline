@@ -35,7 +35,7 @@ def main():
         current = dict(sessionId='requester',workspaceId='workspace',machineId='machine',workContext=dict(kind='local',projectId='project',rootPath=td))
         options = dict(current=current, machines=[dict(id='machine',online=True,canUse=True)],
                        localProjects=[dict(id='project',machineId='machine',rootPath=td,isGit=True)],
-                       agentConfigs=[dict(id='config',machineId='machine',agentType='codex',availability=dict(state='available'),runConfig=dict(models=[dict(id='A',reasoningEffortValues=['low']),dict(id='B',reasoningEffortValues=['high'])],reasoningEffortValues=['low','high']))])
+                       agentConfigs=[dict(id='config',machineId='machine',agentType='codex',runConfig=dict(models=[dict(id='A',reasoningEffortValues=['low']),dict(id='B',reasoningEffortValues=['high'])],reasoningEffortValues=['low','high']))])
         path = Path(td)/'registry.md'
         lane = [None]
         lost = [False]
@@ -62,16 +62,22 @@ def main():
             result=r.claim(path,'source',rev,'failure','tool_or_model',adapter.observe)
             lane[0]=result['lane_id']
             return result
-        successor=claim()
-        assert 'lody' not in successor and successor['worktree']==str(source_tree) and successor['base_commit']==frozen
-        accepted=path.read_bytes()
-        hostpath=Path(td)/'host-registry.md';hostpath.write_bytes(accepted)
+        # Lody 0.112 summarizeDiscoveryAgent(54649) 与 create_options(65307)：
+        # 正常摘要不带 availability；只有 quota exhausted 才附 unavailable。
+        # query(65216) 只是 id/name/description 子串过滤，不替代精确身份检查。
+        assert 'availability' not in options['agentConfigs'][0]
+        hostpath=Path(td)/'host-registry.md';r.write(hostpath,source)
+        _,hostrev=r.read(hostpath,'source')
         hostfixture=Path(td)/'host.json'
         import json
         hostfixture.write_text(json.dumps(dict(binding=binding,options=options,base=frozen,
-            invocation=dict(action='execute',registry=str(hostpath),lane=lane[0],prompt='host nonce',binding=binding))))
+            invocation=dict(action='claim',registry=str(hostpath),source='source',revision=hostrev,
+                            failure_id='host-failure',category='tool_or_model',binding=binding))))
         subprocess.run(['node',str(ROOT/'skills/delivery-pipeline-lody/scripts/native_host_check.js'),
                         str(ROOT/'skills/delivery-pipeline-lody/scripts/native_host.js'),str(hostfixture)],check=True)
+        successor=claim()
+        assert 'lody' not in successor and successor['worktree']==str(source_tree) and successor['base_commit']==frozen
+        accepted=path.read_bytes()
         # 公开合同的 branch 是 base；实际 Git create 后必须是 source commit，不能是 main。
         args=adapter.target(successor)
         assert args['workContext']['branch']=='frozen-source', args
@@ -160,15 +166,21 @@ def main():
         assert not any(name=='lody_session_create' for name,_ in calls)
         # 身份或模型能力未知，既有 intent 原字节不变。
         lost[0]=False;path=Path(td)/'blocked.md';claim();before=path.read_bytes()
-        for kind in ['requester','model','effort','writer']:
+        for kind in ['requester','machine','agent','ambiguous','model','effort','writer','quota','unknown','empty-state']:
             def bad(name,args):
                 value=io(name,args)
                 if name=='lody_session_create_options':
+                    if kind=='machine':value['agentConfigs'][0]['machineId']='other'
+                    if kind=='agent':value['agentConfigs'][0]['agentType']='pi'
+                    if kind=='ambiguous':value['agentConfigs'].append(deepcopy(value['agentConfigs'][0]))
+                    if kind=='quota':value['agentConfigs'][0]['availability']=dict(state='unavailable',reason='quota_exhausted',availableAt=9999999999999)
+                    if kind=='unknown':value['agentConfigs'][0]['availability']=dict(state='unknown')
+                    if kind=='empty-state':value['agentConfigs'][0]['availability']={}
                     if kind=='requester':value['current']['sessionId']='other'
                     if kind=='model':value['agentConfigs'][0]['runConfig']['models']=[]
                     if kind=='effort':
-                        value['agentConfigs'][0]['runConfig']['models'][1].pop('reasoningEffortValues')
-                        value['agentConfigs'][0]['runConfig']['measuredForModelId']='A'
+                        for model in value['agentConfigs'][0]['runConfig']['models']:model.pop('reasoningEffortValues')
+                        value['agentConfigs'][0]['runConfig']['measuredForModelId']='unrelated-model'
                 if name=='lody_session_status_many' and kind=='writer':value['items'][0]['value']['execution']['queuedTurnCount']=1
                 return value
             calls.clear()
@@ -176,6 +188,17 @@ def main():
             except ValueError:pass
             else:raise AssertionError('unsafe native call allowed')
             assert path.read_bytes()==before and not any(name=='lody_session_create' for name,_ in calls)
+            # claim 前同一门禁也不得创建 successor 或推进 Registry。
+            blockedclaim=Path(td)/(kind+'-claim.md');r.write(blockedclaim,source)
+            _,revision=r.read(blockedclaim,'source');claimbefore=blockedclaim.read_bytes();calls.clear()
+            try:r.claim(blockedclaim,'source',revision,'blocked-failure','tool_or_model',a.NativeReplacement(bad,binding).observe)
+            except ValueError:pass
+            else:raise AssertionError('unsafe claim allowed: '+kind)
+            assert blockedclaim.read_bytes()==claimbefore and not any(name=='lody_session_create' for name,_ in calls)
+        explicit=deepcopy(options);explicit['agentConfigs'][0]['availability']=dict(state='available')
+        def explicitly_available(name,args):
+            return explicit if name=='lody_session_create_options' else io(name,args)
+        assert a.NativeReplacement(explicitly_available,binding).target(successor)['agentConfigId']=='config'
     subprocess.run(['node', str(ROOT/'skills/delivery-pipeline-lody/scripts/native_host_check.js')],check=True)
     print('Lody native Adapter boundary checks: pass (native execution Unknown)')
 

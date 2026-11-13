@@ -97,6 +97,14 @@ Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSO
 
 ## M2 replacement 调用方（DD-417，本机原生验收 blocked）
 
+replacement 的 `target()` 复用 `lody_session_create_options(machineId, agentConfigQuery, localProjectQuery)`。
+Lody 0.112 的 query 只按 config id/name/description 子串过滤；返回后仍须精确核对
+agentType、machineId、唯一 config 与 runConfig 中 model/effort。此 discovery summary
+正常省略 `availability`，仅 quota exhausted 时附 `unavailable`；字段缺失按该摘要合同处理，
+显式状态只接受 `available`，`unavailable`、未知状态均拒绝。无需另调 config_get。
+该摘要仅证明声明的能力，不能证明模型服务端可用或实际模型执行；身份、在线 machine、
+本地 project 与冻结 base 门禁继续生效。
+
 `../scripts/native_replacement.py` 消费 canonical Registry 已 claim 的 successor；
 `../scripts/native_host.js` 将 JSON lines 转发给**原 Lody requester** 的正式 MCP 工具绑定。
 不在 T3 里构造 LODY_SESSION_ID，不连内部 socket、不读原生 operation 数据库。

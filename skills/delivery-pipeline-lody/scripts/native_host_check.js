@@ -39,7 +39,18 @@ async function check(wrap, fixture) {
   }
   try {
     if (fixture) {
-      const value=await runNativeReplacement('python3',fixture.invocation,io,native);
+      const claimed=await runNativeReplacement('python3',fixture.invocation,io,native);
+      assert.equal(claimed.result.replacement_intent.status,'accepted');
+      assert.equal(claimed.result.model,'B');
+      assert.equal(claimed.result.effort,'high');
+      assert.equal(seen.filter(x=>x[0]==='create').length,0);
+      // 每次 JSON-lines 请求使用独立 Python 进程，先排空前次退出事件。
+      if (child.exitCode === null) await new Promise(resolve=>child.once('exit',resolve));
+      pending=[];
+      const value=await runNativeReplacement('python3',{
+        action:'execute',registry:fixture.invocation.registry,lane:claimed.result.lane_id,
+        prompt:'host nonce',binding:fixture.binding
+      },io,native);
       assert.equal(value.result.replacement_intent.receipt.gap,undefined,'host create must preserve frozen base: '+JSON.stringify(value.result.replacement_intent.receipt));
       assert.equal(value.result.replacement_intent.receipt.native.id,'host-adopted');
       assert.equal(seen.filter(x=>x[0]==='create').length,1);
