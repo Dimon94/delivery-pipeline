@@ -10,7 +10,6 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'delivery-pipeline/scripts'))
 import lane_registry as registry
-from replacement import decide
 
 
 class NativeError(ValueError):
@@ -105,6 +104,7 @@ class NativeReplacement:
             raise ValueError('native coordinator identity mismatch')
 
     def observe(self, source):
+        self.target(source, {k: source['_selected'][k] for k in ('agent', 'model', 'effort')})
         if source.get('runtime') != 'orca':
             raise ValueError('transport identity mismatch')
         identity = source['orca']
@@ -196,12 +196,6 @@ class NativeReplacement:
             raise ValueError('selected exact native readback missing')
 
     def claim(self, path, source_id, revision, failure_id, category):
-        source, _ = registry.read(path, source_id)
-        choice = decide(source, category, 0)
-        if choice.get('action') != 'replace':
-            raise ValueError(choice['action'])
-        selected = {k: choice[k] for k in ('agent', 'model', 'effort')}
-        self.target(source, selected)
         return registry.claim(path, source_id, revision, failure_id, category, self.observe)
 
     def execute(self, path, lane):
@@ -215,7 +209,7 @@ class NativeReplacement:
             return self.recover(path, lane)
         if row['replacement_intent']['status'] != 'accepted':
             return row
-        self.observe(source)
+        registry.observe_selected(self.observe, source, row)
         selected = {k: row[k] for k in ('agent', 'model', 'effort')}
         self.target(source, selected)
         identity = source['orca']

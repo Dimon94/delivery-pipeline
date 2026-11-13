@@ -97,6 +97,13 @@ def safe(observed):
         raise ValueError('inspect: writer/identity/capability/native gate unverified')
 
 
+def observe_selected(observe, source, selected):
+    """锁内只读门禁；旧身份与所选启动目标分开，目标不写回源行。"""
+    snapshot = deepcopy(source)
+    snapshot['_selected'] = deepcopy({**source, **selected})
+    safe(observe(snapshot))
+
+
 def claim(path, source_id, expected_revision, failure_id, category, observe):
     if not isinstance(failure_id,str) or not failure_id.strip():
         raise ValueError('stable failure_id required')
@@ -112,7 +119,6 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
             raise ValueError('row revision conflict')
         if category in {'outcome_unknown', 'cancelled', 'context_exhausted'}:
             raise ValueError(decide(source,category,0)['action'])
-        safe(observe(deepcopy(source)))
         related=[r for r in all_rows.values() if r.get('work_item')==source['work_item']]
         if sum(not r.get('replacement_of') for r in related)>1:
             raise ValueError('inspect: ambiguous work_item lineage')
@@ -127,9 +133,11 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
         decision=decide(source,category,sum(bool(r.get('replacement_of')) for r in related))
         if decision['action']!='replace':
             if decision['action']=='exhausted':
+                observe_selected(observe, source, source)
                 source['state']='blocked'
                 persist(path,[source])
             raise ValueError(decision['action'])
+        observe_selected(observe, source, {k:v for k,v in decision.items() if k!='action'})
         identity=hashlib.sha256((source_id+'\0'+failure_id).encode()).hexdigest()[:24]
         lane='r-'+identity
         if lane in all_rows:
@@ -172,7 +180,7 @@ def bind_request(path,lane,request,observe,*,runtime=None):
         if intent['status']!='accepted':
             raise ValueError('inspect: launch already attempted')
         source,_=read(path,row['replacement_of'])
-        safe(observe(deepcopy(source)))
+        observe_selected(observe, source, row)
         intent['native_request']=deepcopy(request)
         if runtime is not None:
             row['runtime']=runtime
@@ -187,7 +195,7 @@ def launch(path,lane,observe,start):
         if intent['status']!='accepted':
             return row
         source,_=read(path,row['replacement_of'])
-        safe(observe(deepcopy(source)))
+        observe_selected(observe, source, row)
         if not intent.get('native_request'):
             raise ValueError('native request must be bound before launch')
         intent['status']='launching'

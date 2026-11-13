@@ -35,9 +35,9 @@ def check():
         raise AssertionError(args)
     native=m.NativeReplacement(scope,evidence,read_cli=cli)
     row=dict(lane_id='initial',agent='pi',model='A',effort='high',herdr={**scope,'agent_name':'initial','writer_pids':[retired.pid]})
-    assert native.observe(row)['writer']=='exited'
+    assert native.observe({**row, '_selected':row})['writer']=='exited'
     busy=True
-    try: native.observe(row)
+    try: native.observe({**row, '_selected':row})
     except ValueError: pass
     else: raise AssertionError('foreground child treated as exited writer')
     busy=False
@@ -54,9 +54,9 @@ def check():
     assert positive['status']=='failed', '精确原请求退出回执必须支持正面失败'
     failed={**claimed,'replacement_intent':dict(status='failed',native_request=request,receipt=positive['receipt'])}
     failed['herdr']={**scope,'agent_name':'r-test'} # 从未成为 writer，没有 PID
-    assert native.observe(failed)['writer']=='exited'
+    assert native.observe({**failed, '_selected':failed})['writer']=='exited'
     busy=True
-    try: native.observe(failed)
+    try: native.observe({**failed, '_selected':failed})
     except ValueError: pass
     else: raise AssertionError('failed receipt bypassed live writer')
     busy=False
@@ -69,17 +69,17 @@ def check():
         assert reply(req=bad)['status']=='unknown'
     for key,value in [('agent_name','other'),('scope',{**scope,'terminal_id':'other'})]:
         bad=deepcopy(failed);bad['replacement_intent']['native_request'][key]=value
-        try: native.observe(bad)
+        try: native.observe({**bad, '_selected':bad})
         except ValueError: pass
         else: raise AssertionError('receipt identity mismatch accepted')
     bad=deepcopy(failed)
     bad['replacement_intent']['receipt']['native_request']=deepcopy(request)
     bad['replacement_intent']['receipt']['native_request']['scope']['terminal_id']='another-terminal'
-    try: native.observe(bad)
+    try: native.observe({**bad, '_selected':bad})
     except ValueError: pass
     else: raise AssertionError('receipt for another terminal accepted')
     completed=deepcopy(failed);completed['replacement_intent']['status']='completed'
-    try: native.observe(completed)
+    try: native.observe({**completed, '_selected':completed})
     except ValueError: pass
     else: raise AssertionError('completed startup relabeled failed')
 
@@ -103,6 +103,18 @@ def check():
         primary={**row,'lane_id':'a','state':'blocked','runtime':'herdr-pi-pane','work_item':'startup-case',
                  'recovery_plan':dict(plan_version=1,source='work',primary=triple,fallbacks=[triple,triple]),
                  'recovery_progress':dict(current_index=None,next_cursor=0)}
+        # R1：旧 A 无启动资格仍可核实退出；只验证 canonical 选中的 B。
+        selected=dict(agent='pi',model='B',effort='low')
+        selected_source={**primary,'recovery_plan':{**primary['recovery_plan'],'fallbacks':[selected]}}
+        for label,models in [('missing',{'A':['high']}),('effort',{'B':['high']}),('unknown',{}),('valid',{'B':['low']})]:
+            selected_path=Path(td)/(label+'.md');m.lane_registry.write(selected_path,selected_source)
+            _,v=m.lane_registry.read(selected_path,'a');before=selected_path.read_bytes()
+            target_native=m.NativeReplacement(scope,{'pi':dict(binary=True,models=models)},read_cli=cli)
+            try: result=m.lane_registry.claim(selected_path,'a',v,'selected','tool_or_model',target_native.observe)
+            except ValueError:
+                assert label!='valid' and selected_path.read_bytes()==before
+            else:
+                assert label=='valid' and result['model']=='B'
         m.lane_registry.write(path,primary)
         _,rev=m.lane_registry.read(path,'a')
         b=m.lane_registry.claim(path,'a',rev,'a-tool-error','tool_or_model',native.observe)

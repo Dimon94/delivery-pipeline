@@ -58,7 +58,7 @@ BLOCKED_BY_ITEM_RE = re.compile(r"#?([0-9A-Za-z][\w-]*)")
 KEY_RE = re.compile(r"^([a-z_][a-z0-9_]*):\s*(.*)$")
 
 
-BLOCK_RE = re.compile(r"<!-- wayfinder-lane-registry:v2 -->\s*```yaml\n(.*?)```", re.DOTALL)
+BLOCK_RE = re.compile(r"<!-- wayfinder-lane-registry:v2 -->\s*```yaml\n(.*?)^```[ \t]*\r?$", re.DOTALL | re.MULTILINE)
 REGISTRY_GLOBS = ("registry-*.md", "lane-registry.md")
 
 
@@ -70,7 +70,7 @@ def parse_registry_file(path: Path) -> list[dict]:
     for m in BLOCK_RE.finditer(text):
         row: dict = {"_file": str(path)}
         parent = None
-        for line in m.group(1).splitlines():
+        for line in m.group(1).split('\n'):
             if line[:1] in (" ", "\t"):
                 nested = KEY_RE.match(line.strip())
                 if parent and nested:

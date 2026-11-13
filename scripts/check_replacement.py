@@ -44,7 +44,11 @@ def main():
         assert path.read_bytes()==before
         code = """import sys,json;from pathlib import Path
 sys.path.insert(0,sys.argv[1]);import lane_registry as r
-out=r.claim(Path(sys.argv[2]),'initial',sys.argv[3],'failure-1','tool_or_model',lambda _:dict(writer='exited',identity='match',capability='verified',gate='allowed'))
+def observe(source):
+ assert source['model']=='A' and source['_selected']['model']=='B'
+ assert source['_selected']['recovery_progress']==dict(current_index=0,next_cursor=1)
+ return dict(writer='exited',identity='match',capability='verified',gate='allowed')
+out=r.claim(Path(sys.argv[2]),'initial',sys.argv[3],'failure-1','tool_or_model',observe)
 print(json.dumps(out))
 """
         procs = [subprocess.Popen([sys.executable,'-c',code,str(CORE),str(path),rev], stdout=subprocess.PIPE, text=True) for _ in range(2)]
@@ -52,6 +56,7 @@ print(json.dumps(out))
         assert all(p.returncode == 0 for p in procs)
         assert claims[0] == claims[1], claims
         first = claims[0]
+        assert all('_selected' not in row for row in registry.rows(path).values())
         before=path.read_bytes()
         try:
             registry.write(path,{**row,'lane_id':'unclaimed-new-writer','state':'created'})

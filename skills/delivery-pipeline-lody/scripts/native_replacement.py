@@ -91,7 +91,7 @@ class NativeReplacement:
         return items[0]['value']
 
     def observe(self, source):
-        self.target(source)
+        self.target(source['_selected'])
         overlay = source['lody']
         if overlay['coordinator_session_id'] != self.binding['sessionId']:
             raise ValueError('Unknown: original operation requester mismatch')

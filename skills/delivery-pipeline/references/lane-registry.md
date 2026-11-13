@@ -205,7 +205,13 @@ session/workspace/tab/pane是 lane坐标；
 所有合作写者使用 resolved path 的永久 sidecar flock；不支持跨文件预算、外部编辑器并写、NFS 或断电保证。
 沿已有 v2 块保存快照，latest row 为当前状态；不建事件表、receipt 库或重试计数器。
 
-claim(path, source_id, revision, failure_id, category, observe) 在锁内调用原生只读 observe(source)：
+claim(path, source_id, revision, failure_id, category, observe) 在锁内由 Recovery 选序后，调用原生只读 observe(source)：
+source 的顶层保留旧身份；临时 `_selected` 是共享 owner 合成的所选启动快照（含冻结上下文），不持久化。
+所有壳必须验证 `_selected` 的精确启动能力，同时保留顶层旧 writer/身份/原生熔断核验；
+旧 A 的新启动资格不作为 B 的门槛。bind_request/launch 也传同一双视图，启动前再次核验。
+门禁 Unknown/拒绝时不写 Registry、不推进游标、不占预算；认领后真实 startup_failed 仍占预算。
+已接受同 intent 的 claim 重放先返回原值，不因当前能力消失撤销或重选。
+原生观察
 必须返回 writer=exited、identity=match、capability=verified、gate=allowed；证据必须来自原生状态，
 不能由 metadata 猜测。source/failure 为稳定身份，同源最多一个 successor，冲突事件拒绝。
 source revision 来自 read()；已存在相同 intent 则返回原值，不再次消费游标。预算按同 work_item

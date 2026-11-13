@@ -75,6 +75,23 @@ def main():
                             failure_id='host-failure',category='tool_or_model',binding=binding))))
         subprocess.run(['node',str(ROOT/'skills/delivery-pipeline-lody/scripts/native_host_check.js'),
                         str(ROOT/'skills/delivery-pipeline-lody/scripts/native_host.js'),str(hostfixture)],check=True)
+        # R1：只移除 B 或 B 的 effort，A 仍在；反向仅 B 可启动也应允许。
+        for label,models in [('missing',[dict(id='A',reasoningEffortValues=['low'])]),
+                             ('effort',[dict(id='A',reasoningEffortValues=['low']),dict(id='B',reasoningEffortValues=['low'])]),
+                             ('valid',[dict(id='B',reasoningEffortValues=['high'])])]:
+            selected_path=Path(td)/(label+'-selected.md');r.write(selected_path,source)
+            _,v=r.read(selected_path,'source');before=selected_path.read_bytes()
+            def selected_io(name,args):
+                value=io(name,args)
+                if name=='lody_session_create_options':value['agentConfigs'][0]['runConfig']['models']=models
+                return value
+            calls.clear()
+            try: result=r.claim(selected_path,'source',v,'selected','tool_or_model',a.NativeReplacement(selected_io,binding).observe)
+            except ValueError:
+                assert label!='valid' and selected_path.read_bytes()==before
+            else:
+                assert label=='valid' and result['model']=='B'
+            assert not any(name=='lody_session_create' for name,_ in calls)
         successor=claim()
         assert 'lody' not in successor and successor['worktree']==str(source_tree) and successor['base_commit']==frozen
         accepted=path.read_bytes()

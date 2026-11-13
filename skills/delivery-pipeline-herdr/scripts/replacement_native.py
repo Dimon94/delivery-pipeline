@@ -61,7 +61,7 @@ def main():
         native.verify_target(args.target,row)
         errors=m.mc.capability_errors(row['agent'],row['model'],row['effort'],evidence)
         if errors: raise ValueError('; '.join(errors))
-        argv=m.mc.startup_request({**row,'mode':row.get('mode') or 'none','capability':'verified'},worker_name=args.lane,pane_id=args.target)
+        argv=m.mc.startup_request({**row,'mode':'direct','capability':'verified'},worker_name=args.lane,pane_id=args.target)
         row['herdr'].update(startup_state='launching',argv=argv)
         r.write(registry,row)
         response=subprocess.run(argv,capture_output=True,text=True,timeout=45)

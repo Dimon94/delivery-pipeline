@@ -30,7 +30,7 @@ def execute(path, lane, observe, pane_id, evidence, verify_target, native_start=
     errors=mc.capability_errors(claimed['agent'],claimed['model'],claimed['effort'],evidence)
     if errors:
         raise ValueError('; '.join(errors))
-    argv=mc.startup_request({**claimed,'mode':claimed.get('mode') or 'none','capability':'verified'},worker_name=lane,pane_id=pane_id)
+    argv=mc.startup_request({**claimed,'mode':'direct','capability':'verified'},worker_name=lane,pane_id=pane_id)
     def native_observation(source):
         target=verify_target(pane_id,claimed)
         if target != {'pane_id':pane_id,'identity':'match','shell':'available','scope':'isolated_lane'}:
@@ -147,7 +147,8 @@ class NativeReplacement:
             except ProcessLookupError:
                 continue
             raise ValueError('inspect: original writer PID still exists or was reused')
-        errors = mc.capability_errors(source['agent'],source['model'],source['effort'],self.evidence)
+        selected = source['_selected']
+        errors = mc.capability_errors(selected['agent'],selected['model'],selected['effort'],self.evidence)
         if errors or not self.available(scope,process,agents):
             raise ValueError('inspect: source writer active or capability Unknown')
         return dict(writer='exited',identity='match',capability='verified',gate='allowed')

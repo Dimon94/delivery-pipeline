@@ -31,6 +31,7 @@ class NativeReplacement:
         return dict(providerInstanceId=provider, model=row['model'], options={option: row['effort']})
 
     def observe(self, source):
+        self.target(source['_selected'])
         overlay = source.get('t3code', {})
         receipt = source.get('replacement_intent', {}).get('receipt', {}).get('native', {})
         task_id = receipt.get('taskId') or overlay.get('task_id')
