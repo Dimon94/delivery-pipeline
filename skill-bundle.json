@@ -56,6 +56,11 @@
       "reason": "Cut the spec into candidate tickets and report the MMF total before publishing."
     },
     {
+      "name": "ticket-sizing",
+      "source": "dimon94-skills",
+      "reason": "逐票估算拆分信号并报告 MMF 合计；由 my-skills 拥有。"
+    },
+    {
       "name": "ticket-split-100k",
       "source": "dimon94-skills",
       "reason": "Split a candidate ticket that exceeds the split line along an acceptance boundary."

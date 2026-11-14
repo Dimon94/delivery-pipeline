@@ -25,7 +25,7 @@ review 双轴矩阵。两套配置格式并存，同一策略在两边词汇不�
    （`skills/delivery-pipeline-codex-app/config/models.json`）共用。调度逻辑保持两套。
 2. 配置按**任务类型**组织，废除"角色"命名。已知任务类型 12 个：coordinator、research、
    prototype、planning、design、frontend、backend、testing、integration、assistance、
-   second-opinion、ticket-sizing。每项为 `{agent, model, effort}`；agent 属于
+   second-opinion、ticket-sizing（Skill 来源为 my-skills，见 ADR-0024；工作类型保留）。每项为 `{agent, model, effort}`；agent 属于
    `pi|codex|claude|codex-app`，agent 值决定 transport。每个 transport 声明必需子集：
    缺必需项阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。
 3. 起步续接收敛为**命名 mode 预设**：`modes.<name>` = `kind`（staged/direct）+

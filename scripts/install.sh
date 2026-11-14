@@ -16,7 +16,7 @@ Usage: ./scripts/install.sh [--target codex|claude|pi|all] [--no-hooks]
 Default target: codex
 
 Installs canonical delivery-pipeline, delivery-pipeline-herdr, delivery-pipeline-orca, delivery-pipeline-t3code, delivery-pipeline-lody, and delivery-pipeline-setup into each selected CLI home.
-Codex also receives delivery-pipeline-codex-app; Codex and Claude receive ticket-sizing.
+Codex also receives delivery-pipeline-codex-app.
 All skills symlink to this checkout. Symlinks establish discovery only; Orca runtime and
 capability evidence still require preflight. The pre-commit validator is installed unless --no-hooks is used.
 EOF
@@ -73,7 +73,7 @@ link_skill() {
 install_codex() {
   # Codex 从 ~/.agents/skills 发现 skill；清理旧版装进 $CODEX_HOME/skills 的本项目软链。
   local legacy
-  for legacy in "$CODEX_HOME_DIR"/skills/delivery-pipeline* "$CODEX_HOME_DIR/skills/ticket-sizing"; do
+  for legacy in "$CODEX_HOME_DIR"/skills/delivery-pipeline*; do
     [ -L "$legacy" ] && case "$(readlink "$legacy")" in "$ROOT"/skills/*) rm "$legacy" ;; esac
   done
   link_skill "$ROOT/skills/delivery-pipeline" \
@@ -90,8 +90,6 @@ install_codex() {
     "$AGENTS_HOME_DIR/skills/delivery-pipeline-t3code" "Codex T3Code shell"
   link_skill "$ROOT/skills/delivery-pipeline-lody" \
     "$AGENTS_HOME_DIR/skills/delivery-pipeline-lody" "Codex Lody shell"
-  link_skill "$ROOT/skills/ticket-sizing" \
-    "$AGENTS_HOME_DIR/skills/ticket-sizing" "Codex ticket-sizing"
 }
 
 install_claude() {
@@ -109,8 +107,6 @@ install_claude() {
     "$CLAUDE_HOME_DIR/skills/delivery-pipeline-lody" "Claude Lody shell"
   # The retired pane-dispatch compatibility helper is superseded by the canonical core.
   rm -rf "$CLAUDE_HOME_DIR/skills/pane-dispatch"
-  link_skill "$ROOT/skills/ticket-sizing" \
-    "$CLAUDE_HOME_DIR/skills/ticket-sizing" "Claude ticket-sizing"
 }
 
 install_pi() {

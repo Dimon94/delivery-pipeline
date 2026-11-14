@@ -15,7 +15,6 @@ HERDR = ROOT / "skills" / "delivery-pipeline-herdr"
 T3CODE = ROOT / "skills" / "delivery-pipeline-t3code"
 LODY = ROOT / "skills" / "delivery-pipeline-lody"
 SETUP = ROOT / "skills" / "delivery-pipeline-setup"
-TICKET_SIZING = ROOT / "skills" / "ticket-sizing"
 
 DEPENDENCIES = [
     "wayfinder",
@@ -25,6 +24,7 @@ DEPENDENCIES = [
     "research",
     "to-spec",
     "vertical-slicing",
+    "ticket-sizing",
     "ticket-split-100k",
     "to-tickets",
     "implement",
@@ -259,9 +259,6 @@ def check_prompt_branches() -> None:
         record(
             "gate table must include testing/review/test-decision/rebase in delivery order"
         )
-    for path in (TICKET_SIZING / "SKILL.md", TICKET_SIZING / "agents" / "openai.yaml"):
-        if re.search(r"150k|1\.5|smart zone", path.read_text(), re.IGNORECASE):
-            record(f"uncalibrated fixed sizing policy: {path.relative_to(ROOT)}")
 
 
 def check_runtime_neutrality() -> None:
@@ -747,7 +744,7 @@ def check_installer() -> None:
 
 
 def check_pruned_policy() -> None:
-    roots = (CORE, APP, ORCA, HERDR, SETUP, TICKET_SIZING)
+    roots = (CORE, APP, ORCA, HERDR, SETUP)
     forbidden = (
         re.compile(r"估时"),
         re.compile(r"估档"),

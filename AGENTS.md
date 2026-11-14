@@ -5,7 +5,7 @@
 
 <project>
 定位:delivery-pipeline 多 runtime skill bundle —— 一条可恢复的交付链(idea/map → discovery → spec → tickets → 配置驱动的 CLI/worktree 分派 → integration → testing/review → 汇总 PR/MR)。
-Canonical 核心链路是 repo://skills/delivery-pipeline/,由五个平级 transport 壳共用;CLI/Herdr transport 在 repo://skills/delivery-pipeline-herdr/（供 pi、Codex CLI、Claude CLI）;T3 Code transport 在 repo://skills/delivery-pipeline-t3code/;Lody transport 在 repo://skills/delivery-pipeline-lody/;Codex App 特殊 transport 只在 repo://skills/delivery-pipeline-codex-app/;Orca 独立入口在 repo://skills/delivery-pipeline-orca/;首次配置在 repo://skills/delivery-pipeline-setup/。ticket-sizing 粒度判据在 repo://skills/ticket-sizing/,主干树外不再有 runtime 副本。软链安装即生效;安装与用法见 repo://README.md 和 repo://README.zh-CN.md。
+Canonical 核心链路是 repo://skills/delivery-pipeline/,由五个平级 transport 壳共用;CLI/Herdr transport 在 repo://skills/delivery-pipeline-herdr/（供 pi、Codex CLI、Claude CLI）;T3 Code transport 在 repo://skills/delivery-pipeline-t3code/;Lody transport 在 repo://skills/delivery-pipeline-lody/;Codex App 特殊 transport 只在 repo://skills/delivery-pipeline-codex-app/;Orca 独立入口在 repo://skills/delivery-pipeline-orca/;首次配置在 repo://skills/delivery-pipeline-setup/。ticket-sizing 粒度判据由 my-skills 仓拥有，按运行时 Skill 名称解析；本仓不携带或安装它。软链安装即生效;安装与用法见 repo://README.md 和 repo://README.zh-CN.md。
 事实优先级:运行证据 > 代码与 scripts/validate.py > repo://GLOSSARY.md 与 accepted ADR > 推理。
 </project>
 
