@@ -30,7 +30,7 @@ def check():
         row,_ = lane_registry.read(path, 'review-single')
         assert row['review_plan']['required_axes'] == ['standards', 'spec']
         assert row['review_plan']['lane']['selected']['model'] == 'provider/model'
-        assert len([c for c in calls if c[:2] == ['agent', 'start']]) == 1
+        assert len([c for c in calls if c[:2] == ['agent', 'start'] and '--help' not in c]) == 1
         delivered = (root/'packet.md').read_text()
         assert 'DP_REVIEW_PLAN' in delivered and '"execution_evidence": null' in delivered
         assert '"axis": "standards"' in delivered and '"axis": "spec"' in delivered
@@ -140,6 +140,34 @@ def check_axis_evidence():
     print('axis-evidence-mismatch: pass (adapter simulation; native model/effort Unknown)')
 
 
+def native_boundary(root):
+    """替身只在安装文件与原生进程 I/O；不以此证明 native 接受。"""
+    model_path=root/'.pi/agent/models.json'; model_path.parent.mkdir(parents=True); model_path.write_text('{}')
+    pkg = root/'pi-package'
+    for name in ['dist/bundle/cli.js', 'dist/cli/args.js', 'dist/core/model-config.js',
+                 'dist/core/model-resolver.js', 'node_modules/@earendil-works/pi-ai/dist/models.js']:
+        path = pkg/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(f'#!{sys.executable}\nprint("1.5.2")\n' if name=='dist/bundle/cli.js' else '// external fixture')
+    (pkg/'package.json').write_text(json.dumps({'name':'@earendil-works/pi-coding-agent','version':'1.5.2'}))
+    (root/'pi').symlink_to(pkg/'dist/bundle/cli.js'); (pkg/'dist/bundle/cli.js').chmod(0o755)
+    (root/'node').write_text(f'#!{sys.executable}\n'+r'''import json,sys
+from pathlib import Path
+root=Path(__file__).parent
+x=json.load(sys.stdin)
+statuses=json.loads((root/'native-status.json').read_text()) if (root/'native-status.json').exists() else {}
+print(json.dumps([{'identity':i,'status':statuses.get(i['model'],'runnable'),
+ 'reason':'external native boundary fixture'} for i in x['identities']]))
+''')
+    (root/'node').chmod(0o755)
+    fake = FAKE_HERDR.replace('if args[:2] == ["pane", "current"]:',
+        'if args == ["--version"]: print("herdr 0.9.5")\nelif args == ["agent", "start", "--help"]: print("[possible values: pi, codex] -- [AGENT_ARG]")\nelif args[:2] == ["pane", "current"]:')
+    (root/'herdr').write_text(f'#!{sys.executable}\n'+fake)
+    (root/'herdr').chmod(0o755)
+
+
+def mutations(calls):
+    return [c for c in calls if c[:2] not in [['agent','start']] and c not in [['--version'],['agent','start','--help']]] + [c for c in calls if c[:2]==['agent','start'] and c != ['agent','start','--help']]
+
+
 def check_different_family():
     # 公开生产 dispatch CLI，替身仅位于 Herdr I/O；不调用真实 lane。
     import importlib.util
@@ -173,12 +201,13 @@ def check_different_family():
         map_text = GOOD_MAP.replace('role: map', 'work_item: DD-508\nrole: map\nbase_commit: abc')
         implementation = root/'impl.md'
         implementation.write_text('<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: impl\nwork_item: DD-512\nrole: backend\noutput_mode: commit\nmap: map-demo\nintegrated_commit: def\nagent: pi\nmodel: provider/model\neffort: high\n```\n')
+        native_boundary(root)
         native_path = root/'native.json'; native_path.write_text(json.dumps(native))
         flags = ('--task', 'review', '--output-mode', 'verdict', '--review-scope', 'whole-change',
                  '--required-axes', 'standards', 'spec', '--request-id', 'r1',
                  '--implementation-registry', str(implementation))
         result, path, calls = run(root, 'different', base, packet=packet, map_text=map_text,
-            config_document=config, probe_evidence=probe, extra=(*flags, '--native-capabilities', str(native_path)))
+            config_document=config, probe_evidence=probe, env_extra={'HOME':str(root)}, extra=flags)
         assert result.returncode == 0, result.stdout+result.stderr
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts'))
         import lane_registry
@@ -187,25 +216,79 @@ def check_different_family():
         assert plan['lane']['selected'] == first and plan['lane'] == plan['axes']['standards'], plan
         assert plan['axes']['spec']['selected'] == later
         assert plan['lane']['comparison_basis'] == 'requested'
-        assert len([c for c in calls if c[:2] == ['agent', 'start']]) == 1
-        start = next(c for c in calls if c[:2] == ['agent', 'start'])
+        assert len([c for c in calls if c[:2] == ['agent', 'start'] and '--help' not in c]) == 1
+        start = next(c for c in calls if c[:2] == ['agent', 'start'] and '--help' not in c)
         assert start[start.index('--model')+1] == 'z-first'
         delivered = (root/'packet.md').read_text()
         payload = json.loads(delivered.split('<!-- DP_REVIEW_PLAN -->')[1].split('```json')[1].split('```')[0])
         assert [c['requested'] for c in payload['owner_calls']] == [first, later]
         assert all(c['execution_evidence'] is None for c in payload['owner_calls'])
         assert 'review_execution.py' in delivered and 'native_readbacks' in delivered
-        for name, extra in [('missing', flags), ('stale', (*flags, '--native-capabilities', str(native_path)))]:
-            native_path.write_text(json.dumps({**native, 'request_id': 'stale'}))
-            result, path, calls = run(root, name, base, packet=packet, map_text=map_text,
-                config_document=config, probe_evidence=probe, extra=extra)
-            assert result.returncode != 0 and not calls, '缺证据不得 mutation'
-            assert (root/'packet.md').read_text() == packet and not path.exists()
+        # 自述文件不再授予能力；当前原生进程 Unknown 时即使文件声称成功也阻断。
+        (root/'native-status.json').write_text(json.dumps({'z-first':'unknown'}))
+        result, path, calls = run(root, 'missing', base, packet=packet, map_text=map_text,
+            config_document=config, probe_evidence=probe, env_extra={'HOME':str(root)}, extra=(*flags,'--native-capabilities',str(native_path)))
+        assert result.returncode != 0 and not mutations(calls), '缺证据不得 mutation'
+        assert (root/'packet.md').read_text() == packet and not path.exists()
     print('different-family dispatch: pass (fake native I/O; true execution Unknown)')
+
+
+def check_capability_safety():
+    # 真实生产入口/文件/进程；外部 Herdr、Pi 的 I/O 替身。预期 DD514 R6/R11/R15。
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('mc', Path(__file__).resolve().parents[2]/'delivery-pipeline-setup/scripts/model_config.py')
+    mc=importlib.util.module_from_spec(spec); spec.loader.exec_module(mc)
+    c=mc.migrate_document(mc.valid_fixture())[0]
+    a=mc.triple(c['review']['whole-change']['standards']); b={**a,'model':'second'}
+    c['review']['whole-change']['standards']['candidates']=[b,b]
+    ev={'request_id':'safe','observed_at':'fixture','sources':{'pi':{'status':'ok'}},
+        'capabilities':{'pi':{'binary':True,'models':{a['model']:['high'],'second':['high']}}}}
+    base={'tabs':[{'tab_id':'w1:t1','label':'coord','pane_count':1,'workspace_id':'w1'}],
+          'panes':[{'pane_id':'w1:p1','tab_id':'w1:t1','workspace_id':'w1'}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        root=Path(tmp); native_boundary(root)
+        (root/'watch').write_text('#!/bin/sh\nexit 0\n');(root/'watch').chmod(0o755)
+        owner=root/'owner/SKILL.md';owner.parent.mkdir();owner.write_text('---\nname: code-review\n---\nfixture')
+        packet=f'Owner：code-review；{owner}；fixture invocation\n'
+        flags=('--task','review','--output-mode','verdict','--review-scope','whole-change',
+               '--required-axes','standards','--request-id','safe')
+        map_text=GOOD_MAP.replace('role: map','work_item: DD-508\nrole: map\nbase_commit: base')
+        scenarios=[('missing',{b['model']:'unknown'},'review_capability_evidence_required'),
+                   ('all',{a['model']:'unavailable',b['model']:'unavailable'},'review_no_runnable_candidate'),
+                   ('skip',{a['model']:'unavailable'},None),
+                   ('start-failed',{a['model']:'unavailable'},None)]
+        for name,statuses,error in scenarios:
+            (root/'native-status.json').write_text(json.dumps(statuses))
+            state={**base,'working':name!='start-failed'}
+            result,path,calls=run(root,name,state,packet=packet,map_text=map_text,config_document=c,probe_evidence=ev,env_extra={'HOME':str(root)},extra=flags)
+            if error:
+                assert result.returncode!=0 and error in result.stdout,result.stdout+result.stderr
+                assert not mutations(calls) and not path.exists() and (root/'packet.md').read_text()==packet
+                if name=='all':
+                    assert 'second' in result.stdout and 'provider/model' in result.stdout
+            else:
+                starts=[x for x in calls if x[:2]==['agent','start'] and '--help' not in x]
+                assert len(starts)==1 and starts[0][starts[0].index('--model')+1]=='second',(calls,result.stdout,result.stderr)
+                assert (result.returncode==0)==(name=='skip')
+                if name=='start-failed': assert 'setup_blocked' in path.read_text()
+        (root/'native-status.json').write_text('{}')
+        result,path,calls=run(root,'readonly',base,packet=packet,map_text=map_text,config_document=c,
+            probe_evidence=ev,env_extra={'HOME':str(root)},extra=(*flags,'--preflight-only'))
+        assert result.returncode==0 and json.loads(result.stdout)['state']=='preflight_ready',result.stdout+result.stderr
+        assert not mutations(calls) and not path.exists() and (root/'packet.md').read_text()==packet
+        # 单模型和非参与 implementation 池不应触发候选 native 门槛。
+        c['review']['whole-change']['standards']['candidates']=[]
+        c['review']['whole-change']['spec']['candidates'] = [{**b, 'model':'nonparticipating-axis'}]
+        c['review']['implementation']['spec']['candidates']=[{**b,'model':'unobserved'}]
+        (root/'native-status.json').write_text(json.dumps({a['model']:'unknown'}))
+        result,path,calls=run(root,'legacy',base,packet=packet,map_text=map_text,config_document=c,probe_evidence=ev,env_extra={'HOME':str(root)},extra=flags)
+        assert result.returncode==0,result.stdout+result.stderr
+        assert ['--version'] not in calls
+    print('capability-safety dispatch: pass (external I/O fixtures; native acceptance Unknown)')
 
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch', 'different-family'], required=True)
+    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety'], required=True)
     args = p.parse_args()
-    ({'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
+    ({'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()

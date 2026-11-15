@@ -178,8 +178,9 @@ def main() -> int:
     parser.add_argument("--review-scope")
     parser.add_argument("--required-axes", nargs="+", choices=["standards", "spec"])
     parser.add_argument("--request-id")
-    parser.add_argument("--native-capabilities", help="本轮只读原生 preflight 证据 JSON，非 executed")
+    parser.add_argument("--native-capabilities", help="已停用：外部自述不能授权原生派发；由 Adapter 现场采集")
     parser.add_argument("--implementation-registry", nargs="+")
+    parser.add_argument("--preflight-only", action="store_true", help="whole-change 真实入口只读预检；不写 packet/Registry/pane")
     args = parser.parse_args()
 
     registry = Path(args.registry)
@@ -220,12 +221,36 @@ def main() -> int:
             for path in args.implementation_registry or []:
                 contribution_rows.update(lane_registry.rows(Path(path)))
             implementations = lane_registry.collect_implementation_identities(contribution_rows, fixed_point)
-            review = mc.resolve_review_plan(mc.load_document(Path(args.config).expanduser()),
-                required_axes=args.required_axes, implementations=implementations,
-                evidence=evidence, native_capabilities=mc.load_review_native_capabilities(
-                    args.native_capabilities, args.request_id), request_id=args.request_id)
+            document = mc.load_document(Path(args.config).expanduser())
+            participating = dict.fromkeys(["standards", *args.required_axes])
+            pools = {axis: [mc.triple(cell), *cell["candidates"]]
+                     for axis in participating
+                     if (cell := document["review"]["whole-change"][axis]).get("candidates")}
+            native = {}
+            if pools:
+                if args.native_capabilities:
+                    raise DispatchError("review_capability_evidence_required: external native claims cannot authorize dispatch; omit --native-capabilities")
+                from native_review_preflight import preflight_review_candidates
+                collected = preflight_review_candidates(pools, args.request_id)
+                native = collected["capabilities"]
+                # 工件先返回内存；不在 Registry/packet 写入失败的 preflight。
+                if any(x["status"] == "unknown" for pool in native.values() for x in pool):
+                    raise DispatchError("review_capability_evidence_required: " + json.dumps(collected, ensure_ascii=False))
+            try:
+                review = mc.resolve_review_plan(document,
+                    required_axes=args.required_axes, implementations=implementations,
+                    evidence=evidence, native_capabilities=native, request_id=args.request_id)
+            except ValueError as error:
+                if pools:
+                    raise DispatchError(str(error) + " native_preflight=" + json.dumps(collected, ensure_ascii=False)) from error
+                raise
+            if pools:
+                review["native_preflight"] = collected
             calls = lane_registry.build_owner_calls(review)
             payload = {"review_plan": review, "owner_calls": calls}
+            if args.preflight_only:
+                print(json.dumps({"state":"preflight_ready", **payload}, ensure_ascii=False))
+                return 0
             marker = "<!-- DP_REVIEW_PLAN -->"
             if marker in packet_text:
                 stored = json.loads(packet_text.split(marker, 1)[1].split("```json", 1)[1].split("```", 1)[0])
@@ -244,6 +269,8 @@ def main() -> int:
             lane_registry.verify_review_packet(review, actual)
             plan = mc.review_start_plan(review, evidence)
         else:
+            if args.preflight_only:
+                raise DispatchError("preflight-only requires whole-change review")
             plan = mc.resolve_plan(mc.load_document(Path(args.config).expanduser()), args.task,
                                    ticket_mode=args.ticket_mode, map_mode=args.map_mode,
                                    evidence=evidence, output_mode=args.output_mode)

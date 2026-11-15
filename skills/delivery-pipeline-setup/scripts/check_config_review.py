@@ -233,11 +233,63 @@ def check_different_family():
     print('different-family-plan: pass (public resolver; fixture capability, native execution Unknown)')
 
 
+def check_capability_safety():
+    """独立预期：DD514 AC / DD508 R5/R6/R11；公开 resolver。"""
+    import copy
+    c = m.migrate_document(m.valid_fixture())[0]
+    a = m.triple(c['review']['whole-change']['standards'])
+    b = {**a, 'model': 'second'}
+    c['review']['whole-change']['standards']['candidates'] = [b, b]
+    c['review']['whole-change']['spec']['candidates'] = [{**b, 'model':'nonparticipating-axis'}]
+    c['review']['implementation']['spec']['candidates'] = [{**b, 'model': 'nonparticipant'}]
+    ev = {'request_id': 'safe', 'observed_at': 'fixture', 'sources': {'pi': {'status': 'ok'}},
+          'capabilities': {'pi': {'binary': True, 'models': {a['model']: ['high'], 'second': ['high']}}}}
+    pool = [a, b, b]
+    native = {'standards': [{'identity': x, 'status': 'runnable', 'reason': None,
+                            'evidence_id': f'boundary-{i}'} for i,x in enumerate(pool)]}
+    def resolve(caps=native, probe=ev):
+        return m.resolve_review_plan(c, required_axes=['standards'], implementations=[], evidence=probe,
+                                     native_capabilities=caps, request_id='safe')
+    def blocked(caps, code='review_capability_evidence_required', probe=ev):
+        try: resolve(caps, probe)
+        except ValueError as e:
+            assert code in str(e), str(e)
+            return str(e)
+        raise AssertionError('缺证据/全不可运行必须阻断')
+    for status in [None, 'unknown']:
+        bad = copy.deepcopy(native); bad['standards'][1]['status'] = status
+        blocked(bad)
+    bad = copy.deepcopy(native); bad['standards'][1]['evidence_id'] = None; blocked(bad)
+    bad = copy.deepcopy(native); bad['standards'].pop(); blocked(bad)
+    bad = copy.deepcopy(native); bad['standards'][1]['identity'] = a; blocked(bad)
+    for status in ['runnable', 'unavailable']:
+        bad = copy.deepcopy(native); bad['standards'][1].update(status=status, reason='claimed', evidence_id=None)
+        blocked(bad)
+    bad = copy.deepcopy(native); bad['standards'][0].update(status='unavailable', reason='native rejection')
+    plan = resolve(bad)
+    assert plan['lane']['selected'] == b and plan['lane']['selected_index'] == 1
+    assert [x['identity'] for x in plan['lane']['attempts']] == pool
+    for item in bad['standards']: item.update(status='unavailable', reason='native rejection')
+    message = blocked(bad, 'review_no_runnable_candidate')
+    attempts = json.loads(message.split(': ', 1)[1])
+    assert [x['identity'] for x in attempts] == pool and all(x['reason']=='native rejection' for x in attempts)
+    # 有 native 自述也不能掩盖 probe 中缺完整 agent/model/effort 证据。
+    missing = copy.deepcopy(ev); del missing['capabilities']['pi']['models']
+    blocked(bad, probe=missing)
+    for raw in [None, [], {}]:
+        blocked(bad, probe={**ev, 'capabilities':raw})
+    c['review']['whole-change']['standards']['candidates'] = []
+    assert resolve({})['lane']['selected'] == a  # 非参与池、空池无新增门槛。
+    print('capability-safety: pass (public resolver; native execution Unknown)')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction', 'different-family-plan'], required=True)
+    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety'], required=True)
     args = parser.parse_args()
-    if args.case == 'single-model-plan':
+    if args.case == 'capability-safety':
+        check_capability_safety()
+    elif args.case == 'single-model-plan':
         for version in (6, 7):
             check_single_model(version)
     elif args.case == 'different-family-plan':

@@ -88,14 +88,21 @@ known mismatch 返回 `REVIEW_BLOCKED` 并保存全部 findings；不得自动�
 
 ## 有序候选的只读 preflight 输入
 
-非空参与池要求 `--evidence` 为当前 ProbeEvidence envelope（request_id、observed_at、sources、
-capabilities），并传 `--native-capabilities <file>`。原生文件为
-`{request_id, observed_at, capabilities: {standards: [NativeCapability], spec: [NativeCapability]}}`。
-每轴严格按 `[primary] + candidates` 提供完整逐项证据，重复位置保留；每项含精确
-`identity={agent,model,effort}`、`status=runnable|unavailable`、`reason`、非空 `evidence_id`。
-不可用必须有正面理由；缺证据返回 `review_capability_evidence_required`，在 packet/Registry/pane
-mutation 前拒绝。调用方必须保留真实只读 preflight 原始工件，不能从 catalog 成功推导 native 成功。
-这些字段只声明启动前能力，绝不证明 executed/applied；无真实能力证据时由 Root 停止并报告 Unknown。
+非空参与池要求 `--evidence` 为本 request 的当前 ProbeEvidence envelope（request_id、observed_at、
+sources、capabilities）。生产 dispatch 在任何 packet/Registry/pane mutation 前调用本壳
+`native_review_preflight.preflight_review_candidates`；`--native-capabilities` 外部自述文件不再授权派发，
+非空池传入此参数会拒绝。canonical CLI 的文件输入仅用于纯计划接口，不能替代 Adapter 现场来源。
+
+当前窄合同覆盖 Herdr 0.9.5 的 pi kind 与 AGENT_ARG 透传帮助、Pi 1.5.2 安装包的原生
+parseArgs、ModelConfig schema、精确模型解析和 thinking level 支持/clamp。只覆盖当前 models.json
+注册项；不做 fuzzy/custom fallback、不从 probe 复制 native 成功。其他版本、agent 或来源缺失为
+Unknown；原生明确拒绝才为 unavailable。尚不具备未来启动、认证、网络、额度或审查成功保证。
+
+逐项证据绑定 request、真实采集时间、完整 ordered pools（重复位置保留）、精确 identity、
+原生命令/退出码/结果及 binary/解析源码 hash；evidence_id 为这些绑定的 SHA256。models.json
+只保留 hash，不输出凭据。成功来源随 review_plan.native_preflight 冻结；失败结果在 stdout
+保留缺口，不写 packet/Registry。`--preflight-only` 穿过同一生产 whole-change 入口并在写入前返回
+计划与 owner_calls，供 Root 读回零创建证据；不是另一个 selector。空池不采集新 native 来源。
 
 canonical resolver 先核验参与池，再逐轴选择首个 runnable+different；无 different 时取首个
 runnable 并记录退化理由。standards lane 与 required standards 选择深等；spec 只消费冻结

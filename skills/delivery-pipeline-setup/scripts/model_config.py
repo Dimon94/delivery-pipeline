@@ -1090,6 +1090,11 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
                     or capability.get("identity") != identity or not capability.get("evidence_id")
                     or capability.get("status") not in ("runnable", "unavailable")):
                 raise ValueError(prefix + " exact current evidence required")
+            probe_map = evidence.get("capabilities")
+            probe_agent = probe_map.get(identity["agent"]) if isinstance(probe_map, dict) else None
+            if (not isinstance(probe_agent, dict) or not isinstance(probe_agent.get("binary"), bool)
+                    or not isinstance(probe_agent.get("models"), dict)):
+                raise ValueError(prefix + " complete probe source required")
             errors = capability_errors(**identity, evidence=evidence.get("capabilities"))
             if capability["status"] == "runnable" and errors:
                 raise ValueError(prefix + "; " + "; ".join(errors))
