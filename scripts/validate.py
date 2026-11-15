@@ -445,6 +445,7 @@ def check_context_loading() -> None:
 
 
 def check_lane_wakeup() -> None:
+    subprocess.run([sys.executable, str(ROOT / "skills/delivery-pipeline-orca/scripts/check_pi_review_preflight.py")], check=True)
     subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),
                     "--case", "orca-review-plan"], check=True)
     subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),

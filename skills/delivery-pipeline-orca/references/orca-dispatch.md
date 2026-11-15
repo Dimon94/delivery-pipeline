@@ -172,8 +172,18 @@ spec-only 仍选 standards lane，但 owner_calls 只派 spec。
 候选采集调用固定 Orca 安装内原生 `checkAgentLaunchModelPreferences` 与精确 catalog
 成员检查，保留每个模块 hash；只证明静态参数兼容，还须当前 ProbeEvidence 与本壳原生
 runtime preflight。缺 binary、模块、精确 catalog 成员或未知 launch transport 是 Unknown，
-不能作为 unavailable 跳过；原生精确参数拒绝才是正面 unavailable。未覆盖的 agent-argv
-review 路径保持 Unknown，不借 DD418、旧 Task/Run、Herdr 或 Codex App 证据授权。
+不能作为 unavailable 跳过；原生精确参数拒绝才是正面 unavailable。
+
+Pi `agent-argv` 只覆盖已调查的本机 Orca App 1.4.258：固定 executable 的版本必须与
+Info.plist 一致；同一 CLI 的完整 guide 与 worktree create / terminal send / worker-start
+help 必须有既有 terminal/worktree 链合同，App 原生 TUI 配置必须明确 Pi 的 argv transport。
+再调用 setup 共用的 Pi 1.5.2 纯 parser/model resolution/thinking clamp 采集，精确请求
+必须原值通过；模型 metadata 单独不放行。共用 owner 不含 Herdr transport 判断。
+缺版本、工具、模块、精确模型或 transport 来源仍为 Unknown；clamp/remap 为 unavailable。
+保存当前来源 hash、原生命令、request、完整有序池与位置的 evidence id；来源采集中变化拒绝。
+这仅是静态兼容，完整 host/runtime/terminal/owner preflight 仍由原入口执行；启动、auth、
+network、quota、执行和实际身份均 Unknown。其他 agent-argv 不扩展，不借 DD418、旧 Task/Run、
+Herdr 或 Codex App 成功文件授权。
 
 resolved code-review owner 只消费冻结 `owner_calls`，各轴独立保存完整 findings。
 `review_dispatch.py execution <request.json>` 输入为 `{ledger, data}`；data 沿 canonical

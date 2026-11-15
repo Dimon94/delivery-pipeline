@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import plistlib
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0,str(HERE.parents[1]/'delivery-pipeline/scripts'))
 import lane_registry as registry
 from review_gate import prepare_round, read_ledger, run
 from preflight import resolve_orca_executable
+from native_pi_preflight import collect_pi
 
 
 def collect_native(pools, request_id):
@@ -23,20 +25,46 @@ def collect_native(pools, request_id):
 
     非 App 布局或缺少当前原生模块保持 Unknown，不借用其他 transport。
     """
-    result=dict(request_id=request_id,observed_at=datetime.now(timezone.utc).isoformat(),capabilities={},sources=[])
+    result=dict(request_id=request_id,observed_at=datetime.now(timezone.utc).isoformat(),capabilities={},sources=[],ordered_pools=pools)
     reason='native Orca launch parser unavailable'
     rows=[]
     try:
+        def capture(argv, payload=None):
+            response=subprocess.run(argv,input=payload,capture_output=True,text=True,timeout=30)
+            record=dict(argv=argv,exit=response.returncode,stdout=response.stdout,stderr=response.stderr)
+            result['sources'].append(record)
+            return record
         executable=Path(resolve_orca_executable())
         resources=executable.parent.parent
         out=resources/'app.asar.unpacked/out'
         parser=out/'shared/agent-launch/choices/agent-launch-model-preferences.js'
         catalog=out/'shared/agent-session/options/agent-session-option-catalog.js'
         electron=resources.parent/'MacOS/Orca'
+        pi_transport=False
+        if any(t['agent']=='pi' for ts in pools.values() for t in ts):
+            info=resources.parent/'Info.plist'
+            installed=plistlib.loads(info.read_bytes())['CFBundleShortVersionString']
+            version=capture([str(executable),'--version'])
+            guide=capture([str(executable),'skills','get','orca-cli','--full','--json'])
+            worker=capture([str(executable),'orchestration','worker-start','--help'])
+            terminal=capture([str(executable),'terminal','send','--help'])
+            worktree=capture([str(executable),'worktree','create','--help'])
+            g=json.loads(guide['stdout'])
+            pi_transport=(installed=='1.4.258' and version['stdout'].strip()==installed
+                and all(x['exit']==0 for x in (version,guide,worker,terminal,worktree))
+                and g.get('name')=='orca-cli' and g.get('full') is True
+                and all(x in g.get('markdown','') for x in ('terminal','worktree','orchestration'))
+                and all(x in worker['stdout'] for x in ('--terminal','--worktree','--task'))
+                and all(x in terminal['stdout'] for x in ('--terminal','--text','--enter','--wait-submit'))
+                and all(x in worktree['stdout'] for x in ('--name','--base-branch')))
+            result['sources'].append(dict(path=str(info),sha256=hashlib.sha256(info.read_bytes()).hexdigest()))
+            result['sources'].append(dict(path=str(executable),sha256=hashlib.sha256(executable.read_bytes()).hexdigest()))
         # 原生源码只做纯解析；不调用 agent launch / worker-start / session。
         script='''const fs=require('fs'),crypto=require('crypto');
 const p=require(process.argv[1]),c=require(process.argv[2]);
 const pools=JSON.parse(process.argv[3]);
+const cfg=require(process.argv[4]);
+const pi_transport=cfg.TUI_AGENT_CONFIG?.pi?.detectCmd==='pi' && cfg.TUI_AGENT_CONFIG?.pi?.promptInjectionMode==='argv';
 const rows=Object.fromEntries(Object.entries(pools).map(([a,ts])=>[a,ts.map(t=>{
  const cat=c.getAgentSessionOptionLaunchCatalog(t.agent);
  if(!cat || !cat.supportsWorkerLaunchPreferences || !c.findCatalogModel(cat,t.model)) return {status:'unknown',reason:'exact native model catalog evidence missing'};
@@ -46,23 +74,35 @@ const rows=Object.fromEntries(Object.entries(pools).map(([a,ts])=>[a,ts.map(t=>{
  return {status:'runnable',reason:'native static launch compatibility; execution Unknown'};
 })]));
 const sources=Object.keys(require.cache).map(path=>({path,sha256:crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex')}));
-process.stdout.write(JSON.stringify({rows,sources}));'''
+process.stdout.write(JSON.stringify({rows,sources,pi_transport}));'''
         env={**os.environ,'ELECTRON_RUN_AS_NODE':'1'}
         env.pop('NODE_OPTIONS',None); env.pop('NODE_REPL_EXTERNAL_MODULE',None)
-        response=subprocess.run([str(electron),'-e',script,str(parser),str(catalog),json.dumps(pools)],env=env,capture_output=True,text=True,timeout=30)
+        response=subprocess.run([str(electron),'-e',script,str(parser),str(catalog),json.dumps(pools),str(out/'shared/agent-launch/catalog/tui-agent-config.js')],env=env,capture_output=True,text=True,timeout=30)
         if response.returncode:
             raise ValueError('native parser failed: '+response.stderr[-1000:])
         decoded=json.loads(response.stdout)
-        rows=decoded['rows']; result['sources']=decoded['sources']
+        rows=decoded['rows']; result['sources'].extend(decoded['sources'])
+        if pi_transport and decoded.get('pi_transport') is True:
+            native=collect_pi([t for ts in pools.values() for t in ts],capture,result['sources'])
+            for axis,pool in pools.items():
+                for index,target in enumerate(pool):
+                    if target['agent']=='pi':
+                        rows[axis][index]=native.get(json.dumps(target,sort_keys=True),dict(status='unknown',reason='version-matched Pi parser evidence missing'))
+                        rows[axis][index]={k:v for k,v in rows[axis][index].items() if k!='identity'}
+        else:
+            for axis,pool in pools.items():
+                for index,target in enumerate(pool):
+                    if target['agent']=='pi':
+                        rows[axis][index]=dict(status='unknown',reason='Orca version/guide/native agent-argv transport evidence missing')
         result['executable']=str(executable)
-    except (OSError,ValueError,KeyError,subprocess.TimeoutExpired) as error:
+    except (OSError,ValueError,KeyError,TypeError,subprocess.TimeoutExpired) as error:
         reason=str(error)
     for axis,pool in pools.items():
         result['capabilities'][axis]=[]
         for index,target in enumerate(pool):
             observation=rows[axis][index] if isinstance(rows,dict) else dict(status='unknown',reason=reason)
             record=dict(identity=target,**observation)
-            record['evidence_id']=hashlib.sha256(json.dumps([request_id,axis,index,record,result['sources']],sort_keys=True).encode()).hexdigest()
+            record['evidence_id']=hashlib.sha256(json.dumps([request_id,result['observed_at'],pools,axis,index,record,result['sources']],sort_keys=True).encode()).hexdigest()
             result['capabilities'][axis].append(record)
     return result
 

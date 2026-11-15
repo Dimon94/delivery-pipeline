@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+import sys
+sys.path.insert(0, str(HERE.parents[1]/'delivery-pipeline-setup/scripts'))
 
 
 def _digest(data):
@@ -41,32 +43,8 @@ def preflight_review_candidates(ordered_pools, request_id):
     if herdr:
         sources.append({'herdr_binary':str(Path(herdr).resolve()), 'sha256':_digest(Path(herdr).read_bytes())})
     identities = [x for pool in ordered_pools.values() for x in pool]
-    native = {}
-    pi = shutil.which('pi')
-    if pi and any(x['agent'] == 'pi' for x in identities):
-        binary = Path(pi).resolve()
-        package = binary.parent.parent.parent if binary.parent.name == 'bundle' else binary.parent.parent
-        try:
-            pi_version = capture([pi, '--version'])
-            if pi_version['exit'] != 0 or pi_version['stdout'].strip() != '1.5.2':
-                raise ValueError('Pi binary/source version mismatch')
-            meta = json.loads((package/'package.json').read_text())
-            if meta.get('name') != '@earendil-works/pi-coding-agent' or meta.get('version') != '1.5.2':
-                raise ValueError('version-matched Pi source required')
-            paths = [binary, Path.home()/'.pi/agent/models.json', package/'package.json', HERE/'native_review_probe.mjs',
-                     *[package/p for p in ('dist/cli/args.js', 'dist/core/model-config.js',
-                        'dist/core/model-resolver.js', 'node_modules/@earendil-works/pi-ai/dist/models.js')]]
-            sources.append({'installed_sources': [{'path':str(p), 'sha256':_digest(p.read_bytes())} for p in paths]})
-            selected = [x for x in identities if x['agent'] == 'pi']
-            raw = capture([shutil.which('node') or 'node', str(HERE/'native_review_probe.mjs')],
-                json.dumps({'package':str(package), 'models_path':str(Path.home()/'.pi/agent/models.json'),
-                            'identities':selected}))
-            if raw['exit'] == 0:
-                rows = json.loads(raw['stdout'])
-                if len(rows) == len(selected) and all(r.get('identity') == x for r,x in zip(rows,selected)):
-                    native = {json.dumps(r['identity'],sort_keys=True):r for r in rows}
-        except (OSError, ValueError, TypeError, KeyError):
-            pass  # Unknown 保留，绝不合成 unavailable/runnable。
+    from native_pi_preflight import collect_pi
+    native = collect_pi(identities, capture, sources)
     capabilities = {}
     for axis,pool in ordered_pools.items():
         capabilities[axis] = []
