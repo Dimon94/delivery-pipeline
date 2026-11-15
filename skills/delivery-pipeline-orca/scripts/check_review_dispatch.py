@@ -3,6 +3,10 @@
 import argparse
 import copy
 import json
+import io
+import os
+from contextlib import redirect_stdout
+from unittest.mock import patch
 from pathlib import Path
 import sys
 import tempfile
@@ -64,8 +68,60 @@ def check():
         except ValueError: pass
         else: raise AssertionError('wrong required axes accepted')
         path=Path(tmp)/'review.md'
-        row=dict(lane_id='review',role='review',work_item='DD519',runtime='orca',state='created',review_plan=packet['review_plan'],orca={'mutation':None})
-        registry.reserve_review(path,row)
+        # 独立预期：DD508 R14 / DD519 AC2 的 selected 身份；Base Schema 的无命名 mode；
+        # Orca overlay 合同要求新 freeze 可直接写 task-create intent，不靠 caller 补 row。
+        import preflight as pf
+        from registry_overlay import apply_request, persist_overlay
+        owner=Path(tmp)/'code-review'/'SKILL.md'
+        owner.parent.mkdir(); owner.write_text('---\nname: code-review\n---\n')
+        agent_source=Path(tmp)/'agent.json'; agent_source.write_text('{}')
+        packet_path=Path(tmp)/'packet.md'; packet_path.write_text('# dispatch')
+        host=dict(target=dict(kind='local'),runtimeId='test-runtime')
+        def native_read(executable, *args, **kwargs):
+            if args==('--version',): return 'test-version'
+            if args[:2]==('skills','get'):
+                return dict(name=args[2],full=True,markdown='# guide')
+            if args==('agent-context',): return dict(commands=[])
+            if args==('status',):
+                return dict(ok=True,result=dict(target=host['target'],runtime=dict(
+                    state='ready',reachable=True,connectionState='connected',
+                    runtimeId=host['runtimeId'],capabilities=[])))
+            if args==('skills','installed'):
+                return dict(result=dict(skills=[dict(id='test-skill',name='delivery-pipeline-orca',
+                    providers=['agent-skills'],sourceKind='test',sourceLabel='fixture')]))
+            if args[:2]==('terminal','show'):
+                return dict(ok=True,result=dict(terminal=dict(handle='test-terminal')))
+            raise AssertionError('unexpected native I/O: '+str(args))
+        freeze_request=dict(request,config=str(config_path),evidence=str(evidence_path),
+            registry=str(path),lane='review',work_item='DD519',worktree=tmp,
+            branch='fixture-review',map='map',packet=str(packet_path),preflight=dict(
+                operation='task-create',skill_name='delivery-pipeline-orca',references=[],
+                required_commands=[],required_capabilities=[],config=str(config_path),
+                model_evidence=str(evidence_path),task='review',output_mode='verdict',
+                target_host=host,owner=dict(name='code-review',skill_path=str(owner),
+                invocation_label='/skill:code-review'),agent_readback=dict(
+                status='ready',**target,source=str(agent_source))))
+        request_path=Path(tmp)/'freeze.json'; request_path.write_text(json.dumps(freeze_request))
+        with patch.object(d.prepare,'__kwdefaults__',dict(collect=native)), \
+             patch.object(pf,'_run',side_effect=native_read), \
+             patch.object(pf,'resolve_orca_executable',return_value='/fixture/orca'), \
+             patch.dict(os.environ,ORCA_TERMINAL_HANDLE='test-terminal'), \
+             patch.object(sys,'argv',['review_dispatch.py','freeze',str(request_path)]):
+            output=io.StringIO()
+            with redirect_stdout(output): status=d.main()
+        assert status==0, output.getvalue()
+        row=registry.read(path,'review')[0]
+        intent=apply_request(dict(action='record_mutation',kind='lane',row=row,
+                                 arguments=dict(operation='task-create')))
+        assert {k:row.get(k) for k in target}==target, 'freeze lost/rewrote lane selected identity'
+        assert 'mode' in row and row['mode'] is None, 'review inherited an unrelated named mode'
+        assert all(k in row for k in ('updated_at','base_commit','worktree','branch','output_mode'))
+        assert row['review_plan']==packet['review_plan']
+        intent=persist_overlay(row,intent,readback=lambda:registry.read(path,'review')[0],
+                               write=lambda value:registry.write(path,value))
+        assert registry.read(path,'review')[0]['orca']['mutation']==dict(
+            operation='task-create',request_id=None,receipt_reference=None)
+        row=intent
         for state in ('created','cancelled'):
             registry.write(path,dict(row,state=state))
             before=path.read_bytes()

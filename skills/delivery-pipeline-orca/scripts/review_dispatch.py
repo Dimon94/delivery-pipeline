@@ -192,14 +192,17 @@ def main():
                     raise ValueError(json.dumps(checked,ensure_ascii=False))
                 result['orca_preflight']=checked
                 if args.action=='freeze':
-                    from registry_overlay import empty_overlay
+                    from registry_overlay import empty_overlay, validate_markers
                     packet=Path(data['packet'])
                     if not packet.is_absolute() or not packet.is_file():
                         raise ValueError('existing absolute dispatch packet required')
-                    plan=result['review_plan']
+                    frozen=checked['worker_policy']['frozen']
+                    m.verify_overlay(checked['worker_policy']['plan'],frozen)
                     row=dict(lane_id=data['lane'],work_item=data['work_item'],role='review',runtime='orca',
-                        output_mode='verdict',state='created',base_commit=data['base'],worktree=data['worktree'],
-                        branch=data['branch'],map=data['map'],packet=str(packet),review_plan=plan,orca=empty_overlay())
+                        dispatch_runtime='orca',coordinator_runtime='orca-terminal',
+                        output_mode='verdict',state='created',updated_at=datetime.now(timezone.utc).isoformat(),base_commit=data['base'],worktree=data['worktree'],
+                        branch=data['branch'],map=data['map'],packet=str(packet),orca=empty_overlay(),**frozen)
+                    row=validate_markers(row,kind='lane')
                     registry.reserve_review(Path(data['registry']),row)
                     marker='<!-- DP_REVIEW_PLAN -->'
                     packet.write_text(packet.read_text()+'\n'+marker+'\n```json\n'+json.dumps(result,ensure_ascii=False)+'\n```\n')
