@@ -101,7 +101,8 @@ class ReviewDispatch:
             current['t3code']['receipt'] = receipt
             current['t3code'].update(task_id=receipt.get('taskId'),child_thread_id=receipt.get('childThreadId'),link=receipt.get('link'))
             current['t3code']['startup_state'] = 'received' if receipt.get('taskId') else 'launching'
-            current['state'] = 'running'
+            if current.get('state') == 'created':
+                current['state'] = 'running'
             registry.persist(locked, [current])
         return self.recover(path, row['lane_id'])
 
@@ -110,7 +111,7 @@ class ReviewDispatch:
         plan = registry.load_review_plan(path, lane, row['review_plan']['request_id'])
         overlay = row['t3code']
         registry.verify_review_packet(plan, overlay['review_packet'])
-        action = 'stop' if row.get('state') in {'cancelled','consumed','closed','failed'} else 'inspect_original'
+        action = 'stop' if row.get('state') in {'cancelled','consumed','closed','failed','terminal'} else 'inspect_original'
         return dict(action=action, row=row, review_packet=overlay['review_packet'])
 
     def fan_in(self, packet, axes, coordinates, ledger, round_no, p2_issues=None):

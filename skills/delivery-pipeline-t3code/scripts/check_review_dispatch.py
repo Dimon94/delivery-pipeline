@@ -24,6 +24,45 @@ class Native:
         if name=='t3_thread_read': return self.reads[args['threadId']]
         raise AssertionError(name)
 
+def check_receipt_interleaving(packet, owner):
+    """回执等待期间，另一个 canonical writer 已确认状态；回执不能复活该 lane。"""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    for state in ('cancelled', 'consumed', 'closed', 'failed', 'terminal', 'interrupted'):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'registry.md'
+            entered, release = Event(), Event()
+            native=Native()
+            receipt=dict(taskId='original-task', childThreadId='original-thread', extra={'raw':True})
+            def call(name, args):
+                if name == 'delegate_task':
+                    native.calls.append((name,copy.deepcopy(args)))
+                    entered.set()
+                    assert release.wait(10), 'writer 未释放回执'
+                    return copy.deepcopy(receipt)
+                return native(name,args)
+            adapter=ReviewDispatch(call)
+            with ThreadPoolExecutor(1) as pool:
+                future=pool.submit(adapter.dispatch,path,dict(lane_id='review',work_item='DD517'),packet,owner,'review')
+                try:
+                    assert entered.wait(10), '未进入 native 等待'
+                    saved=registry.read(path,'review')[0]
+                    request=copy.deepcopy(saved['t3code']['native_request'])
+                    saved['state']=state
+                    registry.write(path,saved)
+                finally:
+                    release.set()
+                result=future.result(timeout=10)
+            assert result['row']['state']==state, 'receipt 覆盖已确认状态: '+state
+            assert result['action']==('inspect_original' if state=='interrupted' else 'stop')
+            assert result['row']['t3code']['receipt']==receipt, '原始回执丢失'
+            assert result['row']['t3code']['native_request']==request
+            try: adapter.dispatch(path,dict(lane_id='again',work_item='DD517'),packet,owner,'retry')
+            except ValueError: pass
+            else: raise AssertionError('同 request 二次占位')
+            assert len(registry.rows(path))==1
+            assert sum(n=='delegate_task' for n,_ in native.calls)==1
+
 def check():
     native=Native(); adapter=ReviewDispatch(native)
     context=dict(action='plan',round=1,base='base',head='head',request_id='r1',required_axes=['standards','spec'],implementations=[],interface_changed=False,dependencies_changed=False)
@@ -58,6 +97,7 @@ def check():
     spec=adapter.prepare(config,spec_context)
     assert [c['axis'] for c in spec['owner_calls']]==['spec'], 'spec-only 执行了 standards'
     owner=dict(name='code-review',path='/resolved/code-review/SKILL.md',invocation_label='code-review')
+    check_receipt_interleaving(packet, owner)
     with tempfile.TemporaryDirectory() as tmp:
         path=Path(tmp)/'registry.md'
         row=dict(lane_id='review',work_item='DD517')
