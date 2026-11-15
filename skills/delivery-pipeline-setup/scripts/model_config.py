@@ -986,11 +986,54 @@ def resolve_plan(
     return {**resolved, "capability": "verified"}
 
 
+def resolve_review_plan(document, *, required_axes, implementations, evidence,
+                        native_capabilities, request_id):
+    """whole-change 单模型纯解析；候选扩展沿同一 Interface 接入。"""
+    errors = validate_document(document)
+    if errors:
+        raise ValueError("; ".join(errors))
+    axes = list(required_axes)
+    if not request_id or not axes or len(set(axes)) != len(axes) or any(a not in REVIEW_AXES for a in axes):
+        raise ValueError("review requires request_id and distinct required axes")
+    def select(axis):
+        cell = document["review"]["whole-change"][axis]
+        if cell.get("candidates"):
+            raise ValueError("review_capability_evidence_required: candidate selection not available")
+        selected = triple(cell)
+        errors = capability_errors(**selected, evidence=evidence)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return {"selected": selected, "selected_index": 0, "comparison": "unknown",
+                "comparison_basis": "unknown", "fallback": "single_model",
+                "attempts": [{"index": 0, "identity": selected, "status": "runnable",
+                              "reason": "single_model", "comparison": "unknown"}],
+                "probe_evidence_id": None, "native_evidence_ids": []}
+    lane = select("standards")
+    selections = {a: lane if a == "standards" else select(a) for a in axes}
+    return json.loads(json.dumps({"scope": "whole-change", "required_axes": axes,
+        "config_hash": hashlib.sha256(json.dumps(document, sort_keys=True, ensure_ascii=False,
+                                                  separators=(",", ":")).encode()).hexdigest(),
+        "request_id": request_id, "implementations": implementations,
+        "lane": lane, "axes": selections}))
+
+
+def review_start_plan(review_plan, evidence):
+    """仅复核冻结 lane 目标；不读取配置或重选。"""
+    selected = review_plan["lane"]["selected"]
+    errors = capability_errors(**selected, evidence=evidence)
+    if errors:
+        raise ValueError("; ".join(errors))
+    return {**selected, "mode": "none", "mode_name": None, "phase": "direct",
+            "source": "review.whole-change.standards", "capability": "verified",
+            "review_plan": review_plan}
+
+
 def freeze_overlay(plan: dict) -> dict:
     """返回 coordinator 写入 packet 与 registry 的唯一计划 overlay。"""
     recovery = {k: json.loads(json.dumps(plan[k])) for k in ("recovery_plan", "recovery_progress") if k in plan}
     overlay = {
         **recovery,
+        **({"review_plan": plan["review_plan"]} if "review_plan" in plan else {}),
         "mode": plan.get("mode_name"),
         "agent": plan["agent"],
         "model": plan.get("model"),
@@ -1607,6 +1650,10 @@ def main() -> int:
     parser.add_argument("--evidence", help="归一化实时能力 evidence JSON")
     parser.add_argument("--worker-name", default="worker")
     parser.add_argument("--pane-id", default="pane")
+    parser.add_argument("--review-scope")
+    parser.add_argument("--required-axes", nargs="+", choices=list(REVIEW_AXES))
+    parser.add_argument("--implementation-registry")
+    parser.add_argument("--fixed-point")
     args = parser.parse_args()
 
     if args.command == "recover":
@@ -1675,14 +1722,23 @@ def main() -> int:
             if args.evidence
             else None
         )
-        plan = resolve_plan(
-            load_document(Path(args.path)),
-            args.task,
-            ticket_mode=args.ticket_mode,
-            map_mode=args.map_mode,
-            evidence=evidence,
-            output_mode=args.output_mode,
-        )
+        if args.task == "review":
+            if (args.review_scope != "whole-change" or args.output_mode != "verdict"
+                    or not args.required_axes or not args.request_id or not args.implementation_registry
+                    or not args.fixed_point or args.ticket_mode or args.map_mode):
+                raise ValueError("review requires whole-change verdict, axes, request_id and Registry fixed point")
+            core = Path(__file__).resolve().parents[2] / "delivery-pipeline/scripts"
+            sys.path.insert(0, str(core))
+            import lane_registry
+            implementations = lane_registry.collect_implementation_identities(
+                lane_registry.rows(Path(args.implementation_registry)), args.fixed_point)
+            review = resolve_review_plan(load_document(Path(args.path)), required_axes=args.required_axes,
+                implementations=implementations, evidence=evidence, native_capabilities={}, request_id=args.request_id)
+            plan = review_start_plan(review, evidence)
+        else:
+            plan = resolve_plan(load_document(Path(args.path)), args.task,
+                ticket_mode=args.ticket_mode, map_mode=args.map_mode, evidence=evidence,
+                output_mode=args.output_mode)
         if args.command == "start":
             result = startup_request(
                 plan, worker_name=args.worker_name, pane_id=args.pane_id

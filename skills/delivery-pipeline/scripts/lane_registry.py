@@ -11,7 +11,7 @@ import tempfile
 from lane_graph import parse_registry_file
 from replacement import decide
 
-JSON_FIELDS = {'recovery_plan', 'recovery_progress', 'replacement_intent', 'herdr', 'orca', 't3code', 'lody'}
+JSON_FIELDS = {'implementation_execution', 'review_plan', 'recovery_plan', 'recovery_progress', 'replacement_intent', 'herdr', 'orca', 't3code', 'lody'}
 
 
 def rows(path):
@@ -80,7 +80,7 @@ def write(path, row):
             raise ValueError('work_item already has an active writer or accepted intent')
         if any(r.get('replacement_of') == row['lane_id'] for r in all_rows.values()):
             raise ValueError('source already superseded by accepted intent')
-        frozen_keys=('work_item','mode','agent','model','effort','recovery_plan','recovery_progress','replacement_of','failure_id','failure_category')
+        frozen_keys=('review_plan','work_item','mode','agent','model','effort','recovery_plan','recovery_progress','replacement_of','failure_id','failure_category')
         # v2 parser 把顶层 none 规范化为 None。
         normalized={k:(None if row.get(k)=='none' else row.get(k)) for k in frozen_keys}
         if current and any(current.get(k)!=normalized[k] for k in frozen_keys):
@@ -210,3 +210,58 @@ def recover_launch(path,lane,reconcile):
         if row['replacement_intent']['status']!='launching':
             return row
         return finish(path,row,reconcile(deepcopy(row)))
+
+
+def collect_implementation_identities(registry, fixed_point):
+    """只取此 Map fixed point 已集成的 commit 贡献者；不从当前配置推导。"""
+    maps = [r['lane_id'] for r in registry.values()
+            if r.get('role') == 'map' and r.get('base_commit') == fixed_point]
+    if len(maps) != 1:
+        raise ValueError('implementation collection requires unique Map fixed point')
+    result = []
+    for row in registry.values():
+        if (row.get('map') != maps[0] or row.get('output_mode') != 'commit'
+                or row.get('role') in {'review', 'testing', 'coordinator', 'integration', 'map'}
+                or not row.get('integrated_commit')):
+            continue
+        requested = {k: row.get(k) for k in ('agent', 'model', 'effort')}
+        if not all(requested.values()):
+            requested = None
+        # executed 只接受明确标记 native_readback 的独立读回，不接受 pane/argv。
+        readback = row.get('implementation_execution') or {}
+        executed = readback.get('identity') if readback.get('source') == 'native_readback' else None
+        result.append(dict(lane_id=row['lane_id'], requested=requested, executed=executed))
+    return result
+
+
+def freeze_review_plan(registry, lane_id, plan, request_id):
+    if plan.get('request_id') != request_id:
+        raise ValueError('review request_id mismatch')
+    with lock(registry) as path:
+        row = rows(path)[lane_id]
+        if row.get('review_plan') is not None and row['review_plan'] != plan:
+            raise ValueError('frozen review plan is immutable')
+        row['review_plan'] = deepcopy(plan)
+        persist(path, [row])
+    return load_review_plan(registry, lane_id, request_id)
+
+
+def load_review_plan(registry, lane_id, request_id):
+    plan = read(registry, lane_id)[0].get('review_plan')
+    if not plan or plan.get('request_id') != request_id:
+        raise ValueError('review plan missing/legacy or request_id mismatch')
+    return deepcopy(plan)
+
+
+def build_owner_calls(plan):
+    if plan.get('scope') != 'whole-change':
+        raise ValueError('CLI review requires whole-change')
+    if 'standards' in plan['required_axes'] and plan['lane'] != plan['axes']['standards']:
+        raise ValueError('review lane/standards mismatch')
+    return [dict(axis=axis, requested=deepcopy(plan['axes'][axis]['selected']),
+                 execution_evidence=None) for axis in plan['required_axes']]
+
+
+def verify_review_packet(plan, packet):
+    if packet.get('review_plan') != plan or packet.get('owner_calls') != build_owner_calls(plan):
+        raise ValueError('review packet/plan mismatch')

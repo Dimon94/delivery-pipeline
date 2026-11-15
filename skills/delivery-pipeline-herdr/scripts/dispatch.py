@@ -175,6 +175,10 @@ def main() -> int:
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
     parser.add_argument("--tab-prefix", default="X")
+    parser.add_argument("--review-scope")
+    parser.add_argument("--required-axes", nargs="+", choices=["standards", "spec"])
+    parser.add_argument("--request-id")
+    parser.add_argument("--implementation-registry", nargs="+")
     args = parser.parse_args()
 
     registry = Path(args.registry)
@@ -186,14 +190,58 @@ def main() -> int:
         map_lane = preflight(args)
         sys.path.insert(0,str(HERE.parents[1]/"delivery-pipeline/scripts"))
         import lane_registry
-        existing = lane_registry.rows(registry).values()
-        if any(row.get("state") in {"running","awaiting_human","created"} for row in existing):
+        existing = lane_registry.rows(registry)
+        if args.task == "review" and args.lane in existing:
+            raise DispatchError("review lane already frozen: recover original plan/receipt; do not redispatch")
+        if any(row.get("state") in {"running","awaiting_human","created"} for row in existing.values()):
             raise DispatchError(f"registry already has an active writer: {registry}")
         mc = load_model_config()
-        plan = mc.resolve_plan(mc.load_document(Path(args.config).expanduser()), args.task,
-                               ticket_mode=args.ticket_mode, map_mode=args.map_mode,
-                               evidence=json.loads(Path(args.evidence).expanduser().read_text()),
-                               output_mode=args.output_mode)
+        evidence = json.loads(Path(args.evidence).expanduser().read_text())
+        review = None
+        if args.task == "review":
+            if (args.review_scope != "whole-change" or args.output_mode != "verdict"
+                    or args.map_registry == "none" or not args.required_axes or not args.request_id
+                    or args.ticket_mode or args.map_mode):
+                raise DispatchError("review requires Map Integration whole-change verdict, axes and request_id")
+            packet_path = Path(args.packet)
+            packet_text = packet_path.read_text()
+            owner = re.search(r"^Owner[：:]\s*code-review[；;]\s*([^；;\n]+)[；;]\s*(.+)$", packet_text, re.M)
+            if not owner or not Path(owner[1].strip()).is_absolute():
+                raise DispatchError("review requires resolved code-review owner name/path/invocation label")
+            owner_path = Path(owner[1].strip()).resolve()
+            if not re.search(r"^name: code-review\s*$", owner_path.read_text(), re.M):
+                raise DispatchError("resolved code-review owner mismatch")
+            map_rows = lane_registry.rows(Path(args.map_registry))
+            fixed_point = map_rows[map_lane].get("base_commit")
+            if not fixed_point:
+                raise DispatchError("Map Integration fixed point required")
+            contribution_rows = dict(map_rows)
+            for path in args.implementation_registry or []:
+                contribution_rows.update(lane_registry.rows(Path(path)))
+            implementations = lane_registry.collect_implementation_identities(contribution_rows, fixed_point)
+            review = mc.resolve_review_plan(mc.load_document(Path(args.config).expanduser()),
+                required_axes=args.required_axes, implementations=implementations,
+                evidence=evidence, native_capabilities={}, request_id=args.request_id)
+            calls = lane_registry.build_owner_calls(review)
+            payload = {"review_plan": review, "owner_calls": calls}
+            marker = "<!-- DP_REVIEW_PLAN -->"
+            if marker in packet_text:
+                stored = json.loads(packet_text.split(marker, 1)[1].split("```json", 1)[1].split("```", 1)[0])
+                lane_registry.verify_review_packet(review, stored)
+            else:
+                packet_path.write_text(packet_text + "\n" + marker + "\n```json\n" +
+                    json.dumps(payload, ensure_ascii=False) + "\n```\n" +
+                    "resolved code-review owner：逐轴按 owner_calls 的 requested 调用 required axes；"
+                    "不得重新读取配置选模型。每轴保留独立 findings/verdict 和原生 readback，"
+                    "无 readback 写 Unknown；pane 启动身份不得复制为双轴 executed。"
+                    "沿用原 Review Evidence Bundle、Review Budget 和 review_gate。\n")
+            actual = json.loads(packet_path.read_text().split(marker, 1)[1].split("```json", 1)[1].split("```", 1)[0])
+            lane_registry.verify_review_packet(review, actual)
+            plan = mc.review_start_plan(review, evidence)
+        else:
+            plan = mc.resolve_plan(mc.load_document(Path(args.config).expanduser()), args.task,
+                                   ticket_mode=args.ticket_mode, map_mode=args.map_mode,
+                                   evidence=evidence, output_mode=args.output_mode)
         frozen = mc.freeze_overlay(plan)
         coord = coordinator()
         row = {
@@ -206,6 +254,10 @@ def main() -> int:
         if args.off_chain_reason:
             row["off_chain_reason"] = args.off_chain_reason.replace("\n", " ")
         write_registry(registry, row)
+        if review is not None:
+            lane_registry.freeze_review_plan(registry, args.lane, review, args.request_id)
+            persisted = lane_registry.load_review_plan(registry, args.lane, args.request_id)
+            lane_registry.verify_review_packet(persisted, actual)
         # 同批并发 dispatch 时串行化落位，避免同时 split 同一 tab 或重复开 X。
         lock_path = Path(os.environ.get("TMPDIR", "/tmp")) / f"dp-dispatch-{coord['workspace_id'].replace(':', '_')}.lock"
         with open(lock_path, "w") as lock:

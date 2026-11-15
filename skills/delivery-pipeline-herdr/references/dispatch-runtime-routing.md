@@ -59,3 +59,16 @@ Herdr 0.9.5 已采集的帮助未提供持久历史请求账本。当前 Adapter
 startup_failed，shell 空闲和 agent 缺席也不等于原请求未启动。不能独立对账时保持
 launching 并 blocked，不重发、不推进 C；需补版本匹配的原请求正面拒绝/历史账本证据。
 尚无这样的原生证据时，不把 A→B→C 的 seam 检查当作原生验收通过。
+
+## whole-change 单模型入口
+
+`dispatch.py --task review --output-mode verdict --review-scope whole-change
+--required-axes standards spec --request-id <round-id>` 使用 review resolver，拒绝 implementation
+scope 与 ticket/map mode。其余 work 参数沿原合同。`--implementation-registry <file> ...`
+可传完整贡献 lane Registry 文件；未传时只读 map registry（适用于贡献 row 共置的 Registry）。
+调用方必须提供 fixed point 的完整贡献集合，不得仅传 coordinator/testing 的快照。
+packet 的 Owner 三字段须为已解析 code-review；派发前写入并读回冻结 plan 与轴调用清单，
+Registry 精确读回后才创建 pane。lane 启动前仅复核冻结目标能力，不再选模型。
+
+独立回归命令：`python3 skills/delivery-pipeline-herdr/scripts/check_review_dispatch.py --case single-model`。
+该命令使用 fake Herdr，不声称执行了模型。真实入口的逐轴 owner findings/readback 另由 root 验收。

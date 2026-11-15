@@ -440,6 +440,10 @@ def check_context_loading() -> None:
 
 
 def check_lane_wakeup() -> None:
+    subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),
+                    "--case", "single-model-plan"], check=True)
+    subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
+                    "--case", "single-model"], check=True)
     lifecycle = HERDR / "references" / "pane-lifecycle-rules.md"
     code_blocks = re.findall(
         r"```(?:bash|sh|text)?\n(.*?)\n```", lifecycle.read_text(), re.DOTALL
