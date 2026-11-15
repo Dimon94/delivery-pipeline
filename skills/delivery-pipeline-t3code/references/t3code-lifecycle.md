@@ -8,6 +8,7 @@
 
 T3 在子任务终态或子任务提问时唤醒 `coordinator_thread_id` 对应线程。被唤醒后对每个相关 lane：
 
+0. 存在 review_plan 的正式审查，先沿 `t3code-dispatch.md` §Whole-change ReviewPlan 原生入口恢复原 packet/receipt；本节的 lane 启动身份仅供定位。逐轴执行及放行统一走 ReviewDispatch.fan_in 与 canonical review_gate，保留完整 findings。
 1. 原 coordinator 线程用 `task_status(task_id)`；其他线程用 `t3_thread_read(child_thread_id)`。
    `task_status` 只读本线程派发的任务；`t3_thread_read` 不含 `workState`，记 Unknown；独立 `executedModel` 取 recentRuns，缺失记 Unknown。
 2. `hasPendingQuestion: true` 或 `pendingApproval` 非空 → 进入 §HITL。

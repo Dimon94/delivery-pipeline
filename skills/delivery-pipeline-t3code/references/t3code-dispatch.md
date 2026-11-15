@@ -126,3 +126,33 @@ receipt 缺失、原生拒绝、读回失败或身份冲突保留 launching/Unkn
 不推进游标，不声称未启动。已完成 intent 重放直接返回原行；启动失败的正面分类若无原生
 绑定证据仍 Unknown，不能凭工具异常把后项消费掉。跨 provider session 的无回执对账能力
 当前 Unknown。普通无冻结计划 lane 继续走原合同，不由本入口重建计划。
+
+
+## Whole-change ReviewPlan 原生入口
+
+Review 不走 work replacement。使用 `native_host.js::runReviewDispatch` 转发
+`python3 <本树绝对路径>/scripts/review_dispatch.py`（同目录 helper）；宿主绑定再增加
+`orchestrator_capabilities`。沿用同一个 JSON lines driver，不创建第二路由或账本。
+
+1. action=prepare：输入 config 原文、ledger 路径、round 参数（round_no/base/head/request_id/
+   implementations/interface_changed/dependencies_changed）。implementations 必须由 canonical
+   collect_implementation_identities 从所有已集成贡献 Registry 收集，含修复者。
+   prepare_round 决定 required axes/复用；same head 返回原完整 result，不创建 lane。
+   各参与池现场 `orchestrator_capabilities(search=精确 model)`，冻结完整 snapshot；
+   provider/model/options/permission 缺证据阻断，截断目录未命中记 Unknown，正面不可用可跳过。
+   canonical resolver 唯一选序，单模型也执行原生 preflight。结果为 packet，尚无派发。
+2. action=dispatch：path=本轮 Registry、row=唯一 lane/work_item 等 base 字段、packet、
+   owner={name,path,invocation_label}、task=完整 evidence bundle/固定点/只读工作合同。
+   所选 lane 与轴再核验，reserve_review 冻结同轮 plan/packet/request，再持久 launching，
+   最后唯一 delegate_task；receipt 在 t3code overlay。收到 next 立即交还宿主，不轮询。
+3. action=recover：path/lane，只读原 plan/packet/receipt。inspect_original 时沿原坐标读取，
+   没回执为 Unknown，不再次 dispatch；cancelled/consumed/closed/failed 返回 stop。
+4. action=fan_in：packet、完整 axes（含 findings）、coordinates={axis:{thread_id,run_id}}、
+   ledger、round_no、p2_issues。坐标来自 owner 原生轴结果，不传 lane 坐标冒充各轴。
+   只从精确 run 的 recentRuns.executedModel 取实际模型；model/options 不作证明。
+   当前 schema 无 applied effort，保留 Unknown。唯一 review_gate 分类并保存 findings，
+   只有 PASS 放行；REVIEW_BLOCKED 不自动重跑。不重复 gate；恢复读原 ledger。
+
+公开检查：setup `check_config_review.py --case t3-review-plan` 与本壳
+`check_review_dispatch.py --case native-evidence`。这些是外部 I/O 替身检查；真实能力、
+派发、逐轴执行和 applied effort 验收独立由 Root 受控完成，未运行时 Unknown。

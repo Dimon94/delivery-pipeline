@@ -11,7 +11,7 @@ async function runNativeReplacement(command, invocation, processIO, native) {
     const message = lines.map(line => {try {return JSON.parse(line);} catch {return null;}}).find(value => value && (value.tool || value.result));
     if (!message) throw new Error('Adapter protocol failed: '+output.output);
     if (message.result) return {result: message.result, transcript};
-    if (!['task_status','t3_thread_read','delegate_task'].includes(message.tool)) throw new Error('Unsupported native tool');
+    if (!['task_status','t3_thread_read','delegate_task','orchestrator_capabilities'].includes(message.tool)) throw new Error('Unsupported native tool');
     let reply;
     try {
       const raw = await native[message.tool](message.arguments);
@@ -23,4 +23,4 @@ async function runNativeReplacement(command, invocation, processIO, native) {
   }
 }
 
-if (typeof module !== "undefined") module.exports = {runNativeReplacement};
+if (typeof module !== "undefined") module.exports = {runNativeReplacement, runReviewDispatch: runNativeReplacement};

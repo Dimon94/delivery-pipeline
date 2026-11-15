@@ -23,7 +23,7 @@ commit 加载 gate-state-machine 的实施前置检查；Review 分支在适用�
      `git switch --detach <base_sha>`。
    - 读回 HEAD 等于 `base_sha`、worktree clean、`git rev-parse --git-common-dir` 等于 Source repo。
      任一不符即 blocked。
-2. verdict lane 的双轴 review 由 worker 按 resolved code-review owner 执行；调用前读取
+2. verdict lane 的 required-axis review 由 worker 按 resolved code-review owner 执行；调用前读取
    `../../delivery-pipeline/references/code-review-evidence-preflight.md`，fixed point 为 map registry
    base；preflight bundle 完成前不派生 Standards/Spec 子审查。commit lane 不跑 review。子审查用宿主原生 subagent，本轮内同步完成、只读同一 bundle。
    本 lane 的其余工作由 worker 亲自完成；需要更多并行时在终态原因写明，由 coordinator 决定。
@@ -31,3 +31,15 @@ commit 加载 gate-state-machine 的实施前置检查；Review 分支在适用�
 4. API 400/5xx/网络错误按原重试继续；402 额度错误停止，回传 blocked 与原错误工件。
    output_mode 不符停止写入。
 5. completed 或 blocked 的最终回复是 lane-registry §终态行，其后一行 `现场：<T3 初始分支>`。coordinator 经 T3 完成唤醒读取该回复。
+
+
+## Whole-change 冻结计划
+
+正式 review 通过 `../scripts/review_dispatch.py` 与 `native_host.js::runReviewDispatch`。
+输入 `review_packet.review_plan` 和 `owner_calls` 原样消费；resolved owner 只携带
+name、absolute path、invocation_label。不得在 owner 内重读配置或重选模型。
+只执行 required_axes；spec-only 的 standards 选择仅启动 lane，不执行 standards。
+每轴保存完整 findings 与原生 thread_id/run_id，交 coordinator `fan_in` 独立读取
+recentRuns。父线程 model、请求 options、lane receipt 均不是逐轴 executed 证据。
+本机 schema 无 applied effort 字段，记录 Unknown；known 部分冲突也须 REVIEW_BLOCKED。
+取消/响应丢失保留原 intent/receipt；不得换候选、补发或为了补身份重跑已完成轴。

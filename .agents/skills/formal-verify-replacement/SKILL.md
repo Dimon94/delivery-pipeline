@@ -61,3 +61,9 @@ DD516 同步：同一个 review_recovery_model 增加 R1–R3、FIX/终态、同
 --review-ledger/--previous-review-registry，以及两条 later-round 公开检查。新 request 只用于
 合法新轮，原 request 的 immutable plan/intent/receipt 仍由 DD515 恢复。模型不证明贡献者
 Registry 的外部真实性、原生执行或 exactly-once；真实文件/CLI 和 Root 最终验收继续承担。
+
+DD517 同步：T3 ReviewDispatch 使用相同 reserve_review 唯一锁内占位，t3code overlay
+持久 accepted→launching→receipt；recover 只读、取消 stop，无第二 native 启动边。
+review_recovery_model 的既有状态空间及九个破坏变体直接适用，源码已补同构联系；
+真实文件联系为 T3 check_review_dispatch.py --case native-evidence。模型不验证
+能力目录、逐轴身份、宿主权限或原生去重；真实 T3 接受仍由 Root 完成。

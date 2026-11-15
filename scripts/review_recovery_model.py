@@ -6,6 +6,9 @@ DD519 Orca 映射：review_dispatch freeze 复用 reserve_review（accepted）�
 mutation/receipt，不执行 retry。原生操作由 Root，模型不证明其遵守调用顺序。
 未扩张状态空间或原生 exactly-once 结论；真实临时 Registry 的取消/重复检查见
 Orca check_review_dispatch --case native-unknown。
+T3 同构联系：ReviewDispatch.dispatch reserve_review → t3code.startup_state accepted/launching
+→ 原 delegate receipt；recover 只读。相同 request 无第二 reserve；cancelled 为 stop。
+能力核验在 reserve 前，模型不抽象能力内容；真实文件 Adapter 检查承担其证明。
 假设合作写者/本地 flock/原子 replace；不证明 native exactly-once 或模型身份。
 """
 from collections import deque
