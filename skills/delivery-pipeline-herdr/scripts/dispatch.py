@@ -197,7 +197,7 @@ def main() -> int:
     if args.recover_review:
         from review_recovery import recover
         try:
-            print(json.dumps(recover(args.registry, args.lane, args.request_id, args.review_ledger), ensure_ascii=False))
+            print(json.dumps(recover(args.registry, args.lane, args.request_id, args.review_ledger, args.previous_review_registry), ensure_ascii=False))
             return 0
         except (ValueError, KeyError, OSError, TypeError) as error:
             print(json.dumps({"state":"blocked", "error":str(error)}, ensure_ascii=False))
@@ -222,10 +222,8 @@ def main() -> int:
             # 完整结果复用优先于能力/配置检查，不创建 lane、不写预算。
             prior_rows = lane_registry.rows(Path(args.previous_review_registry)) if args.previous_review_registry else existing
             if rounds:
-                old_plan = rounds[-1].get('review_packet', {}).get('review_plan')
-                originals = [r for r in prior_rows.values() if r.get('review_plan') == old_plan]
-                if len(originals) != 1 or originals[0].get('state') in {'cancelled', 'setup_blocked'}:
-                    raise DispatchError('original round missing/cancelled/failed: recover original, no new FIX')
+                from review_recovery import verify_previous_round
+                verify_previous_round(prior_rows, rounds)
             map_rows = lane_registry.rows(Path(args.map_registry))
             maps = [r for r in map_rows.values() if r.get('role') == 'map']
             if len(maps) != 1:

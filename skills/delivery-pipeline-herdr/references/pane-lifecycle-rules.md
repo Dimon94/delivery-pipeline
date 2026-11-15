@@ -32,7 +32,9 @@ nohup "$SKILL_ROOT/scripts/lane-watch.sh" "$pane_id" "$coordinator_pane_id" "$la
 
 `dispatch.py --recover-review --registry <原 Registry> --lane <原 lane> --request-id <原 request>`
 只读原 plan、Herdr startup intent/receipt；可加 `--review-ledger <原 Review Budget>` 读取已记录
-轴结果、findings 与终态。无需 config/catalog/当前能力文件，不调用 Herdr、不投递 prompt。
+轴结果、findings 与终态。后轮尚未 fan-in 时，携原账本恢复还需沿用
+`--previous-review-registry <上轮原 Registry>`（上轮同文件时可省），核对原 FIX 计划与状态。
+无需 config/catalog/当前能力文件，不调用 Herdr、不投递 prompt。
 `inspect_original` 表示原响应 Unknown，只能沿原坐标对账；`recover_original` 表示恢复已有
 请求，仍不得重发；`stop` 表示取消、失败或已有终态；`fan_in_recorded` 只返回原 FIX 结果，
 本票不创建下一轮计划。原生取消由 coordinator 在原 session 执行，保留结果文件、草稿与

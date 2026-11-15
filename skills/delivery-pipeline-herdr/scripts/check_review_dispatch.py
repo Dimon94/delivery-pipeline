@@ -535,10 +535,55 @@ def check_later_round():
         starts=[c for c in calls if c[:2]==['agent','start']]
         assert len(starts)==1 and starts[0][starts[0].index('--model')+1]==plan['lane']['selected']['model']
         before=path2.read_bytes(); budget=ledger.read_bytes()
-        recovery=[sys.executable,str(Path(__file__).with_name('dispatch.py')),'--recover-review','--registry',str(path2),'--lane','r2','--request-id','r2']
+        recovery=[sys.executable,str(Path(__file__).with_name('dispatch.py')),'--recover-review','--registry',str(path2),'--lane','r2','--request-id','r2','--review-ledger',str(ledger),'--previous-review-registry',str(path)]
         r=subprocess.run(recovery,text=True,capture_output=True)
         assert r.returncode==0 and json.loads(r.stdout)['review_packet']['review_plan']==plan
-        assert path2.read_bytes()==before
+        assert path2.read_bytes()==before and ledger.read_bytes()==budget
+        assert json.loads(r.stdout)['action']=='recover_original'
+        trace=(root/'calls.jsonl').read_bytes()
+        # 错误预算、旧 point、当前 packet mismatch、取消/失败不能伪装成合法 FIX。
+        import copy
+        original_rounds=read_ledger(ledger)
+        def reject_recovery(rounds, current=row2, previous=row):
+            ledger.write_text(json.dumps(dict(rounds=rounds)))
+            # 每个负例是独立错误现场，不绕过已有行的 immutable 写入约束。
+            path2.unlink(); path.unlink()
+            registry.write(path2,current); registry.write(path,previous)
+            result=subprocess.run(recovery,text=True,capture_output=True)
+            assert result.returncode!=0, '错误 ledger/point/原轮状态被接受'
+            assert (root/'calls.jsonl').read_bytes()==trace, '恢复触发 native'
+        reject_recovery([])
+        wrong=copy.deepcopy(original_rounds)
+        wrong[0]['review_packet']['review_plan']['round_context']['base']='other-base'
+        reject_recovery(wrong)
+        wrong=copy.deepcopy(original_rounds); wrong[0]['round']=2
+        reject_recovery(wrong)
+        for outcome in ('PASS','REVIEW_BLOCKED','REVIEW_EXHAUSTED'):
+            wrong=copy.deepcopy(original_rounds); wrong[0]['outcome']=outcome
+            reject_recovery(wrong)
+        wrong=copy.deepcopy(row2)
+        wrong['review_plan']['implementations']=[]
+        reject_recovery(original_rounds,wrong)
+        wrong=copy.deepcopy(row2)
+        wrong['review_plan']['round_context']['request_id']='other-request'
+        reject_recovery(original_rounds,wrong)
+        wrong=copy.deepcopy(row2)
+        wrong['review_plan']['round_context']['head']='h1'
+        reject_recovery(original_rounds,wrong)
+        wrong=copy.deepcopy(row2)
+        wrong['review_plan']['round_context']['required_axes']=['standards','spec']
+        reject_recovery(original_rounds,wrong)
+        wrong=copy.deepcopy(original_rounds)
+        wrong.append({**wrong[0], 'round':2})  # 当前轮已有不匹配 packet 不能视为尚未入账
+        reject_recovery(wrong)
+        wrong=copy.deepcopy(row); wrong['review_plan']['request_id']='unrelated'
+        reject_recovery(original_rounds,previous=wrong)
+        for state in ('cancelled','setup_blocked','failed'):
+            reject_recovery(original_rounds,previous={**row,'state':state})
+        wrong=copy.deepcopy(row); wrong['herdr']['startup_state']='failed'
+        reject_recovery(original_rounds,previous=wrong)
+        path2.unlink(); path.unlink()
+        ledger.write_bytes(budget); registry.write(path2,row2); registry.write(path,row)
         # 原始完整结果复用；新 lane 无写入，无 native 调用，预算字节不变。
         reuse=list(later); reuse[reuse.index('h2')]='h1'
         r,reuse_path,calls=run(root,'reuse',base,packet=packet,map_text=map_text,extra=reuse)
