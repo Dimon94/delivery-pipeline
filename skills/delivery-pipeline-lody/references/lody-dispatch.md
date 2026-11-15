@@ -148,3 +148,45 @@ history，executedModel/runtime_thinking/applied_effort/nonce 独立写 Unknown�
 Codex 工具执行环境载入函数并显式绑定实际终端 exec/write 与五个正式工具。不要启动第二个
 Codex CLI 来取得 requester。宿主不可执行该函数时，直接由原 caller 驱动同一 JSON-lines
 协议，一行请求对应一次正式工具调用，一行原始结果回送；不要补造身份、结果或环境变量。
+
+## M3 whole-change review（DD-518）
+
+whole-change review 必须走本节，不使用 work resolve/replacement。原 coordinator requester 通过
+`../scripts/native_host.js` 的现有 `runNativeReplacement` 协议，command 指向
+`python3 <本壳绝对路径>/scripts/native_review.py`，invocation 为以下 JSON（不带 `--request`）：
+
+- `action`: `preflight` / `dispatch` / `recover`；`registry`、`lane`、`request_id`、`binding`。
+- 新轮另传 `config`（已保存的完整 CLI 配置快照）、`implementation_registries`（全部贡献
+  Registry 绝对路径）、`fixed_point`、`head`、`ledger`、`required_axes`、`round`（默认 1）。
+  `row` 给出原 whole-change 的 Base Schema、Integration `worktree` / `base_commit`；
+  `owner` 为已解析 `{name,path,invocation}`，path 是绝对 SKILL.md；`prompt` 是完整原 packet
+  和 Review Evidence Bundle 指针。不得把测试 fixture 当作输入。
+- 后轮可传 `previous_review_registry`、`interface_changed`、`dependencies_changed`；轮次与
+  required axes 由 canonical `review_gate.prepare_round` 决定。相同 base/head 返回完整原结论。
+- `binding` 沿既有 `{sessionId,workspaceId,machineId,projectId,sourceRepo}`；必须是当前原
+  Lody requester 的真实身份。T3 不补造身份或代调工具。
+
+只读 discovery 逐项核对 agentType/machine、精确 modelId、该模型的 reasoningEffortValues
+（或 measuredForModelId 精确绑定的档位）；缺失/歧义为 Unknown 并阻断。完整 runConfig 明确
+不支持目标或显式 unavailable 可跳过。普通摘要省略 availability 沿 0.112 合同处理。
+所有参与池项、所选 lane 与 required axes 均在 create 前核验；模型/家族选序仍只由
+canonical resolve_review_plan 决定。空候选同样精确核验，但不新增家族声明要求。
+
+preflight 返回 plan/owner_calls/原生 arguments，不写 Registry、packet 或创建 session。
+dispatch 将 plan、packet 全文、owner、binding 和精确 arguments 一起 reserve 到唯一 Registry，
+`lody.startup_state=launching` 后才 create。原 operation receipt 原样保存，completed 只表示
+收到 receipt，不证明 startup 或实际模型。session/worktree startup 仍沿原 Startup Readback。
+同 request 的重入只读原 plan/receipt；launching/响应丢失返回 inspect_original，不重发。
+取消或终态 stop；没有自动 successor、work fallback 或跨 transport 路由。
+
+resolved owner 必须逐轴消费冻结 owner_calls，spec-only 只执行 spec，standards 仍决定 lane。
+调用 canonical `../../delivery-pipeline/scripts/review_gate.py --ledger <原账本>`，stdin 传
+round、完整 axes findings/counts/verdict、原 review_packet、逐轴 native_readbacks 与 p2_issues。
+缺独立 executedModel/applied effort 传 null（无 readback），canonical 逐轴记录 unknown；
+不得将 session requested 或模型自述转为 executed。部分 known 冲突也会 REVIEW_BLOCKED，
+完整 findings 保留，不重跑。恢复若已有账本必须传原 ledger，返回原完整结论，禁止再次 gate。
+DD-417 的 work operation 证据不能用于本 review，DD-417 未 Done 也不总阻塞本票代码。
+
+独立检查：`python3 skills/delivery-pipeline-lody/scripts/check_review_dispatch.py --case native-unknown`；
+setup 同义入口：`python3 skills/delivery-pipeline-setup/scripts/check_config_review.py --case lody-review-plan`。
+两者只证明真实临时文件/子进程与 native I/O 边界合同，真实 Lody session 与逐轴实际执行仍待 Root。

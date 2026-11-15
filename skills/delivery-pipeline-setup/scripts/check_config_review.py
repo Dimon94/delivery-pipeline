@@ -408,9 +408,11 @@ def check_later_round():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['orca-review-plan', 't3-review-plan', 'later-round-plan', 'single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
+    parser.add_argument('--case', choices=['lody-review-plan', 'orca-review-plan', 't3-review-plan', 'later-round-plan', 'single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
     args = parser.parse_args()
-    if args.case == 'orca-review-plan':
+    if args.case == 'lody-review-plan':
+        subprocess.run([sys.executable, str(ROOT / 'skills/delivery-pipeline-lody/scripts/check_review_dispatch.py'), '--case', 'native-unknown'], check=True)
+    elif args.case == 'orca-review-plan':
         subprocess.run([sys.executable, str(HERE.parents[1]/'delivery-pipeline-orca/scripts/check_review_dispatch.py'), '--case', 'native-unknown'], check=True)
     elif args.case == 't3-review-plan':
         subprocess.run([sys.executable, str(ROOT / 'skills/delivery-pipeline-t3code/scripts/check_review_dispatch.py'), '--case', 'native-evidence'], check=True)

@@ -1,6 +1,8 @@
 """DD515 有界模型：同一 request、两个调用者、持久启动前缀和取消。
 
 reserve 对应唯一 Registry 锁内占位，launching 先于外部 start，恢复只读。
+DD518 Lody caller 同样映射 reserve_review → lody.launching → create → receipt；
+无新状态/边，真实双进程/response lost 检查位于 Lody check_review_dispatch.py。
 DD519 Orca 映射：review_dispatch freeze 复用 reserve_review（accepted），原生调用前
 既有 registry_overlay.record_mutation 对应 intent/launching；recover 只返回原 orca
 mutation/receipt，不执行 retry。原生操作由 Root，模型不证明其遵守调用顺序。

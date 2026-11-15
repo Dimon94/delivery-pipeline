@@ -23,7 +23,8 @@ Lody session 生命周期与 Lody packet，其他 gate、owner、worktree、Inte
 3. 新 lane 使用本壳 `assets/LODY_ROLE_DISPATCH_PACKET.md`；worker 先把 Lody 给的 worktree 对齐到
    packet 的 `base_sha`。结果投递、HITL、fan-in、恢复与 Cleanup 按 `references/lody-lifecycle.md`。
 4. Integration 由 coordinator 在 Map Integration Worktree 亲自执行；testing 与 whole-change review
-   各为一条 Lody lane。
+   各为一条 Lody lane。whole-change review 必须沿 `references/lody-dispatch.md` §M3
+   冻结 ReviewPlan/owner_calls，通过现有 native host 协议调用 native_review.py；不走 work fallback。
 5. 当前会话明确选择 Herdr、T3Code、Codex App 或 Orca 时退出本壳，改用对应入口；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 

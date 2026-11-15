@@ -713,6 +713,10 @@ def check_t3code_contract() -> None:
 
 
 def check_lody_contract() -> None:
+    result = subprocess.run([sys.executable, str(LODY / "scripts/check_review_dispatch.py"),
+                             "--case", "native-unknown"], text=True, capture_output=True)
+    if result.returncode != 0:
+        record(f"Lody review plan failed: {result.stdout}{result.stderr}")
     for path in (
         LODY / "SKILL.md",
         LODY / "references" / "lody-dispatch.md",

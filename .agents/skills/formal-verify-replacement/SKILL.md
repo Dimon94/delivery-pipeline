@@ -67,3 +67,10 @@ DD517 同步：T3 ReviewDispatch 使用相同 reserve_review 唯一锁内占位�
 review_recovery_model 的既有状态空间及九个破坏变体直接适用，源码已补同构联系；
 真实文件联系为 T3 check_review_dispatch.py --case native-evidence。模型不验证
 能力目录、逐轴身份、宿主权限或原生去重；真实 T3 接受仍由 Root 完成。
+
+DD518 同步：Lody whole-change `native_review.handle` 复用 reserve_review，在同一唯一
+Registry 持久 launching arguments/plan/packet 后才 session create；receipt 沿 lody 保存。
+既有 review_recovery_model 的 accepted→launching→started→completed 与取消/重放边同样映射
+此 caller，无新增状态或 successor。真实联系为 Lody `check_review_dispatch.py --case native-unknown`
+的两个独立进程竞争、response lost 与取消零重发、真实 JSON-lines 子进程；外部替身仅在
+Lody 公开 I/O。模型与 fixture 不证明真实 requester 权限、native 去重或实际模型/effort。
