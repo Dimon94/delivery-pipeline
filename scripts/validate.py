@@ -449,6 +449,9 @@ def check_lane_wakeup() -> None:
                     "--case", "multi-implementer-fallback"], check=True)
     subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
                     "--case", "runnable-fallback"], check=True)
+    subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
+                    "--case", "same-round-recovery"], check=True)
+    subprocess.run([sys.executable, str(ROOT / "scripts/review_recovery_model.py")], check=True)
     for script in (SETUP / "scripts/check_config_review.py", HERDR / "scripts/check_review_dispatch.py"):
         subprocess.run([sys.executable, str(script), "--case", "capability-safety"], check=True)
     subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),

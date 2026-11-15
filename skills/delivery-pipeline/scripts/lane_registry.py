@@ -110,6 +110,8 @@ def claim(path, source_id, expected_revision, failure_id, category, observe):
     with lock(path) as path:
         all_rows=rows(path)
         source=all_rows[source_id]
+        if source.get('role') == 'review':
+            raise ValueError('review recovery requires original plan/receipt; no work replacement')
         successors=[r for r in all_rows.values() if r.get('replacement_of')==source_id]
         if successors:
             if len(successors)!=1 or successors[0].get('failure_id')!=failure_id or successors[0].get('failure_category')!=category:
@@ -265,3 +267,22 @@ def build_owner_calls(plan):
 def verify_review_packet(plan, packet):
     if packet.get('review_plan') != plan or packet.get('owner_calls') != build_owner_calls(plan):
         raise ValueError('review packet/plan mismatch')
+
+
+def reserve_review(path, row):
+    """在唯一 Registry 锁内占用本轮 request；启动前冻结计划，不生成 successor。"""
+    plan = row['review_plan']
+    build_owner_calls(plan)
+    if not plan.get('request_id') or row.get('role') != 'review':
+        raise ValueError('whole-change review request required')
+    with lock(path) as path:
+        existing = rows(path)
+        if row['lane_id'] in existing or any(
+                r.get('review_plan', {}).get('request_id') == plan['request_id']
+                for r in existing.values()):
+            raise ValueError('review already frozen: recover original plan/receipt')
+        if any(r.get('work_item') == row.get('work_item') and
+               r.get('state') in {'created', 'running', 'awaiting_human'} for r in existing.values()):
+            raise ValueError('work_item already has an active writer')
+        persist(path, [row])
+    return read(path, row['lane_id'])[0]

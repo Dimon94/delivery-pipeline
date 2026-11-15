@@ -89,8 +89,13 @@ def herdr(*args: str) -> dict:
     if result.returncode != 0:
         raise DispatchError(f"herdr {' '.join(args[:2])} failed: {result.stderr.strip() or result.stdout.strip()}")
     try:
-        return json.loads(result.stdout) if result.stdout.strip() else {}
+        reply = json.loads(result.stdout) if result.stdout.strip() else {}
+        if args[:2] == ("agent", "start") and (not isinstance(reply, dict) or not isinstance(reply.get("result"), dict)):
+            raise DispatchError("inspect original start: native receipt Unknown")
+        return reply
     except json.JSONDecodeError:
+        if args[:2] == ("agent", "start"):
+            raise DispatchError("inspect original start: native receipt Unknown")
         return {}
 
 
@@ -170,7 +175,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     for flag in ("config", "evidence", "task", "output-mode", "lane", "work-item", "title",
                  "worktree", "branch", "base", "packet", "registry", "map-registry"):
-        parser.add_argument(f"--{flag}", required=True)
+        parser.add_argument(f"--{flag}", required="--recover-review" not in sys.argv)
     parser.add_argument("--off-chain-reason")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
@@ -181,10 +186,21 @@ def main() -> int:
     parser.add_argument("--native-capabilities", help="已停用：外部自述不能授权原生派发；由 Adapter 现场采集")
     parser.add_argument("--implementation-registry", nargs="+")
     parser.add_argument("--preflight-only", action="store_true", help="whole-change 真实入口只读预检；不写 packet/Registry/pane")
+    parser.add_argument("--recover-review", action="store_true", help="只读原 plan/intent/receipt，不读取配置或创建 lane")
+    parser.add_argument("--review-ledger", help="恢复时读取原 Review Budget 账本")
     args = parser.parse_args()
+    if args.recover_review:
+        from review_recovery import recover
+        try:
+            print(json.dumps(recover(args.registry, args.lane, args.request_id, args.review_ledger), ensure_ascii=False))
+            return 0
+        except (ValueError, KeyError, OSError, TypeError) as error:
+            print(json.dumps({"state":"blocked", "error":str(error)}, ensure_ascii=False))
+            return 1
 
     registry = Path(args.registry)
     row: dict = {}
+    row_owned = False
     try:
         for label, value in (("worktree", args.worktree), ("packet", args.packet)):
             if not Path(value).is_absolute() or not Path(value).exists():
@@ -193,7 +209,8 @@ def main() -> int:
         sys.path.insert(0,str(HERE.parents[1]/"delivery-pipeline/scripts"))
         import lane_registry
         existing = lane_registry.rows(registry)
-        if args.task == "review" and args.lane in existing:
+        if args.task == "review" and (args.lane in existing or any(
+                r.get("review_plan", {}).get("request_id") == args.request_id for r in existing.values())):
             raise DispatchError("review lane already frozen: recover original plan/receipt; do not redispatch")
         if any(row.get("state") in {"running","awaiting_human","created"} for row in existing.values()):
             raise DispatchError(f"registry already has an active writer: {registry}")
@@ -262,6 +279,10 @@ def main() -> int:
                     "不得重新读取配置选模型。每轴保留独立 findings/verdict 和原生 readback，"
                     "无 readback 写 Unknown；pane 启动身份不得复制为双轴 executed。"
                     "沿用原 Review Evidence Bundle、Review Budget 和 review_gate。"
+                    "同轮恢复先读原 Registry plan/intent/receipt 与已有轴结果文件，只 fan-in；"
+                    "已完成轴禁止为补并行而重跑。取消尝试不计完成轮次，保留原 finding/草稿/结果。"
+                    "响应丢失或启动后失败只对账原请求，不进 work replacement，不换候选。"
+                    "原账本终态只读返回，不重新提交 gate。"
                     f"fan-in 必须运行 python3 {HERE / 'review_execution.py'} --ledger <原轮次账本>，"
                     "stdin 传 round、axes 完整结果、原 review_packet 与逐轴 native_readbacks；"
                     "REVIEW_BLOCKED 保留 findings、阻断本轮放行，禁止自动重跑或换候选。\n")
@@ -285,7 +306,12 @@ def main() -> int:
         }
         if args.off_chain_reason:
             row["off_chain_reason"] = args.off_chain_reason.replace("\n", " ")
-        write_registry(registry, row)
+        if review is not None:
+            row['review_plan'] = review
+            lane_registry.reserve_review(registry, row)
+        else:
+            write_registry(registry, row)
+        row_owned = True
         if review is not None:
             lane_registry.freeze_review_plan(registry, args.lane, review, args.request_id)
             persisted = lane_registry.load_review_plan(registry, args.lane, args.request_id)
@@ -298,11 +324,20 @@ def main() -> int:
         name = agent_name(args.lane)
         row["herdr"] = {**pane, "agent_name": name, "coordinator_pane_id": coord["pane_id"]}
         write_registry(registry, row)
-        herdr(*mc.startup_request(plan, worker_name=name, pane_id=pane["pane_id"])[1:])
+        argv = mc.startup_request(plan, worker_name=name, pane_id=pane["pane_id"])
+        if review is not None:
+            row["herdr"].update(startup_state="launching", request_id=args.request_id, argv=argv)
+            write_registry(registry, row)
+        reply = herdr(*argv[1:])
+        if review is not None:
+            row["herdr"].update(startup_state="completed", receipt={"request_id":args.request_id, "native":reply})
+            write_registry(registry, row)
         herdr("pane", "rename", pane["pane_id"], args.title)
         prompt = f"完整读取 {args.packet} 并严格按其中全部指令执行。"
         herdr("agent", "prompt", name, prompt)
         if not wait_working(name):
+            if review is not None:
+                raise DispatchError("inspect original review: working Unknown; preserve pane/packet, do not re-prompt")
             herdr("agent", "prompt", name, prompt)
             if not wait_working(name):
                 subprocess.run(["herdr", "pane", "close", pane["pane_id"]], capture_output=True)
@@ -314,7 +349,7 @@ def main() -> int:
         row["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         write_registry(registry, row)
     except (DispatchError, ValueError, OSError, KeyError, json.JSONDecodeError) as error:
-        if row:
+        if row_owned:
             row["state"] = "setup_blocked"
             row["blocker"] = str(error).replace("\n", " ")
             try:

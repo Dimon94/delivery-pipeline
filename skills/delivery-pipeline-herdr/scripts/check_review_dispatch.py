@@ -360,8 +360,137 @@ def check_capability_safety():
     print('capability-safety dispatch: pass (external I/O fixtures; native acceptance Unknown)')
 
 
+
+def check_same_round():
+    """独立预期 DD515 AC1–6 / R12/R15/R17：原请求只读恢复、零第二副作用。"""
+    import os
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts'))
+    import lane_registry as registry
+    base = {'tabs': [{'tab_id':'w1:t1','label':'coord','pane_count':1,'workspace_id':'w1'}],
+            'panes': [{'pane_id':'w1:p1','tab_id':'w1:t1','workspace_id':'w1'}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        root=Path(tmp)
+        (root/'herdr').write_text(f'#!{sys.executable}\n'+FAKE_HERDR)
+        (root/'watch').write_text('#!/bin/sh\nexit 0\n')
+        for name in ('herdr','watch'): (root/name).chmod(0o755)
+        owner=root/'owner/SKILL.md'; owner.parent.mkdir(); owner.write_text('---\nname: code-review\n---\nfixture')
+        packet=f'Owner：code-review；{owner}；fixture\n'
+        flags=('--task','review','--output-mode','verdict','--review-scope','whole-change',
+               '--required-axes','standards','spec','--request-id','original')
+        map_text=GOOD_MAP.replace('role: map','work_item: DD-508\nrole: map\nbase_commit: base')
+        result,path,calls=run(root,'recover',base,packet=packet,map_text=map_text,extra=flags)
+        assert result.returncode==0,result.stdout+result.stderr
+        original,_=registry.read(path,'recover')
+        assert original['herdr']['startup_state']=='completed', '原启动 receipt 未持久化'
+        assert original['herdr']['receipt'], '缺原始 receipt'
+        starts=sum(c[:2]==['agent','start'] for c in calls); assert starts==1
+        frozen=original['review_plan']
+        # 配置/catalog 已坏：恢复不得读取它们，不调用原生 IO。
+        (root/'model-roles.json').write_text('broken'); (root/'evidence.json').unlink()
+        cmd=[sys.executable,str(Path(__file__).with_name('dispatch.py')),'--recover-review',
+             '--registry',str(path),'--lane','recover','--request-id','original']
+        before=path.read_bytes(); call_bytes=(root/'calls.jsonl').read_bytes()
+        with ThreadPoolExecutor(2) as pool:
+            results=list(pool.map(lambda _:subprocess.run(cmd,text=True,capture_output=True),range(2)))
+        for r in results:
+            assert r.returncode==0,r.stdout+r.stderr
+            got=json.loads(r.stdout)
+            assert got['review_packet']['review_plan']==frozen
+            assert got['row']==original and got['action']=='recover_original'
+        assert path.read_bytes()==before and (root/'calls.jsonl').read_bytes()==call_bytes
+        # response lost / 取消 / 启动失败均只读原证据，不派下一项。
+        for state,startup,action in [('setup_blocked','launching','inspect_original'),
+                                     ('cancelled','completed','stop'),('setup_blocked','failed','stop')]:
+            row={**original,'state':state,'herdr':{**original['herdr'],'startup_state':startup}}
+            registry.write(path,row)
+            before=path.read_bytes()
+            r=subprocess.run(cmd,text=True,capture_output=True)
+            assert r.returncode==0,r.stderr+r.stdout
+            got=json.loads(r.stdout); assert got['action']==action and got['row']==row
+            assert path.read_bytes()==before and (root/'calls.jsonl').read_bytes()==call_bytes
+            _,rev=registry.read(path,'recover')
+            try: registry.claim(path,'recover',rev,'no-replacement','tool_or_model',lambda _:dict(writer='exited',identity='match',capability='verified',gate='allowed'))
+            except ValueError as error:
+                assert 'original plan/receipt' in str(error), '必须返回原 review 恢复合同，不能落入 legacy work 策略'
+            else: raise AssertionError('review 进入 work replacement')
+            assert path.read_bytes()==before
+        # 已完成轴原结果随原 gate 可恢复；终态不重提、不丢 finding，不为并行补跑。
+        ledger=root/'review-budget.json'
+        packet_data={'review_plan':frozen,'owner_calls':registry.build_owner_calls(frozen)}
+        clean={'P0':0,'P1':0,'P2':0,'P3':0}
+        axes={axis:{'verdict':'PASS','counts':{**clean,'P3':1},'findings':['原始 finding '+axis]}
+              for axis in ('standards','spec')}
+        data={'round':1,'axes':axes,'review_packet':packet_data,'native_readbacks':{}}
+        gate=[sys.executable,str(Path(__file__).with_name('review_execution.py')),'--ledger',str(ledger)]
+        r=subprocess.run(gate,input=json.dumps(data),text=True,capture_output=True)
+        assert r.returncode==0 and r.stdout.strip()=='PASS',r.stderr
+        before=ledger.read_bytes()
+        r=subprocess.run([*cmd,'--review-ledger',str(ledger)],text=True,capture_output=True)
+        got=json.loads(r.stdout)
+        assert r.returncode==0 and got['action']=='stop'
+        assert got['recorded_rounds'][0]['axes']==axes and len(got['recorded_rounds'])==1
+        assert [e['status'] for e in got['recorded_rounds'][0]['execution_evidence']]==['unknown','unknown']
+        r=subprocess.run(gate,input=json.dumps(data),text=True,capture_output=True)
+        assert r.returncode!=0 and ledger.read_bytes()==before
+        fix_ledger=root/'fix-budget.json'
+        blocked={**axes['standards'],'verdict':'BLOCK','counts':{**clean,'P1':1},'findings':['原始阻断 finding']}
+        fix_data={**data,'axes':{**axes,'standards':blocked}}
+        r=subprocess.run([*gate[:-1],str(fix_ledger)],input=json.dumps(fix_data),text=True,capture_output=True)
+        assert r.returncode==0 and r.stdout.strip()=='FIX',r.stderr
+        r=subprocess.run([*cmd,'--review-ledger',str(fix_ledger)],text=True,capture_output=True)
+        got=json.loads(r.stdout)
+        assert r.returncode==0 and got['action']=='stop', '取消/失败优先于原 FIX 恢复'
+        assert got['recorded_rounds'][0]['axes']['standards']==blocked
+        # 相同 intent 换 lane 也不得占第二 lane；真实独立 Python 进程竞争同一文件。
+        race=root/'race.md'
+        worker="""import sys,json; from pathlib import Path
+sys.path.insert(0,sys.argv[1]); import lane_registry as r
+row=json.loads(sys.argv[3]); r.reserve_review(Path(sys.argv[2]),row)
+"""
+        core=str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts')
+        def reserve(i):
+            row={**original,'lane_id':f'race-{i}','state':'terminal'}
+            return subprocess.run([sys.executable,'-c',worker,core,str(race),json.dumps(row)],capture_output=True)
+        with ThreadPoolExecutor(2) as pool: reserved=list(pool.map(reserve,range(2)))
+        assert sorted(r.returncode for r in reserved)==[0,1]
+        assert len(registry.rows(race))==1
+        # 原生 IO 已收到 start 后杀死当前 dispatch 进程，真实持久前缀恢复不重发。
+        fault = FAKE_HERDR.replace('if args[:2] == ["pane", "current"]:',
+            'if args[:2] == ["agent", "start"]:\n    import os,signal\n    (root/"start-accepted").write_text("external fixture only")\n    os.kill(os.getppid(), signal.SIGKILL)\n    raise SystemExit(1)\nelif args[:2] == ["pane", "current"]:')
+        (root/'herdr').write_text(f'#!{sys.executable}\n'+fault)
+        r,path,calls=run(root,'response-lost',base,packet=packet,map_text=map_text,extra=flags)
+        assert r.returncode!=0 and (root/'start-accepted').exists()
+        pending,_=registry.read(path,'response-lost')
+        assert pending['herdr']['startup_state']=='launching' and 'receipt' not in pending['herdr']
+        trace=(root/'calls.jsonl').read_bytes(); before=path.read_bytes()
+        r=subprocess.run([sys.executable,str(Path(__file__).with_name('dispatch.py')),
+            '--recover-review','--registry',str(path),'--lane','response-lost','--request-id','original'],
+            text=True,capture_output=True)
+        got=json.loads(r.stdout)
+        assert r.returncode==0 and got['action']=='inspect_original' and got['row']==pending
+        assert path.read_bytes()==before and (root/'calls.jsonl').read_bytes()==trace
+        # exit 0 但响应不可解析也不能伪造 completed receipt。
+        malformed=FAKE_HERDR.replace('if args[:2] == ["pane", "current"]:',
+            'if args[:2] == ["agent", "start"]:\n    print("response lost")\nelif args[:2] == ["pane", "current"]:')
+        (root/'herdr').write_text(f'#!{sys.executable}\n'+malformed)
+        r,path,calls=run(root,'malformed-response',base,packet=packet,map_text=map_text,extra=flags)
+        saved,_=registry.read(path,'malformed-response')
+        assert r.returncode!=0 and saved['herdr']['startup_state']=='launching'
+        assert 'receipt' not in saved['herdr'] and sum(c[:2]==['agent','start'] for c in calls)==1
+        # 等待 working 超时不是未收到 packet：review 禁止二次 prompt 或关 pane 丢证据。
+        (root/'herdr').write_text(f'#!{sys.executable}\n'+FAKE_HERDR)
+        r,path,calls=run(root,'working-unknown',{**base,'working':False},packet=packet,map_text=map_text,extra=flags)
+        assert r.returncode!=0
+        assert sum(c[:2]==['agent','prompt'] for c in calls)==1, 'Unknown working 不得重复投递 review packet'
+        assert not any(c[:2]==['pane','close'] for c in calls), '必须保留原 session 证据'
+    check_axis_evidence()
+    print('same-round-recovery: pass (真实文件/独立进程；native IO 替身，实际执行 Unknown)')
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback'], required=True)
+    p.add_argument('--case', choices=['same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback'], required=True)
     args = p.parse_args()
-    ({'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
+    ({'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()

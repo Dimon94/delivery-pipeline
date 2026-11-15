@@ -45,3 +45,12 @@ observe 的 `_selected` 为共享选中的启动快照，顶层为旧身份；�
 输入及跳过该门禁的破坏变体（共 11 个）；不抽象能力目录的变化时刻，不能保证观察后远端能力不变化。
 真实对应回归为 `python3 scripts/check_r1_replacement.py` 及四壳 `check_*_native_replacement.py`；
 后者替身仅在原生 I/O 边界，selected 能力由生产解析器验证。并发仍由真实双进程检查承担。
+
+DD515 同步：正式 review 不走 work claim/replacement。`reserve_review` 在唯一 Registry 的
+flock 内冻结原计划与 request，占位成功的唯一 dispatch 持久 `herdr.startup_state=launching`
+后才调用 start；receipt 沿原 herdr 字段保存。恢复只读原 plan/receipt/Review Budget，取消、
+终态停止，response lost inspect，不重发、不重选。运行 `python3 scripts/review_recovery_model.py`
+枚举同 request 两调用者、配置变化、启动持久前缀和取消，拒绝重复占位、重发、重选与取消后
+replacement 四变体。真实联系为 `check_review_dispatch.py --case same-round-recovery` 的
+公开 CLI、真实文件及独立双进程竞争。该模型不覆盖网络、强制断电、NFS 或原生去重；没有
+扩张旧 M2 原生验收结论。原有 replacement 模型与检查继续执行。
