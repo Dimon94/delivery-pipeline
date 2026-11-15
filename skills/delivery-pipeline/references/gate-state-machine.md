@@ -183,6 +183,7 @@ whole-change，最多 3 轮，不能续。所属壳仍启用逐票 review 时，
 
 按 gate 输出处置：
 
+- `REVIEW_BLOCKED`：M3 known executed mismatch 阻断本轮放行；保留完整 findings 与逐轴证据，不自动重跑、不换候选。
 - `PASS`：进入下一 gate。验证缺口写入报告，由 testing/closeout gate 判定，不改变 Review verdict。
 - `FIX`：写诊断 artifact，给出根因和归因类别；whole-change 的全部 finding 交给同一个 implementer
   lane 修复并排查同类位置，merger 收口后再开下一轮。
@@ -195,7 +196,7 @@ whole-change，最多 3 轮，不能续。所属壳仍启用逐票 review 时，
 
 - P2 查重后登记 Issue，P3 留在报告里。两者都不开修复 lane，也不触发新一轮。
 - whole-change 阶段的修复 lane 和同步主干不跑内嵌 Review，由下一轮 whole-change 复核。
-- 只有 `FIX` 能续轮；`PASS` 与 `REVIEW_EXHAUSTED` 是账本终态，gate 拒绝之后的写入。终态后的冲突解决、
+- 只有 `FIX` 能续轮；`PASS`、`REVIEW_BLOCKED` 与 `REVIEW_EXHAUSTED` 是账本终态，gate 拒绝之后的写入。终态后的冲突解决、
   恢复修复等改动靠测试验证并在 PR 注明，沿用原账本路径。FIX 与下一轮之间的 merge 并入下一轮范围。
 - base 与 head 相同的 Review 结果直接复用，不重跑。
 - packet 不得抬高阻断线或预算。用户明确破例时，packet 引用用户原话与来源坐标。

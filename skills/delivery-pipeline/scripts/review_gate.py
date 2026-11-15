@@ -6,10 +6,12 @@
    "axes": {"standards": {"verdict": "PASS", "counts": {"P0": 0, "P1": 0, "P2": 1, "P3": 0}},
             "spec": {"verdict": "NO_SPEC"}},
    "p2_issues": ["<Issue 坐标>"]}
-输出：PASS | FIX | REVIEW_EXHAUSTED。输入非法或超预算时非零退出。
+M3 另传 review_packet 和 native_readbacks，逐轴 schema 见 code-review-evidence-preflight.md。
+输出：PASS | FIX | REVIEW_EXHAUSTED | REVIEW_BLOCKED。输入非法或超预算时非零退出。
 账本只记录已产生有效 verdict 的轮次及其 P0-P3 合计；中断的审查不进账本，因此不占预算。
-只有 FIX 能续轮：PASS 与 REVIEW_EXHAUSTED 是终态，之后再写入一律拒绝。
+只有 FIX 能续轮：PASS、REVIEW_BLOCKED 与 REVIEW_EXHAUSTED 是终态，之后再写入一律拒绝。
 """
+from copy import deepcopy
 import argparse
 import json
 import os
@@ -18,6 +20,54 @@ import tempfile
 
 MAX_ROUNDS = 3
 SEVERITIES = ("P0", "P1", "P2", "P3")
+
+
+def record_axis_execution(axis, requested, native_readback):
+    """只接受逐轴原生读回；effort 只能取 applied_effort，不能取请求参数。"""
+    if axis not in ('standards', 'spec'):
+        raise ValueError('unknown review axis')
+    if not isinstance(requested, dict) or any(
+            not isinstance(requested.get(k), str) or not requested[k].strip()
+            for k in ('agent', 'model', 'effort')):
+        raise ValueError('requested ModelTriple required')
+    raw = native_readback if isinstance(native_readback, dict) else {}
+    executed = None
+    if raw.get('source') == 'native_readback':
+        identity = raw.get('identity') or {}
+        observed = {'agent': identity.get('agent'), 'model': identity.get('model'),
+                    'effort': raw.get('applied_effort')}
+        executed = {key: value if isinstance(value, str) and value.strip() else None
+                    for key, value in observed.items()}
+        if not any(executed.values()):
+            executed = None
+    conflicts = [k for k, v in (executed or {}).items() if v is not None and v != requested[k]]
+    complete = executed is not None and all(executed.values())
+    status = 'mismatch' if conflicts else ('matched' if complete else 'unknown')
+    return {'axis': axis, 'requested': deepcopy(requested), 'executed': executed,
+            'status': status, 'reason': ','.join(conflicts) if conflicts else
+                (None if complete else 'native_readback_incomplete'),
+            'native_readback': deepcopy(raw) if raw.get('source') == 'native_readback' else None}
+
+
+def round_release_blockers(evidence):
+    return ['reviewer_execution_mismatch'] if any(e['status'] == 'mismatch' for e in evidence) else []
+
+
+def execution_evidence(data):
+    """由同一冻结 packet 推导 requested；调用方不能提交自评 status。"""
+    packet = data.get('review_packet')
+    if packet is None:
+        return []  # legacy gate；M3 Adapter 强制要求 packet。
+    from lane_registry import verify_review_packet
+    plan = packet['review_plan']
+    verify_review_packet(plan, packet)
+    if set(data['axes']) != set(plan['required_axes']):
+        raise ValueError('result axes must equal frozen required_axes')
+    readbacks = data.get('native_readbacks', {})
+    if not isinstance(readbacks, dict) or set(readbacks) - set(plan['required_axes']):
+        raise ValueError('native_readbacks must belong to required axes')
+    return [record_axis_execution(call['axis'], call['requested'], readbacks.get(call['axis']))
+            for call in packet['owner_calls']]
 
 
 # ---- 结论推导 ---------------------------------------------------------------
@@ -54,6 +104,8 @@ def evaluate(data):
     if round_no == 1 and not {"standards", "spec"} <= axes.keys():
         raise ValueError("第 1 轮必须同时有 standards 与 spec；无 Spec 时写 NO_SPEC")
     counts = [axis_counts(name, axis) for name, axis in axes.items()]
+    if round_release_blockers(execution_evidence(data)):
+        return 'REVIEW_BLOCKED'
     if sum(item["P0"] + item["P1"] for item in counts):
         return "FIX" if round_no < MAX_ROUNDS else "REVIEW_EXHAUSTED"
     issues = data.get("p2_issues", [])
@@ -95,6 +147,11 @@ def run(data, ledger):
         for severity, value in axis_counts(name, axis).items():
             totals[severity] += value
     entry = {"round": data["round"], "outcome": outcome, "counts": totals}
+    if data.get('review_packet') is not None:
+        evidence = execution_evidence(data)
+        entry.update(axes=deepcopy(data['axes']), execution_evidence=evidence,
+                     release_blockers=round_release_blockers(evidence),
+                     review_packet=deepcopy(data['review_packet']), p2_issues=deepcopy(data.get('p2_issues', [])))
     write_ledger(ledger, rounds + [entry])
     return outcome
 

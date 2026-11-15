@@ -53,3 +53,31 @@ requested 来自冻结顶层 triple（包含已选 fallback）；只有 `impleme
 `config_hash` 为完整配置 canonical JSON（sort_keys、UTF-8、紧凑 separators）的 SHA-256，
 不同于配置事务对原始文件字节的 base_hash。本路径不写配置、不迁移、不要求家族声明。
 空 candidates 按字段判断，兼容后续 canonical schema 接受的空池版本；非空池交后续选序能力。
+
+## 逐轴执行证据与放行（DD-508 R17）
+
+M3 fan-in 向既有 review gate 传 `round`、完整 `axes`（verdict/counts/findings）、
+`p2_issues`、原冻结 `review_packet={review_plan,owner_calls}` 及 `native_readbacks`。
+各 CLI Adapter 负责把每轴真实原生响应映射为下列形状；不得从配置、启动参数或宿主身份补值：
+
+```json
+{"standards":{"source":"native_readback","identity":{"agent":"<observed>","model":"<observed>"},"applied_effort":"<observed>","evidence_id":"<原生响应工件绝对路径>"}}
+```
+
+没有原生读回时省略该轴或写 null。缺 agent/model/applied_effort 可省略相应字段。
+`identity.effort` 不作为 applied effort；source 不是 `native_readback` 时不接受 executed。
+source 标记是 Adapter 的来源承诺，gate 不认证 provider 响应真实性；保留原始工件供 Root 审核。
+
+`review_gate.record_axis_execution(axis, requested, native_readback)` 是共用的纯证据分类规则，
+Adapter 沿用该规则；`requested` 取冻结 owner_calls，绝不重新选序。
+输出每轴 `axis/requested/executed/status/reason/native_readback`，executed 中的 effort 仅指
+applied effort。无观测为 null，部分读回的缺字段为 null；status 的机器值为
+`matched/mismatch/unknown`（unknown 即 Unknown）。任一已知冲突优先判 mismatch；全部三字段
+读回且相等才 matched，其余 unknown。`round_release_blockers` 仅对 mismatch 输出
+`reviewer_execution_mismatch`。
+
+gate 核对冻结 packet 与结果轴，重算状态，不信调用者自评的 status。账本保留完整 axes、原 packet、
+逐轴证据、P2 坐标及 release_blockers。known mismatch 返回 `REVIEW_BLOCKED`，不放行本轮，
+不自动重跑、不换候选；Unknown 不单独阻断。缺 verdict 仍按原规则报错，不伪造审查结果。
+Legacy 无 packet 调用保持原合同；M3 Adapter 必须提供 packet。外部 resolved code-review owner
+须回传每轴原生响应及完整 findings，并执行该 fan-in；本仓不修改外部 skill，其真实遵守情况由 Root 验收。

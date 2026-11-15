@@ -234,7 +234,10 @@ def main() -> int:
                     "resolved code-review owner：逐轴按 owner_calls 的 requested 调用 required axes；"
                     "不得重新读取配置选模型。每轴保留独立 findings/verdict 和原生 readback，"
                     "无 readback 写 Unknown；pane 启动身份不得复制为双轴 executed。"
-                    "沿用原 Review Evidence Bundle、Review Budget 和 review_gate。\n")
+                    "沿用原 Review Evidence Bundle、Review Budget 和 review_gate。"
+                    f"fan-in 必须运行 python3 {HERE / 'review_execution.py'} --ledger <原轮次账本>，"
+                    "stdin 传 round、axes 完整结果、原 review_packet 与逐轴 native_readbacks；"
+                    "REVIEW_BLOCKED 保留 findings、阻断本轮放行，禁止自动重跑或换候选。\n")
             actual = json.loads(packet_path.read_text().split(marker, 1)[1].split("```json", 1)[1].split("```", 1)[0])
             lane_registry.verify_review_packet(review, actual)
             plan = mc.review_start_plan(review, evidence)

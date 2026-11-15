@@ -72,3 +72,16 @@ Registry 精确读回后才创建 pane。lane 启动前仅复核冻结目标能�
 
 独立回归命令：`python3 skills/delivery-pipeline-herdr/scripts/check_review_dispatch.py --case single-model`。
 该命令使用 fake Herdr，不声称执行了模型。真实入口的逐轴 owner findings/readback 另由 root 验收。
+
+
+## 逐轴执行证据 fan-in
+
+resolved owner 完成 required axes 后，运行 `python3 <本壳绝对路径>/scripts/review_execution.py
+--ledger <原 whole-change 账本>`；stdin 是 `round/axes/p2_issues/review_packet/native_readbacks`。
+`review_packet` 原样取冻结 packet，读回 schema 见 canonical `code-review-evidence-preflight.md`。
+该入口只执行原 review gate；不读取配置、不选候选、不创建 lane。逐轴缺 readback 写 Unknown，
+known mismatch 返回 `REVIEW_BLOCKED` 并保存全部 findings；不得自动重跑。退出 0 表示账本写入成功，
+只有 stdout `PASS` 才允许继续放行，不能仅凭退出码判 PASS。
+
+独立检查：`python3 skills/delivery-pipeline-herdr/scripts/check_review_dispatch.py --case axis-evidence-mismatch`。
+该检查仅模拟 Adapter 证据，不证明真实 Herdr/provider 的 model 或 applied effort。

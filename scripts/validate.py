@@ -445,6 +445,8 @@ def check_context_loading() -> None:
 
 
 def check_lane_wakeup() -> None:
+    subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
+                    "--case", "axis-evidence-mismatch"], check=True)
     subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),
                     "--case", "single-model-plan"], check=True)
     subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
