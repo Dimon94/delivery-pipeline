@@ -178,6 +178,7 @@ def main() -> int:
     parser.add_argument("--review-scope")
     parser.add_argument("--required-axes", nargs="+", choices=["standards", "spec"])
     parser.add_argument("--request-id")
+    parser.add_argument("--native-capabilities", help="本轮只读原生 preflight 证据 JSON，非 executed")
     parser.add_argument("--implementation-registry", nargs="+")
     args = parser.parse_args()
 
@@ -221,7 +222,8 @@ def main() -> int:
             implementations = lane_registry.collect_implementation_identities(contribution_rows, fixed_point)
             review = mc.resolve_review_plan(mc.load_document(Path(args.config).expanduser()),
                 required_axes=args.required_axes, implementations=implementations,
-                evidence=evidence, native_capabilities={}, request_id=args.request_id)
+                evidence=evidence, native_capabilities=mc.load_review_native_capabilities(
+                    args.native_capabilities, args.request_id), request_id=args.request_id)
             calls = lane_registry.build_owner_calls(review)
             payload = {"review_plan": review, "owner_calls": calls}
             marker = "<!-- DP_REVIEW_PLAN -->"

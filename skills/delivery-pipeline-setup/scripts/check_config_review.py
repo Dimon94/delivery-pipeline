@@ -116,7 +116,7 @@ def check_candidate_family():
             m.resolve_review_plan(candidate, required_axes=['standards', 'spec'], implementations=[],
                                   evidence=ev['capabilities'], native_capabilities={}, request_id='candidate-round')
         except ValueError as error:
-            assert 'candidate selection not available' in str(error)
+            assert 'review_capability_evidence_required' in str(error)
         else:
             raise AssertionError('非空候选不得绕过后续选序门槛')
         assert candidate == frozen_candidate
@@ -170,12 +170,77 @@ def check_candidate_family():
         app=m.valid_app_fixture();assert m.migrate_document(app)==(app,'app')
     print('candidate-family-transaction: pass (CLI/files/processes; native execution Unknown)')
 
+def check_different_family():
+    """DD-508 R4/R9：Unknown 后的首个 different，不能优先主项或字典排序。"""
+    config = m.migrate_document(m.valid_fixture())[0]
+    primary = {'agent': 'pi', 'model': 'provider/model', 'effort': 'high'}
+    unknown = {**primary, 'model': 'undeclared-route'}
+    first = {**primary, 'model': 'z-first'}
+    later = {**primary, 'model': 'a-later'}
+    config['review']['whole-change']['standards']['candidates'] = [unknown, first, later, first]
+    config['review']['whole-change']['spec']['candidates'] = [later, first]
+    config['model_families'] = {'pi': {name: {'family': family, 'source': 'user_declared'}
+        for name, family in [('provider/model', 'impl'), ('z-first', 'other'), ('a-later', 'third')]}}
+    pools = {axis: [m.triple(cell), *cell['candidates']]
+             for axis, cell in config['review']['whole-change'].items()}
+    probe = {'request_id': 'r1', 'observed_at': 'fixture-only', 'sources': {'pi': {'status': 'ok'}},
+             'capabilities': {'pi': {'binary': True, 'models': {x['model']: ['high'] for x in pools['standards']}}}}
+    native = {axis: [{'identity': x, 'status': 'runnable', 'reason': None,
+                     'evidence_id': f'fixture-{axis}-{i}'} for i, x in enumerate(pool)] for axis, pool in pools.items()}
+    impl = [{'lane_id': 'impl', 'requested': primary, 'executed': primary}]
+    def resolve(implementations=impl, evidence=probe, capabilities=native):
+        return m.resolve_review_plan(config, required_axes=['standards', 'spec'], implementations=implementations,
+            evidence=evidence, native_capabilities=capabilities, request_id='r1')
+    plan = resolve()
+    assert plan['lane'] == plan['axes']['standards']
+    assert plan['lane']['selected'] == first, '必须首个 runnable+different，不能主项/字典排序/Unknown'
+    assert plan['axes']['spec']['selected'] == later, '逐轴独立选序'
+    assert [a['identity'] for a in plan['lane']['attempts']] == pools['standards'], '用户顺序及重复不可丢'
+    assert [a['comparison'] for a in plan['lane']['attempts']] == ['same', 'unknown', 'different', 'different', 'different']
+    assert plan['lane']['comparison_basis'] == 'executed'
+    assert plan['lane']['fallback'] == 'none'
+    assert plan['family_evidence'] and all(f['source'] == 'declared_at_review' for f in plan['family_evidence'])
+    requested = resolve([{**impl[0], 'executed': None}])
+    assert requested['lane']['comparison_basis'] == 'requested'
+    mixed = resolve([impl[0], {**impl[0], 'lane_id': 'legacy', 'executed': None}])
+    assert mixed['lane']['comparison_basis'] == 'mixed'
+    unknown_impl = resolve([{**impl[0], 'executed': unknown}])
+    assert unknown_impl['lane']['comparison'] == 'unknown'
+    assert unknown_impl['lane']['selected'] == primary and unknown_impl['lane']['fallback'] == 'no_different_family_candidate'
+    for ev, cap in [(None, native), ({**probe, 'request_id': 'stale'}, native), (probe, {})]:
+        try: resolve(evidence=ev, capabilities=cap)
+        except ValueError as error: assert 'review_capability_evidence_required' in str(error)
+        else: raise AssertionError('缺当前证据必须阻断')
+    calls = registry.build_owner_calls(plan)
+    assert [c['requested'] for c in calls] == [first, later]
+    registry.verify_review_packet(plan, {'review_plan': plan, 'owner_calls': calls})
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for name, value in [('config', config), ('probe', probe),
+                            ('native', {'request_id': 'r1', 'observed_at': 'fixture-only', 'capabilities': native})]:
+            (root/f'{name}.json').write_text(json.dumps(value))
+        source = root/'registry.md'
+        registry.write(source, {'lane_id': 'map', 'work_item': 'DD-508', 'role': 'map', 'base_commit': 'base'})
+        registry.write(source, {'lane_id': 'impl', 'work_item': 'DD-512', 'role': 'backend', 'map': 'map',
+            'output_mode': 'commit', 'integrated_commit': 'head', **primary,
+            'implementation_execution': {'source': 'native_readback', 'identity': primary}})
+        result = subprocess.run([sys.executable, str(SCRIPT), 'resolve', str(root/'config.json'), 'review',
+            '--review-scope', 'whole-change', '--output-mode', 'verdict', '--required-axes', 'standards', 'spec',
+            '--request-id', 'r1', '--fixed-point', 'base', '--implementation-registry', str(source),
+            '--evidence', str(root/'probe.json'), '--native-capabilities', str(root/'native.json')], text=True, capture_output=True)
+        assert result.returncode == 0, result.stdout+result.stderr
+        assert json.loads(result.stdout)['review_plan'] == plan
+    print('different-family-plan: pass (public resolver; fixture capability, native execution Unknown)')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction'], required=True)
+    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction', 'different-family-plan'], required=True)
     args = parser.parse_args()
     if args.case == 'single-model-plan':
         for version in (6, 7):
             check_single_model(version)
+    elif args.case == 'different-family-plan':
+        check_different_family()
     else:
         check_candidate_family()

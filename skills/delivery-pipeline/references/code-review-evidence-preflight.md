@@ -35,7 +35,7 @@ fixed point 解析为唯一 commit 后记录 HEAD；ref 无效、diff 为空或�
 
 完成标准：两轴从同一 bundle 开始，只用 read/search 完成并返回可聚合结果。
 
-## 冻结单模型 Review Plan
+## 冻结 Review Plan
 
 CLI whole-change 的 packet 携带 `review_plan` 和 `owner_calls`，由 canonical
 `model_config.resolve_review_plan` 生成；`lane_registry.verify_review_packet` 读回核对。
@@ -52,7 +52,10 @@ requested 来自冻结顶层 triple（包含已选 fallback）；只有 `impleme
 `source: native_readback` 的 identity 可作为 executed，旧 lane 缺读回保持 null。
 `config_hash` 为完整配置 canonical JSON（sort_keys、UTF-8、紧凑 separators）的 SHA-256，
 不同于配置事务对原始文件字节的 base_hash。本路径不写配置、不迁移、不要求家族声明。
-空 candidates 按字段判断，兼容后续 canonical schema 接受的空池版本；非空池交后续选序能力。
+空 candidates 保持单模型兼容；非空参与池由同一 resolver 核验当前 probe/native 证据，
+按用户顺序优先首个 runnable+different，否则首个 runnable。family_evidence 保存精确声明及
+declared_at_review 来源，attempts 保留顺序、重复、理由和证据 id。comparison_basis 为
+requested/mixed 时仅表示配置级偏好，不证明实际执行家族独立。
 
 ## 逐轴执行证据与放行（DD-508 R17）
 

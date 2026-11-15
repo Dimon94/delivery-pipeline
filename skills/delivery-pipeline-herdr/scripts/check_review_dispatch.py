@@ -140,8 +140,72 @@ def check_axis_evidence():
     print('axis-evidence-mismatch: pass (adapter simulation; native model/effort Unknown)')
 
 
+def check_different_family():
+    # 公开生产 dispatch CLI，替身仅位于 Herdr I/O；不调用真实 lane。
+    import importlib.util
+    module_path = Path(__file__).resolve().parents[2]/'delivery-pipeline-setup/scripts/model_config.py'
+    spec = importlib.util.spec_from_file_location('review_mc', module_path)
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    primary = {'agent': 'pi', 'model': 'provider/model', 'effort': 'high'}
+    first = {**primary, 'model': 'z-first'}
+    later = {**primary, 'model': 'a-later'}
+    config = m.migrate_document(m.valid_fixture())[0]
+    for axis, candidate in [('standards', first), ('spec', later)]:
+        config['review']['whole-change'][axis]['candidates'] = [candidate]
+    config['model_families'] = {'pi': {model: {'family': family, 'source': 'user_declared'}
+        for model, family in [('provider/model', 'impl'), ('z-first', 'other'), ('a-later', 'other')]}}
+    probe = {'request_id': 'r1', 'observed_at': 'fixture-only', 'sources': {'pi': {'status': 'ok'}},
+        'capabilities': {'pi': {'binary': True, 'models': {x: ['high'] for x in ['provider/model', 'z-first', 'a-later']}}}}
+    native = {'request_id': 'r1', 'observed_at': 'fixture-only', 'capabilities': {
+        axis: [{'identity': x, 'status': 'runnable', 'reason': None, 'evidence_id': f'fixture-{axis}-{i}'}
+               for i, x in enumerate([primary, candidate])]
+        for axis, candidate in [('standards', first), ('spec', later)]}}
+    base = {'tabs': [{'tab_id': 'w1:t1', 'label': 'coord', 'pane_count': 1, 'workspace_id': 'w1'}],
+            'panes': [{'pane_id': 'w1:p1', 'tab_id': 'w1:t1', 'workspace_id': 'w1'}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root/'herdr').write_text(f'#!{sys.executable}\n'+FAKE_HERDR)
+        (root/'watch').write_text('#!/bin/sh\nexit 0\n')
+        for name in ['herdr', 'watch']: (root/name).chmod(0o755)
+        owner = root/'owner/SKILL.md'; owner.parent.mkdir()
+        owner.write_text('---\nname: code-review\n---\nfixture only\n')
+        packet = f'Owner：code-review；{owner}；fixture file invocation\n'
+        map_text = GOOD_MAP.replace('role: map', 'work_item: DD-508\nrole: map\nbase_commit: abc')
+        implementation = root/'impl.md'
+        implementation.write_text('<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: impl\nwork_item: DD-512\nrole: backend\noutput_mode: commit\nmap: map-demo\nintegrated_commit: def\nagent: pi\nmodel: provider/model\neffort: high\n```\n')
+        native_path = root/'native.json'; native_path.write_text(json.dumps(native))
+        flags = ('--task', 'review', '--output-mode', 'verdict', '--review-scope', 'whole-change',
+                 '--required-axes', 'standards', 'spec', '--request-id', 'r1',
+                 '--implementation-registry', str(implementation))
+        result, path, calls = run(root, 'different', base, packet=packet, map_text=map_text,
+            config_document=config, probe_evidence=probe, extra=(*flags, '--native-capabilities', str(native_path)))
+        assert result.returncode == 0, result.stdout+result.stderr
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts'))
+        import lane_registry
+        row, _ = lane_registry.read(path, 'different')
+        plan = row['review_plan']
+        assert plan['lane']['selected'] == first and plan['lane'] == plan['axes']['standards'], plan
+        assert plan['axes']['spec']['selected'] == later
+        assert plan['lane']['comparison_basis'] == 'requested'
+        assert len([c for c in calls if c[:2] == ['agent', 'start']]) == 1
+        start = next(c for c in calls if c[:2] == ['agent', 'start'])
+        assert start[start.index('--model')+1] == 'z-first'
+        delivered = (root/'packet.md').read_text()
+        payload = json.loads(delivered.split('<!-- DP_REVIEW_PLAN -->')[1].split('```json')[1].split('```')[0])
+        assert [c['requested'] for c in payload['owner_calls']] == [first, later]
+        assert all(c['execution_evidence'] is None for c in payload['owner_calls'])
+        assert 'review_execution.py' in delivered and 'native_readbacks' in delivered
+        for name, extra in [('missing', flags), ('stale', (*flags, '--native-capabilities', str(native_path)))]:
+            native_path.write_text(json.dumps({**native, 'request_id': 'stale'}))
+            result, path, calls = run(root, name, base, packet=packet, map_text=map_text,
+                config_document=config, probe_evidence=probe, extra=extra)
+            assert result.returncode != 0 and not calls, '缺证据不得 mutation'
+            assert (root/'packet.md').read_text() == packet and not path.exists()
+    print('different-family dispatch: pass (fake native I/O; true execution Unknown)')
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch'], required=True)
+    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch', 'different-family'], required=True)
     args = p.parse_args()
-    (check_axis_evidence if args.case == 'axis-evidence-mismatch' else check)()
+    ({'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()

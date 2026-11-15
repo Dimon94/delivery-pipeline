@@ -1039,19 +1039,88 @@ def resolve_plan(
 
 def resolve_review_plan(document, *, required_axes, implementations, evidence,
                         native_capabilities, request_id):
-    """whole-change 单模型纯解析；候选扩展沿同一 Interface 接入。"""
+    """whole-change 纯解析；先核验完整参与池，再按用户顺序选择。"""
     errors = validate_document(document)
     if errors:
         raise ValueError("; ".join(errors))
     axes = list(required_axes)
     if not request_id or not axes or len(set(axes)) != len(axes) or any(a not in REVIEW_AXES for a in axes):
         raise ValueError("review requires request_id and distinct required axes")
+    participating = list(dict.fromkeys(["standards", *axes]))
+    family_evidence = []
+    def family(identity):
+        declaration = (family_declaration(document, identity.get("agent"), identity.get("model"))
+                       if identity else None)
+        item = {"identity": identity, "declaration": declaration, "source": "declared_at_review"}
+        if item not in family_evidence:
+            family_evidence.append(item)
+        return declaration["family"] if declaration else None
+
+    observed = [(i.get("executed") if i.get("executed") is not None else i.get("requested"),
+                 "executed" if i.get("executed") is not None else "requested") for i in implementations]
+    bases = {basis for _, basis in observed}
+    basis = next(iter(bases)) if len(bases) == 1 else "mixed" if bases else "unknown"
+    implementation_families = [family(identity) for identity, _ in observed]
+    def compare(identity):
+        declared = family(identity)
+        if declared is None or not implementation_families:
+            return "unknown"
+        if declared in implementation_families:
+            return "same"
+        return "different" if all(implementation_families) else "unknown"
+
+    # 非空池必须绑定本轮 probe 与逐项 NativeCapability；缺项不能当 unavailable。
+    checked = {}
+    for axis in participating:
+        cell = document["review"]["whole-change"][axis]
+        if not cell.get("candidates"):
+            continue
+        prefix = "review_capability_evidence_required: " + axis
+        if (not isinstance(evidence, dict) or evidence.get("request_id") != request_id
+                or not evidence.get("observed_at") or not isinstance(evidence.get("sources"), dict)):
+            raise ValueError(prefix + " current probe required")
+        pool = [triple(cell), *cell["candidates"]]
+        native = native_capabilities.get(axis) if isinstance(native_capabilities, dict) else None
+        if not isinstance(native, list) or len(native) != len(pool):
+            raise ValueError(prefix + " complete ordered native evidence required")
+        attempts = []
+        for index, (identity, capability) in enumerate(zip(pool, native)):
+            source = evidence["sources"].get(identity["agent"], {})
+            if (source.get("status") != "ok" or not isinstance(capability, dict)
+                    or capability.get("identity") != identity or not capability.get("evidence_id")
+                    or capability.get("status") not in ("runnable", "unavailable")):
+                raise ValueError(prefix + " exact current evidence required")
+            errors = capability_errors(**identity, evidence=evidence.get("capabilities"))
+            if capability["status"] == "runnable" and errors:
+                raise ValueError(prefix + "; " + "; ".join(errors))
+            if capability["status"] == "unavailable" and not capability.get("reason"):
+                raise ValueError(prefix + " unavailable requires positive reason")
+            attempts.append({"index": index, "identity": identity, "status": capability["status"],
+                "reason": capability.get("reason"), "comparison": compare(identity),
+                "comparison_basis": basis, "native_evidence_id": capability["evidence_id"]})
+        checked[axis] = attempts
+
     def select(axis):
         cell = document["review"]["whole-change"][axis]
         if cell.get("candidates"):
-            raise ValueError("review_capability_evidence_required: candidate selection not available")
+            attempts = checked[axis]
+            runnable = [a for a in attempts if a["status"] == "runnable"]
+            if not runnable:
+                raise ValueError("review_no_runnable_candidate: " + json.dumps(attempts))
+            different = [a for a in runnable if a["comparison"] == "different"]
+            selected = (different or runnable)[0]
+            for attempt in attempts:
+                if attempt["status"] == "runnable":
+                    attempt["reason"] = ("selected" if attempt["index"] == selected["index"] else
+                        "different_family_preferred" if attempt["comparison"] != "different" and different else "later_in_user_order")
+            return {"selected": selected["identity"], "selected_index": selected["index"],
+                "comparison": selected["comparison"], "comparison_basis": basis,
+                "fallback": "none" if different else "no_different_family_candidate", "attempts": attempts,
+                "probe_evidence_id": evidence.get("evidence_id", request_id),
+                "native_evidence_ids": [a["native_evidence_id"] for a in attempts]}
         selected = triple(cell)
-        errors = capability_errors(**selected, evidence=evidence)
+        errors = capability_errors(**selected, evidence=(evidence.get("capabilities", evidence)
+                                    if isinstance(evidence, dict) else evidence))
         if errors:
             raise ValueError("; ".join(errors))
         return {"selected": selected, "selected_index": 0, "comparison": "unknown",
@@ -1065,13 +1134,25 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
         "config_hash": hashlib.sha256(json.dumps(document, sort_keys=True, ensure_ascii=False,
                                                   separators=(",", ":")).encode()).hexdigest(),
         "request_id": request_id, "implementations": implementations,
-        "lane": lane, "axes": selections}))
+        "lane": lane, "axes": selections, "family_evidence": family_evidence}))
+
+
+def load_review_native_capabilities(path, request_id):
+    """读取 Adapter 本轮只读证据；不探测、不生成成功结论。"""
+    if not path:
+        return {}
+    value = json.loads(Path(path).expanduser().read_text())
+    if (not isinstance(value, dict) or value.get('request_id') != request_id
+            or not value.get('observed_at') or not isinstance(value.get('capabilities'), dict)):
+        raise ValueError('review_capability_evidence_required: current native preflight required')
+    return value['capabilities']
 
 
 def review_start_plan(review_plan, evidence):
     """仅复核冻结 lane 目标；不读取配置或重选。"""
     selected = review_plan["lane"]["selected"]
-    errors = capability_errors(**selected, evidence=evidence)
+    errors = capability_errors(**selected, evidence=(evidence.get("capabilities", evidence)
+                                if isinstance(evidence, dict) else evidence))
     if errors:
         raise ValueError("; ".join(errors))
     return {**selected, "mode": "none", "mode_name": None, "phase": "direct",
@@ -1700,6 +1781,7 @@ def main() -> int:
     parser.add_argument("--map-mode")
     parser.add_argument("--output-mode")
     parser.add_argument("--evidence", help="归一化实时能力 evidence JSON")
+    parser.add_argument("--native-capabilities", help="本轮 Adapter 原生只读 preflight 证据 JSON")
     parser.add_argument("--worker-name", default="worker")
     parser.add_argument("--pane-id", default="pane")
     parser.add_argument("--review-scope")
@@ -1785,7 +1867,8 @@ def main() -> int:
             implementations = lane_registry.collect_implementation_identities(
                 lane_registry.rows(Path(args.implementation_registry)), args.fixed_point)
             review = resolve_review_plan(load_document(Path(args.path)), required_axes=args.required_axes,
-                implementations=implementations, evidence=evidence, native_capabilities={}, request_id=args.request_id)
+                implementations=implementations, evidence=evidence,
+                native_capabilities=load_review_native_capabilities(args.native_capabilities, args.request_id), request_id=args.request_id)
             plan = review_start_plan(review, evidence)
         else:
             plan = resolve_plan(load_document(Path(args.path)), args.task,

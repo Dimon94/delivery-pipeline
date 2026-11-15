@@ -70,10 +70,14 @@ GOOD_MAP = ("<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: map-demo\nro
 
 
 def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", map_text=GOOD_MAP,
-        extra=()):
+        extra=(), config_document=None, probe_evidence=None):
     (root / "state.json").write_text(json.dumps(state))
     (root / "calls.jsonl").write_text("")
     config, evidence = fixture_config(root)
+    if config_document is not None:
+        config.write_text(json.dumps(config_document))
+    if probe_evidence is not None:
+        evidence.write_text(json.dumps(probe_evidence))
     (root / "packet.md").write_text(packet)
     registry = root / f"registry-{lane}.md"
     map_registry = root / "registry-map-demo.md"

@@ -60,7 +60,7 @@ startup_failed，shell 空闲和 agent 缺席也不等于原请求未启动。�
 launching 并 blocked，不重发、不推进 C；需补版本匹配的原请求正面拒绝/历史账本证据。
 尚无这样的原生证据时，不把 A→B→C 的 seam 检查当作原生验收通过。
 
-## whole-change 单模型入口
+## whole-change Review Plan 入口
 
 `dispatch.py --task review --output-mode verdict --review-scope whole-change
 --required-axes standards spec --request-id <round-id>` 使用 review resolver，拒绝 implementation
@@ -85,3 +85,20 @@ known mismatch 返回 `REVIEW_BLOCKED` 并保存全部 findings；不得自动�
 
 独立检查：`python3 skills/delivery-pipeline-herdr/scripts/check_review_dispatch.py --case axis-evidence-mismatch`。
 该检查仅模拟 Adapter 证据，不证明真实 Herdr/provider 的 model 或 applied effort。
+
+## 有序候选的只读 preflight 输入
+
+非空参与池要求 `--evidence` 为当前 ProbeEvidence envelope（request_id、observed_at、sources、
+capabilities），并传 `--native-capabilities <file>`。原生文件为
+`{request_id, observed_at, capabilities: {standards: [NativeCapability], spec: [NativeCapability]}}`。
+每轴严格按 `[primary] + candidates` 提供完整逐项证据，重复位置保留；每项含精确
+`identity={agent,model,effort}`、`status=runnable|unavailable`、`reason`、非空 `evidence_id`。
+不可用必须有正面理由；缺证据返回 `review_capability_evidence_required`，在 packet/Registry/pane
+mutation 前拒绝。调用方必须保留真实只读 preflight 原始工件，不能从 catalog 成功推导 native 成功。
+这些字段只声明启动前能力，绝不证明 executed/applied；无真实能力证据时由 Root 停止并报告 Unknown。
+
+canonical resolver 先核验参与池，再逐轴选择首个 runnable+different；无 different 时取首个
+runnable 并记录退化理由。standards lane 与 required standards 选择深等；spec 只消费冻结
+owner_calls。顺序、重复、比较依据和 declared_at_review 声明随 config hash 冻结。
+requested/mixed basis 是配置级偏好。空 candidates 保持旧 evidence map 和单模型门槛。
+公开检查：`check_review_dispatch.py --case different-family`；fixture 不代表真实执行。
