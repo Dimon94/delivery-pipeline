@@ -67,6 +67,13 @@ row，registry 文件的写回与读回由 caller 完成；身份冲突、active
 payload schema 与一致性检查见
 `references/orca-registry-overlay.md`。
 
+## Whole-change review
+
+Map Integration 的唯一 whole-change 入口沿 `references/orca-dispatch.md` 的 M3 合同，
+使用 `scripts/review_dispatch.py prepare|freeze|recover|execution <request.json>`。
+复用 canonical ReviewPlan、prepare_round、Registry 与 resolved code-review owner；
+preflight-ready 不证明执行。原生缺口保持 Unknown，禁止换 transport 或借旧 Task/Run。
+
 ## Recovery
 
 coordinator 按 `../delivery-pipeline/references/fresh-session-boundaries.md` §Coordinator Recovery

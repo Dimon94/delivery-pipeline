@@ -24,3 +24,12 @@ commit 加载 gate-state-machine 的实施前置检查；原生 preamble 的能�
    原 message ID resume。共享 overlay 的 startup、settlement 与 cleanup 归 coordinator。
 3. 取消、retry、response lost 或 restart 前读取 `../references/orca-recovery.md`；
    原生身份与停止状态 Unknown 时保留现场。
+
+## Whole-change verdict
+
+只消费 `DP_REVIEW_PLAN` 中冻结的 `review_plan` 与 `owner_calls`；不重新读取配置选模型。
+standards lane 启动身份不能替代双轴 executed；spec-only 只执行 spec。
+每轴 requested 与 executed/applied effort 独立保存，无原生读回写 Unknown。
+沿 `scripts/review_dispatch.py execution` 进入 canonical Review Budget/mismatch gate，
+保留完整 findings；known 冲突阻断，无自动下一候选。同轮先 recover 原 Registry/
+intent/receipt/已有轴结果，已完成轴不重跑；取消不换模型、不重复派发。

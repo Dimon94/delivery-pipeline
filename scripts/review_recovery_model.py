@@ -1,6 +1,11 @@
 """DD515 有界模型：同一 request、两个调用者、持久启动前缀和取消。
 
 reserve 对应唯一 Registry 锁内占位，launching 先于外部 start，恢复只读。
+DD519 Orca 映射：review_dispatch freeze 复用 reserve_review（accepted），原生调用前
+既有 registry_overlay.record_mutation 对应 intent/launching；recover 只返回原 orca
+mutation/receipt，不执行 retry。原生操作由 Root，模型不证明其遵守调用顺序。
+未扩张状态空间或原生 exactly-once 结论；真实临时 Registry 的取消/重复检查见
+Orca check_review_dispatch --case native-unknown。
 假设合作写者/本地 flock/原子 replace；不证明 native exactly-once 或模型身份。
 """
 from collections import deque

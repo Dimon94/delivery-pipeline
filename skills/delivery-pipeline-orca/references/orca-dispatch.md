@@ -147,3 +147,38 @@ cleanup request 的顺序必须精确为：项目 cleanup gate → `worker-relea
 coordinator 在清理 readback 后经 `registry_overlay.py` 的 `record_state` 落写项目 resolution 与 `closed`（绕过
 record_state 手写 state 视为违规），并完成 git branch readback。重复 closed cleanup 只返回
 `deduplicated`，不重做 mutation。
+
+## Whole-change review 候选与执行证据（M3）
+
+沿本入口的 Map Integration → testing → whole-change review 操作，先运行
+`scripts/review_dispatch.py prepare <request.json>`，通过后由 Root 使用同一请求执行
+`freeze`。两者不启动 Task/Dispatch/session；freeze 仅在唯一 Registry 用
+`reserve_review` 占原 request 并将同一 ReviewPlan/owner_calls 写进既有 packet。
+Root 核验原生 provenance 后，才沿上方既有 `task-create`/`worker-start` 和
+`registry_overlay.record_mutation` 写 intent、执行一次、保存原 receipt；不得从
+preflight-ready 推出原生已执行。响应丢失、失败或取消后只运行 `recover`，保留
+原 Task/Dispatch/intent/receipt，Unknown 不重发，不自动下一候选。
+
+request 字段：`config`/`evidence` 绝对文件路径、`implementation_registries` 完整贡献
+Registry 路径数组、`fixed_point`（Map base）、`base`/`head`（已验证 fixed point）、
+`round`、`request_id`、`required_axes`、`registry`、`lane`、`work_item`、`worktree`、
+`branch`、`map`、`packet`（既有 packet 绝对路径）、`preflight`（本壳原有完整请求）。
+后轮增加原 `ledger`，可选 `previous_review_registry` 和真实 diff 导出的
+`interface_changed`/`dependencies_changed`。所选 lane 的 agent_readback 随原 preflight
+请求核验；owner 必须是 resolved code-review 的 name/absolute SKILL.md/invocation label。
+不读 implementation review 格，不启用逐票 review。prepare_round 决定 required axes，
+spec-only 仍选 standards lane，但 owner_calls 只派 spec。
+
+候选采集调用固定 Orca 安装内原生 `checkAgentLaunchModelPreferences` 与精确 catalog
+成员检查，保留每个模块 hash；只证明静态参数兼容，还须当前 ProbeEvidence 与本壳原生
+runtime preflight。缺 binary、模块、精确 catalog 成员或未知 launch transport 是 Unknown，
+不能作为 unavailable 跳过；原生精确参数拒绝才是正面 unavailable。未覆盖的 agent-argv
+review 路径保持 Unknown，不借 DD418、旧 Task/Run、Herdr 或 Codex App 证据授权。
+
+resolved code-review owner 只消费冻结 `owner_calls`，各轴独立保存完整 findings。
+`review_dispatch.py execution <request.json>` 输入为 `{ledger, data}`；data 沿 canonical
+review_gate 的 round/axes/p2_issues/review_packet/native_readbacks 合同。逐轴 executed
+必须来自该轴原生 readback，applied_effort 单独读回；没有则 null。启动 requested、
+effective 参数或静态 preflight 不能复制为 executed。known 部分冲突也 REVIEW_BLOCKED，
+完整 findings 保留，不换模型重跑；Review Budget 原样。恢复请求为
+`{registry, lane, request_id, ledger?}`，只读返回原计划、orca intent/receipt 和原账本结果。

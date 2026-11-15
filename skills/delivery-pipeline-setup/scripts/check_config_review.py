@@ -408,9 +408,11 @@ def check_later_round():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['later-round-plan', 'single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
+    parser.add_argument('--case', choices=['orca-review-plan', 'later-round-plan', 'single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
     args = parser.parse_args()
-    if args.case == 'later-round-plan':
+    if args.case == 'orca-review-plan':
+        subprocess.run([sys.executable, str(HERE.parents[1]/'delivery-pipeline-orca/scripts/check_review_dispatch.py'), '--case', 'native-unknown'], check=True)
+    elif args.case == 'later-round-plan':
         check_later_round()
     elif args.case == 'multi-implementer-fallback':
         check_multi_implementer()

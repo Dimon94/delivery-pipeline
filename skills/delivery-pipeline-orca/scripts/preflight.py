@@ -276,6 +276,18 @@ def _model_command(
     """通过既有 setup helper 解析/冻结；不复制 schema，也不调用 Herdr start/resume。"""
     _, config_path = _read_json_file(request["config"], "config")
     _, evidence_path = _read_json_file(request["model_evidence"], "model_evidence")
+    if request.get("review_packet") is not None:
+        sys.path.insert(0, str(SETUP_SCRIPTS))
+        import model_config as mc
+        sys.path.insert(0, str(ROOT / "skills/delivery-pipeline/scripts"))
+        from lane_registry import verify_review_packet
+        packet = request["review_packet"]
+        verify_review_packet(packet["review_plan"], packet)
+        if request["task"] != "review" or request["output_mode"] != "verdict":
+            raise PreflightError("review packet requires whole-change verdict")
+        evidence = json.loads(Path(evidence_path).read_text())
+        plan = mc.review_start_plan(packet["review_plan"], evidence)
+        return (mc.freeze_overlay(plan) if command == "freeze" else plan), config_path, evidence_path
     arguments = [
         sys.executable,
         str(MODEL_CONFIG),
@@ -450,7 +462,7 @@ def preflight(request: object, env: dict[str, str] | None = None) -> dict[str, A
             "owner",
             "agent_readback",
         }
-        optional = {"ticket_mode", "map_mode", "terminal_handle"}
+        optional = {"ticket_mode", "map_mode", "terminal_handle", "review_packet"}
         if not required <= set(request) or not set(request) <= required | optional:
             raise PreflightError(
                 f"request 字段不匹配: missing={sorted(required - set(request))}, extra={sorted(set(request) - required - optional)}"
