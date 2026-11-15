@@ -352,11 +352,67 @@ def check_capability_safety():
     print('capability-safety: pass (public resolver; native execution Unknown)')
 
 
+def check_later_round():
+    """独立预期：DD516 / gate-state-machine R2/R3、R16，不执行 native。"""
+    from review_gate import prepare_round, run, read_ledger
+    clean = dict(P0=0, P1=0, P2=0, P3=0)
+    impl = dict(lane_id='impl', requested=dict(agent='pi', model='provider/model', effort='high'), executed=None)
+    fixer = dict(lane_id='fixer', requested=impl['requested'], executed=dict(agent='codex', model='undeclared', effort='high'))
+    config = m.valid_fixture()
+    ev = {'pi': {'binary': True, 'models': {'provider/model': ['high']}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        ledger = Path(tmp)/'budget.json'
+        context = prepare_round([], round_no=1, base='base', head='h1', request_id='r1', implementations=[impl])
+        assert context['required_axes'] == ['standards', 'spec']
+        plan = m.resolve_review_plan(config, required_axes=context['required_axes'], implementations=context['implementations'], evidence=ev, native_capabilities={}, request_id='r1', round_context=context)
+        packet = dict(review_plan=plan, owner_calls=registry.build_owner_calls(plan))
+        passing = dict(verdict='PASS', counts=clean, findings=['original'])
+        blocking = dict(verdict='BLOCK', counts={**clean, 'P1':1}, findings=['repair spec'])
+        assert run(dict(round=1, axes=dict(standards=passing, spec=blocking), review_packet=packet), ledger) == 'FIX'
+        rounds = read_ledger(ledger); before=ledger.read_bytes()
+        reuse = prepare_round(rounds, round_no=2, base='base', head='h1', request_id='r2', implementations=[impl])
+        assert reuse['action']=='reuse' and reuse['result']==rounds[0]
+        assert ledger.read_bytes()==before
+        try: run(dict(round=1, axes=dict(standards=passing,spec=blocking), review_packet=packet),ledger)
+        except ValueError: pass
+        else: raise AssertionError('same head reran gate')
+        assert ledger.read_bytes()==before
+        context = prepare_round(rounds, round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer])
+        assert context['required_axes']==['spec'] and context['implementations']==[impl,fixer]
+        plan2 = m.resolve_review_plan(config, required_axes=['spec'], implementations=context['implementations'], evidence=ev, native_capabilities={}, request_id='r2', round_context=context)
+        assert [x['axis'] for x in registry.build_owner_calls(plan2)]==['spec']
+        assert plan2['lane']['selected']==plan['lane']['selected']
+        assert plan2['implementation_evidence'][1]['basis']=='executed'
+        assert plan2['implementation_evidence'][1]['declaration'] is None
+        for flag in ('interface_changed','dependencies_changed'):
+            assert prepare_round(rounds, round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer], **{flag:True})['required_axes']==['standards','spec']
+        def rejected(**changes):
+            args=dict(round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer]); args.update(changes)
+            try: prepare_round(rounds, **args)
+            except ValueError: return
+            raise AssertionError('invalid new round accepted: '+str(changes))
+        rejected(implementations=[impl]); rejected(request_id='r1'); rejected(round_no=4)
+        for outcome in ('PASS','REVIEW_BLOCKED','REVIEW_EXHAUSTED'):
+            previous=rounds; rounds=[{**previous[0], 'outcome':outcome}]
+            rejected()
+            rounds=previous
+        packet2=dict(review_plan=plan2, owner_calls=registry.build_owner_calls(plan2))
+        assert run(dict(round=2,axes=dict(spec=blocking),review_packet=packet2),ledger)=='FIX'
+        context3=prepare_round(read_ledger(ledger),round_no=3,base='base',head='h3',request_id='r3',implementations=[impl,fixer,{**impl,'lane_id':'fixer3'}])
+        assert context3['required_axes']==['spec']
+        plan3=m.resolve_review_plan(config,required_axes=['spec'],implementations=context3['implementations'],evidence=ev,native_capabilities={},request_id='r3',round_context=context3)
+        assert run(dict(round=3,axes=dict(spec=blocking),review_packet=dict(review_plan=plan3,owner_calls=registry.build_owner_calls(plan3))),ledger)=='REVIEW_EXHAUSTED'
+        assert len(read_ledger(ledger))==3
+    print('later-round-plan: pass (R2/R3, fixer, reuse; native Unknown)')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
+    parser.add_argument('--case', choices=['later-round-plan', 'single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
     args = parser.parse_args()
-    if args.case == 'multi-implementer-fallback':
+    if args.case == 'later-round-plan':
+        check_later_round()
+    elif args.case == 'multi-implementer-fallback':
         check_multi_implementer()
     elif args.case == 'capability-safety':
         check_capability_safety()

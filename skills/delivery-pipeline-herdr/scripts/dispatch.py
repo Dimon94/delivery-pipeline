@@ -187,7 +187,12 @@ def main() -> int:
     parser.add_argument("--implementation-registry", nargs="+")
     parser.add_argument("--preflight-only", action="store_true", help="whole-change 真实入口只读预检；不写 packet/Registry/pane")
     parser.add_argument("--recover-review", action="store_true", help="只读原 plan/intent/receipt，不读取配置或创建 lane")
-    parser.add_argument("--review-ledger", help="恢复时读取原 Review Budget 账本")
+    parser.add_argument("--review-ledger", help="本 scope 原 Review Budget 账本；恢复/后轮共用")
+    parser.add_argument('--round', type=int, default=1)
+    parser.add_argument('--review-head', help='本轮已验证的候选 commit')
+    parser.add_argument('--previous-review-registry', help='上一轮原 Registry；后轮必需')
+    parser.add_argument('--interface-changed', action='store_true')
+    parser.add_argument('--dependencies-changed', action='store_true')
     args = parser.parse_args()
     if args.recover_review:
         from review_recovery import recover
@@ -205,15 +210,44 @@ def main() -> int:
         for label, value in (("worktree", args.worktree), ("packet", args.packet)):
             if not Path(value).is_absolute() or not Path(value).exists():
                 raise DispatchError(f"{label} must be an existing absolute path: {value}")
-        map_lane = preflight(args)
         sys.path.insert(0,str(HERE.parents[1]/"delivery-pipeline/scripts"))
         import lane_registry
         existing = lane_registry.rows(registry)
+        round_context = None
+        if args.task == 'review' and (args.review_head or args.round != 1 or args.review_ledger):
+            from review_gate import prepare_round, read_ledger
+            if not args.review_head or not args.review_ledger:
+                raise DispatchError('round planning requires review-head and original review-ledger')
+            rounds = read_ledger(args.review_ledger)
+            # 完整结果复用优先于能力/配置检查，不创建 lane、不写预算。
+            prior_rows = lane_registry.rows(Path(args.previous_review_registry)) if args.previous_review_registry else existing
+            if rounds:
+                old_plan = rounds[-1].get('review_packet', {}).get('review_plan')
+                originals = [r for r in prior_rows.values() if r.get('review_plan') == old_plan]
+                if len(originals) != 1 or originals[0].get('state') in {'cancelled', 'setup_blocked'}:
+                    raise DispatchError('original round missing/cancelled/failed: recover original, no new FIX')
+            map_rows = lane_registry.rows(Path(args.map_registry))
+            maps = [r for r in map_rows.values() if r.get('role') == 'map']
+            if len(maps) != 1:
+                raise DispatchError('unique Map fixed point required')
+            contributions = dict(map_rows)
+            for source in args.implementation_registry or []:
+                contributions.update(lane_registry.rows(Path(source)))
+            identities = lane_registry.collect_implementation_identities(contributions, maps[0]['base_commit'])
+            round_context = prepare_round(rounds, round_no=args.round, base=args.base,
+                head=args.review_head, request_id=args.request_id, implementations=identities,
+                interface_changed=args.interface_changed, dependencies_changed=args.dependencies_changed)
+            if round_context['action'] == 'reuse':
+                print(json.dumps(round_context, ensure_ascii=False))
+                return 0
+            if args.required_axes != round_context['required_axes']:
+                raise DispatchError('required axes must equal original Review Budget decision')
         if args.task == "review" and (args.lane in existing or any(
                 r.get("review_plan", {}).get("request_id") == args.request_id for r in existing.values())):
             raise DispatchError("review lane already frozen: recover original plan/receipt; do not redispatch")
         if any(row.get("state") in {"running","awaiting_human","created"} for row in existing.values()):
             raise DispatchError(f"registry already has an active writer: {registry}")
+        map_lane = preflight(args)
         mc = load_model_config()
         evidence = json.loads(Path(args.evidence).expanduser().read_text())
         review = None
@@ -238,6 +272,8 @@ def main() -> int:
             for path in args.implementation_registry or []:
                 contribution_rows.update(lane_registry.rows(Path(path)))
             implementations = lane_registry.collect_implementation_identities(contribution_rows, fixed_point)
+            if round_context is not None:
+                implementations = round_context['implementations']
             document = mc.load_document(Path(args.config).expanduser())
             participating = dict.fromkeys(["standards", *args.required_axes])
             pools = {axis: [mc.triple(cell), *cell["candidates"]]
@@ -256,7 +292,7 @@ def main() -> int:
             try:
                 review = mc.resolve_review_plan(document,
                     required_axes=args.required_axes, implementations=implementations,
-                    evidence=evidence, native_capabilities=native, request_id=args.request_id)
+                    evidence=evidence, native_capabilities=native, request_id=args.request_id, round_context=round_context)
             except ValueError as error:
                 if pools:
                     raise DispatchError(str(error) + " native_preflight=" + json.dumps(collected, ensure_ascii=False)) from error

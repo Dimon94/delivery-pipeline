@@ -199,6 +199,13 @@ whole-change，最多 3 轮，不能续。所属壳仍启用逐票 review 时，
 - 只有 `FIX` 能续轮；`PASS`、`REVIEW_BLOCKED` 与 `REVIEW_EXHAUSTED` 是账本终态，gate 拒绝之后的写入。终态后的冲突解决、
   恢复修复等改动靠测试验证并在 PR 注明，沿用原账本路径。FIX 与下一轮之间的 merge 并入下一轮范围。
 - base 与 head 相同的 Review 结果直接复用，不重跑。
+- 后轮的派发前决定复用 `review_gate.prepare_round`，不增加预算 owner。输入原 scope 账本、
+  base/head、新 request、完整已集成实现者集合及接口/依赖变化；冻结 `round_context` 到本轮
+  Review Plan。只有原 FIX 可产生 R2/R3，必须纳入新的修复 lane；旧 executed 身份保留，
+  家族缺声明仍为 Unknown。相同 base/head 返回原完整记录，账本不写入。
+- 新轮的新 request 与同轮重试分开：同轮仍恢复原 immutable plan/intent/receipt，不能因
+  配置变化重选。取消或终态不能伪造 FIX 续轮；原生 readback mismatch 继续由同一个 gate 阻断。
+  旧计划没有 base/head 的冻结证据时，不能猜测其 fixed point 并声称自动复用成功。
 - packet 不得抬高阻断线或预算。用户明确破例时，packet 引用用户原话与来源坐标。
 
 完成标准：每轮都有账本记录，输出由 gate 给出；每条 P2 有 Issue 坐标；`REVIEW_EXHAUSTED` 有 retro 交付物。

@@ -1038,7 +1038,7 @@ def resolve_plan(
 
 
 def resolve_review_plan(document, *, required_axes, implementations, evidence,
-                        native_capabilities, request_id):
+                        native_capabilities, request_id, round_context=None):
     """whole-change 纯解析；先核验完整参与池，再按用户顺序选择。"""
     errors = validate_document(document)
     if errors:
@@ -1046,6 +1046,11 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
     axes = list(required_axes)
     if not request_id or not axes or len(set(axes)) != len(axes) or any(a not in REVIEW_AXES for a in axes):
         raise ValueError("review requires request_id and distinct required axes")
+    if round_context is not None and (
+            round_context.get('action') != 'plan' or round_context.get('required_axes') != axes
+            or round_context.get('implementations') != implementations
+            or round_context.get('request_id') != request_id):
+        raise ValueError('review round context/axes/implementations mismatch')
     participating = list(dict.fromkeys(["standards", *axes]))
     family_evidence = []
     def family(identity):
@@ -1146,7 +1151,8 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
                                                   separators=(",", ":")).encode()).hexdigest(),
         "request_id": request_id, "implementations": implementations,
         "lane": lane, "axes": selections, "family_evidence": family_evidence,
-        "implementation_evidence": implementation_evidence}))
+        "implementation_evidence": implementation_evidence,
+        **({"round_context": round_context} if round_context is not None else {})}))
 
 
 def load_review_native_capabilities(path, request_id):

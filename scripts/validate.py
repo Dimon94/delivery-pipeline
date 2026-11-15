@@ -446,6 +446,10 @@ def check_context_loading() -> None:
 
 def check_lane_wakeup() -> None:
     subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),
+                    "--case", "later-round-plan"], check=True)
+    subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
+                    "--case", "later-round"], check=True)
+    subprocess.run([sys.executable, str(SETUP / "scripts/check_config_review.py"),
                     "--case", "multi-implementer-fallback"], check=True)
     subprocess.run([sys.executable, str(HERDR / "scripts/check_review_dispatch.py"),
                     "--case", "runnable-fallback"], check=True)

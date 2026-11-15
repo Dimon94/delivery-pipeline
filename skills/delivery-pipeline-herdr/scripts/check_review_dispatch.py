@@ -489,8 +489,70 @@ row=json.loads(sys.argv[3]); r.reserve_review(Path(sys.argv[2]),row)
     print('same-round-recovery: pass (真实文件/独立进程；native IO 替身，实际执行 Unknown)')
 
 
+def check_later_round():
+    """真实文件/公开派发和 gate；替身仅在 native I/O。预期来自 DD516。"""
+    import subprocess
+    sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts'))
+    import lane_registry as registry
+    from review_gate import read_ledger
+    base={'tabs':[{'tab_id':'w1:t1','label':'coord','pane_count':1,'workspace_id':'w1'}],
+          'panes':[{'pane_id':'w1:p1','tab_id':'w1:t1','workspace_id':'w1'}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        root=Path(tmp)
+        (root/'herdr').write_text(f'#!{sys.executable}\n'+FAKE_HERDR)
+        (root/'watch').write_text('#!/bin/sh\nexit 0\n')
+        for name in ('herdr','watch'): (root/name).chmod(0o755)
+        owner=root/'owner.md'; owner.write_text('---\nname: code-review\n---\nfixture')
+        packet=f'Owner：code-review；{owner}；fixture\n'
+        map_text=GOOD_MAP.replace('role: map','work_item: DD-508\nrole: map\nbase_commit: abc')
+        ledger=root/'budget.json'
+        flags=('--task','review','--output-mode','verdict','--review-scope','whole-change',
+               '--required-axes','standards','spec','--review-ledger',str(ledger))
+        r,path,calls=run(root,'r1',base,packet=packet,map_text=map_text,extra=(*flags,'--request-id','r1','--review-head','h1'))
+        assert r.returncode==0,r.stdout+r.stderr
+        row,_=registry.read(path,'r1'); frozen=row['review_plan']
+        assert frozen['round_context']['head']=='h1'
+        clean=dict(P0=0,P1=0,P2=0,P3=0)
+        passing=dict(verdict='PASS',counts=clean,findings=['original'])
+        blocking=dict(verdict='BLOCK',counts={**clean,'P1':1},findings=['spec repair'])
+        gate=[sys.executable,str(Path(__file__).with_name('review_execution.py')),'--ledger',str(ledger)]
+        data=dict(round=1,axes=dict(standards=passing,spec=blocking),review_packet=dict(review_plan=frozen,owner_calls=registry.build_owner_calls(frozen)))
+        r=subprocess.run(gate,input=json.dumps(data),text=True,capture_output=True)
+        assert r.returncode==0 and r.stdout.strip()=='FIX',r.stderr
+        row['state']='consumed'; registry.write(path,row)
+        fixer=root/'fixer.md'
+        registry.write(fixer,dict(lane_id='fixer',work_item='repair',map='map-demo',role='backend',output_mode='commit',integrated_commit='h2',agent='pi',model='provider/model',effort='high',implementation_execution=dict(source='native_readback',identity=dict(agent='codex',model='unknown-family',effort='high'))))
+        later=(*flags,'--round','2','--request-id','r2','--review-head','h2','--previous-review-registry',str(path),'--implementation-registry',str(fixer))
+        r,path2,calls=run(root,'r2',base,packet=packet,map_text=map_text,extra=later)
+        assert r.returncode!=0 and not calls, 'extra standards axis accepted'
+        spec_flags=list(later); spec_flags.remove('standards')
+        r,path2,calls=run(root,'r2',base,packet=packet,map_text=map_text,extra=spec_flags)
+        assert r.returncode==0,r.stdout+r.stderr
+        row2,_=registry.read(path2,'r2'); plan=row2['review_plan']
+        assert plan['required_axes']==['spec'] and [c['axis'] for c in registry.build_owner_calls(plan)]==['spec']
+        assert plan['implementations'][0]['lane_id']=='fixer'
+        assert plan['implementation_evidence'][0]['basis']=='executed'
+        starts=[c for c in calls if c[:2]==['agent','start']]
+        assert len(starts)==1 and starts[0][starts[0].index('--model')+1]==plan['lane']['selected']['model']
+        before=path2.read_bytes(); budget=ledger.read_bytes()
+        recovery=[sys.executable,str(Path(__file__).with_name('dispatch.py')),'--recover-review','--registry',str(path2),'--lane','r2','--request-id','r2']
+        r=subprocess.run(recovery,text=True,capture_output=True)
+        assert r.returncode==0 and json.loads(r.stdout)['review_packet']['review_plan']==plan
+        assert path2.read_bytes()==before
+        # 原始完整结果复用；新 lane 无写入，无 native 调用，预算字节不变。
+        reuse=list(later); reuse[reuse.index('h2')]='h1'
+        r,reuse_path,calls=run(root,'reuse',base,packet=packet,map_text=map_text,extra=reuse)
+        assert r.returncode==0 and json.loads(r.stdout)['result']==read_ledger(ledger)[0],r.stdout+r.stderr
+        assert not calls and not reuse_path.exists() and ledger.read_bytes()==budget
+        # cancelled 不得借原 FIX 伪造新轮；PASS/blocked 由 setup 检查覆盖。
+        row['state']='cancelled'; registry.write(path,row)
+        r,_,calls=run(root,'cancelled-next',base,packet=packet,map_text=map_text,extra=spec_flags)
+        assert r.returncode!=0 and not calls and ledger.read_bytes()==budget
+    print('later-round: pass (文件/CLI/原receipt；native执行 Unknown)')
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback'], required=True)
+    p.add_argument('--case', choices=['later-round', 'same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback'], required=True)
     args = p.parse_args()
-    ({'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
+    ({'later-round':check_later_round, 'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()

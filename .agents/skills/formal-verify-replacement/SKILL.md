@@ -54,3 +54,10 @@ flock 内冻结原计划与 request，占位成功的唯一 dispatch 持久 `her
 replacement 四变体。真实联系为 `check_review_dispatch.py --case same-round-recovery` 的
 公开 CLI、真实文件及独立双进程竞争。该模型不覆盖网络、强制断电、NFS 或原生去重；没有
 扩张旧 M2 原生验收结论。原有 replacement 模型与检查继续执行。
+
+DD516 同步：同一个 review_recovery_model 增加 R1–R3、FIX/终态、同 head、修复者和取消
+的有界组合，拒绝预算、终态、漏修复者、相同 head 重跑与取消后轮五变体。
+真实联系为 review_gate.prepare_round（原预算唯一决定面）、dispatch --round/--review-head/
+--review-ledger/--previous-review-registry，以及两条 later-round 公开检查。新 request 只用于
+合法新轮，原 request 的 immutable plan/intent/receipt 仍由 DD515 恢复。模型不证明贡献者
+Registry 的外部真实性、原生执行或 exactly-once；真实文件/CLI 和 Root 最终验收继续承担。

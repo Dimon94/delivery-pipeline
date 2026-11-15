@@ -134,9 +134,55 @@ def write_ledger(path, rounds):
     os.replace(temp, path)
 
 
+def prepare_round(rounds, *, round_no, base, head, request_id, implementations,
+                  interface_changed=False, dependencies_changed=False):
+    """原 Review Budget 的派发前决定面；不写账本，不创建新 attempt。"""
+    if not base or not head or not request_id:
+        raise ValueError('new round requires base/head/request_id')
+    for entry in reversed(rounds):
+        point = entry.get('review_packet', {}).get('review_plan', {}).get('round_context', {})
+        if point.get('base') == base and point.get('head') == head:
+            return dict(action='reuse', result=deepcopy(entry))
+    if type(round_no) is not int or not 1 <= round_no <= MAX_ROUNDS or round_no != len(rounds)+1:
+        raise ValueError('Review Budget requires consecutive rounds, at most 3')
+    if not rounds:
+        axes = ['standards', 'spec']
+    else:
+        previous = rounds[-1]
+        if previous['outcome'] != 'FIX':
+            raise ValueError('only FIX permits a new round')
+        old_plan = previous['review_packet']['review_plan']
+        if any(r['review_packet']['review_plan']['request_id'] == request_id for r in rounds):
+            raise ValueError('new round requires a new request; same round must recover original')
+        old = old_plan.get('implementations', [])
+        old_ids = {i['lane_id'] for i in old}
+        if not any(i['lane_id'] not in old_ids for i in implementations):
+            raise ValueError('new round requires integrated repair implementer')
+        # 保留旧身份（包括已知 executed 但家族 Unknown），再纳入修复者。
+        implementations = deepcopy(old) + [i for i in implementations if i['lane_id'] not in old_ids]
+        axes = ['standards', 'spec'] if interface_changed or dependencies_changed else [
+            axis for axis, result in previous['axes'].items()
+            if sum(axis_counts(axis, result)[p] for p in ('P0', 'P1'))]
+        if not axes:
+            raise ValueError('FIX requires P0/P1 axes')
+    return dict(action='plan', round=round_no, base=base, head=head,
+                request_id=request_id, required_axes=axes, implementations=deepcopy(implementations),
+                interface_changed=interface_changed, dependencies_changed=dependencies_changed)
+
+
 def run(data, ledger):
     outcome = evaluate(data)
     rounds = read_ledger(ledger)
+    plan = data.get('review_packet', {}).get('review_plan', {})
+    context = plan.get('round_context')
+    if context:
+        expected_plan = prepare_round(rounds, round_no=data['round'], base=context['base'],
+            head=context['head'], request_id=plan['request_id'], implementations=plan['implementations'],
+            interface_changed=context['interface_changed'], dependencies_changed=context['dependencies_changed'])
+        if expected_plan['action'] == 'reuse':
+            raise ValueError('same base/head: reuse complete recorded result, do not rerun gate')
+        if context != expected_plan or plan['required_axes'] != expected_plan['required_axes']:
+            raise ValueError('round plan differs from Review Budget decision')
     if rounds and rounds[-1]["outcome"] != "FIX":
         raise ValueError(f"账本已终结于 {rounds[-1]['outcome']}，只有 FIX 之后才能开下一轮")
     expected = len(rounds) + 1
