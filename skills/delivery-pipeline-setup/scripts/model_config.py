@@ -1061,6 +1061,12 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
     bases = {basis for _, basis in observed}
     basis = next(iter(bases)) if len(bases) == 1 else "mixed" if bases else "unknown"
     implementation_families = [family(identity) for identity, _ in observed]
+    implementation_evidence = [
+        {"lane_id": item.get("lane_id"), "requested": item.get("requested"),
+         "executed": item.get("executed"), "identity": identity, "basis": source,
+         "declaration": (family_declaration(document, identity.get("agent"), identity.get("model"))
+                         if identity else None), "source": "declared_at_review"}
+        for item, (identity, source) in zip(implementations, observed)]
     def compare(identity):
         declared = family(identity)
         if declared is None or not implementation_families:
@@ -1139,7 +1145,8 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
         "config_hash": hashlib.sha256(json.dumps(document, sort_keys=True, ensure_ascii=False,
                                                   separators=(",", ":")).encode()).hexdigest(),
         "request_id": request_id, "implementations": implementations,
-        "lane": lane, "axes": selections, "family_evidence": family_evidence}))
+        "lane": lane, "axes": selections, "family_evidence": family_evidence,
+        "implementation_evidence": implementation_evidence}))
 
 
 def load_review_native_capabilities(path, request_id):

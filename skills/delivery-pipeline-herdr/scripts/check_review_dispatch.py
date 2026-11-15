@@ -233,6 +233,79 @@ def check_different_family():
     print('different-family dispatch: pass (fake native I/O; true execution Unknown)')
 
 
+def check_runnable_fallback():
+    """DD513 R10/R14/R17：外部 I/O 替身；真实生产 dispatch/packet/Registry/gate。"""
+    import importlib.util
+    import subprocess
+    spec = importlib.util.spec_from_file_location('mc', Path(__file__).resolve().parents[2]/'delivery-pipeline-setup/scripts/model_config.py')
+    mc = importlib.util.module_from_spec(spec); spec.loader.exec_module(mc)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts'))
+    import lane_registry
+    primary = {'agent': 'pi', 'model': 'provider/model', 'effort': 'high'}
+    first = {**primary, 'model': 'z-first'}
+    later = {**primary, 'model': 'a-later'}
+    config = mc.migrate_document(mc.valid_fixture())[0]
+    for axis in ('standards', 'spec'):
+        config['review']['whole-change'][axis]['candidates'] = [first, later, first]
+    config['model_families'] = {'pi': {
+        primary['model']: {'family': 'blue', 'source': 'user_declared'},
+        'impl': {'family': 'red', 'source': 'user_declared'}}}
+    probe = {'request_id': 'fallback', 'observed_at': 'fixture', 'sources': {'pi': {'status': 'ok'}},
+        'capabilities': {'pi': {'binary': True, 'models': {x['model']: ['high'] for x in (primary, first, later)}}}}
+    base = {'tabs': [{'tab_id': 'w1:t1', 'label': 'coord', 'pane_count': 1, 'workspace_id': 'w1'}],
+            'panes': [{'pane_id': 'w1:p1', 'tab_id': 'w1:t1', 'workspace_id': 'w1'}]}
+    for comparison in ('same', 'unknown'):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); native_boundary(root)
+            (root/'native-status.json').write_text(json.dumps({primary['model']: 'unavailable'}))
+            (root/'watch').write_text('#!/bin/sh\nexit 0\n'); (root/'watch').chmod(0o755)
+            owner = root/'owner/SKILL.md'; owner.parent.mkdir()
+            owner.write_text('---\nname: code-review\n---\nfixture only')
+            packet = f'Owner：code-review；{owner}；fixture invocation\n'
+            map_text = GOOD_MAP.replace('role: map', 'work_item: DD-508\nrole: map\nbase_commit: abc')
+            implementation = root/'impl.md'
+            lane_registry.write(implementation, {'lane_id': 'impl', 'work_item': 'DD-513', 'role': 'backend',
+                'map': 'map-demo', 'output_mode': 'commit', 'integrated_commit': 'def', **{**primary, 'model': 'impl'}})
+            if comparison == 'same':
+                config['model_families']['pi']['z-first'] = {'family': 'red', 'source': 'user_declared'}
+            else:
+                config['model_families']['pi'].pop('z-first', None)
+            flags = ('--task', 'review', '--output-mode', 'verdict', '--review-scope', 'whole-change',
+                     '--required-axes', 'standards', 'spec', '--request-id', 'fallback',
+                     '--implementation-registry', str(implementation))
+            result, path, calls = run(root, 'fallback-'+comparison, base, packet=packet, map_text=map_text,
+                config_document=config, probe_evidence=probe, env_extra={'HOME': str(root)}, extra=flags)
+            assert result.returncode == 0, result.stdout+result.stderr
+            plan = lane_registry.read(path, 'fallback-'+comparison)[0]['review_plan']
+            for axis in ('standards', 'spec'):
+                selected = plan['axes'][axis]
+                assert selected['selected'] == first and selected['selected_index'] == 1
+                assert selected['comparison'] == comparison
+                assert selected['fallback'] == 'no_different_family_candidate'
+                attempts = selected['attempts']
+                assert [a['identity'] for a in attempts] == [primary, first, later, first]
+                assert [a['status'] for a in attempts] == ['unavailable', 'runnable', 'runnable', 'runnable']
+                assert attempts[0]['comparison'] == 'different'  # different 但不可运行不能获选。
+                assert [a['reason'] for a in attempts] == ['external native boundary fixture', 'selected', 'later_in_user_order', 'later_in_user_order']
+            assert plan['lane'] == plan['axes']['standards']
+            starts = [c for c in calls if c[:2] == ['agent', 'start'] and '--help' not in c]
+            assert len(starts) == 1 and starts[0][starts[0].index('--model')+1] == 'z-first'
+            delivered = (root/'packet.md').read_text()
+            payload = json.loads(delivered.split('<!-- DP_REVIEW_PLAN -->')[1].split('```json')[1].split('```')[0])
+            lane_registry.verify_review_packet(plan, payload)
+            assert [c['requested'] for c in payload['owner_calls']] == [first, first]
+            assert all(c['execution_evidence'] is None for c in payload['owner_calls'])
+            axes = {a: {'verdict': 'PASS', 'counts': {'P0':0,'P1':0,'P2':0,'P3':0}, 'findings': []} for a in ('standards','spec')}
+            ledger = root/'ledger.json'
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('review_execution.py')), '--ledger', str(ledger)],
+                input=json.dumps({'round': 1, 'axes': axes, 'review_packet': payload, 'native_readbacks': {}}), text=True, capture_output=True)
+            assert result.returncode == 0 and result.stdout.strip() == 'PASS', result.stdout+result.stderr
+            saved = json.loads(ledger.read_text())['rounds'][0]
+            assert [e['status'] for e in saved['execution_evidence']] == ['unknown', 'unknown']
+            assert saved['axes'] == axes
+    print('runnable-fallback: pass (same/unknown; external I/O fixture; actual execution Unknown)')
+
+
 def check_capability_safety():
     # 真实生产入口/文件/进程；外部 Herdr、Pi 的 I/O 替身。预期 DD514 R6/R11/R15。
     import importlib.util
@@ -289,6 +362,6 @@ def check_capability_safety():
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety'], required=True)
+    p.add_argument('--case', choices=['single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback'], required=True)
     args = p.parse_args()
-    ({'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
+    ({'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()

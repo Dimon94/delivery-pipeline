@@ -233,6 +233,75 @@ def check_different_family():
     print('different-family-plan: pass (public resolver; fixture capability, native execution Unknown)')
 
 
+def check_multi_implementer():
+    """DD513/R7-R10：手列三值决策表，穿过真实 Registry 收集和公开 resolver。"""
+    from itertools import product, permutations
+    config = m.migrate_document(m.valid_fixture())[0]
+    reviewer = {'agent': 'pi', 'model': 'reviewer', 'effort': 'high'}
+    config['review']['whole-change']['standards'] = {**reviewer, 'candidates': [reviewer]}
+    config['model_families'] = {'pi': {
+        name: {'family': family, 'source': 'user_declared'}
+        for name, family in [('reviewer', 'red'), ('red-impl', 'red'), ('blue-impl', 'blue')]}}
+    probe = {'request_id': 'multi', 'observed_at': 'fixture', 'sources': {'pi': {'status': 'ok'}},
+             'capabilities': {'pi': {'binary': True, 'models': {'reviewer': ['high']}}}}
+    caps = {'standards': [{'identity': reviewer, 'status': 'runnable', 'reason': None,
+                           'evidence_id': f'fixture-{i}'} for i in range(2)]}
+    # 相对 red 审查者：S=red, D=blue, U=未声明。预期直接来自 R8，非调用被测比较器。
+    table = {'': 'unknown', 'S': 'same', 'D': 'different', 'U': 'unknown',
+             'SS': 'same', 'SD': 'same', 'SU': 'same', 'DD': 'different',
+             'DU': 'unknown', 'UU': 'unknown', 'SSS': 'same', 'SSD': 'same',
+             'SSU': 'same', 'SDD': 'same', 'SDU': 'same', 'SUU': 'same',
+             'DDD': 'different', 'DDU': 'unknown', 'DUU': 'unknown', 'UUU': 'unknown'}
+    count = 0
+    for key, expected in table.items():
+        for sequence in sorted(set(permutations(key))):
+            for sources in product(('requested', 'executed'), repeat=len(sequence)):
+                rows = {'map': {'lane_id': 'map', 'role': 'map', 'base_commit': 'base'}}
+                expected_evidence = []
+                for i, (symbol, source) in enumerate(zip(sequence, sources)):
+                    identity = {**reviewer, 'model': {'S': 'red-impl', 'D': 'blue-impl', 'U': 'unknown-impl'}[symbol]}
+                    # executed 未声明时 requested 仍有 red 声明，必须禁止回退。
+                    requested = identity if source == 'requested' else {**reviewer, 'model': 'red-impl'}
+                    executed = identity if source == 'executed' else None
+                    lane = f'impl-{i}'
+                    rows[lane] = {'lane_id': lane, 'map': 'map', 'role': 'backend',
+                        'output_mode': 'commit', 'integrated_commit': f'commit-{i}', **requested,
+                        'implementation_execution': {'source': 'native_readback', 'identity': executed}}
+                    declaration = None if symbol == 'U' else {
+                        'family': {'S': 'red', 'D': 'blue'}[symbol], 'source': 'user_declared'}
+                    expected_evidence.append({'lane_id': lane, 'requested': requested, 'executed': executed,
+                        'identity': identity, 'basis': source, 'declaration': declaration,
+                        'source': 'declared_at_review'})
+                implementations = registry.collect_implementation_identities(rows, 'base')
+                plan = m.resolve_review_plan(config, required_axes=['standards'], implementations=implementations,
+                    evidence=probe, native_capabilities=caps, request_id='multi')
+                assert plan['lane']['comparison'] == expected, (sequence, sources, plan)
+                basis = 'unknown' if not sources else sources[0] if len(set(sources)) == 1 else 'mixed'
+                assert plan['lane']['comparison_basis'] == basis
+                assert plan.get('implementation_evidence') == expected_evidence, '缺逐实现者来源/声明审计证据'
+                assert plan['implementations'] == implementations
+                assert [a['comparison'] for a in plan['lane']['attempts']] == [expected, expected]
+                assert plan['lane']['fallback'] == ('none' if expected == 'different' else 'no_different_family_candidate')
+                assert plan['lane']['selected_index'] == 0
+                count += 1
+    # 候选自身缺声明时，即使实现集合完整也只能 Unknown。
+    del config['model_families']['pi']['reviewer']
+    plan = m.resolve_review_plan(config, required_axes=['standards'],
+        implementations=[{'lane_id': 'known', 'requested': {**reviewer, 'model': 'blue-impl'}, 'executed': None}],
+        evidence=probe, native_capabilities=caps, request_id='multi')
+    assert plan['lane']['comparison'] == 'unknown'
+    assert plan['lane']['fallback'] == 'no_different_family_candidate'
+    for executed in (None, {}, {'model': 'unknown-impl'}):
+        plan = m.resolve_review_plan(config, required_axes=['standards'],
+            implementations=[{'lane_id': 'partial', 'requested': None, 'executed': executed}],
+            evidence=probe, native_capabilities=caps, request_id='multi')
+        item = plan['implementation_evidence'][0]
+        assert item['identity'] == executed and item['declaration'] is None
+        assert item['basis'] == ('requested' if executed is None else 'executed')
+        assert plan['lane']['comparison'] == 'unknown'
+    print(f'multi-implementer-fallback: pass ({count} Registry/resolver cases; native execution Unknown)')
+
+
 def check_capability_safety():
     """独立预期：DD514 AC / DD508 R5/R6/R11；公开 resolver。"""
     import copy
@@ -285,9 +354,11 @@ def check_capability_safety():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety'], required=True)
+    parser.add_argument('--case', choices=['single-model-plan', 'candidate-family-transaction', 'different-family-plan', 'capability-safety', 'multi-implementer-fallback'], required=True)
     args = parser.parse_args()
-    if args.case == 'capability-safety':
+    if args.case == 'multi-implementer-fallback':
+        check_multi_implementer()
+    elif args.case == 'capability-safety':
         check_capability_safety()
     elif args.case == 'single-model-plan':
         for version in (6, 7):
