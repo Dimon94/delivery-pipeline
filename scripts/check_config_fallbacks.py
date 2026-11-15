@@ -24,7 +24,7 @@ def check():
         assert path.read_bytes()==raw
         assert run('migrate')[0]==0
         migrated=json.loads(path.read_text())
-        expected=copy.deepcopy(old);expected['version']=6
+        expected=copy.deepcopy(old);expected['version']=7;expected['model_families']={}
         for c in expected['work'].values():c['fallbacks']=[]
         for axes in expected['review'].values():
             for c in axes.values():c['candidates']=[]

@@ -93,8 +93,32 @@ def _cell_errors(prefix, value, agents, listing=None):
     return errors
 
 
+def _family_errors(families: object) -> list[str]:
+    import re
+    if not isinstance(families, dict):
+        return ["model_families must be an object"]
+    errors = []
+    for agent, models in families.items():
+        if agent not in CLI_AGENTS or not isinstance(models, dict):
+            errors.append("family declarations require an exact CLI agent and native model map")
+            continue
+        for model, value in models.items():
+            if (not isinstance(model, str) or not model.strip()
+                    or not isinstance(value, dict) or set(value) != {"family", "source"}
+                    or value.get("source") != "user_declared"
+                    or not isinstance(value.get("family"), str)
+                    or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value["family"], re.ASCII)):
+                errors.append("family must be a normalized ASCII slug with user_declared source")
+    return errors
+
+
+def family_declaration(document: dict, agent: str, native_model: str) -> dict | None:
+    """精确用户声明；effort 不参与身份，缺失即 Unknown，不推断家族。"""
+    return copy.deepcopy(document.get("model_families", {}).get(agent, {}).get(native_model))
+
+
 def validate_document(document: object, transport: str = "cli") -> list[str]:
-    """只检查 CLI v6 / App v5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
+    """只检查 CLI v6/v7 / App v5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
     if transport not in ("cli", "app"):
         return ["transport must be cli or app"]
     agents = CLI_AGENTS if transport == "cli" else {"codex-app"}
@@ -102,6 +126,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
     if not isinstance(document, dict):
         return ["top-level value must be an object"]
     top_level = {"version", "work", "modes", "review"}
+    if transport == "cli" and document.get("version") == 7:
+        top_level.add("model_families")
     if transport == "app":
         top_level = top_level | {"default_mode"}
         allowed = top_level | {"legacy_execution"}
@@ -114,10 +140,12 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
         )
     if transport == "cli" and "default_mode" in document:
         errors.append("default_mode is App-only; CLI 默认计划来自 work 项")
-    if document.get("version") != (6 if transport == "cli" else 5):
+    if document.get("version") not in ((6, 7) if transport == "cli" else (5,)):
         errors.append(
             "unsupported version; older configs need model_config.py migrate"
         )
+    if transport == "cli" and document.get("version") == 7:
+        errors.extend(_family_errors(document.get("model_families")))
     work = document.get("work")
     if not isinstance(work, dict):
         errors.append("work must be an object")
@@ -235,7 +263,7 @@ def show(path: Path) -> dict:
     result["config"] = document
     errors = validate_document(document)
     result["validation"] = {"valid": not errors, "errors": errors}
-    if isinstance(document, dict) and document.get("version") != 6:
+    if isinstance(document, dict) and document.get("version") not in (6, 7):
         result["file_state"] = "unsupported_version"
     elif errors:
         result["file_state"] = "invalid_schema"
@@ -411,11 +439,14 @@ def migrate_document(document: dict) -> tuple[dict, str]:
     is_app = "default_mode" in document and any(
         isinstance(c, dict) and c.get("agent") == "codex-app"
         for c in document.get("work", {}).values())
-    if document.get("version") == 6 or (document.get("version") == 5 and is_app):
+    if document.get("version") in (6, 7) or (document.get("version") == 5 and is_app):
         transport = "app" if is_app else "cli"
         errors = validate_document(document, transport)
         if errors: raise ValueError("; ".join(errors))
-        return copy.deepcopy(document), transport
+        migrated = copy.deepcopy(document)
+        if transport == "cli" and migrated["version"] == 6:
+            migrated.update(version=7, model_families={})
+        return migrated, transport
     if document.get("version") == 5:
         for c in [*document.get("work", {}).values(), *(c for axes in document.get("review", {}).values() for c in axes.values())]:
             errors = _entry_errors("legacy cell", c, CLI_AGENTS)
@@ -429,6 +460,8 @@ def migrate_document(document: dict) -> tuple[dict, str]:
             migrated["work"][task]["fallbacks"] = []
         for axes in migrated["review"].values():
             for c in axes.values(): c["candidates"] = []
+    if transport == "cli":
+        migrated.update(version=7, model_families={})
     errors = validate_document(migrated, transport)
     if errors: raise ValueError("; ".join(errors))
     return migrated, transport
@@ -675,18 +708,22 @@ def validate_selection(candidate: dict, previous: object,
     errors = validate_document(candidate)
     if errors:
         raise ConfigRejected("invalid_candidate", "; ".join(errors))
-    if (not isinstance(evidence, dict) or not request_id
+    if evidence is not None and (not isinstance(evidence, dict) or not request_id
             or evidence.get("request_id") != request_id
             or not isinstance(evidence.get("observed_at"), str)
             or not evidence["observed_at"].strip()
             or not isinstance(evidence.get("sources"), dict)):
         raise ConfigRejected("capability_unavailable", "需要本次 request-id 的能力证据")
     previous_valid = not validate_document(previous)
-    for scope in REVIEW_SCOPES:
-        for axis in REVIEW_AXES:
-            old_candidates = previous["review"][scope][axis]["candidates"] if previous_valid else []
-            if candidate["review"][scope][axis]["candidates"] != old_candidates:
-                raise ConfigRejected("invalid_candidate", "M2 不编辑 review candidates")
+    referenced = set()
+    for c in [*candidate["work"].values(), *(c for axes in candidate["review"].values() for c in axes.values())]:
+        for item in [c, *c.get("fallbacks", []), *c.get("candidates", [])]:
+            referenced.add((item["agent"], item["model"]))
+    previous_families = previous.get("model_families", {}) if previous_valid else {}
+    for agent, models in candidate.get("model_families", {}).items():
+        for model in models:
+            if (agent, model) not in referenced and model not in previous_families.get(agent, {}):
+                raise ConfigRejected("invalid_candidate", "新声明必须对应配置引用的精确工具和原生模型")
     old_entries = (_config_entries(previous) if previous_valid else {})
     def counts(document, task):
         c = document["work"][task]
@@ -696,9 +733,19 @@ def validate_selection(candidate: dict, previous: object,
         old = counts(previous, task) if previous_valid else Counter()
         for identity in counts(candidate, task) - old:
             additions[f"work.{task}.fallbacks.{identity}"] = dict(zip(("agent", "model", "effort"), identity))
+    for scope in REVIEW_SCOPES:
+        for axis in REVIEW_AXES:
+            def candidates(document):
+                return Counter(tuple(item[k] for k in ("agent", "model", "effort"))
+                               for item in document["review"][scope][axis]["candidates"])
+            old = candidates(previous) if previous_valid else Counter()
+            for identity in candidates(candidate) - old:
+                additions[f"review.{scope}.{axis}.candidates.{identity}"] = dict(zip(("agent", "model", "effort"), identity))
     for key, entry in {**_config_entries(candidate), **additions}.items():
         if old_entries.get(key) == entry:
             continue
+        if evidence is None:
+            raise ConfigRejected("capability_unavailable", "需要本次 request-id 的能力证据")
         source = evidence["sources"].get(entry["agent"], {})
         errors = capability_errors(entry["agent"], entry["model"], entry["effort"],
                                    evidence.get("capabilities"))
@@ -746,6 +793,10 @@ def apply(path: Path, candidate: dict, base_hash: str,
                 old[field] = new[field]
             if key.startswith("work."):
                 old["fallbacks"] = copy.deepcopy(new["fallbacks"])
+            else:
+                old["candidates"] = copy.deepcopy(new["candidates"])
+        if previous["version"] == 7:
+            permitted["model_families"] = copy.deepcopy(candidate["model_families"])
         if permitted != candidate:
             raise ConfigRejected("invalid_candidate", "桌面不能修改只读设置")
         validate_selection(candidate, previous, evidence, request_id)
@@ -920,7 +971,7 @@ def resolve_plan(
         raise ValueError(f"task type not defined in config: {task}")
     entry = document["work"][task]
     recovery = {}
-    if document.get("version") == 6 and task in CLI_REQUIRED_WORK:
+    if document.get("version") in (6, 7) and task in CLI_REQUIRED_WORK:
         explicit = task in IMPLEMENTATION_TASKS and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
         recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
                     "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
@@ -1468,7 +1519,7 @@ def self_test() -> list[str]:
     if (
         transport != "cli"
         or validate_document(migrated)
-        or migrated["version"] != 6
+        or migrated["version"] != 7
         or "default_mode" in migrated
         or migrated["modes"] != {}
     ):
@@ -1488,7 +1539,7 @@ def self_test() -> list[str]:
     }
     migrated, _ = migrate_document(json.loads(json.dumps(legacy_v3)))
     if (
-        migrated["version"] != 6
+        migrated["version"] != 7
         or "default_mode" in migrated
         or validate_document(migrated)
         or "execution" in migrated["work"]["backend"]
@@ -1540,7 +1591,7 @@ def self_test() -> list[str]:
     migrated, transport = migrate_document(json.loads(json.dumps(legacy_v4)))
     if (
         transport != "cli"
-        or migrated["version"] != 6
+        or migrated["version"] != 7
         or "default_mode" in migrated
         or validate_document(migrated)
         or "execution" in migrated["work"]["backend"]
@@ -1606,8 +1657,9 @@ def self_test() -> list[str]:
     migrated, transport = migrate_document(legacy_app_v4)
     if transport != "app" or migrated["version"] != 5:
         failures.append("App v4 migration did not bump the version")
-    if migrate_document(valid_fixture())[0] != valid_fixture():
-        failures.append("v6 repeated migration changed configuration")
+    v7 = {**valid_fixture(), "version": 7, "model_families": {}}
+    if migrate_document(v7)[0] != v7:
+        failures.append("v7 repeated migration changed configuration")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "model-roles.json"
         path.write_text(json.dumps(legacy_v3), encoding="utf-8")

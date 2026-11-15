@@ -27,3 +27,5 @@ python3 build.py --python /absolute/path/to/python3 --install
 DD-411：五 work 的备用列表不限长、允许重复，按编号位置编辑；差异显示完整顺序，确认后与主配置同事务保存。旧 CLI 配置必须先由 AI setup 显式迁移 v6；App 保持 v5。Host Interface 不变；备用消费与完整列表异常恢复扩展归后续票。
 
 DD-412：返回与外观切换保留完整有序草稿，撤销恢复完整读取快照。冲突或待核实时禁止再次保存，显式 ReadConfig 失败继续保留；当前等于候选只陈述当前观察。另一有效文档作为新基线，页面展示旧草稿九格完整顺序供参考，重新选择、预览、确认；再次提交前拒绝仍保留参考。Host 不增加 Recover；`bun test src/recovery.test.ts` 验证完整列表恢复合同。
+
+DD-511：四格候选支持增删改移，共享声明覆盖所有 work/review 引用身份（含备用）并保留已声明但不再引用的模型。声明按精确工具/原生模型共享，effort 不改变家族。v7 由 AI setup 显式迁移，App v5 不变。Draft.changes 包含 model_families，Editor.save 冻结完整候选；Host generic payload 不变。冲突/待确认旧草稿同时保留候选与声明，读回后需人工重新选择和预览，不自动重提。`bun test src/review.test.ts` 和 canonical `check_config_review.py --case candidate-family-transaction` 分别检查编辑与真实文件事务；GUI 与实际模型执行独立验收。

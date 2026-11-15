@@ -27,3 +27,5 @@ python3 scripts/check_config_transaction.py
 DD-381：桌面 apply 的 prepare 复用同一个 configuration_transaction，增加九格/只读区限制，不改变锁与提交点模型。`python3 scripts/check_config_apply.py` 补 apply/configure 独立进程同基线竞争和相同 pre/post/no-op 真实回归；没有新增 formal owner。
 
 DD-411：CLI v6 的 fallbacks 与主配置共用原 prepare/锁/hash/replace/readback 步骤；迁移转换仅在 prepare 内补列表，模型步骤与假设不变。公开 check_config_fallbacks.py 补有序重复、计数证据与只读 candidates；沿用真实进程事务及既有三个反例。
+
+DD-511：CLI v7 的有序 review candidates 与 model_families 进入既有 apply/configure prepare；锁、hash、replace、精确读回、崩溃与失败分类均不改变。check_config_review.py --case candidate-family-transaction 补四格保序/重复计数/仅声明/no-op/stale/pre/post 与真实双进程同基线竞争；原模型与进程检查继续覆盖同一事务，不新增 owner。同步代码坐标由 DD-511/result.md 与 git log 定位。

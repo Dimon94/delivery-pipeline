@@ -1,4 +1,4 @@
-# 模型配置 Schema（CLI version 6 / App version 5）
+# 模型配置 Schema（CLI version 7（兼容 6）/ App version 5）
 
 本文件是 worker 模型配置的唯一定义点，核心链路与各 transport 壳共用同一份格式。
 各 transport 的调度逻辑在其壳内实现，配置 schema 只有这一份。
@@ -15,7 +15,8 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 
 ```json
 {
-  "version": 6,
+  "version": 7,
+  "model_families": {},
   "work": {
     "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] },
     "backend":  { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] }
@@ -45,8 +46,8 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 }
 ```
 
-CLI 实例顶层 key 精确为 `version`、`work`、`modes`、`review`。App 实例额外必需
-`default_mode`，并允许可选 `legacy_execution`（见下文）。CLI `version` 必须等于 6；App 保持 5。
+CLI v7 实例顶层 key 精确为 `version`、`work`、`modes`、`review`、`model_families`。App 实例额外必需
+`default_mode`，并允许可选 `legacy_execution`（见下文）。CLI 接受 `version` 6 或 7，显式 migrate 输出 7；App 保持 5。
 
 ## work：任务类型
 
@@ -131,3 +132,11 @@ App 实例允许可选的 `legacy_execution`，key 精确为 `astra-luna` 与 `a
 review 四格精确为 `{agent, model, effort, candidates}`，candidates 同形列表；M2 桌面只保留，不编辑或消费。
 AI setup 显式 migrate 将 CLI v5 升 v6，仅补空列表；更旧版本先沿既有转换，同一事务保存。重复迁移零写入。App 不使用 CLI 迁移。
 新增或改值以及增加重复次数需本次精确能力证据；未改值排序和删除可保留 Unknown 原值。桌面与 setup 共用原有锁/hash/replace/readback 事务。列表消费由后续票实现。
+
+## v7：有序 review 候选与共享家族声明
+
+显式 v6→v7 仅增加空 `model_families` 并更新版本；show/probe 不迁移。v6 空 candidates 的单模型路径继续有效。App 保持 v5，不增加字段。
+四格 candidates 保持 ModelTriple 有序列表，允许重复；新增或增加重复次数、改值须当前精确能力，排序/删除/仅声明变更无需构造新能力。删除候选不删除声明。
+`model_families` 为 `{agent: {native_model: {family, source: "user_declared"}}}`。family 使用小写 ASCII slug（字母数字段以单个连字符连接）；UI 将输入去首尾空白并转小写。检索只按精确 agent/native model，不看 effort，不按名称、路由、显示标签推断；缺失即 Unknown。声明仅为用户证据，不是外部认证。候选与声明共用 canonical apply/configure 原子事务。
+
+新声明必须对应当前 work/review（含 fallback/candidate）引用的精确身份；已有声明可在删除候选后继续保留和维护，不接受新清单外身份注入。
