@@ -1,8 +1,9 @@
-# ADR-0024: ticket-sizing 所有权转移到 my-skills
+# ADR-0025: ticket-sizing 所有权转移到 my-skills
 
 **Status:** Accepted
 **Date:** 2026-11-13
 **Decider:** User (Dimon)
+**原号与来源:** ADR-0024，main 提交 `0fb02b4ef6847d7a27650ffd1ace4ac488888a6c`；组合 M1/M2 时为避免与配置事务 ADR-0024 重号改为 ADR-0025，决定内容与 Accepted 状态不变。
 **Related:** ADR-0008（只更新 Skill 来源，工作类型不变）；my-skills ADR-0017
 
 ## Context
