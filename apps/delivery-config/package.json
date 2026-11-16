@@ -14,6 +14,7 @@
     "mygo-runtime": "0.7.4"
   },
   "devDependencies": {
+    "happy-dom": "^21.0.4",
     "mygo-cli": "0.7.4",
     "typescript": "7",
     "vite": "8"
