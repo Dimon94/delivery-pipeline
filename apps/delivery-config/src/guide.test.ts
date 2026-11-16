@@ -36,7 +36,7 @@ test('R6：测试路径优先、AppInfo 路径兜底，指令标记测试配置'
  for(const v of [g.detail,g.instruction]){expect(v).toContain('测试配置');expect(v).toContain(path);expect(v).not.toContain(app.config_path);}
  expect(guide({hostUnavailable:true},app).detail).toContain(app.config_path);
  expect(guide({hostUnavailable:true},app).instruction).toContain(app.config_path);
- expect(guide({hostUnavailable:true}).detail).toContain('Unknown');
+ expect(guide({hostUnavailable:true}).detail).toContain('未取得配置完整路径');
 });
 test('R7：v5 + default_mode + 任意 work 格 codex-app 才属于 App',()=>{
  const config={version:5,default_mode:'normal',work:{research:{agent:'codex-app'}}};
