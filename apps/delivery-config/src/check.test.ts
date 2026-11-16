@@ -82,6 +82,14 @@ test('R4：五种项状态各一，且按 未选完 > 工具不可用 > 需换�
  expect(['planning','design','frontend'].map(n=>f.status(`work.${n}`).primary.kind)).toEqual(['tool_off','incomplete','model_gone']);
  const tool=f.status('work.planning').primary;expect(tool.kind==='tool_off'&&tool.reason).toBe('未取得完整证据链');
 });
+test('R4（DD-578）：清单里有该模型、档位也不在，但来源不是 ok → 仍是工具不可用，不是需换档位',()=>{
+ const c=base();c.work.planning={...ok,effort:'max',fallbacks:[]};
+ const d=new Draft(c);d.beginProbe('r');
+ d.acceptProbe(evidence('r','ok',{sources:{codex:{status:'unknown',next_step:'请核对',reason:'来源不可靠'},pi:{status:'ok',next_step:''},claude:{status:'ok',next_step:''}}}));
+ expect(d.status('work.planning').primary.kind).toBe('tool_off');
+ // 来源恢复 ok 后，同一配置才落到需换档位。
+ const g=checked(new Draft(c));expect(g.status('work.planning').primary.kind).toBe('effort_gone');
+});
 test('状态随核对阶段：checking 全部是核对中；idle/unreachable 全部是未核实',()=>{
  const c=base();c.work.planning.fallbacks=[{...ok},{agent:'pi',model:'pi/m',effort:'low'}];
  const d=new Draft(c);
