@@ -127,7 +127,7 @@ async function probe() {
 function guideCard() {
  if(!guideInput||!appInfoLoaded)return '';
  const g=guide(guideInput,appInfo);
- return `<section class="card guide-card" aria-label="配置处理引导"><h2>${escape(g.title)}</h2><p class="guide-detail">${escape(g.detail)}</p><h3>影响</h3><p>${escape(g.impact)}</p><h3>下一步</h3><p>${escape(g.next)}</p>${g.instruction?`<label for="guide-instruction">给 AI 助手的指令</label><textarea id="guide-instruction" readonly>${escape(g.instruction)}</textarea><div class="guide-actions"><button class="primary" id="copy-guide">复制指令</button><span id="copy-status" role="status"></span></div>`:''}<button class="plain" id="guide-reload" ${reading?'disabled':''}>重新读取</button></section>`;
+ return `<section class="card guide-card" aria-label="配置处理引导"><h2>${escape(g.title)}</h2><p class="guide-detail">${escape(g.detail)}</p><h3>影响</h3><p>${escape(g.impact)}</p><h3>下一步</h3><p>${escape(g.next)}</p>${g.instruction?`<label for="guide-instruction">给 AI 助手的指令</label><textarea id="guide-instruction" readonly>${escape(g.instruction)}</textarea>`:''}<div class="guide-actions">${g.instruction?'<button class="primary" id="copy-guide">复制指令</button>':''}<button class="plain" id="guide-reload" ${reading?'disabled':''}>重新读取</button>${g.instruction?'<span id="copy-status" role="status"></span>':''}</div></section>`;
 }
 function render() {
  const kind=editor?.state.kind;
