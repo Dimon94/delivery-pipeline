@@ -43,3 +43,37 @@ test('候选子行操作保序，编辑归属正确差异路径，候选异常�
  expect(doc.querySelector('.diff-panel')!.textContent).toContain('1. Pi · Claude Opus 5 5');
  click('#back');
 });
+// DD-598：预期来自票据的保存主次、诊断位置与系统外观合同。
+test('差异对话框只有确认保存设置为主按钮',()=>{
+ click('#diff');
+ expect([...doc.querySelectorAll('.diff-panel .primary')].map(e=>e.textContent)).toEqual(['确认保存设置']);
+ expect(doc.querySelector('#back')!.classList.contains('plain')).toBe(true);
+ click('#back');
+});
+test('诊断在页脚作为文字按钮，使用说明留顶栏，诊断可返回原设置',()=>{
+ expect(doc.querySelector('header #diagnostic')).toBeNull();
+ expect(doc.querySelector('header #help')!.textContent).toBe('使用说明');
+ const diagnostic=doc.querySelector('footer #diagnostic')!;
+ expect(diagnostic).not.toBeNull();expect(diagnostic.classList.contains('text-button')).toBe(true);
+ const before=doc.querySelector('select[data-path="work.frontend"][data-field="model"]')!.outerHTML;
+ click('#diagnostic');expect(doc.querySelector('h1')!.textContent).toBe('独立诊断');
+ expect(JSON.parse(doc.querySelector('pre')!.textContent!)).toEqual({file_state:'ready',config,base_hash:'hash',cells:{}});
+ click('#close-diagnostic');
+ expect(doc.querySelector('select[data-path="work.frontend"][data-field="model"]')!.outerHTML).toBe(before);
+});
+import {readFileSync} from 'node:fs';
+test('外观只跟随系统：无手动入口，深浅两套色板由系统媒体条件选择',()=>{
+ expect(doc.querySelector('#theme')).toBeNull();
+ expect(doc.documentElement.hasAttribute('data-theme')).toBe(false);
+ const source=readFileSync(new URL('./main.ts',import.meta.url),'utf8');
+ const css=readFileSync(new URL('./style.css',import.meta.url),'utf8');
+ expect(source).not.toMatch(/dataset\.theme|data-theme/);
+ expect(css).not.toContain('data-theme');
+ const sheet=new win.CSSStyleSheet();sheet.replaceSync(css);
+ for(const mode of ['light','dark']){
+  const rule=[...sheet.cssRules].find(r=>r.cssText.includes(`prefers-color-scheme: ${mode}`)||r.cssText.includes(`prefers-color-scheme:${mode}`));
+  expect(rule).toBeDefined();
+  expect(rule!.cssText).toContain(`color-scheme: ${mode}`);
+  for(const token of ['--bg:','--card:','--ink:','--accent:'])expect(rule!.cssText).toContain(token);
+ }
+});
