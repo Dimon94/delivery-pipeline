@@ -196,3 +196,28 @@ runpy.run_path(` + strconv.Quote(tool) + `,run_name='__main__')`
 		t.Fatal("提交后错误不应回滚")
 	}
 }
+
+// R3：AppInfo.Build 与构建脚本 build_label 同格式；期望值取自 Spec 的示例，不由实现反推。
+func TestAppInfoBuild(t *testing.T) {
+	saved := [3]string{buildCommit, buildDirty, builtAt}
+	defer func() { buildCommit, buildDirty, builtAt = saved[0], saved[1], saved[2] }()
+	cases := []struct{ commit, dirty, at, want string }{
+		{"658b108", "false", "2026-11-16T06:40:00Z", "658b108 · 2026-11-16 06:40Z"},
+		{"658b108", "true", "2026-11-16T06:40:00Z", "658b108+未提交 · 2026-11-16 06:40Z"},
+		{"unknown", "false", "2026-11-16T06:40:00Z", "unknown · 2026-11-16 06:40Z"},
+		{"", "", "", ""}, // 未经构建脚本注入：构建号未知，由页面兜底
+		{"", "true", "2026-11-16T06:40:00Z", ""},
+		{"658b108", "false", "not-a-time", "658b108"}, // 时间坏了仍显示提交
+	}
+	for _, c := range cases {
+		buildCommit, buildDirty, builtAt = c.commit, c.dirty, c.at
+		got := (&Host{}).AppInfo().Build
+		if got != c.want {
+			t.Fatalf("%+v：Build=%q", c, got)
+		}
+	}
+	// 不做 I/O；ConfigPath/ConfigKind 归 DD-584，本票不填
+	if info := (&Host{Config: "/nonexistent/x"}).AppInfo(); info.ConfigPath != "" || info.ConfigKind != "" {
+		t.Fatalf("本票不填 ConfigPath/ConfigKind：%+v", info)
+	}
+}

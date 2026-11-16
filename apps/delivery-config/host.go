@@ -18,10 +18,36 @@ import (
 // 构建时绑定；运行时不搜索 shell PATH。
 var pythonPath string
 
+// 构建号三段由 build.py 经 MYGO_LDFLAGS 注入（-X main.buildCommit 等）；开发运行时为空。
+var buildCommit, buildDirty, builtAt string
+
 type Host struct {
 	Python string
 	Tool   string
 	Config string
+}
+
+// AppInfo 是页面标签的数据源。Build 与 build.py 的 build_label 同格式；
+// ConfigPath/ConfigKind 的填充归 DD-584，本票留空。
+type AppInfo struct {
+	Build      string `json:"build"`
+	ConfigPath string `json:"config_path"`
+	ConfigKind string `json:"config_kind"`
+}
+
+// AppInfo 不做 I/O、不改变状态；未注入构建号时 Build 为空，页面显示“构建号未知”。
+func (h *Host) AppInfo() AppInfo {
+	if buildCommit == "" {
+		return AppInfo{}
+	}
+	label := buildCommit
+	if buildDirty == "true" {
+		label += "+未提交"
+	}
+	if at, err := time.Parse(time.RFC3339, builtAt); err == nil {
+		label += " · " + at.UTC().Format("2006-01-02 15:04") + "Z"
+	}
+	return AppInfo{Build: label}
 }
 
 // ReadConfig 只消费 canonical show；配置异常保留结构化结果。

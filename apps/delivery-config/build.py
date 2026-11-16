@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """本机构建：绑定解释器，携带同源工具，ad-hoc 签名；`--install` 就地升级同一 bundle id 的旧应用。"""
 import argparse
+import datetime
 import os
 from pathlib import Path
 import plistlib
@@ -10,6 +11,48 @@ import sys
 
 root = Path(__file__).resolve().parent
 BUNDLE_ID = 'com.dimon.delivery-pipeline.settings'
+
+
+def build_info(repo, now=None):
+    """构建号三段：提交短哈希、已跟踪文件是否有未提交改动、UTC 构建时间。读不到 git 时 commit='unknown'，不抛异常。"""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    # 钩子等上层会注入 GIT_DIR / GIT_INDEX_FILE，继承会让构建号指向别的仓。
+    env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+
+    def git(*args):
+        return subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+    try:
+        commit = git('rev-parse', '--short', 'HEAD') or 'unknown'
+        dirty = bool(git('status', '--porcelain', '--untracked-files=no')) if commit != 'unknown' else False
+    except (OSError, subprocess.CalledProcessError):
+        commit, dirty = 'unknown', False
+    return {'commit': commit, 'dirty': dirty, 'built_at': now.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+
+def build_label(info):
+    """例：'658b108 · 2026-11-16 06:40Z'；有未提交改动时 '658b108+未提交 · …'。Go 的 AppInfo.Build 同格式。"""
+    return info['commit'] + ('+未提交' if info['dirty'] else '') + ' · ' + info['built_at'][:16].replace('T', ' ') + 'Z'
+
+
+def ldflags(python, info):
+    """二进制注入：与既有 main.pythonPath 并列。"""
+    return ' '.join(['-X main.pythonPath='+str(python), '-X main.buildCommit='+info['commit'],
+                     '-X main.buildDirty='+('true' if info['dirty'] else 'false'), '-X main.builtAt='+info['built_at']])
+
+
+def stamp_bundle(app, info):
+    """把构建号写进 Info.plist 的 CFBundleVersion；必须在 codesign 之前，否则签名失效。"""
+    path = Path(app) / 'Contents/Info.plist'
+    with path.open('rb') as f:
+        plist = plistlib.load(f)
+    plist['CFBundleVersion'] = build_label(info)
+    with path.open('wb') as f:
+        plistlib.dump(plist, f)
+
+
+def summary(app, info):
+    return '构建号：'+build_label(info)+'\n路径：'+str(app)
 
 
 class InstallRefused(Exception):
@@ -84,7 +127,8 @@ def main():
     args = parser.parse_args()
     python = Path(args.python).resolve()
     subprocess.run([str(python), '-c', 'import sys; assert sys.version_info >= (3,10), "需要 Python >= 3.10"'], check=True)
-    subprocess.run(['bun', 'run', 'build', '-skip-dmg'], cwd=root, env={**os.environ, 'MYGO_LDFLAGS': '-X main.pythonPath='+str(python)}, check=True)
+    info = build_info(root)
+    subprocess.run(['bun', 'run', 'build', '-skip-dmg'], cwd=root, env={**os.environ, 'MYGO_LDFLAGS': ldflags(python, info)}, check=True)
     app = next((root / 'build').glob('darwin-*/*.app'))
     canonical = root.parents[1] / 'skills/delivery-pipeline-setup/scripts'
     resources = app / 'Contents/Resources'
@@ -94,6 +138,7 @@ def main():
     # 对最终资源执行隔离 probe，防止源码可用但应用漏带依赖。
     subprocess.run([str(python), str(root.parents[1] / 'scripts/check_config_toml.py'),
                     '--python', str(python), '--tool', str(resources / 'model_config.py')], check=True)
+    stamp_bundle(app, info)
     subprocess.run(['codesign','--force','--deep','--sign','-',str(app)], check=True)
     verify(app)
     if args.install:
@@ -102,7 +147,7 @@ def main():
             app = install(app, destination)
         except InstallRefused as refused:
             raise SystemExit('安装已停止（'+refused.reason+'），旧应用保持原样：'+str(refused))
-    print(app)
+    print(summary(app, info))
 
 
 if __name__ == '__main__':

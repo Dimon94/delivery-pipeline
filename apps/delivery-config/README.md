@@ -14,6 +14,8 @@ python3 build.py --python /absolute/path/to/python3 --install
 
 升级：重新运行同一条 `python3 build.py --python /absolute/path/to/python3 --install` 即可，不必先删旧版。同一 bundle id（`com.dimon.delivery-pipeline.settings`）的旧应用会被整体替换：新包先复制到同目录临时位置并验签，通过后才与旧包交换，最后删除备份。以下情况安装会停下并说明原因，旧应用保持原样、不留临时件：`running`（应用正在运行，先退出再装）、`foreign_bundle`（目标位置是其他应用）、`copy_failed`（新包复制或验签失败）。原因解除后重新运行即可。构建只产出这一个 bundle id，没有改 bundle id 的参数。`install(app, destination)` 可被导入；根目录 `python3 scripts/check_config_install.py` 用临时目录里的假 `.app` 检查上述行为（已接入 `validate.py`）。安装后从 Finder 双击，不依赖 shell PATH、当前目录或构建树。解释器被移动或卸载时，请让 AI 助手重新绑定并构建安装；不会静默安装依赖。Developer ID、公证和跨机器分发不在本机验收范围内。
 
+构建号：每次构建由三段组成——提交短哈希、已跟踪文件有未提交改动时加 `+未提交`、构建时间（UTC），例如 `658b108 · 2026-11-16 06:40Z`。同一个构建号经 ldflags（`main.buildCommit/buildDirty/builtAt`）注入二进制，页面右上角显示“本机设置 · <构建号>”；并在签名前写入 `Info.plist` 的 `CFBundleVersion`，Finder“显示简介”可见。读不到 git 时提交部分为 `unknown`，构建不中断；页面取不到构建号显示“构建号未知”，不影响读配置。构建和安装命令结束时打印构建号与 `.app` 路径（安装后为安装位置）。
+
 配置默认读取 `~/.config/delivery-pipeline/model-roles.json`，不自动初始化、修复或迁移；仅在用户预览并明确确认后保存。缺失、损坏、旧版、非法结构、不可读分别引导助手处理，处理后点击“重新读取”。能力状态 Unknown，读取成功不代表模型运行或额度验证成功。显式预设和旧 lane 的既有规则保持。
 
 检查：根目录 `python3 scripts/check_config_show.py` 已接入 `scripts/validate.py`；本目录 `go test ./...` 穿过公开 Host 到真实 Python 进程。`DELIVERY_CONFIG_TEST_PATH` 可让受控独立测试进程读取临时配置，不能用它改写真实配置。Finder、窗口交互和异常恢复须另留本机证据，不能由这些命令替代。`scripts/check_config_apply.py` 验证桌面与 setup 的共享事务兼容性。
