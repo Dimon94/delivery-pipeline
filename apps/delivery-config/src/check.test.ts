@@ -157,6 +157,19 @@ test('R9：主选不可用时给出接替：第一个可用备用 / 无可用备
  expect(t('review.implementation.spec')).toEqual({kind:'candidates',usable:0});
  expect(t('review.whole-change.standards')).toBeNull();
 });
+test('R9：核对中与无法核对时不判断接替（takeover 为 null），队列仍按配置顺序给出项状态',()=>{
+ const c=base(),bad={...ok,model:'gone@native'};
+ c.work.planning={...bad,fallbacks:[{...bad},{...ok}]};
+ c.review.implementation!.spec={...bad,candidates:[{...ok}]};
+ const d=new Draft(c),t=()=>[d.status('work.planning').takeover,d.status('review.implementation.spec').takeover];
+ expect(t()).toEqual([null,null]);
+ d.beginProbe('a');expect(t()).toEqual([null,null]);
+ expect(d.status('work.planning').queue.map(q=>q.kind)).toEqual(['checking','checking']);
+ d.acceptProbe(evidence('a','unreachable'));expect(t()).toEqual([null,null]);
+ expect(d.status('work.planning').queue.map(q=>q.kind)).toEqual(['unverified','unverified']);
+ d.beginProbe('b');d.acceptProbe(evidence('b'));
+ expect(t()).toEqual([{kind:'fallback',index:1},{kind:'candidates',usable:1}]);
+});
 test('R10：队列标签与逐项状态，顺序同配置，k 为非可用项个数',()=>{
  const c=base();
  c.work.planning.fallbacks=[{...ok},{...ok,model:'gone@native'},{...ok,effort:''},{...ok,effort:'max'}];
