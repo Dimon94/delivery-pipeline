@@ -43,7 +43,7 @@ test('R7：v5 + default_mode + 任意 work 格 codex-app 才属于 App',()=>{
  const g=guide({fileState:'unsupported_version',path,config},{build:'',config_kind:'test',config_path:path});
  expect(g.kind).toBe('app_config');expect(g.instruction).toBeUndefined();
  expect(g.detail).toContain(path);expect(g.detail).toContain('测试配置');
- expect(g.impact).toContain('有效');expect(g.next).toContain('Codex App');
+ expect(g.impact).toContain('识别为 Codex App 配置（本页面只编辑 CLI 设置）');expect(g.impact).not.toContain('有效');expect(g.next).toContain('Codex App');
  expect(g.impact+g.next).not.toContain('迁移');
  for(const c of [{...config,work:{research:{agent:'codex'}}},{version:5,work:config.work},{...config,version:4}]){
   expect(guide({fileState:'unsupported_version',path,config:c}).kind).toBe('unsupported_version');
@@ -60,4 +60,17 @@ test('R4/R5：仅需要处理且没有读取任务时自动重读',()=>{
  expect(shouldRereadOnFocus({ready:false,reading:true})).toBe(false);
  expect(shouldRereadOnFocus({ready:true,reading:false})).toBe(false);
  expect(shouldRereadOnFocus({ready:true,reading:true})).toBe(false);
+});
+
+test('R6：AppInfo 失败或尚未返回时，详情和指令均标明配置来源未确认',()=>{
+ const g=guide({fileState:'unsupported_version',path,config:{version:5}},undefined);
+ for(const text of [g.detail,g.instruction])expect(text).toContain('配置来源未确认');
+ expect(g.detail).toContain(path);expect(g.instruction).toContain(path);
+});
+
+test('R1：非字符串或数字的版本按 JSON 展示',()=>{
+ for(const [version,expected] of [[{major:5},'{"major":5}'],[[5,6],'[5,6]'],[false,'false'],[null,'null']] as const){
+  const detail=guide({fileState:'unsupported_version',path,config:{version}}).detail;
+  expect(detail).toContain('实际版本：'+expected);expect(detail).not.toContain('[object Object]');
+ }
 });

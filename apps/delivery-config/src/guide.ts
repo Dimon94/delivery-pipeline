@@ -9,7 +9,7 @@ const content:Record<GuideKind,[string,string,string]> = {
  invalid_schema:['配置项目不完整或不符合要求','配置校验未通过，暂不能在这里编辑或用于交付。','修正配置项目并通过校验'],
  unreadable:['无法访问配置','无法读取这份配置，暂不能查看和编辑模型设置。','检查文件位置与读取权限'],
  host_unavailable:['读取环境无法使用','尚不能确认配置内容，暂不能查看和编辑模型设置。','检查读取环境、应用绑定的 Python（至少 3.10）与随附配置工具'],
- app_config:['这是 Codex App 的配置','这份 Codex App 配置本身有效；本页面只编辑 CLI 设置。','请在 Codex App 中使用这份配置；需要 CLI 设置时让 AI 助手另行配置。'],
+ app_config:['这是 Codex App 的配置','识别为 Codex App 配置（本页面只编辑 CLI 设置）。','请在 Codex App 中使用这份配置；需要 CLI 设置时让 AI 助手另行配置。'],
  unknown:['配置状态暂未识别','尚不能确认这份配置是否可用，暂不能在这里编辑。','检查配置与应用的读取结果'],
 };
 export function guide(input:GuideInput, app?:AppInfo):Guide {
@@ -20,9 +20,9 @@ export function guide(input:GuideInput, app?:AppInfo):Guide {
  const kind:GuideKind=state && Object.hasOwn(content,state)?state as GuideKind:'unknown';
  const [title,impact,goal]=content[kind];
  const path=input.path || app?.config_path || 'Unknown（未取得配置完整路径，请先确认）';
- const target=(app?.config_kind==='test'?'测试配置':'配置')+'：'+path;
+ const target=(!app?'配置来源未确认':app.config_kind==='test'?'测试配置':'配置')+'：'+path;
  let detail=target;
- if(kind==='unsupported_version')detail+='；实际版本：'+String(config?.version??'Unknown');
+ if(kind==='unsupported_version')detail+='；实际版本：'+(config?.version===undefined?'Unknown':typeof config.version==='string'||typeof config.version==='number'?String(config.version):JSON.stringify(config.version));
  if(kind==='invalid_schema'&&input.errors?.length)detail+='\n'+input.errors.slice(0,3).join('\n');
  const next=kind==='app_config'?goal:'请复制下方指令给 AI 助手，'+goal+'，处理后回到此窗口，页面会自动重新读取；也可点击“重新读取”。';
  return {kind,title,detail,impact,next,...(kind==='app_config'?{}:{instruction:`请使用 delivery-pipeline-setup 处理${target}。当前状态：${title}。详情：${detail}。期望结果：${goal}，使配置可以正常使用。处理后请读回核对配置路径、版本和校验结果，并告诉我结果，然后我会回到模型设置，等待页面自动重新读取。`})};

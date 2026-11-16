@@ -125,9 +125,9 @@ async function probe() {
  if(draft===owner)render();
 }
 function guideCard() {
- if(!guideInput)return '';
+ if(!guideInput||!appInfoLoaded)return '';
  const g=guide(guideInput,appInfo);
- return `<section class="card guide-card" aria-label="配置处理引导"><h2>${escape(g.title)}</h2><p class="guide-detail">${escape(g.detail)}</p><h3>影响</h3><p>${escape(g.impact)}</p><h3>下一步</h3><p>${escape(g.next)}</p>${g.instruction?`<label for="guide-instruction">给 AI 助手的指令</label><textarea id="guide-instruction" readonly>${escape(g.instruction)}</textarea><div class="guide-actions"><button class="primary" id="copy-guide">复制指令</button><span id="copy-status" role="status"></span></div>`:''}</section>`;
+ return `<section class="card guide-card" aria-label="配置处理引导"><h2>${escape(g.title)}</h2><p class="guide-detail">${escape(g.detail)}</p><h3>影响</h3><p>${escape(g.impact)}</p><h3>下一步</h3><p>${escape(g.next)}</p>${g.instruction?`<label for="guide-instruction">给 AI 助手的指令</label><textarea id="guide-instruction" readonly>${escape(g.instruction)}</textarea><div class="guide-actions"><button class="primary" id="copy-guide">复制指令</button><span id="copy-status" role="status"></span></div>`:''}<button class="plain" id="guide-reload" ${reading?'disabled':''}>重新读取</button></section>`;
 }
 function render() {
  const kind=editor?.state.kind;
@@ -146,7 +146,7 @@ function render() {
  try {await navigator.clipboard.writeText(text.value);status.textContent='已复制，粘贴给 AI 助手即可';}
  catch {text.focus();text.select();status.textContent='已选中，请按 ⌘C 复制';}
  });
- document.querySelector('#reload')!.addEventListener('click',()=>{if(draft?.changes().length){message='草稿已保留。若要重新读取设置，请先撤销修改。';render();}else read();});
+ for(const id of ['reload','guide-reload'])document.querySelector('#'+id)?.addEventListener('click',reload);
  document.querySelector('#refresh')?.addEventListener('click',probe);
  document.querySelectorAll<HTMLButtonElement>('button[data-queue]').forEach(button=>button.addEventListener('click',()=>{
  const path=button.dataset.queue!;
@@ -182,25 +182,42 @@ function render() {
  if(locked||checking||reading){for(const id of ['refresh','undo','diff','reload']){const el=document.querySelector<HTMLButtonElement>('#'+id);if(el)el.disabled=true;}}
  document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(select=>select.addEventListener('change',()=>{saved='';draft!.select(select.dataset.path!,select.dataset.field as keyof ModelTriple,select.value);render();}));
 }
-async function read() {
- reading=true; saved='';message='正在读取本机设置…';render();
+function reload() {
+ if(reading)return;
+ if(draft?.changes().length){message='草稿已保留。若要重新读取设置，请先撤销修改。';render();}else void read();
+}
+function disableReload(disabled:boolean) {
+ for(const id of ['reload','guide-reload']){
+  const button=document.querySelector<HTMLButtonElement>('#'+id);if(button)button.disabled=disabled;
+ }
+}
+async function read(automatic=false) {
+ const previous=guideInput&&appInfoLoaded?guide(guideInput,appInfo):undefined;
+ reading=true; saved='';
+ // 自动读取保留卡片 DOM，复制提示、焦点和文字选区不受影响。
+ if(automatic)disableReload(true);
+ else {message='正在读取本机设置…';render();}
  try {snapshot=await mygo.call<Snapshot & {path?:string;validation?:{errors:string[]}}>('Host.ReadConfig');
  const result=snapshot as Snapshot & {path?:string;validation?:{errors:string[]}};
  guideInput=snapshot.file_state==='ready'?undefined:{fileState:result.file_state,path:result.path,config:result.config,errors:result.validation?.errors};editor=undefined;draft=snapshot.file_state==='ready'&&snapshot.config?(editor=new Editor(snapshot)).state.draft:undefined;message=snapshot.file_state==='ready'?loadedMessage:'';}
  catch {guideInput={hostUnavailable:true};snapshot=undefined;editor=undefined;draft=undefined;message='读取环境无法使用。请让 AI 助手检查已绑定的 Python（至少 3.10）及应用随附的配置工具，再点击重新读取。';}
- reading=false;render();
+ await appInfoReady;
+ reading=false;
+ const current=guideInput?guide(guideInput,appInfo):undefined;
+ if(automatic&&previous&&current&&previous.kind===current.kind&&previous.detail===current.detail)disableReload(false);
+ else render();
  if(draft)void probe();
 }
 function rereadOnFocus() {
- if(shouldRereadOnFocus({ready:!!draft,reading}))void read();
+ if(shouldRereadOnFocus({ready:!!draft,reading}))void read(true);
 }
 window.addEventListener('focus',rereadOnFocus);
 document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState==='visible')rereadOnFocus();
 });
-read();
-// 构建号只在启动时取一次；与读配置并行，失败只让标签显示“构建号未知”。
-void loadAppInfo(()=>mygo.call<AppInfo>('Host.AppInfo')).then(info=>{appInfo=info;appInfoLoaded=true;render();});
+// 与读取并行；无论成功或失败，来源落定后才展示引导卡与指令。
+const appInfoReady=loadAppInfo(()=>mygo.call<AppInfo>('Host.AppInfo')).then(info=>{appInfo=info;appInfoLoaded=true;});
+void read();
 
 async function save(){
  if(!editor||draft?.check.kind==='checking'||reading)return;
