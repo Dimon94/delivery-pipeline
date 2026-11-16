@@ -216,8 +216,53 @@ func TestAppInfoBuild(t *testing.T) {
 			t.Fatalf("%+v：Build=%q", c, got)
 		}
 	}
-	// 不做 I/O；ConfigPath/ConfigKind 归 DD-584，本票不填
-	if info := (&Host{Config: "/nonexistent/x"}).AppInfo(); info.ConfigPath != "" || info.ConfigKind != "" {
-		t.Fatalf("本票不填 ConfigPath/ConfigKind：%+v", info)
+}
+
+// R4/R5：启动参数决定读哪份配置。期望值来自 Spec：无参数 formal+正式路径；--config 绝对路径 test；
+// 相对路径回到 formal；--config 优先于环境变量；未知参数（MyGo 可能追加）一律忽略。
+func TestHostFromArgs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	formal := filepath.Join(home, ".config", "delivery-pipeline", "model-roles.json")
+	noEnv := func(string) string { return "" }
+	withEnv := func(k string) string {
+		if k == "DELIVERY_CONFIG_TEST_PATH" {
+			return "/tmp/from-env.json"
+		}
+		return ""
+	}
+	cases := []struct {
+		name       string
+		args       []string
+		env        func(string) string
+		path, kind string
+	}{
+		{"无参数读正式配置", nil, noEnv, formal, "formal"},
+		{"--config 绝对路径", []string{"--config", "/tmp/t.json"}, noEnv, "/tmp/t.json", "test"},
+		{"--config 相对路径退回正式配置", []string{"--config", "rel/t.json"}, noEnv, formal, "formal"},
+		{"--config 缺值退回正式配置", []string{"--config"}, noEnv, formal, "formal"},
+		{"--config 优先于环境变量", []string{"--config", "/tmp/t.json"}, withEnv, "/tmp/t.json", "test"},
+		{"只有环境变量也是测试配置", nil, withEnv, "/tmp/from-env.json", "test"},
+		{"未知参数被忽略", []string{"-psn_0_12345", "--foo", "bar", "--config", "/tmp/t.json", "--verbose"}, noEnv, "/tmp/t.json", "test"},
+		{"只有未知参数读正式配置", []string{"-psn_0_12345", "--foo", "/tmp/t.json"}, noEnv, formal, "formal"},
+	}
+	for _, c := range cases {
+		h := hostFromArgs(c.args, c.env)
+		if h.Config != c.path {
+			t.Fatalf("%s：Config=%q，期望 %q", c.name, h.Config, c.path)
+		}
+		info := h.AppInfo()
+		if info.ConfigPath != c.path || info.ConfigKind != c.kind {
+			t.Fatalf("%s：AppInfo=%+v，期望 path=%q kind=%q", c.name, info, c.path, c.kind)
+		}
+	}
+	// 直接构造的 Host（未经启动参数）按正式配置处理
+	if info := (&Host{Config: "/nonexistent/x"}).AppInfo(); info.ConfigKind != "formal" || info.ConfigPath != "/nonexistent/x" {
+		t.Fatalf("未标记来源的 Host 应为 formal：%+v", info)
+	}
+	// R5：测试路径不写入任何持久位置——解析后正式配置位置下不产生文件
+	hostFromArgs([]string{"--config", "/tmp/t.json"}, noEnv)
+	if _, err := os.Stat(filepath.Join(home, ".config")); err == nil {
+		t.Fatal("解析启动参数不应创建任何目录或文件")
 	}
 }

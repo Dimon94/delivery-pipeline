@@ -25,10 +25,11 @@ type Host struct {
 	Python string
 	Tool   string
 	Config string
+	kind   string // "formal" | "test"；空等同 formal
 }
 
 // AppInfo 是页面标签的数据源。Build 与 build.py 的 build_label 同格式；
-// ConfigPath/ConfigKind 的填充归 DD-584，本票留空。
+// ConfigKind 为 "formal"（正式配置）或 "test"（启动参数/开发环境变量指定的测试配置）。
 type AppInfo struct {
 	Build      string `json:"build"`
 	ConfigPath string `json:"config_path"`
@@ -37,8 +38,12 @@ type AppInfo struct {
 
 // AppInfo 不做 I/O、不改变状态；未注入构建号时 Build 为空，页面显示“构建号未知”。
 func (h *Host) AppInfo() AppInfo {
+	info := AppInfo{ConfigPath: h.Config, ConfigKind: h.kind}
+	if info.ConfigKind == "" {
+		info.ConfigKind = "formal"
+	}
 	if buildCommit == "" {
-		return AppInfo{}
+		return info
 	}
 	label := buildCommit
 	if buildDirty == "true" {
@@ -47,7 +52,8 @@ func (h *Host) AppInfo() AppInfo {
 	if at, err := time.Parse(time.RFC3339, builtAt); err == nil {
 		label += " · " + at.UTC().Format("2006-01-02 15:04") + "Z"
 	}
-	return AppInfo{Build: label}
+	info.Build = label
+	return info
 }
 
 // ReadConfig 只消费 canonical show；配置异常保留结构化结果。
@@ -67,14 +73,27 @@ func (h *Host) ReadConfig() (json.RawMessage, error) {
 }
 
 func installedHost() *Host {
+	return hostFromArgs(os.Args[1:], os.Getenv)
+}
+
+// hostFromArgs 只认 `--config <绝对路径>`，其他参数一律忽略（MyGo/系统可能追加参数）。
+// 优先级：--config > 开发用环境变量 DELIVERY_CONFIG_TEST_PATH > 正式配置。
+// 相对路径或缺值的 --config 视为没有参数。测试路径只存在于本进程，不写入任何持久位置。
+func hostFromArgs(args []string, env func(string) string) *Host {
 	executable, _ := os.Executable()
 	home, _ := os.UserHomeDir()
-	config := filepath.Join(home, ".config", "delivery-pipeline", "model-roles.json")
-	// 仅用于受控验收，默认始终读取 CLI 实例。
-	if override := os.Getenv("DELIVERY_CONFIG_TEST_PATH"); override != "" {
-		config = override
+	host := &Host{Python: pythonPath, Tool: filepath.Join(filepath.Dir(executable), "..", "Resources", "model_config.py"), kind: "formal"}
+	host.Config = filepath.Join(home, ".config", "delivery-pipeline", "model-roles.json")
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--config" && filepath.IsAbs(args[i+1]) {
+			host.Config, host.kind = args[i+1], "test"
+			return host
+		}
 	}
-	return &Host{Python: pythonPath, Tool: filepath.Join(filepath.Dir(executable), "..", "Resources", "model_config.py"), Config: config}
+	if override := env("DELIVERY_CONFIG_TEST_PATH"); override != "" {
+		host.Config, host.kind = override, "test"
+	}
+	return host
 }
 
 // ProbeCapabilities 的唯一网络操作为现有本机网关的模型清单 GET。

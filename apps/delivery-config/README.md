@@ -14,11 +14,13 @@ python3 build.py --python /absolute/path/to/python3 --install
 
 升级：重新运行同一条 `python3 build.py --python /absolute/path/to/python3 --install` 即可，不必先删旧版。同一 bundle id（`com.dimon.delivery-pipeline.settings`）的旧应用会被整体替换：新包先复制到同目录临时位置并验签，通过后才与旧包交换，最后删除备份。以下情况安装会停下并说明原因，旧应用保持原样、不留临时件：`running`（应用正在运行，先退出再装）、`foreign_bundle`（目标位置是其他应用）、`copy_failed`（新包复制或验签失败）。原因解除后重新运行即可。构建只产出这一个 bundle id，没有改 bundle id 的参数。`install(app, destination)` 可被导入；根目录 `python3 scripts/check_config_install.py` 用临时目录里的假 `.app` 检查上述行为（已接入 `validate.py`）。安装后从 Finder 双击，不依赖 shell PATH、当前目录或构建树。解释器被移动或卸载时，请让 AI 助手重新绑定并构建安装；不会静默安装依赖。Developer ID、公证和跨机器分发不在本机验收范围内。
 
-构建号：每次构建由三段组成——提交短哈希、已跟踪文件有未提交改动时加 `+未提交`、构建时间（UTC），例如 `658b108 · 2026-11-16 06:40Z`。同一个构建号经 ldflags（`main.buildCommit/buildDirty/builtAt`）注入二进制，页面右上角显示“本机设置 · <构建号>”；并在签名前写入 `Info.plist` 的 `CFBundleVersion`，Finder“显示简介”可见。读不到 git 时提交部分为 `unknown`，构建不中断；页面取不到构建号显示“构建号未知”，不影响读配置。构建和安装命令结束时打印构建号与 `.app` 路径（安装后为安装位置）。
+构建号：每次构建由三段组成——提交短哈希、已跟踪文件有未提交改动时加 `+未提交`、构建时间（UTC），例如 `658b108 · 2026-11-16 06:40Z`。同一个构建号经 ldflags（`main.buildCommit/buildDirty/builtAt`）注入二进制，页面右上角显示“本机设置 · <构建号>”（用测试配置打开时为“测试配置 · <构建号>”，见下）；并在签名前写入 `Info.plist` 的 `CFBundleVersion`，Finder“显示简介”可见。读不到 git 时提交部分为 `unknown`，构建不中断；页面取不到构建号显示“构建号未知”，不影响读配置。构建和安装命令结束时打印构建号与 `.app` 路径（安装后为安装位置）。
 
 配置默认读取 `~/.config/delivery-pipeline/model-roles.json`，不自动初始化、修复或迁移；仅在用户预览并明确确认后保存。缺失、损坏、旧版、非法结构、不可读分别引导助手处理，处理后点击“重新读取”。能力状态 Unknown，读取成功不代表模型运行或额度验证成功。显式预设和旧 lane 的既有规则保持。
 
-检查：根目录 `python3 scripts/check_config_show.py` 已接入 `scripts/validate.py`；本目录 `go test ./...` 穿过公开 Host 到真实 Python 进程。`DELIVERY_CONFIG_TEST_PATH` 可让受控独立测试进程读取临时配置，不能用它改写真实配置。Finder、窗口交互和异常恢复须另留本机证据，不能由这些命令替代。`scripts/check_config_apply.py` 验证桌面与 setup 的共享事务兼容性。
+隔离验收（同一 App 加 `--config`）：不另发测试包，也不改 bundle id。用同一个 App 加启动参数打开，例如 `open -n "<.app 路径>" --args --config /tmp/<测试配置>.json`；`--config` 后必须是绝对路径，相对路径或缺值视为没有参数，退回正式配置。页面标签变为“测试配置 · <构建号>”并换底色，悬停显示完整路径；读取、能力核对和保存都只针对该路径。不带参数打开永远读 `~/.config/delivery-pipeline/model-roles.json`，页面标签为“本机设置 · <构建号>”；测试路径只存在于该进程，不写入任何持久位置。其他未知启动参数一律忽略。`--config` 优先于环境变量。开发用途另保留环境变量 `DELIVERY_CONFIG_TEST_PATH`（同样标为测试配置），不是验收的主要方式。
+
+检查：根目录 `python3 scripts/check_config_show.py` 已接入 `scripts/validate.py`；本目录 `go test ./...` 穿过公开 Host 到真实 Python 进程，并覆盖 `hostFromArgs` 的启动参数解析。测试配置不能用来改写真实配置。Finder、窗口交互和异常恢复须另留本机证据，不能由这些命令替代。`scripts/check_config_apply.py` 验证桌面与 setup 的共享事务兼容性。
 
 九格可编辑为窗口草稿，打开、保存成功和恢复后自动核对能力（页面可点“重新核对”），支持差异核对、返回与撤销；确认保存调用 apply，不调用 configure。草稿完整保留 CLI v6 文档及只读区。能力经 Host 的本机网关 GET 与 canonical `model_config.py probe` 归一化，三种工具独立报告；Unknown 保留原配置，只阻止缺证据的新选择。Probe 不验证认证、额度或模型执行。
 
