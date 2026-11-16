@@ -16,7 +16,7 @@ test('四格保序和声明进入差异；effort共享精确声明；取消恢�
 });
 test('增加重复必须有能力，精确模型与effort不可借用',()=>{
  const d=new Draft(config);d.editCandidates('review.whole-change.spec',{kind:'add',item:b});expect(d.valid()).toBe(false);
- d.beginProbe('now');d.acceptProbe({request_id:'now',observed_at:'now',sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{'route/native-model':['low']}}}});expect(d.valid()).toBe(true);
+ d.beginProbe('now');d.acceptProbe({request_id:'now',observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{'route/native-model':['low']}}}});expect(d.valid()).toBe(true);
  d.select('review.whole-change.spec.candidates.3','model','native-model');expect(d.valid()).toBe(false);
 });
 for(const uncertain of [true,false])test(`冲突/待确认保留顺序与声明，不重提 ${uncertain}`,async()=>{

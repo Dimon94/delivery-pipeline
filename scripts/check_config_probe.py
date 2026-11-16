@@ -14,6 +14,7 @@ def probe(value):
     return json.loads(p.stdout)
 p = probe(raw)
 assert p['request_id'] == 'acceptance' and p['observed_at']
+assert p['gateway'] == {'status':'ok'}, 'Host 传入 ok 时证据必须声明网关可达'
 assert p['capabilities']['pi']['models'] == {'magpie/vendor/model@large':['low','high']}
 assert p['capabilities']['codex']['models'] == {'vendor/model@large':['high']}
 assert p['sources']['pi']['status'] == 'ok' and p['sources']['claude']['status'] == 'unknown'
@@ -28,4 +29,10 @@ assert p['capabilities']['codex']['models'] == {} and p['sources']['pi']['status
 raw['gateway'] = {'status':'unknown'}
 p = probe(raw)
 assert p['capabilities']['pi']['models'] == {}
+assert p['gateway'] == {'status':'unreachable'}, '网关未知必须区分为 unreachable'
+for odd in ({'status':'OK'}, {'status':'error','data':[]}, {}):
+    raw['gateway'] = odd
+    assert probe(raw)['gateway'] == {'status':'unreachable'}, '只有精确的 ok 才算可达'
+del raw['gateway']
+assert probe(raw)['gateway'] == {'status':'unreachable'}, 'Host 未传 gateway 时不能当作可达'
 print('probe contract: pass')

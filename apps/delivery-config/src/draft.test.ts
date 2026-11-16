@@ -5,7 +5,7 @@ for(const p of paths){const keys=p.split('.');if(keys[0]==='work')original.work[
 original.work.research={agent:'pi',model:'untouched',effort:'low'};
 test('旧请求不能覆盖新选择；失效档位重选；只读值与撤销保留',async()=>{
  const d=new Draft(original);d.beginProbe('old');d.select('work.frontend','model','new');d.beginProbe('new');
- const e={request_id:'new',observed_at:'now',capabilities:{codex:{binary:true,models:{new:['low']}}},sources:{codex:{status:'ok',next_step:''}}} as Evidence;
+ const e={request_id:'new',observed_at:'now',gateway:{status:'ok'},capabilities:{codex:{binary:true,models:{new:['low']}}},sources:{codex:{status:'ok',next_step:''}}} as Evidence;
  const delayed = new Promise<boolean>(resolve=>setTimeout(()=>resolve(d.acceptProbe({...e,request_id:'old'})),20));
  expect(d.acceptProbe(e)).toBe(true);expect(await delayed).toBe(false);
  expect(cell(d.config,'work.frontend').effort).toBe('');expect(d.valid()).toBe(false);
@@ -16,7 +16,7 @@ test('旧请求不能覆盖新选择；失效档位重选；只读值与撤销�
 test('完整有序备用含重复位置，经编辑、差异和撤销保留',()=>{
  const initial=structuredClone(original);for(const n of ['planning','design','frontend','backend','testing'])initial.work[n]!.fallbacks=[];
  const d=new Draft(initial),a={agent:'pi',model:'native',effort:'high'},b={...a,effort:'low'};
- d.beginProbe('list');d.acceptProbe({request_id:'list',observed_at:'now',sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{native:['high','low']}}}});
+ d.beginProbe('list');d.acceptProbe({request_id:'list',observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{native:['high','low']}}}});
  for(const item of [b,a,b,a])d.editFallbacks('planning',{kind:'add',item});
  expect(d.config.work.planning!.fallbacks).toEqual([b,a,b,a]);expect(d.valid()).toBe(true);
  d.editFallbacks('planning',{kind:'move',index:3,to:0});d.editFallbacks('planning',{kind:'remove',index:3});

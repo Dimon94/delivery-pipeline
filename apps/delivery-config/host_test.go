@@ -68,7 +68,10 @@ func TestProbeCapabilities(t *testing.T) {
 	}
 	var result struct {
 		RequestID string `json:"request_id"`
-		Sources   map[string]struct {
+		Gateway   struct {
+			Status string `json:"status"`
+		} `json:"gateway"`
+		Sources map[string]struct {
 			Status string `json:"status"`
 		} `json:"sources"`
 	}
@@ -77,6 +80,10 @@ func TestProbeCapabilities(t *testing.T) {
 	}
 	if result.RequestID != "host-read-only" || len(result.Sources) != 3 {
 		t.Fatal("probe 未贯穿请求身份与三工具来源")
+	}
+	// 网关状态是证据层字段；本机网关是否在线不确定，只断言取值落在合同内。
+	if result.Gateway.Status != "ok" && result.Gateway.Status != "unreachable" {
+		t.Fatalf("probe 证据缺少 gateway.status：%s", output)
 	}
 	raw, _ := os.ReadFile(path)
 	if string(raw) != "protected" {

@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 const config=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json
 s=importlib.util.spec_from_file_location('m','skills/delivery-pipeline-setup/scripts/model_config.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(json.dumps(m.valid_fixture()))`],{cwd:new URL('../../../',import.meta.url).pathname}).toString()) as Config;
 const snapshot={config,base_hash:'original',file_state:'ready',cells:{}} as Snapshot;
-function edited(){const e=new Editor(snapshot);e.state.draft.config.work.planning!.effort='low';e.state.draft.beginProbe('x');e.state.draft.acceptProbe({request_id:'x',observed_at:'now',sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{'provider/model':['low','high']}}}});e.preview();return e;}
+function edited(){const e=new Editor(snapshot);e.state.draft.config.work.planning!.effort='low';e.state.draft.beginProbe('x');e.state.draft.acceptProbe({request_id:'x',observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{'provider/model':['low','high']}}}});e.preview();return e;}
 test('保存冻结候选，待确认禁止重复提交；显式检查只说明当前',async()=>{
  const e=edited();let calls=0;
  let finish!:(v:any)=>void;
