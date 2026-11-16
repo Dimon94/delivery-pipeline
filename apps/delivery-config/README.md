@@ -10,7 +10,9 @@ bun install --frozen-lockfile
 python3 build.py --python /absolute/path/to/python3 --install
 ```
 
-构建验证解释器版本，将绝对路径绑定到二进制，并把仓内 canonical 工具及附带 MIT 许可的 Tomli 2.2.1（Python 3.10 的 TOML fallback）原样复制到 `.app/Contents/Resources`；再进行 ad-hoc 签名。安装位置为 `~/Applications/Delivery Pipeline Settings.app`。安装脚本遇已有应用即停止，不覆盖。安装后从 Finder 双击，不依赖 shell PATH、当前目录或构建树。解释器被移动或卸载时，请让 AI 助手重新绑定并构建安装；不会静默安装依赖。Developer ID、公证和跨机器分发不在本机验收范围内。
+构建验证解释器版本，将绝对路径绑定到二进制，并把仓内 canonical 工具及附带 MIT 许可的 Tomli 2.2.1（Python 3.10 的 TOML fallback）原样复制到 `.app/Contents/Resources`；再进行 ad-hoc 签名。安装位置为 `~/Applications/Delivery Pipeline Settings.app`。
+
+升级：重新运行同一条 `python3 build.py --python /absolute/path/to/python3 --install` 即可，不必先删旧版。同一 bundle id（`com.dimon.delivery-pipeline.settings`）的旧应用会被整体替换：新包先复制到同目录临时位置并验签，通过后才与旧包交换，最后删除备份。以下情况安装会停下并说明原因，旧应用保持原样、不留临时件：`running`（应用正在运行，先退出再装）、`foreign_bundle`（目标位置是其他应用）、`copy_failed`（新包复制或验签失败）。原因解除后重新运行即可。构建只产出这一个 bundle id，没有改 bundle id 的参数。`install(app, destination)` 可被导入；根目录 `python3 scripts/check_config_install.py` 用临时目录里的假 `.app` 检查上述行为（已接入 `validate.py`）。安装后从 Finder 双击，不依赖 shell PATH、当前目录或构建树。解释器被移动或卸载时，请让 AI 助手重新绑定并构建安装；不会静默安装依赖。Developer ID、公证和跨机器分发不在本机验收范围内。
 
 配置默认读取 `~/.config/delivery-pipeline/model-roles.json`，不自动初始化、修复或迁移；仅在用户预览并明确确认后保存。缺失、损坏、旧版、非法结构、不可读分别引导助手处理，处理后点击“重新读取”。能力状态 Unknown，读取成功不代表模型运行或额度验证成功。显式预设和旧 lane 的既有规则保持。
 
