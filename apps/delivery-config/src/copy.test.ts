@@ -22,7 +22,7 @@ test('全部固定文字、状态提示和引导均不含内部词',()=>{
 test('不可用工具只显示人话，悬停完整保留来源原因',()=>{
  for(const agent of ['codex','claude']){
   const reason='未取得精确模型与有效档位的完整证据链';
-  const result=toolOffText(agent,reason);clean(result.text);
+  const result=toolOffText(agent,reason,{evidence:{sources:{[agent]:{status:"unknown",next_step:""}},capabilities:{[agent]:{binary:true,models:{}}}}});clean(result.text);
   expect(result.text).toBe('暂不支持：还不能确认它有哪些模型可用');expect(result.title).toBe(reason);
  }
  expect(toolOffText('pi').title).toBeUndefined();
@@ -40,3 +40,22 @@ test('页面文字节点不得重新带入内部词',()=>{
  expect(source).not.toMatch(/[\u4e00-\u9fff]/);
  expect(source).not.toMatch(/['"`]Unknown|['"`]slug|['"`]probe['"`]/);
 });
+test('R1 工具原因按结构区分，当前不可用优先',()=>{
+ const evidence={sources:{codex:{status:'unknown',next_step:''},claude:{status:'unknown',next_step:''}},capabilities:{codex:{binary:true,models:{}},claude:{binary:false,models:{}}}};
+ expect(toolOffText('codex','原始原因',{evidence}).text).toBe('暂不支持：还不能确认它有哪些模型可用');
+ expect(toolOffText('claude','原始原因',{evidence}).text).toBe('暂时用不了，可点重新核对');
+ expect(toolOffText('pi','核对失败',{evidence}).text).toBe('暂时用不了，可点重新核对');
+ expect(toolOffText('codex','原始原因',{evidence,selected:true}).text).toBe('当前用不了，可点重新核对');
+ expect(toolOffText('codex','原始原因',{evidence}).title).toBe('原始原因');
+});
+test('R1 模型版本、缩写及新增家族显示',()=>{
+ for(const [raw,label] of [
+ ['claude-opus-5-5','Claude Opus 5.5'],['claude-sonnet-5-5','Claude Sonnet 5.5'],['claude-fable-5-1','Claude Fable 5.1'],
+ ['deepseek-v4.1-flash-sg','DeepSeek V4.1 Flash SG'],['glm-5.3','GLM 5.3'],['minimax-m3.1-flash','MiniMax M3.1 Flash'],['foo-bar-1','foo-bar-1']])expect(modelLabel(raw!)).toBe(label!);
+});
+test('R1 实例标签文字集中并拦截内部词',()=>{
+ const source=readFileSync(new URL('./appinfo.ts',import.meta.url),'utf8').replace(/\/\/[^\n]*/g,'').replace(/copy\.[\p{L}\p{N}]+/gu,'copy.text');
+ expect(source).not.toMatch(/[\u4e00-\u9fff]/);
+ for(const info of [undefined,{build:'',config_kind:'test'},{build:'',config_kind:'cli'}])clean(instanceLabel(info));
+});
+import {instanceLabel} from './appinfo';

@@ -1,6 +1,10 @@
+import type {Evidence} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
+ 测试配置: "测试配置 · ",
+ 本机设置: "本机设置 · ",
+ 构建号未知: "构建号未知",
   检查: "检查",
   每张票写完后: "每张票写完后",
   合并前看整体: "合并前看整体",
@@ -126,18 +130,21 @@ export const copy = {
   "当前设置仍无法读取修改还在请让AI助手处理后再次检查": "当前设置仍无法读取，修改还在。请让 AI 助手处理后再次检查。",
   "检查失败修改还在请处理环境后再次检查": "检查失败，修改还在，请处理环境后再次检查。"
 };
-const families:Record<string,string>={gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
+const families:Record<string,string>={glm:'GLM',minimax:'MiniMax',gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
 const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};
 export function modelLabel(raw:string):string {
  if(!raw)return '请选择模型';
  const parts=raw.split('/'),leaf=parts.pop()!,base=leaf.split('@')[0]!;
  const family=Object.keys(families).find(f=>base===f||base.startsWith(f+'-')||((f==='k3'||f==='hy3')&&base.startsWith(f)));
- const label=family?families[family]+base.slice(family.length).replace(/^-/, ' ').replaceAll('-',' ').replace(/\b[a-z]/g,c=>c.toUpperCase()):base;
+ const label=family?families[family]+base.slice(family.length).replace(/^-/, ' ').replace(/(?<=\b\d)(?:-\d)+\b/g,v=>v.replaceAll('-','.')).replaceAll('-',' ').replace(/\b[a-z]+/g,v=>v.length<=2?v.toUpperCase():v[0]!.toUpperCase()+v.slice(1)):base;
  const source=parts.filter(p=>p!=='magpie').pop(),context=leaf.match(/@(\d+)k$/)?.[1];
  return label+(source&&sources[source]?` · ${sources[source]}`:'')+(context?` · ${Number(context)/10}万上下文`:'');
 }
-export function toolOffText(_agent:string,reason?:string):{text:string;title?:string} {
- return {text:'暂不支持：还不能确认它有哪些模型可用',...(reason?{title:reason}:{})};
+// unknown + 已安装 + 空模型清单表示尚无完整能力；不匹配来源原因文字。
+export function toolOffText(agent:string,reason?:string,context:{evidence?:Pick<Evidence,'sources'|'capabilities'>;selected?:boolean}={}):{text:string;title?:string} {
+ const source=context.evidence?.sources[agent],cap=context.evidence?.capabilities[agent];
+ const unsupported=['codex','claude'].includes(agent)&&source?.status==='unknown'&&cap?.binary===true&&Object.keys(cap.models).length===0;
+ return {text:context.selected?'当前用不了，可点重新核对':unsupported?'暂不支持：还不能确认它有哪些模型可用':'暂时用不了，可点重新核对',...(reason?{title:reason}:{})};
 }
 export function effortLabel(effort:string):string {return ({minimal:'最低',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',ultra:'极高',none:'不额外思考'} as Record<string,string>)[effort]||effort;}
 export type BannerInput={kind:'checking'}|{kind:'unreachable';cause:'gateway'|'call'}|{kind:'saved'}|{kind:'loaded'}|{kind:'recovered'};

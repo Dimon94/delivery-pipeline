@@ -1,3 +1,4 @@
+import {copy} from './copy';
 export type AppInfo = {build: string; config_path: string; config_kind: string};
 
 export function isTestConfig(info?: Pick<AppInfo, 'config_kind'>): boolean {
@@ -6,7 +7,7 @@ export function isTestConfig(info?: Pick<AppInfo, 'config_kind'>): boolean {
 
 // 页面右上角标签；取不到构建号时如实说“构建号未知”，不影响读配置。
 export function instanceLabel(info?: Pick<AppInfo, 'build' | 'config_kind'>): string {
-  return (isTestConfig(info) ? '测试配置 · ' : '本机设置 · ') + (info?.build || '构建号未知');
+  return (isTestConfig(info) ? copy.测试配置 : copy.本机设置) + (info?.build || copy.构建号未知);
 }
 
 // 悬停提示：完整配置路径；取不到时为空。

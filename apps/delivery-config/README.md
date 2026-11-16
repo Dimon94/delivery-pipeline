@@ -1,6 +1,6 @@
 # 本机模型设置
 
-MyGo 0.7.4 的网页窗口。读取、能力核验与保存复用 setup 的 canonical `model_config.py show/probe/apply`，不维护第二份 schema。五个工作项与四格检查显示主配置；其他 work 和预设只展示概览。模型身份留在快照，普通界面只显示易读名称；未知名称显示待识别。
+MyGo 0.7.4 的网页窗口。读取、能力核验与保存复用 setup 的 canonical `model_config.py show/probe/apply`，不维护第二份 schema。五个工作项与按阶段分组的四项检查显示主配置；其他 work 和预设只展示概览。模型身份留在快照，普通界面只显示易读名称；认不出的名称保留原始叶子名。
 
 构建依赖 Go（模块要求 ≥1.27.3）、Bun、Python ≥3.10：
 
@@ -22,16 +22,16 @@ python3 build.py --python /absolute/path/to/python3 --install
 
 检查：根目录 `python3 scripts/check_config_show.py` 已接入 `scripts/validate.py`；本目录 `go test ./...` 穿过公开 Host 到真实 Python 进程，并覆盖 `hostFromArgs` 的启动参数解析。测试配置不能用来改写真实配置。Finder、窗口交互和异常恢复须另留本机证据，不能由这些命令替代。`scripts/check_config_apply.py` 验证桌面与 setup 的共享事务兼容性。
 
-九格可编辑为窗口草稿，打开、保存成功和恢复后自动核对能力（页面可点“重新核对”），支持差异核对、返回与撤销；确认保存调用 apply，不调用 configure。草稿完整保留 CLI v6 文档及只读区。能力经 Host 的本机网关 GET 与 canonical `model_config.py probe` 归一化，三种工具独立报告；Unknown 保留原配置，只阻止缺证据的新选择。Probe 不验证认证、额度或模型执行。
+九格可编辑为窗口内待保存修改，打开、保存成功和恢复后自动核对能力（页面可点“重新核对”），支持差异核对、返回与撤销；确认保存调用 apply，不调用 configure。修改完整保留 CLI v7 文档及只读区。能力经 Host 的本机网关 GET 与 canonical `model_config.py probe` 归一化，三种工具独立报告；未能核对的工具保留原设置，并提示重新核对；Codex CLI / Claude Code 尚缺完整模型与档位支持时禁用。Probe 不验证认证、额度或模型执行。
 
-`bun test src/draft.test.ts` 覆盖受控延迟与草稿行为，`go test ./...` 穿过真实 Python 公开入口。可重复的来源归一化合同由根 `scripts/check_config_probe.py` 进入 validate；真实 MyGo 证据独立记录。
+`bun test src/draft.test.ts` 覆盖受控延迟与修改行为，`go test ./...` 穿过真实 Python 公开入口。可重复的来源归一化合同由根 `scripts/check_config_probe.py` 进入 validate；真实 MyGo 证据独立记录。
 
-保存经 Host.Apply 在明确确认后重新采集 probe，再调用 canonical apply；Host 不暴露 setup 权限。冲突重读以最新完整文档为起点，旧草稿仅供人工核对，必须重新选择与预览。保存结果待确认时只允许显式检查当前设置，不自动重试或回滚。独立诊断页可查看机器结果。
+保存经 Host.Apply 在明确确认后重新采集 probe，再调用 canonical apply；Host 不暴露 setup 权限。冲突重读以最新完整文档为起点，旧修改仅供人工核对，必须重新选择与预览。保存结果待确认时只允许显式检查当前设置，不自动重试或回滚。独立诊断页可查看机器结果。
 
 保存成功的主设置由新 lane 的默认 work 路径读取；显式点名的 mode 继续覆盖模型与思考程度，已有 lane 按原 registry 恢复。`python3 scripts/check_config_lane.py` 穿过公开 apply → resolve/start，检查默认精确身份（含 @ 后缀）、ticket/map 预设优先级和只读区保持；该检查不证明 transport 启动、旧 lane 恢复或模型实际执行，三者仍需独立运行证据。
 
 DD-411：五 work 的备用列表不限长、允许重复，按编号位置编辑；差异显示完整顺序，确认后与主配置同事务保存。旧 CLI 配置必须先由 AI setup 显式迁移 v6；App 保持 v5。Host Interface 不变；备用消费与完整列表异常恢复扩展归后续票。
 
-DD-412：返回与外观切换保留完整有序草稿，撤销恢复完整读取快照。冲突或待核实时禁止再次保存，显式 ReadConfig 失败继续保留；当前等于候选只陈述当前观察。另一有效文档作为新基线，页面展示旧草稿九格完整顺序供参考，重新选择、预览、确认；再次提交前拒绝仍保留参考。Host 不增加 Recover；`bun test src/recovery.test.ts` 验证完整列表恢复合同。
+DD-412：返回保留完整有序修改；外观自动跟随系统深浅色，无手动开关。撤销前的修改仍留在窗口内，撤销恢复完整读取快照。冲突或待核实时禁止再次保存，显式 ReadConfig 失败继续保留；当前等于候选只陈述当前观察。另一有效文档作为新基线，页面展示旧修改九格完整顺序供参考，重新选择、预览、确认；再次提交前拒绝仍保留参考。Host 不增加 Recover；`bun test src/recovery.test.ts` 验证完整列表恢复合同。
 
-DD-511：四格候选支持增删改移，共享声明覆盖所有 work/review 引用身份（含备用）并保留已声明但不再引用的模型。声明按精确工具/原生模型共享，effort 不改变家族。v7 由 AI setup 显式迁移，App v5 不变。Draft.changes 包含 model_families，Editor.save 冻结完整候选；Host generic payload 不变。冲突/待确认旧草稿同时保留候选与声明，读回后需人工重新选择和预览，不自动重提。`bun test src/review.test.ts` 和 canonical `check_config_review.py --case candidate-family-transaction` 分别检查编辑与真实文件事务；GUI 与实际模型执行独立验收。
+DD-511：四格候选支持增删改移，共享声明覆盖所有 work/review 引用身份（含备用）并保留已声明但不再引用的模型。声明按精确工具/原生模型共享，effort 不改变家族。v7 由 AI setup 显式迁移，App v5 不变。Draft.changes 包含 model_families，Editor.save 冻结完整候选；Host generic payload 不变。冲突/待确认旧修改同时保留候选与声明，读回后需人工重新选择和预览，不自动重提。`bun test src/review.test.ts` 和 canonical `check_config_review.py --case candidate-family-transaction` 分别检查编辑与真实文件事务；GUI 与实际模型执行独立验收。
