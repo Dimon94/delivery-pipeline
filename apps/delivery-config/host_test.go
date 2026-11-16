@@ -244,6 +244,12 @@ func TestHostFromArgs(t *testing.T) {
 		{"--config 优先于环境变量", []string{"--config", "/tmp/t.json"}, withEnv, "/tmp/t.json", "test"},
 		{"只有环境变量也是测试配置", nil, withEnv, "/tmp/from-env.json", "test"},
 		{"未知参数被忽略", []string{"-psn_0_12345", "--foo", "bar", "--config", "/tmp/t.json", "--verbose"}, noEnv, "/tmp/t.json", "test"},
+		{"多个 --config 以最后一个为准", []string{"--config", "/tmp/a.json", "--config", "/tmp/b.json"}, noEnv, "/tmp/b.json", "test"},
+		{"前一个相对路径、最后一个绝对路径", []string{"--config", "rel/a.json", "--config", "/tmp/b.json"}, noEnv, "/tmp/b.json", "test"},
+		{"最后一个相对路径退回正式配置", []string{"--config", "/tmp/a.json", "--config", "rel/b.json"}, noEnv, formal, "formal"},
+		{"最后一个缺值退回正式配置", []string{"--config", "/tmp/a.json", "--config"}, noEnv, formal, "formal"},
+		{"最后一个相对路径回到环境变量", []string{"--config", "/tmp/a.json", "--config", "rel/b.json"}, withEnv, "/tmp/from-env.json", "test"},
+		{"最后一个缺值回到环境变量", []string{"--config", "/tmp/a.json", "--config"}, withEnv, "/tmp/from-env.json", "test"},
 		{"只有未知参数读正式配置", []string{"-psn_0_12345", "--foo", "/tmp/t.json"}, noEnv, formal, "formal"},
 	}
 	for _, c := range cases {

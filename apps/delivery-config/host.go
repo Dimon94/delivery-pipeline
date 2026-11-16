@@ -77,18 +77,23 @@ func installedHost() *Host {
 }
 
 // hostFromArgs 只认 `--config <绝对路径>`，其他参数一律忽略（MyGo/系统可能追加参数）。
+// 出现多个 --config 时以最后一个为准；最后一个的值是相对路径或缺失，就按没有参数处理，不回头采用前一个。
 // 优先级：--config > 开发用环境变量 DELIVERY_CONFIG_TEST_PATH > 正式配置。
-// 相对路径或缺值的 --config 视为没有参数。测试路径只存在于本进程，不写入任何持久位置。
+// 测试路径只存在于本进程，不写入任何持久位置。
 func hostFromArgs(args []string, env func(string) string) *Host {
 	executable, _ := os.Executable()
 	home, _ := os.UserHomeDir()
 	host := &Host{Python: pythonPath, Tool: filepath.Join(filepath.Dir(executable), "..", "Resources", "model_config.py"), kind: "formal"}
 	host.Config = filepath.Join(home, ".config", "delivery-pipeline", "model-roles.json")
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == "--config" && filepath.IsAbs(args[i+1]) {
-			host.Config, host.kind = args[i+1], "test"
-			return host
+	last := -1
+	for i, arg := range args {
+		if arg == "--config" {
+			last = i
 		}
+	}
+	if last >= 0 && last+1 < len(args) && filepath.IsAbs(args[last+1]) {
+		host.Config, host.kind = args[last+1], "test"
+		return host
 	}
 	if override := env("DELIVERY_CONFIG_TEST_PATH"); override != "" {
 		host.Config, host.kind = override, "test"
