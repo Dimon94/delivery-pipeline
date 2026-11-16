@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test';
-import {guide} from './guide';
+import {guide,shouldRereadOnFocus} from './guide';
 const path='/tmp/dd593/配置.json';
 test('R1 missing：说明缺失、路径、影响与下一步',()=>{
  const g=guide({fileState:'missing',path});
@@ -52,4 +52,12 @@ test('R7：v5 + default_mode + 任意 work 格 codex-app 才属于 App',()=>{
 test('R8：未知状态仍有完整引导；读取环境不可用优先',()=>{
  expect(guide({path,fileState:'future'}).kind).toBe('unknown');
  expect(guide({path,fileState:'missing',hostUnavailable:true}).kind).toBe('host_unavailable');
+});
+
+// 独立预期：spec-m3 R4/R5；可编辑包括草稿、核对、保存、冲突和待确认。
+test('R4/R5：仅需要处理且没有读取任务时自动重读',()=>{
+ expect(shouldRereadOnFocus({ready:false,reading:false})).toBe(true);
+ expect(shouldRereadOnFocus({ready:false,reading:true})).toBe(false);
+ expect(shouldRereadOnFocus({ready:true,reading:false})).toBe(false);
+ expect(shouldRereadOnFocus({ready:true,reading:true})).toBe(false);
 });

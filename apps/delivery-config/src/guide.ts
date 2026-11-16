@@ -24,6 +24,10 @@ export function guide(input:GuideInput, app?:AppInfo):Guide {
  let detail=target;
  if(kind==='unsupported_version')detail+='；实际版本：'+String(config?.version??'Unknown');
  if(kind==='invalid_schema'&&input.errors?.length)detail+='\n'+input.errors.slice(0,3).join('\n');
- const next=kind==='app_config'?goal:'请复制下方指令给 AI 助手，'+goal+'，处理后点击“重新读取”。';
- return {kind,title,detail,impact,next,...(kind==='app_config'?{}:{instruction:`请使用 delivery-pipeline-setup 处理${target}。当前状态：${title}。详情：${detail}。期望结果：${goal}，使配置可以正常使用。处理后请读回核对配置路径、版本和校验结果，并告诉我结果，然后我会回到模型设置点击“重新读取”。`})};
+ const next=kind==='app_config'?goal:'请复制下方指令给 AI 助手，'+goal+'，处理后回到此窗口，页面会自动重新读取；也可点击“重新读取”。';
+ return {kind,title,detail,impact,next,...(kind==='app_config'?{}:{instruction:`请使用 delivery-pipeline-setup 处理${target}。当前状态：${title}。详情：${detail}。期望结果：${goal}，使配置可以正常使用。处理后请读回核对配置路径、版本和校验结果，并告诉我结果，然后我会回到模型设置，等待页面自动重新读取。`})};
+}
+
+export function shouldRereadOnFocus(s:{ready:boolean;reading:boolean}):boolean {
+ return !s.ready && !s.reading;
 }

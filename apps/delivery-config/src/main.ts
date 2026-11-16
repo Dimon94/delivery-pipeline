@@ -1,5 +1,5 @@
 import './style.css';
-import {guide,type GuideInput} from './guide';
+import {guide,shouldRereadOnFocus,type GuideInput} from './guide';
 
 import {Draft,settleProbe,cell,paths,work,agentIds,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus} from './draft';
 import {Editor,type Snapshot,type Outcome} from './editor';
@@ -191,6 +191,13 @@ async function read() {
  reading=false;render();
  if(draft)void probe();
 }
+function rereadOnFocus() {
+ if(shouldRereadOnFocus({ready:!!draft,reading}))void read();
+}
+window.addEventListener('focus',rereadOnFocus);
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='visible')rereadOnFocus();
+});
 read();
 // 构建号只在启动时取一次；与读配置并行，失败只让标签显示“构建号未知”。
 void loadAppInfo(()=>mygo.call<AppInfo>('Host.AppInfo')).then(info=>{appInfo=info;appInfoLoaded=true;render();});
