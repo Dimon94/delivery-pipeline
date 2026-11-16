@@ -63,3 +63,12 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 
 /* DD-584：测试配置标签换底色，与正式配置一眼可分；以主题 accent 混合，深浅色都保持对比。 */
 .instance.test-config{color:var(--ink);background:color-mix(in srgb,var(--accent) 22%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 55%,transparent);font-weight:500}
+
+/* DD-593：引导内容可选中，路径和指令在窄窗口内换行。 */
+.guide-card{padding:24px;max-width:850px;margin:24px auto}
+.guide-card h2{font-size:20px;margin-bottom:12px}
+.guide-card h3,.guide-card label{display:block;font-size:13px;font-weight:600;margin:18px 0 6px}
+.guide-card p{line-height:1.7;overflow-wrap:anywhere}
+.guide-detail{white-space:pre-wrap;color:var(--muted)}
+.guide-card textarea{box-sizing:border-box;width:100%;min-height:175px;resize:vertical;padding:12px;color:var(--ink);background:var(--card-2);border:1px solid var(--line);border-radius:8px;font:13px/1.7 ui-monospace,monospace;user-select:text}
+.guide-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:13px}
