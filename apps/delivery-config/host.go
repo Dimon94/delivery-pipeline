@@ -69,7 +69,7 @@ func (h *Host) ProbeCapabilities(requestID string) (json.RawMessage, error) {
 	cmd.Stdin = bytes.NewReader(input)
 	output, err := cmd.Output()
 	if err != nil || !json.Valid(output) {
-		return nil, errors.New("无法刷新能力。请让 AI 助手检查本机工具与模型来源，再重试。")
+		return nil, errors.New("无法重新核对。请让 AI 助手检查本机工具与模型来源，再重试。")
 	}
 	return json.RawMessage(output), nil
 }

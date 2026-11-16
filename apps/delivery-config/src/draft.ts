@@ -125,3 +125,10 @@ export class Draft {
  }
  undo() {this.config=structuredClone(this.snapshot);}
 }
+// 页面收到 Host 证据后的唯一收口：证据被拒绝（request 不匹配）而 draft 仍停在本次请求的 checking 时，
+// 按核对失败处理，避免重新核对/重新读取永久禁用。旧请求的 id 不会命中 failProbe，仍被忽略（R2）。
+export function settleProbe(draft:Draft,id:string,value:Evidence):boolean {
+ if(draft.acceptProbe(value))return true;
+ draft.failProbe(id);
+ return false;
+}

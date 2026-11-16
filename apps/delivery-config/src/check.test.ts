@@ -1,5 +1,5 @@
 import {test,expect} from 'bun:test';
-import {Draft,paths,type Config,type Evidence} from './draft';
+import {Draft,settleProbe,paths,type Config,type Evidence} from './draft';
 import {Editor} from './editor';
 // DD-577：Check 判别联合（T1–T8）与项状态（R4、R6–R9）。只穿过 Draft 的公开方法。
 const ok={agent:'codex',model:'good@native',effort:'high'};
@@ -181,4 +181,20 @@ test('R10：队列标签与逐项状态，顺序同配置，k 为非可用项个
  expect(w.queue.filter(q=>q.kind!=='ok').length).toBe(3);
  expect(r.queue.map(q=>q.kind)).toEqual(['tool_off','ok']);
  expect(d.status('work.design').queue).toEqual([]);
+});
+test('页面收口：Host 证据 request 不匹配而仍在本次 checking → 无法核对，按钮不会永久禁用',()=>{
+ const d=new Draft(base());d.beginProbe('mine');
+ expect(settleProbe(d,'mine',evidence('someone-else'))).toBe(false);
+ expect(d.check).toEqual({kind:'unreachable',cause:'call_failed'});
+ // 匹配的证据照常生效。
+ const e=new Draft(base());e.beginProbe('mine');
+ expect(settleProbe(e,'mine',evidence('mine'))).toBe(true);expect(e.check.kind).toBe('checked');
+ // 已被更新的请求取代：旧请求被拒绝时不得把新请求的 checking 打断（R2）。
+ const f=new Draft(base());f.beginProbe('old');f.beginProbe('new');
+ expect(settleProbe(f,'old',evidence('old'))).toBe(false);
+ expect(f.check).toEqual({kind:'checking',request:'new'});
+});
+test('R9：接替文案只在 takeover 里给出序号，不承诺运行时跳过（takeover 数据不变）',()=>{
+ const c=base();c.work.planning={...ok,model:'gone@native',fallbacks:[{...ok,model:'gone@native'},{...ok}]};
+ expect(checked(new Draft(c)).status('work.planning').takeover).toEqual({kind:'fallback',index:1});
 });

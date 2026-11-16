@@ -851,7 +851,7 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
         sources[agent] = {'status': 'ok' if models else 'unknown',
                           'observed_at': observed, 'reason': '' if models else '未取得精确模型与有效档位的完整证据链', 'origin': harness.get('origin', '本机工具元数据'),
                           'next_step': '能力仅核验配置与元数据；认证、额度和实际执行为 Unknown。' if models else
-                          '请让 AI 助手核对该工具的接入、精确模型清单和思考档位，再刷新能力。'}
+                          '请让 AI 助手核对该工具的接入、精确模型清单和思考档位，再重新核对。'}
     # 网关状态属于证据层：区分“网关挂了”与“工具未接入”，UI 不得从 sources 反推。
     return {'request_id': request_id, 'observed_at': observed,
             'gateway': {'status': 'ok' if gateway.get('status') == 'ok' else 'unreachable'},

@@ -51,7 +51,7 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    检查精确 agent/model/effort 命中本轮证据。失败只重新选择对应项。
 5. **共享事务提交并 readback。** 禁止用 shell 重定向、编辑器或临时脚本直接写目标。
    用户确认本次候选后生成唯一 request-id，重新采集本轮能力，按配置 Module 的
-   `ProbeEvidence` 交接（request_id、observed_at、capabilities、sources；来源状态 ok 才可用于改动格）。
+   `ProbeEvidence` 交接（request_id、observed_at、gateway、capabilities、sources；`gateway` 为 `{status: ok|unreachable}`，仅当 Host 传入的网关状态为 ok 时才是 ok；来源状态 ok 才可用于改动格）。
    桌面 Host 仅 GET 本机网关模型清单，将原始 gateway 来源经 stdin 交给
    `model_config.py probe --request-id <本次身份>`；setup 使用同一命令（stdin 为 gateway 来源对象）。
    probe 只读取本机 harness 元数据，不发推理；sources 中 Unknown 的工具不提供新增选择。
