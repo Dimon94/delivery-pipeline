@@ -272,3 +272,52 @@ func TestHostFromArgs(t *testing.T) {
 		t.Fatal("解析启动参数不应创建任何目录或文件")
 	}
 }
+
+func TestPreviewReview(t *testing.T) {
+	python, _ := exec.LookPath("python3")
+	tool, _ := filepath.Abs("../../skills/delivery-pipeline-setup/scripts/model_config.py")
+	seed := exec.Command(python, "-c", `import importlib.util,json,sys
+s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+c=m.migrate_document(m.valid_fixture())[0]
+c['model_families']={}
+a=dict(agent='pi',model='gpt-6.1-sol',effort='high');b=dict(agent='pi',model='claude-opus-5-5',effort='high')
+for task in ('design','frontend','backend'):c['work'][task]={**a,'fallbacks':[]}
+for axis in c['review']['whole-change']:c['review']['whole-change'][axis]={**a,'candidates':[]}
+c['review']['whole-change']['standards']['candidates']=[b]
+e=dict(request_id='test',observed_at='now',sources={'pi':{'status':'ok'}},capabilities={'pi':{'binary':True,'models':{a['model']:['high'],b['model']:['high']}}})
+print(json.dumps([c,e]))`, tool)
+	raw, err := seed.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inputs []json.RawMessage
+	if err = json.Unmarshal(raw, &inputs); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "protected")
+	os.WriteFile(path, []byte("unchanged"), 0600)
+	h := Host{Python: python, Tool: tool, Config: path}
+	result, err := h.PreviewReview(inputs[0], inputs[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]struct {
+		Outcome  string `json:"outcome"`
+		Selected struct {
+			Model string `json:"model"`
+		} `json:"selected"`
+	}
+	if err = json.Unmarshal(result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got["standards"].Outcome != "different" || got["standards"].Selected.Model != "claude-opus-5-5" {
+		t.Fatal(string(result))
+	}
+	if _, err = h.PreviewReview(inputs[0], json.RawMessage(`{}`)); err == nil {
+		t.Fatal("不完整证据不得给出结论")
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != "unchanged" {
+		t.Fatal("预览改写配置")
+	}
+}

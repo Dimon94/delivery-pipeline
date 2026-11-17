@@ -170,3 +170,25 @@ func (h *Host) Apply(candidate json.RawMessage, baseHash string) (json.RawMessag
 	// 进程异常可能越过提交点；不可声称未写入。
 	return json.RawMessage(`{"status":"commit_unverified","error":{"code":"commit_unverified"},"expected_hash":null}`), nil
 }
+
+// PreviewReview 只调用 canonical 选择规则；临时输入与正式配置完全隔离。
+func (h *Host) PreviewReview(candidate json.RawMessage, evidence json.RawMessage) (json.RawMessage, error) {
+	dir, err := os.MkdirTemp("", "delivery-preview-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	candidatePath, evidencePath := filepath.Join(dir, "candidate.json"), filepath.Join(dir, "evidence.json")
+	if err = os.WriteFile(candidatePath, candidate, 0600); err != nil {
+		return nil, err
+	}
+	if err = os.WriteFile(evidencePath, evidence, 0600); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(context.Background(), h.Python, h.Tool, "preview-review", "--candidate", candidatePath, "--evidence", evidencePath)
+	output, err := cmd.Output()
+	if err != nil || !json.Valid(output) {
+		return nil, errors.New("无法推算检查结果，请重新核对后再试。")
+	}
+	return json.RawMessage(output), nil
+}

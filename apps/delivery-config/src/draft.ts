@@ -75,26 +75,13 @@ export class Draft {
  for(const p of changed)for(const field of ['agent','model','effort'] as const)this.select(p,field,source[field]);
  return {kind:'applied',changed};
  }
- changes() {return [...paths.filter(p=>JSON.stringify(cell(this.snapshot,p))!==JSON.stringify(cell(this.config,p))),...(JSON.stringify(this.snapshot.model_families)!==JSON.stringify(this.config.model_families)?['model_families']:[])];}
+ changes() {return paths.filter(p=>JSON.stringify(cell(this.snapshot,p))!==JSON.stringify(cell(this.config,p)));}
  editCandidates(path:string,edit:FallbackEdit) {
  const items=cell(this.config,path).candidates!;
  if(edit.kind==='add')items.push(structuredClone(edit.item));
  else if(edit.kind==='set')items[edit.index]=structuredClone(edit.item);
  else if(edit.kind==='remove')items.splice(edit.index,1);
  else items.splice(edit.to,0,items.splice(edit.index,1)[0]!);
- }
- setFamilyDeclaration(agent:string,nativeModel:string,family:string) {
- const declarations=this.config.model_families!;
- if(!family.trim()){delete declarations[agent]?.[nativeModel];return;}
- (declarations[agent]??={})[nativeModel]={family:family.trim().toLowerCase(),source:'user_declared'};
- }
- familyIdentities() {
- const identities=new Map<string,ModelTriple>();
- for(const c of [...Object.values(this.config.work),...Object.values(this.config.review).flatMap(Object.values)])
- for(const item of [c,...c.fallbacks||[],...c.candidates||[]])identities.set(JSON.stringify([item.agent,item.model]),item);
- // 保留不再被候选引用的声明，允许用户显式维护。
- for(const [agent,models] of Object.entries(this.config.model_families||{}))for(const model of Object.keys(models))identities.set(JSON.stringify([agent,model]),{agent,model,effort:''});
- return [...identities.values()];
  }
  editFallbacks(name:string,edit:FallbackEdit) {
  const items=this.config.work[name]!.fallbacks!;
@@ -156,7 +143,6 @@ export class Draft {
  valid() {
  const key=(c:ModelTriple)=>JSON.stringify([c.agent,c.model,c.effort]);
  return this.changes().every(p=>{
- if(p==='model_families')return true;
  const c=cell(this.config,p),old=cell(this.snapshot,p);
  if(key(c)!==key(old)&&!this.options(c).includes(c.effort))return false;
  const remaining=new Map<string,number>();

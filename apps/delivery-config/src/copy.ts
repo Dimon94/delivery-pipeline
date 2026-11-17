@@ -2,6 +2,8 @@ import type {Evidence,Check,SourceEvidence} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
+ "核对完成后显示":"核对完成后显示",
+ "按当前设置推算":"按当前设置推算；实际执行可能因备用接替而不同。",
  "复制到其他工作":"复制到其他工作",
  "应用":"应用",
  "取消":"取消",
@@ -56,7 +58,6 @@ export const copy = {
   "候选中": "候选中",
   "个可用": "个可用。",
   "项需处理": "项需处理",
-  "共享家族声明": "共享家族声明",
   "备用": "备用",
   "实施结果": "实施结果",
   "整体交付": "整体交付",
@@ -66,16 +67,12 @@ export const copy = {
   "候选": "候选：",
   "空": "空",
   "备用2": "备用：",
-  "用户声明": "用户声明）",
-  "未声明": "未声明",
   "候选2": "候选",
   "上移": "上移",
   "下移": "下移",
   "删除": "删除",
   "title核对完成后才能新增": "title=\"核对完成后才能新增\"",
   "添加候选": "添加候选",
-  "为不同工具中的同类模型填写相同家族名思考程度不影响分组此处由你填": "为不同工具中的同类模型填写相同家族名，思考程度不影响分组。此处由你填写，留空表示未声明。",
-  "共享家族": "共享家族",
   "配置处理引导": "配置处理引导",
   "影响": "影响",
   "下一步": "下一步",
@@ -206,3 +203,9 @@ export function modelSummary(c:import('./draft').ModelTriple,route?:SourceEviden
 }
 
 export function effortChangedText(from:string,to:string):string {return `思考程度已从“${effortLabel(from)}”改为“${effortLabel(to)}”，新模型不支持“${effortLabel(from)}”`;}
+
+export function reviewPreviewText(p:NonNullable<import('./preview').ReviewPreview['standards']>):{text:string;title?:string} {
+ const name=p.selected?modelSummary(p.selected):'';
+ const text=p.outcome==='different'?`优先：${name}（和写代码的模型不是同一家）`:p.outcome==='no_different_family'?`没有可换的另一家，按顺序用 ${name}`:p.outcome==='unrecognized'?`有模型认不出出自哪家，按顺序用 ${name}`:'没有可用的检查模型，请重新核对或调整设置';
+ return {text,...(p.unrecognized.length?{title:p.unrecognized.map(c=>`${agentLabel(c.agent)} · ${c.model}`).join('；')}:{})};
+}

@@ -1,3 +1,4 @@
+import {reviewPreviewText} from './copy';
 import {agentLabel,effortChangedText,modelSummary} from './copy';
 import {expect,test} from 'bun:test';
 import {modelLabel} from './copy';
@@ -115,4 +116,8 @@ test('DD-618 Claude 官方来源、可读模型名与禁用原因',()=>{
  const reason='请先打开 Claude Code 完成登录后重新核对';
  const off=toolOffText('claude',undefined,{evidence:{sources:{claude:{route:null,status:'unknown',next_step:'',reason}},capabilities:{claude:{binary:true,models:{}}}}});
  expect(off.title).toBe(reason);expect(off.text).toContain('暂不支持');clean(off.text);
+});
+
+test('检查预计结果的所有说法进入禁用词扫描',()=>{
+ for(const outcome of ['different','no_different_family','unrecognized','none_runnable'] as const)clean(reviewPreviewText({selected:{agent:'claude',model:'claude-opus-5-5',effort:'high'},selected_index:1,outcome,unrecognized:[]}).text);
 });

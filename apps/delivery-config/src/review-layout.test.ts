@@ -76,7 +76,7 @@ test('工作模型三次点击选中，差异中只有该项，点外部不修�
  expect(doc.querySelector('.model-popup')).not.toBeNull();
  click('[data-source="junbo"]');click(`[data-model="${target}"]`);
  expect(doc.querySelector('.model-popup')).toBeNull();
- expect(doc.body.textContent).toContain('magpie/junbo/gpt-6.1-sol');
+ expect(doc.querySelector('button[data-path="work.frontend"][data-field="model"]')!.textContent).toContain('GPT 6.1 Sol · 骏伯');
  expect(doc.querySelector('.footer-status')!.textContent).toBe('1 项修改待确认');
  click('#diff');expect([...doc.querySelectorAll('.diff-panel article h3')].map(e=>e.textContent)).toEqual(['前端开发']);
  expect(doc.querySelector('.diff-panel')!.textContent).toContain('GPT 6.1 Sol · 骏伯');click('#back');
