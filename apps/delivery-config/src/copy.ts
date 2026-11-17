@@ -152,7 +152,7 @@ export function modelLabel(raw:string):string {
  return label+(source&&sources[source]?` · ${sources[source]}`:'')+(context?` · ${Number(context)/10}万上下文`:'');
 }
 export function agentLabel(agent:string,route?:SourceEvidence['route']):string {
- if(agent==='claude'&&route==='official')return 'Claude Code · Anthropic 官方清单';
+ if(agent==='claude'&&route==='official')return 'Claude Code · 官方清单';
  if(agent==='codex'&&route==='direct')return 'Codex CLI · 直连 OpenAI';
  return ({pi:'Pi',codex:'Codex CLI',claude:'Claude Code'} as Record<string,string>)[agent]||copy.已配置工具;
 }

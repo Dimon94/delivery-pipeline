@@ -45,8 +45,8 @@ const claudeOption=()=>doc.querySelector<HTMLOptionElement>('select[data-path="w
 test('DD-618 官方清单贯穿工具下拉与已有行，模型档位与就近提示来自清单',async()=>{
  gateway='ok';click('#refresh');await settle();
  expect(claudeOption().disabled).toBe(false);
- expect(claudeOption().textContent).toBe('Claude Code · Anthropic 官方清单');
- expect(doc.querySelector('.readonly-grid')!.textContent).toContain('Claude Code · Anthropic 官方清单');
+ expect(claudeOption().textContent).toBe('Claude Code · 官方清单');
+ expect(doc.querySelector('.readonly-grid')!.textContent).toContain('Claude Code · 官方清单');
  for(const word of FORBIDDEN)expect(claudeOption().textContent).not.toContain(word);
  const select=claudeOption().parentElement as HTMLSelectElement;select.value='claude';select.dispatchEvent(new win.Event('change',{bubbles:true}));
  click('[data-path="work.design"][data-field="model"]');

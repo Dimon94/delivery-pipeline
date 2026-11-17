@@ -109,7 +109,7 @@ test('DD-613 工具路由文案与禁用原因通过禁词扫描',()=>{
 });
 
 test('DD-618 Claude 官方来源、可读模型名与禁用原因',()=>{
- const label=agentLabel('claude','official');expect(label).toBe('Claude Code · Anthropic 官方清单');clean(label);
+ const label=agentLabel('claude','official');expect(label).toBe('Claude Code · 官方清单');clean(label);
  expect(agentLabel('claude','gateway')).toBe('Claude Code');
  expect(modelLabel('claude-opus-5-5')).toBe('Claude Opus 5.5');
  const reason='请先打开 Claude Code 完成登录后重新核对';
