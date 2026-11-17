@@ -6,6 +6,26 @@
 
 canonical 合同位于 `../../delivery-pipeline/references/`，下文以文件名引用。
 
+## 跨仓路由
+
+T3 只从 coordinator 线程所属项目的根目录建子 worktree。目标仓库（Spec 或票面 `Repo:`）的 common dir
+与 coordinator checkout 不同时，本线程派不出 lane（Preflight 第 2 步必然失败）；先做路由，不先派发再失败。
+失败例子：在父仓线程里对子仓 map 直接 `delegate_task`，子 worktree 建在父仓，startup readback 报 common dir 不符。
+
+1. 读目标仓库 AGENTS.md 的 Git 规则，再读 coordinator 所在仓库 instructions 里点名该目标仓库的覆盖段
+   （例：ads-decision-system 根 AGENTS.md `<tk_ada>`「交付覆盖」）。目标仓库禁止建分支且没有用户覆盖授权时，
+   停下问用户。
+2. 按 `integration-worktree-management.md` 在目标仓库建或复用 Map Integration Worktree；路径与分支名取覆盖段，
+   没有覆盖段时取目标仓库约定。
+3. `t3_project_list` 找 workspace root 等于该集成 worktree 的 T3 项目，没有就 `t3_project_create`。
+4. 写 map registry：`source_worktree_path` 为目标仓库主 checkout，`integration_worktree_path` 为集成 worktree，
+   `target_override` 为覆盖段的「绝对路径§小节」（无则 `none`），Coordinator Recovery 写明来源线程。
+5. `t3_thread_launch` 在该项目开 coordinator 线程，prompt 为 `/delivery-pipeline-t3code` 加 registry 绝对路径，
+   要求它按 §恢复 接管。用户对跨仓 map 调用本壳即是开这个线程的请求。
+6. 回复新线程 `link` 后结束本轮；来源线程不再派发、不 fan-in 该 map。
+
+完成条件：registry 可读回目标仓库坐标、`target_override` 与新 coordinator 线程；新线程的 Preflight 第 2 步通过。
+
 ## Preflight
 
 每批 maximal safe batch 前做一次只读 snapshot：

@@ -7,6 +7,7 @@
 Coordinator thread：<coordinator_thread_id>（<coordinator_provider>）
 Worker target：<provider_instance_id> / <model> / <effort_option>=<effort_value>
 Base：<base_sha>；分支 <prefix>issue-<coordinate> | detached
+目标仓覆盖：<registry target_override> | none
 ```
 
 packet 全文作为 `delegate_task` 的 `task`；Worker 合同指向本文件绝对路径，读取 §Worker 执行。
@@ -17,6 +18,8 @@ Review 时公共模板的输入补 scope、fixed point、两轴配置与 preflig
 从本节进入；公共合同只读 lane-registry 的 Worker 共同行为与终态行，完整 owner 另读。
 commit 加载 gate-state-machine 的实施前置检查；Review 分支在适用时再读。
 
+0. `目标仓覆盖` 不是 `none` 时先读该小节：它列出的条目是用户授权，优先于目标仓库 AGENTS.md 的冲突条目；
+   未列出的条目照目标仓库规则执行。
 1. 先对齐 T3 给的 worktree，再执行 Worker 共同行为：
    - 记录 `git branch --show-current` 作为 T3 初始分支。
    - commit mode：`git switch -c <prefix>issue-<coordinate> <base_sha>`；其他 mode：
