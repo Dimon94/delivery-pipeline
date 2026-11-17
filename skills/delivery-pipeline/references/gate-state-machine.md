@@ -77,10 +77,9 @@ discovery 收口后、发布实施票之前只按本节。一张 map 交付一�
 切分测试：存在一种切法，使每半都能单独上线且单独有人用，就是多个 MMF。
 
 1. `to-spec` 按 **MMF** 的切分测试判定。多个 MMF：停在 spec gate，向用户报告，并请其在编排器外跑 `to-epic`。每个 MMF 另开一张 map。不在本 map 再发布 Spec。切不开且这一整体有人用：发布这一份 Spec。整体没人用：不足一个 MMF，是某个 MMF 里的 ticket，不在本 map 发布 Spec。
-2. `vertical-slicing` 接着判定。一个上下文装得下：不拆票，交 `to-tickets` 发布单票。本节到此结束。
-3. 装不下：`vertical-slicing` 切候选票，并调用 `ticket-sizing` 给出逐票拆分信号、票数、拆分信号合计与推荐。估算口径只在 resolved `ticket-sizing` 的绝对 SKILL.md 路径。
-4. 向用户报告合计与推荐。用户三选一：照此执行；回 `to-epic` 重切，落点同第 1 步；确认切不开则转入 Ticket Release Mode。启用条件只按 `integration-worktree-management.md` §独立票模式。
-5. 照此执行且单票超过拆分线：先经 `ticket-split-100k`，再由 `to-tickets` 发布。先估算，后发布。
+2. `to-tickets` 接着切票：合同票加行为票，单票也走它，切片表只有一行。它调用 `ticket-sizing` 给出逐票拆分信号、票数、拆分信号合计与推荐，超过拆分线的票按 `ticket-sizing`「拆分线」拆开；估算口径只在 resolved `ticket-sizing` 的绝对 SKILL.md 路径。
+3. 向用户报告合计与推荐。用户三选一：照此执行；回 `to-epic` 重切，落点同第 1 步；确认切不开则转入 Ticket Release Mode。启用条件只按 `integration-worktree-management.md` §独立票模式。
+4. 照此执行：由 `to-tickets` 发布并读回。先估算，后发布。
 
 ## 实施前置检查
 
