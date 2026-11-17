@@ -23,6 +23,8 @@ coordinator 只看结果。
    Worktree 按 execution-worktree-integration 对待收口 lane 逐条收口，终态
    `LANE_DONE <merger_lane> <integration HEAD>`。同一 Map Integration Worktree 同时只有一个
    merger，期间到达的 terminal 累积到下一批。
+   2026-11-17 修订（ADR-0026 决策 5）：正常 fan-in 由 Driver 自己完成；只有 cherry-pick 冲突或
+   focused checks 失败时才派 merger lane。
 3. watcher 接受 `LANE_DONE <lane_id>` 后带一个空格分隔后缀的终态行。
 
 ## Consequences

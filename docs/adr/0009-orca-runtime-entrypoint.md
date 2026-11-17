@@ -25,6 +25,8 @@
    不 fallback 到 Herdr/Codex App。机械 helper 只能校验 caller-declared readback 的字段、绑定与
    可读绝对 source path，不能证明原生 provenance；结构成功仅为 `preflight-ready` 且
    `authority: false`，coordinator 读回 native source 后才可授权。Unknown 不授权 mutation。
+   2026-11-17 修订（ADR-0026 决策 11）：有 Autonomy Grant 的 map 内，Driver 的 readback 校验通过即构成
+   授权；版本匹配的 guides 与 capability 证据是前置条件，缺失时 halt，不回落其他 transport。
 6. 本决策只交付入口与 preflight。Run/Task/Dispatch、fan-in/recovery、provider、remote 与
    closeout 生命周期分别留给 #121–#128，不在入口中提前实现。
 
