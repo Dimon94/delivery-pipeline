@@ -22,6 +22,55 @@ for config, env, expected in route_cases:
     assert mc.codex_route(config, env) == expected, (config, env, expected)
     assert (config, env) == before, '路由识别不能修改输入'
 print('Codex route table: pass')
+# DD-616 R1–R4：预期来自 Spec；凭据为合成哨兵。
+assert callable(getattr(mc, 'claude_endpoint', None)), '缺少 Claude 地址与凭据解析'
+secret = 'fixture-oauth-secret'
+oauth = {'accessToken': secret, 'expiresAt': 200000}
+login_reason = '请先打开 Claude Code 完成登录后重新核对'
+cases = [
+    ({}, {}, oauth, 'official', 'https://api.anthropic.com', 'oauth'),
+    ({'env': {'ANTHROPIC_BASE_URL': 'https://proxy.example'}}, {}, oauth, 'official', 'https://proxy.example', 'oauth'),
+    ({'env': {'ANTHROPIC_BASE_URL': 'https://settings.example'}}, {'ANTHROPIC_BASE_URL': 'https://env.example'}, oauth, 'official', 'https://env.example', 'oauth'),
+    ({}, {'ANTHROPIC_BASE_URL': 'http://127.0.0.1:3425/v1'}, oauth, None, 'http://127.0.0.1:3425/v1', None),
+    ({}, {}, {'accessToken': secret, 'expiresAt': 99999}, None, 'https://api.anthropic.com', None),
+    ({}, {}, {'expiresAt': 200000}, None, 'https://api.anthropic.com', None),
+    ({}, {}, None, None, 'https://api.anthropic.com', None),
+    ({'env': {'ANTHROPIC_API_KEY': 'fixture-settings-key'}}, {'ANTHROPIC_AUTH_TOKEN': 'fixture-token'}, oauth, 'official', 'https://api.anthropic.com', 'api_key'),
+    ({'env': {'ANTHROPIC_API_KEY': 'fixture-settings-key'}}, {'ANTHROPIC_API_KEY': 'fixture-env-key'}, oauth, 'official', 'https://api.anthropic.com', 'api_key'),
+    ({'env': {'ANTHROPIC_AUTH_TOKEN': 'fixture-token'}}, {}, oauth, 'official', 'https://api.anthropic.com', 'auth_token'),
+    ({'apiKeyHelper': 'do-not-execute'}, {}, oauth, None, 'https://api.anthropic.com', None),
+]
+for settings, env, credential, route, base, kind in cases:
+    before = copy.deepcopy((settings, env, credential))
+    endpoint = mc.claude_endpoint(settings, env, credential, 100)
+    assert (endpoint['route'], endpoint['base_url'], endpoint['credential_kind']) == (route, base, kind)
+    assert (settings, env, credential) == before
+    serialized = json.dumps(endpoint)
+    assert all(value not in serialized for value in (secret, 'fixture-settings-key', 'fixture-env-key', 'fixture-token'))
+    if route is None:
+        assert endpoint['reason']
+        if not settings.get('apiKeyHelper') and not env.get('ANTHROPIC_BASE_URL'):
+            assert endpoint['reason'] == login_reason
+print('Claude endpoint table: pass')
+# 2026-11-17 本机当前地址 /v1/models 实测裁剪，仅保留 id 与 effort。
+assert callable(getattr(mc, 'claude_models', None)), '缺少 Claude 官方模型清单归一化'
+claude_catalog = json.loads((root/'scripts/fixtures/claude-models.json').read_text())
+expected_claude = {
+    'claude-opus-5-5': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'claude-sonnet-4-6': ['low', 'medium', 'high', 'max'],
+    'claude-opus-4-5-20251101': ['low', 'medium', 'high'],
+}
+assert mc.claude_models(claude_catalog) == [
+    {'native_id': native, 'gateway_id': native, 'efforts': efforts}
+    for native, efforts in expected_claude.items()]
+for malformed in ({}, {'data': [{}]}, {'data': 'bad'}, {'data': [{'id': 'm', 'capabilities': []}]}):
+    try:
+        mc.claude_models(malformed)
+    except ValueError as error:
+        assert secret not in str(error)
+    else:
+        raise AssertionError('结构不符必须拒绝')
+print('Claude official catalog: pass')
 raw = {'gateway': {'status':'ok','data':[{'id':'vendor/model@large','supported_reasoning_levels':[{'effort':'low'},{'effort':'high'},{'effort':'max'}]}]},
        'harnesses': {'pi': {'binary':True,'route':'gateway','models':[{'native_id':'magpie/vendor/model@large','gateway_id':'vendor/model@large','efforts':['low','high']}]},
                      'codex': {'binary':True,'route':'gateway','models':[{'native_id':'vendor/model@large','gateway_id':'vendor/model@large','efforts':['high','xhigh']}]},
@@ -80,3 +129,84 @@ for binary, route in ((True, None), (False, 'direct')):
     if binary:
         assert '既不是本机网关也不是 OpenAI 官方' in p['sources']['codex']['reason']
 print('probe contract and direct dispatch: pass')
+official = copy.deepcopy(raw)
+official['harnesses']['claude'] = {'binary': True, 'route': 'official', 'models': mc.claude_models(claude_catalog)}
+for gateway in ({'status': 'ok', 'data': []}, {'status': 'unknown'}):
+    official['gateway'] = gateway
+    p = probe(official)
+    assert p['capabilities']['claude']['models'] == expected_claude
+    assert p['sources']['claude']['status'] == 'ok' and p['sources']['claude']['route'] == 'official'
+    assert p['gateway']['status'] == ('ok' if gateway['status'] == 'ok' else 'unreachable')
+assert mc.capability_errors('claude', 'claude-opus-5-5', 'high', p['capabilities']) == []
+assert mc.capability_errors('claude', 'claude-sonnet-4-6', 'xhigh', p['capabilities'])
+config = mc.valid_fixture()
+config['work']['backend'] = {'agent': 'claude', 'model': 'claude-opus-5-5', 'effort': 'high', 'fallbacks': []}
+plan = mc.resolve_plan(config, 'backend', evidence=p['capabilities'], output_mode='commit')
+argv = mc.startup_request(plan, worker_name='worker', pane_id='pane')
+assert argv[argv.index('--model') + 1] == 'claude-opus-5-5'
+assert argv[argv.index('--effort') + 1] == 'high'
+for reason in (login_reason, 'Claude Code 指向本机网关，暂不支持通过网关核对 Claude 模型', '无法读取 Claude 官方模型清单'):
+    official['harnesses']['claude'].update(route=None, reason=reason)
+    p = probe(official)
+    assert p['capabilities']['claude']['models'] == {}
+    assert p['sources']['claude']['status'] == 'unknown' and p['sources']['claude']['reason'] == reason
+print('Claude official probe and dispatch: pass')
+# 外部系统边界替身：读文件/钥匙串与 HTTP；不执行 apiKeyHelper，不请求推理。
+import io, os, tempfile, urllib.request
+from types import SimpleNamespace
+from unittest.mock import patch
+with tempfile.TemporaryDirectory() as directory:
+    home = Path(directory)
+    (home/'.claude').mkdir()
+    settings_path = home/'.claude/settings.json'
+    settings_path.write_text('{}')
+    calls = []
+    requests = []
+    def command(args, **kwargs):
+        calls.append(args)
+        if args[0] == 'security':
+            return SimpleNamespace(returncode=0, stdout=json.dumps({'claudeAiOauth': {'accessToken': secret, 'expiresAt': 9999999999999}}))
+        return SimpleNamespace(returncode=0, stdout='2.1.326' if '--version' in args else '')
+    def request(req, **kwargs):
+        requests.append((req, kwargs))
+        return io.BytesIO(json.dumps(claude_catalog).encode())
+    with patch.object(Path, 'home', return_value=home), patch.dict(os.environ, {}, clear=True), patch('sys.platform', 'darwin'), patch('shutil.which', side_effect=lambda name: '/fake/'+name), patch('subprocess.run', side_effect=command), patch('urllib.request.urlopen', side_effect=request):
+        collected = mc.collect_harnesses()
+        assert collected['claude']['route'] == 'official'
+        assert collected['claude']['models'] == mc.claude_models(claude_catalog)
+        assert len(requests) == 1 and requests[0][0].full_url == 'https://api.anthropic.com/v1/models?limit=1000'
+        assert requests[0][0].get_method() == 'GET' and requests[0][1]['timeout'] == 15
+        assert requests[0][0].get_header('Authorization') == 'Bearer '+secret
+        assert requests[0][0].get_header('Anthropic-beta') == 'oauth-2025-04-20'
+        assert secret not in json.dumps(mc.probe({'harnesses': collected}, 'safe'))
+        for name, kind in (('ANTHROPIC_API_KEY', 'X-api-key'), ('ANTHROPIC_AUTH_TOKEN', 'Authorization')):
+            requests.clear()
+            with patch.dict(os.environ, {name: secret}):
+                result = mc.collect_harnesses()['claude']
+            assert result['route'] == 'official' and len(requests) == 1
+            assert requests[0][0].get_header(kind) == (secret if name.endswith('API_KEY') else 'Bearer '+secret)
+            assert secret not in json.dumps(result)
+        with patch('urllib.request.urlopen', side_effect=OSError(secret)):
+            result = mc.collect_harnesses()['claude']
+            assert result['route'] is None and '无法读取' in result['reason']
+            assert secret not in json.dumps(result)
+        import urllib.error
+        with patch('urllib.request.urlopen', side_effect=urllib.error.HTTPError('https://example.invalid', 401, secret, {}, None)):
+            result = mc.collect_harnesses()['claude']
+            assert result['route'] is None and result['reason'] == login_reason
+            assert secret not in json.dumps(result)
+        with patch('subprocess.run', return_value=SimpleNamespace(returncode=1, stdout='')):
+            requests.clear()
+            result = mc.collect_harnesses()['claude']
+            assert result['route'] is None and result['reason'] == login_reason and not requests
+        (home/'.claude/.credentials.json').write_text(json.dumps({'claudeAiOauth': {'accessToken': secret, 'expiresAt': 9999999999999}}))
+        with patch('sys.platform', 'linux'):
+            requests.clear()
+            result = mc.collect_harnesses()['claude']
+            assert result['route'] == 'official' and len(requests) == 1
+        for settings in ({'apiKeyHelper': 'never-run'}, {'env': {'ANTHROPIC_BASE_URL': 'http://127.0.0.1:3425/v1'}}):
+            settings_path.write_text(json.dumps(settings))
+            requests.clear()
+            assert mc.collect_harnesses()['claude']['route'] is None
+            assert not requests
+print('Claude collection request and credential isolation: pass')

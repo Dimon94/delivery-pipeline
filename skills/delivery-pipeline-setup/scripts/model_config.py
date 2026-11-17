@@ -839,6 +839,64 @@ def codex_route(config: dict, env: Mapping[str, str]) -> CodexRoute:
     return None
 
 
+ClaudeEndpoint = TypedDict('ClaudeEndpoint', {
+    'route': Literal['official'] | None, 'base_url': str,
+    'credential_kind': Literal['api_key', 'auth_token', 'oauth'] | None,
+    'reason': str})
+
+
+def claude_endpoint(settings: dict, env: Mapping[str, str],
+                    oauth: dict | None, now: float) -> ClaudeEndpoint:
+    settings_env = settings.get('env', {})
+    base = env.get('ANTHROPIC_BASE_URL') or settings_env.get('ANTHROPIC_BASE_URL') or 'https://api.anthropic.com'
+    result: ClaudeEndpoint = {'route': None, 'base_url': base,
+                             'credential_kind': None, 'reason': ''}
+    if base.startswith('http://127.0.0.1:3425'):
+        result['reason'] = 'Claude Code 指向本机网关，暂不支持通过网关核对 Claude 模型'
+        return result
+    if settings.get('apiKeyHelper'):
+        result['reason'] = 'Claude Code 使用 apiKeyHelper，暂不支持核对'
+        return result
+    for name, kind in (('ANTHROPIC_API_KEY', 'api_key'), ('ANTHROPIC_AUTH_TOKEN', 'auth_token')):
+        if env.get(name) or settings_env.get(name):
+            result.update(route='official', credential_kind=kind)
+            return result
+    if (oauth and oauth.get('accessToken') and isinstance(oauth.get('expiresAt'), (int, float))
+            and oauth['expiresAt'] / 1000 >= now):
+        result.update(route='official', credential_kind='oauth')
+    else:
+        result['reason'] = '请先打开 Claude Code 完成登录后重新核对'
+    return result
+
+
+EFFORT_ORDER = ('low', 'medium', 'high', 'xhigh', 'max')
+
+
+class HarnessModel(TypedDict):
+    native_id: str
+    gateway_id: str
+    efforts: list[str]
+
+
+def claude_models(catalog: dict) -> list[HarnessModel]:
+    try:
+        if not isinstance(catalog['data'], list):
+            raise ValueError
+        models = []
+        for model in catalog['data']:
+            native = model['id']
+            if not isinstance(native, str) or not native:
+                raise ValueError
+            effort = model.get('capabilities', {}).get('effort', {})
+            efforts = [e for e in EFFORT_ORDER
+                       if effort.get('supported') is True and effort.get(e, {}).get('supported') is True]
+            if efforts:
+                models.append({'native_id': native, 'gateway_id': native, 'efforts': efforts})
+        return models
+    except (KeyError, TypeError, AttributeError, ValueError):
+        raise ValueError('无法读取 Claude 官方模型清单') from None
+
+
 def probe(raw: dict, request_id: str) -> ProbeEvidence:
     """只归一化 metadata；逐工具独立，不把 gateway 声明当 harness 能力。"""
     from datetime import datetime, timezone
@@ -854,12 +912,12 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
         harness = raw.get('harnesses', {}).get(agent, {})
         models = {}
         route = harness.get('route')
-        if harness.get('binary') is True and route in ('gateway', 'direct'):
+        if harness.get('binary') is True and route in ('gateway', 'direct', 'official'):
             for model in harness.get('models', []):
                 native = model.get('native_id')
                 if not isinstance(native, str) or not native:
                     continue
-                if route == 'direct':
+                if route in ('direct', 'official'):
                     allowed = model.get('efforts', [])
                 elif gateway.get('status') == 'ok':
                     allowed = [e for e in model.get('efforts', [])
@@ -883,7 +941,7 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
 
 
 def collect_harnesses() -> dict:
-    """仅本机元数据命令/配置；不打印原始来源或凭据，不发推理。"""
+    """本机元数据与一次只读模型清单请求；不打印原始来源或凭据，不发推理。"""
     import shutil
     import subprocess
     home = Path.home()
@@ -955,9 +1013,54 @@ def collect_harnesses() -> dict:
                         'origin': 'Pi 注册清单、模型映射与网关清单交集'}
     except (OSError, ValueError, KeyError):
         result['pi'] = {'binary': output is not None}
-    # Claude 无稳定无推理逐模型 catalog 命令；help 五档不构成逐模型证据。
-    result['claude'] = {'binary': command('claude', ['--version']) is not None,
-                        'route': None, 'origin': 'Claude 逐模型有效能力尚缺可核验来源'}
+    import time
+    import urllib.request
+    claude = {'binary': command('claude', ['--version']) is not None,
+              'route': None, 'origin': 'Anthropic 官方模型清单（Claude Code 当前账号与地址）'}
+    result['claude'] = claude
+    try:
+        path = home/'.claude/settings.json'
+        settings = json.loads(path.read_text()) if path.exists() else {}
+        oauth = None
+        endpoint = claude_endpoint(settings, os.environ, oauth, time.time())
+        # 有显式凭据或不支持的路由时，不触碰钥匙串。
+        if endpoint['reason'] == '请先打开 Claude Code 完成登录后重新核对':
+            try:
+                if sys.platform == 'darwin':
+                    credentials = subprocess.run(
+                        ['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+                        capture_output=True, text=True, timeout=15)
+                    record = json.loads(credentials.stdout) if credentials.returncode == 0 else {}
+                else:
+                    record = json.loads((home/'.claude/.credentials.json').read_text())
+                oauth = record.get('claudeAiOauth')
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                oauth = None
+            endpoint = claude_endpoint(settings, os.environ, oauth, time.time())
+        claude.update(route=endpoint['route'], reason=endpoint['reason'])
+        if endpoint['route'] == 'official':
+            kind = endpoint['credential_kind']
+            if kind == 'oauth':
+                credential = oauth['accessToken']
+            else:
+                name = 'ANTHROPIC_API_KEY' if kind == 'api_key' else 'ANTHROPIC_AUTH_TOKEN'
+                credential = os.environ.get(name) or settings.get('env', {}).get(name)
+            headers = {'anthropic-version': '2023-06-01'}
+            if kind == 'api_key':
+                headers['x-api-key'] = credential
+            else:
+                headers.update(Authorization='Bearer ' + credential,
+                               **{'anthropic-beta': 'oauth-2025-04-20'})
+            request = urllib.request.Request(endpoint['base_url'].rstrip('/') + '/v1/models?limit=1000',
+                                             headers=headers)
+            with urllib.request.urlopen(request, timeout=15) as response:
+                claude['models'] = claude_models(json.load(response))
+    except urllib.error.HTTPError as error:
+        claude.update(route=None, reason=(
+            '请先打开 Claude Code 完成登录后重新核对' if error.code in (401, 403)
+            else '无法读取 Claude 官方模型清单'))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        claude.update(route=None, reason='无法读取 Claude 官方模型清单')
     return result
 
 

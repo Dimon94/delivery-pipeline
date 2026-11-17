@@ -37,13 +37,22 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    取得统一 `ProbeEvidence`；stdin 为 `{"gateway":{"status":"ok","data":[...]}}` 原始来源对象。
    网关来源仅取现有本机 `http://127.0.0.1:3425/v1/models` 的 GET；读取失败时传
    `{"gateway":{"status":"unknown"}}`。不输出凭据，不发推理，不修改接入或代理。
-   Python 采集本机 harness 元数据并归一化；`capabilities` 是精确原生模型到有效档位的映射，
+   Python 采集本机 harness 元数据与 Claude 一次只读官方模型清单并归一化；`capabilities` 是精确原生模型到有效档位的映射，
    `sources` 给出来源、采集时间、状态、route 与下一核验动作。
    Codex 直连 OpenAI（route=direct）时使用 `codex debug models --bundled` 内置清单及其档位，
    不读取自定义 catalog，未与网关交叉核对；认证、账号可用模型与额度为 Unknown。
    网关路由（route=gateway）仍取本机工具清单与网关清单的交集；其他代理（route=null）
    不提供候选，reason 说明地址既不是本机网关也不是 OpenAI 官方。
-   网关不可达时，直连 Codex 的模型仍保留，gateway 状态仍为 unreachable。
+   Claude 使用当前账号与地址读取 Anthropic 官方模型清单（route=official，只读不推理），
+   GET `<base_url>/v1/models?limit=1000`，超时 15 秒。地址依次取进程环境、settings.env 的
+   ANTHROPIC_BASE_URL、官方默认地址；凭据依次取 ANTHROPIC_API_KEY（进程环境优先于
+   settings.env）、ANTHROPIC_AUTH_TOKEN（同上）、OAuth。macOS 只读钥匙串项
+   Claude Code-credentials，其他平台只读 ~/.claude/.credentials.json；不刷新凭据、不执行 apiKeyHelper。
+   过期或缺失 OAuth 提示先去 Claude Code 登录；本机网关与 apiKeyHelper 暂不支持核对，
+   清单读取失败时给出原因、不提供候选。仅保留官方清单明确支持的 low/medium/high/xhigh/max，
+   无档位模型不提供。凭据不进入输出或异常文本；首次钥匙串读取可能弹授权框，未确认时记 Unknown。
+   官方清单不能证明额度或实际调用成功，这两项为 Unknown。
+   网关不可达时，直连 Codex 与 official Claude 的模型仍保留，gateway 状态仍为 unreachable。
    只使用状态为 ok 的候选；
    Unknown 保留已有值，请用户或 AI 助手补齐来源后刷新。
 3. **逐项选择。** 按 `planning`、`design`、`frontend`、`backend`、`testing` 顺序，每个任务
@@ -60,7 +69,7 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    `ProbeEvidence` 交接（request_id、observed_at、gateway、capabilities、sources；`gateway` 为 `{status: ok|unreachable}`，仅当 Host 传入的网关状态为 ok 时才是 ok；来源状态 ok 才可用于改动格）。
    桌面 Host 仅 GET 本机网关模型清单，将原始 gateway 来源经 stdin 交给
    `model_config.py probe --request-id <本次身份>`；setup 使用同一命令（stdin 为 gateway 来源对象）。
-   probe 只读取本机 harness 元数据，不发推理；sources 中 Unknown 的工具不提供新增选择。
+   probe 读取本机 harness 元数据与 Claude 官方模型清单，不发推理；sources 中 Unknown 的工具不提供新增选择。
    能力判断复用 Python `capability_errors` / `validate_selection`，不在 Skill 复制规则。
    候选写入独立临时文件，证据也只放临时文件，不能写进用户配置。
    从实际原字节读取 SHA-256 基线（包括坏 JSON 的显式修复）；缺失才省略 --base-hash。

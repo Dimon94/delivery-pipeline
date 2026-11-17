@@ -1,0 +1,96 @@
+{
+  "data": [
+    {
+      "id": "claude-opus-5-5",
+      "capabilities": {
+        "effort": {
+          "supported": true,
+          "low": {
+            "supported": true
+          },
+          "medium": {
+            "supported": true
+          },
+          "high": {
+            "supported": true
+          },
+          "xhigh": {
+            "supported": true
+          },
+          "max": {
+            "supported": true
+          }
+        }
+      }
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "capabilities": {
+        "effort": {
+          "supported": true,
+          "low": {
+            "supported": true
+          },
+          "medium": {
+            "supported": true
+          },
+          "high": {
+            "supported": true
+          },
+          "xhigh": {
+            "supported": false
+          },
+          "max": {
+            "supported": true
+          }
+        }
+      }
+    },
+    {
+      "id": "claude-opus-4-5-20251101",
+      "capabilities": {
+        "effort": {
+          "supported": true,
+          "low": {
+            "supported": true
+          },
+          "medium": {
+            "supported": true
+          },
+          "high": {
+            "supported": true
+          },
+          "xhigh": {
+            "supported": false
+          },
+          "max": {
+            "supported": false
+          }
+        }
+      }
+    },
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "capabilities": {
+        "effort": {
+          "supported": false,
+          "low": {
+            "supported": false
+          },
+          "medium": {
+            "supported": false
+          },
+          "high": {
+            "supported": false
+          },
+          "xhigh": {
+            "supported": false
+          },
+          "max": {
+            "supported": false
+          }
+        }
+      }
+    }
+  ]
+}
