@@ -15,7 +15,7 @@ export function pickerView(input:PickerInput):PickerView {
  const words=input.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
  const source=input.source||groups.find(g=>g.items.some(i=>i.selected))?.source||groups[0]?.source;
  const visible=words.length?groups.map(g=>({...g,items:g.items.filter(i=>words.every(w=>(i.id+' '+i.label+' '+g.label).toLowerCase().includes(w)))})).filter(g=>g.items.length):groups.filter(g=>g.source===source);
- if(input.current&&!Object.hasOwn(input.models,input.current))visible.unshift({source:'current',label:copy.当前模型,items:[{id:input.current,label:modelLabel(input.current),efforts:'',selected:true,disabled:copy.这个模型已不在可用清单里}]});
+ if(input.current&&!Object.hasOwn(input.models,input.current)&&words.every(w=>(input.current+' '+modelLabel(input.current)).toLowerCase().includes(w)))visible.unshift({source:'current',label:copy.当前模型,items:[{id:input.current,label:modelLabel(input.current),efforts:'',selected:true,disabled:copy.这个模型已不在可用清单里}]});
  return {sources:groups.map(g=>({id:g.source,label:g.label,count:g.items.length})),groups:visible,...(!visible.length?{empty:copy.没有匹配的模型}:{})};
 }
 export function moveActive(view:PickerView,active:string|undefined,key:'ArrowUp'|'ArrowDown'|'Home'|'End'):string|undefined {

@@ -1,21 +1,23 @@
-import type {Evidence} from './draft';
+import type {Evidence,Check} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
- 可选模型:'可选模型',
- 搜索模型: "搜索模型",
- 搜索模型示例: "模型名或来源，如 sol 骏伯",
- 没有匹配的模型: "没有匹配的模型",
- 当前模型: "当前模型",
- 支持的思考程度: "支持的思考程度",
- 测试配置: "测试配置 · ",
- 本机设置: "本机设置 · ",
- 构建号未知: "构建号未知",
-  检查: "检查",
-  每张票写完后: "每张票写完后",
-  合并前看整体: "合并前看整体",
-  写法是否合规: "写法是否合规",
-  是否做到Spec的要求: "是否做到 Spec 的要求",
+ "可选模型":"可选模型",
+ "搜索模型": "搜索模型",
+ "搜索模型示例": "模型名或来源，如 sol 骏伯",
+ "没有匹配的模型": "没有匹配的模型",
+ "当前模型": "当前模型",
+ "支持的思考程度": "支持的思考程度",
+ "测试配置": "测试配置 · ",
+ "本机设置": "本机设置 · ",
+ "构建号未知": "构建号未知",
+  "来源切换快捷键": "Alt + ← / → 切换来源；Tab 关闭",
+  "选中标记": "✓",
+  "检查": "检查",
+  "每张票写完后": "每张票写完后",
+  "合并前看整体": "合并前看整体",
+  "写法是否合规": "写法是否合规",
+  "是否做到Spec的要求": "是否做到 Spec 的要求",
   "正在读取本机设置": "正在读取本机设置…",
   "规划": "规划",
   "设计": "设计",
@@ -161,3 +163,11 @@ export function bannerText(input:BannerInput):string {
 export function diffVerdict(valid:boolean):string {return valid?'这些修改都可以使用':'有修改还不能用，请返回重新选择';}
 
 export function pickerCount(count:number):string {return `${count} 个可选模型`;}
+
+export function pickerEfforts(efforts:string):string {return `支持的思考程度：${efforts}`;}
+export function pickerUnavailable(check:Check,agent?:string,reading=false):string|undefined {
+ if(reading)return copy.正在读取本机设置;
+ if(check.kind==='unreachable')return bannerText({kind:'unreachable',cause:check.cause==='gateway'?'gateway':'call'});
+ if(check.kind!=='checked')return bannerText({kind:'checking'});
+ if(agent!==undefined&&check.evidence.sources[agent]?.status!=='ok')return toolOffText(agent,undefined,{evidence:check.evidence,selected:true}).text;
+}

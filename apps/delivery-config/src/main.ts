@@ -1,5 +1,5 @@
 import {pickerView,moveActive} from './picker';
-import {modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount} from './copy';
+import {modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts} from './copy';
 import './style.css';
 import {guide,shouldRereadOnFocus,type GuideInput} from './guide';
 
@@ -43,7 +43,7 @@ function fields(c: Cell, path?:string) {
  const choices=draft?.agentChoices()||[];
  // 已选中却不可用的工具保持选中并标“工具不可用”；其余不可用工具写来源给的原因。
  const agentLabel=(v:string)=>{const ch=choices.find(a=>a.agent===v);if(!ch?.reason)return agents[v]!;return agents[v]!+' · '+toolOffText(v,ch.reason,{evidence,selected:v===c.agent}).text;};
- const controls={agent:select('agent',choices.filter(a=>a.enabled).map(a=>a.agent),agentLabel,agentIds),model:`<button class="pill" data-path="${path}" data-field="model" aria-label="${escape(pathLabel(path))} · ${copy.模型}" aria-expanded="false">${escape(modelLabel(c.model))}</button>`,effort:select('effort',levels,effortLabel)};
+ const controls={agent:select('agent',choices.filter(a=>a.enabled).map(a=>a.agent),agentLabel,agentIds),model:`<button class="pill" data-path="${path}" data-field="model" aria-label="${escape(pathLabel(path))} · ${copy.模型}" aria-expanded="false" aria-haspopup="listbox" aria-controls="picker-results">${escape(modelLabel(c.model))}</button>`,effort:select('effort',levels,effortLabel)};
  return `<div class="fields">${(['agent','model','effort'] as const).map(field=>controls[field]).join('')}</div>`;
 }
 // 行内状态只由 Draft 的项状态决定（R4/R5）：可用、核对中、未核实都不写字；其余每项一句原因加一个处理动作。
@@ -184,23 +184,26 @@ function closePicker(update=false) {
  button?.setAttribute('aria-expanded','false');button?.focus();
 }
 function renderPicker() {
+ if(editor&&editor.state.kind!=='draft'){closePicker();return;}
  if(!picker||!draft){document.querySelector('.model-popup')?.remove();return;}
  const {path,query,source}=picker,c=cell(draft.config,path);
  const button=document.querySelector<HTMLButtonElement>(`button[data-path="${path}"][data-field="model"]`);
  if(!button){closePicker();return;}
  const check=draft.check,evidence=draft.evidence;
- const unavailable=reading?copy.正在读取本机设置:check.kind==='unreachable'?bannerText({kind:'unreachable',cause:check.cause==='gateway'?'gateway':'call'}):check.kind!=='checked'?bannerText({kind:'checking'}):evidence?.sources[c.agent]?.status!=='ok'?toolOffText(c.agent,undefined,{evidence,selected:true}).text:undefined;
+ const unavailable=pickerUnavailable(check,c.agent,reading);
  const view=pickerView({models:evidence?.capabilities[c.agent]?.models||{},current:c.model,query,source,unavailable});
  const items=view.groups.flatMap(g=>g.items);
  if(!reading&&check.kind==='checked')picker.active=items.find(i=>i.id===picker!.active&&!i.disabled)?.id||(picker.active?undefined:items.find(i=>i.selected&&!i.disabled)?.id)||items.find(i=>!i.disabled)?.id;
+ const search=(input:HTMLInputElement)=>{picker!.query=input.value;picker!.active=undefined;renderPicker();};
  let popup=document.querySelector<HTMLDivElement>('.model-popup');
  if(!popup){
   popup=document.createElement('div');popup.className='popup model-popup';
-  popup.innerHTML='<div class="picker-content"></div><div class="popup-note" role="status" aria-live="polite" aria-atomic="true"></div>';
+  popup.innerHTML=`<div class="picker-content"><label class="picker-search"><span>${copy.搜索模型}</span><input role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="picker-results" aria-describedby="picker-shortcuts" aria-label="${copy.搜索模型}" placeholder="${copy.搜索模型示例}" value="${escape(query)}"></label><div class="picker-body"></div></div><div class="popup-note"><div id="picker-shortcuts">${copy.来源切换快捷键}</div><div role="status" aria-live="polite" aria-atomic="true"></div></div>`;
   popup.addEventListener('click',event=>event.stopPropagation());
+  popup.querySelector('input')!.addEventListener('compositionend',event=>search(event.target as HTMLInputElement));
   document.body.append(popup);
  }
- popup.querySelector('.picker-content')!.innerHTML=`<label class="picker-search"><span>${copy.搜索模型}</span><input role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="picker-results" aria-label="${copy.搜索模型}" placeholder="${copy.搜索模型示例}" value="${escape(query)}"></label><div class="picker-body"><div class="provider-tabs">${view.sources.map(s=>`<button data-source="${escape(s.id)}" class="${!query.trim()&&view.groups.some(g=>g.source===s.id)?'active':''}"><span>${escape(s.label)}</span><span>${s.count}</span></button>`).join('')}</div><div class="option-list" id="picker-results" role="listbox" aria-label="${copy.可选模型}">${view.groups.map(g=>`<div class="option-group">${escape(g.label)}</div>${g.items.map(i=>`<button id="picker-option-${items.indexOf(i)}" role="option" tabindex="-1" aria-selected="${i.selected}" aria-disabled="${!!i.disabled}" class="option${i.selected?' selected':''}" data-model="${escape(i.id)}" ${i.disabled?'disabled':''}><span class="option-info"><span>${escape(i.label)}</span><span class="sub">${escape(i.disabled||copy.支持的思考程度+'：'+i.efforts)}</span></span>${i.selected?'<span class="check">✓</span>':''}</button>`).join('')}`).join('')}${view.empty?`<p class="empty">${escape(view.empty)}</p>`:''}</div></div>`;
+ popup.querySelector('.picker-body')!.innerHTML=`<div class="provider-tabs">${view.sources.map(s=>`<button data-source="${escape(s.id)}" class="${!query.trim()&&view.groups.some(g=>g.source===s.id)?'active':''}"><span>${escape(s.label)}</span><span>${s.count}</span></button>`).join('')}</div><div class="option-list" id="picker-results" role="listbox" aria-label="${copy.可选模型}">${view.groups.map(g=>`<div role="group" aria-label="${escape(g.label)}"><div class="option-group">${escape(g.label)}</div>${g.items.map(i=>`<button id="picker-option-${items.indexOf(i)}" role="option" tabindex="-1" aria-selected="${i.selected}" aria-disabled="${!!i.disabled}" class="option${i.selected?' selected':''}" data-model="${escape(i.id)}" ${i.disabled?'disabled':''}><span class="option-info"><span>${escape(i.label)}</span><span class="sub">${escape(i.disabled||pickerEfforts(i.efforts))}</span></span>${i.selected?`<span class="check">${copy.选中标记}</span>`:''}</button>`).join('')}</div>`).join('')}${view.empty?`<p class="empty">${escape(view.empty)}</p>`:''}</div>`;
  popup.querySelector('[aria-live]')!.textContent=pickerCount(items.filter(i=>!i.disabled).length);
  button.setAttribute('aria-expanded','true');
  positionPicker();
@@ -211,8 +214,15 @@ function renderPicker() {
   if(active){input.setAttribute('aria-activedescendant',active.id);active.scrollIntoView?.({block:'nearest'});}
   else input.removeAttribute('aria-activedescendant');
  };
- input.addEventListener('keydown',event=>{
-  if(event.isComposing)return;
+ input.onkeydown=event=>{
+  if(event.isComposing||event.keyCode===229)return;
+  if(event.altKey&&(event.key==='ArrowLeft'||event.key==='ArrowRight')){
+   event.preventDefault();
+   const index=view.sources.findIndex(s=>s.id===view.groups.find(g=>g.source!=='current')?.source);
+   const next=view.sources[Math.max(0,Math.min(view.sources.length-1,index+(event.key==='ArrowRight'?1:-1)))];
+   if(next){picker!.source=next.id;picker!.query='';picker!.active=undefined;input.value='';renderPicker();}
+   return;
+  }
   if(event.key==='Escape'||event.key==='Tab'){event.preventDefault();closePicker();}
   else if(event.key==='ArrowUp'||event.key==='ArrowDown'||event.key==='Home'||event.key==='End'){
    event.preventDefault();picker!.active=moveActive(view,picker!.active,event.key);highlight();
@@ -220,13 +230,11 @@ function renderPicker() {
    event.preventDefault();
    Array.from(popup!.querySelectorAll<HTMLButtonElement>('[data-model]')).find(b=>b.dataset.model===picker?.active&&!b.disabled)?.click();
   }
- });
- const search=()=>{picker!.query=input.value;picker!.active=undefined;renderPicker();};
- input.addEventListener('input',event=>{if(!event.isComposing)search();});
- input.addEventListener('compositionend',search);
+ };
+ input.oninput=event=>{if(!event.isComposing)search(input);};
  popup.querySelectorAll<HTMLButtonElement>('[data-source]').forEach(b=>b.addEventListener('click',()=>{picker!.source=b.dataset.source;picker!.active=undefined;renderPicker();}));
  popup.querySelectorAll<HTMLButtonElement>('[data-model]').forEach(b=>b.addEventListener('click',()=>{saved='';draft!.select(path,'model',b.dataset.model!);closePicker(true);}));
- input.focus();input.setSelectionRange(query.length,query.length);
+ if(document.activeElement!==input)input.focus();
  highlight();
 }
 function positionPicker() {

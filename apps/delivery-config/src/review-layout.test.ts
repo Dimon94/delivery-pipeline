@@ -128,6 +128,53 @@ test('中文组合输入期间保留搜索框，完成组词后再过滤',()=>{
  expect(doc.querySelector('[aria-live]')!.textContent).toBe('1 个可选模型');
  doc.querySelector('[role="combobox"]')!.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
 });
+test('刷新核对与重读不替换正在组词的输入框',async()=>{
+ click('button[data-path="work.frontend"][data-field="model"]');
+ const input=doc.querySelector<HTMLInputElement>('[role="combobox"]')!;
+ input.dispatchEvent(new win.CompositionEvent('compositionstart',{bubbles:true}));input.value='jun';
+ input.dispatchEvent(new win.InputEvent('input',{bubbles:true,isComposing:true}));
+ click('#refresh');await new Promise(r=>setTimeout(r,20));
+ expect(doc.querySelector('[role="combobox"]')===input).toBe(true);expect(input.value).toBe('jun');
+ click('#reload');await new Promise(r=>setTimeout(r,20));
+ expect(doc.querySelector('[role="combobox"]')===input).toBe(true);expect(input.value).toBe('jun');
+ input.value='骏伯';input.dispatchEvent(new win.CompositionEvent('compositionend',{bubbles:true,data:'骏伯'}));
+ expect(doc.querySelector('[aria-live]')!.textContent).toBe('1 个可选模型');doc.body.click();
+});
+test('WebKit 组词确认后 keyCode 229 不选择模型',()=>{
+ click('button[data-path="work.frontend"][data-field="model"]');
+ const input=doc.querySelector<HTMLInputElement>('[role="combobox"]')!;
+ input.value='骏伯';input.dispatchEvent(new win.CompositionEvent('compositionend',{bubbles:true,data:'骏伯'}));
+ const event=new win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,isComposing:false});Object.defineProperty(event,'keyCode',{value:229});input.dispatchEvent(event);
+ expect(doc.querySelector('.model-popup')!==null).toBe(true);expect(doc.querySelector('.footer-status')!.textContent).toBe('0 项修改待确认');doc.body.click();
+});
+test('Alt 方向键切换来源，Tab 仍关闭且不改值',()=>{
+ click('button[data-path="work.frontend"][data-field="model"]');
+ const input=doc.querySelector<HTMLInputElement>('[role="combobox"]')!;
+ input.dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true}));
+ expect(doc.querySelector('.provider-tabs .active')?.getAttribute('data-source')).toBe('junbo');
+ expect(doc.querySelectorAll('[role="option"]').length).toBe(1);expect(doc.querySelector('[role="option"]')?.getAttribute('data-model')).toBe(target);
+ input.dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowLeft',altKey:true,bubbles:true}));
+ expect(doc.querySelector('.provider-tabs .active')?.getAttribute('data-source')).toBe('auto');
+ input.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Tab',bubbles:true}));expect(doc.querySelector('.model-popup')).toBeNull();
+ expect(doc.querySelector('.footer-status')!.textContent).toBe('0 项修改待确认');
+});
+test('触发按钮关联列表，结果项被有名称的分组包含',()=>{
+ const trigger=doc.querySelector<HTMLButtonElement>('button[data-path="work.frontend"][data-field="model"]')!;trigger.click();
+ expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');expect(doc.getElementById(trigger.getAttribute('aria-controls')!)?.getAttribute('role')).toBe('listbox');
+ const groups=doc.querySelectorAll('[role="listbox"] > [role="group"]');expect(groups.length).toBe(1);expect(groups[0]!.getAttribute('aria-label')).toBe('自动路由');expect(groups[0]!.querySelectorAll('[role="option"]').length).toBe(2);doc.body.click();
+});
+test('差异预览锁定时关闭已打开的选择器',()=>{
+ click('button[data-path="work.frontend"][data-field="model"]');click('[data-source="junbo"]');click(`[data-model="${target}"]`);
+ click('button[data-path="work.frontend"][data-field="model"]');
+ doc.querySelector('#diff')!.dispatchEvent(new win.MouseEvent('click',{bubbles:false}));
+ expect(doc.querySelector('.diff-panel')).not.toBeNull();expect(doc.querySelector('.model-popup')).toBeNull();click('#back');click('#undo');
+});
+test('Host 网关失败时弹层只有恢复原因，没有可选项',async()=>{
+ holdProbe=true;click('#refresh');pendingProbe!({request_id:pendingId,gateway:{status:'failed'},sources:{},capabilities:{}});await new Promise(r=>setTimeout(r,20));holdProbe=false;
+ click('button[data-path="work.frontend"][data-field="model"]');
+ expect(doc.querySelector('.model-popup')!.textContent).toContain('本机模型网关没有响应');expect(doc.querySelector('.model-popup')!.textContent).toContain('重新核对');expect(doc.querySelectorAll('[role="option"]').length).toBe(0);doc.body.click();
+ click('#refresh');await new Promise(r=>setTimeout(r,20));
+});
 test('方案 B 两阶段四行：候选在名字旁，同一行包含三个设置控件',()=>{
  const groups=[...doc.querySelectorAll('.review-section .review-stage')];
  expect(groups.map(g=>g.querySelector('h3')?.textContent)).toEqual(['实施结果 · 每张票写完后','整体交付 · 合并前看整体']);

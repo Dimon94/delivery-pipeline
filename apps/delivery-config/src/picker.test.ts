@@ -41,3 +41,9 @@ test('键盘按可见顺序跨组移动，边界停留并跳过所有不可选�
  expect(moveActive({...v,groups:[v.groups[0]!]},'gone','Home')).toBeUndefined();
  expect(moveActive({sources:[],groups:[]},undefined,'End')).toBeUndefined();
 });
+
+test('缺失当前模型也参与查询过滤，无匹配时给出空结果',()=>{
+ const view=pickerView({models,current:'magpie/auto/gpt-5.4-old',query:'zzzz'});
+ expect(view.groups).toEqual([]);expect(view.empty).toBe('没有匹配的模型');
+ expect(pickerView({models,current:'magpie/auto/gpt-5.4-old',query:'5.4'}).groups[0]!.items[0]!.disabled).toBe('这个模型已不在可用清单里');
+});

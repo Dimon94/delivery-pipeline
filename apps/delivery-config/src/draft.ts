@@ -1,3 +1,4 @@
+import {pickerUnavailable} from './copy';
 export type ModelTriple = {agent: string; model: string; effort: string};
 export type Cell = ModelTriple & {fallbacks?:ModelTriple[]; candidates?:ModelTriple[]};
 export type FallbackEdit = {kind:"add";item:ModelTriple}|{kind:"set";index:number;item:ModelTriple}|{kind:"move";index:number;to:number}|{kind:"remove";index:number};
@@ -103,7 +104,7 @@ export class Draft {
  });
  }
  // 删除与调序始终允许（R7）；选择与新增只在已核对时开放。
- canEdit() {const on=this.check.kind==='checked';return {select:on,addToQueue:on};}
+ canEdit() {const on=pickerUnavailable(this.check)===undefined;return {select:on,addToQueue:this.check.kind==='checked'};}
  options(c:Cell) {return this.evidence?.sources[c.agent]?.status==='ok'?this.evidence.capabilities[c.agent]?.models[c.model] || []:[];}
  select(path:string, field:keyof ModelTriple,value:string) {
  const c=cell(this.config,path); if(c[field]===value)return;
