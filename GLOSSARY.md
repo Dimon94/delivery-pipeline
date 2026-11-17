@@ -3,7 +3,7 @@
 ## Core Concepts
 
 **Epic**
-一个 MMF 容纳不下的交付目标，由多个独立验收、合入及上线的 MMF 组成。Epic Issue 记录该目标、MMF 索引和跨 MMF 依赖。
+一个 MMF 容纳不下的交付目标，由多个独立验收、合入及上线的 MMF 组成。Epic Issue 记录该目标、MMF 索引和跨 MMF 依赖。`to-epic` 切分 MMF，用户确认一次；每个 MMF 跑在自己的 map 上，start blockers 清空后由 Epic 级 **Driver** 打开。Map 不是 Epic。
 
 **MMF**
 Minimal Marketable Feature. The unit of acceptance, merge, and release: one Spec, one MR, and zero or more tickets. One map delivers one MMF. Boundary test: a cut that lets each half ship alone, and that someone would use alone, is multiple MMFs. Spec-gate action: `skills/delivery-pipeline/references/gate-state-machine.md` §tickets 前链路.
@@ -27,8 +27,8 @@ The final step that lands the one **MMF** from **Map Integration Worktree**: reb
 Exception mode. The trigger lives only in `skills/delivery-pipeline/references/integration-worktree-management.md` §独立票模式. When that section has written `delivery_mode: ticket_release`, each Execution Worktree starts from the freshly fetched remote default branch instead of the Map Integration Worktree, each ticket ships through its own MR, and the ticket closes only after `release_stage` reaches `deployed`. No Integration, cherry-pick, or summary MR.
 
 **Test Decision Point**
-完成 whole-change testing/review 后确认用户额外测试策略的 gate。已有仍适用的明确选择可复用；
-缺失、范围或风险变化、适用性 Unknown 时才暂停询问。策略与证据要求见
+完成 whole-change testing/review 后核对测试策略的 gate。策略在 **Plan Review** 定下；范围与风险
+未变时沿用、不停，变化时触发 **Halt**。策略与证据要求见
 `skills/delivery-pipeline/references/test-decision-and-rebase.md`；测试选择不等于远程发布授权。
 
 **Concurrent Maps**
@@ -122,6 +122,38 @@ The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-c
 **Entrypoint Layering**
 The rule that arranges the entry skills. `skills/delivery-pipeline` is the Core Chain: the single home of shared semantics (gate state machine, lane registry, Worker Task Configuration schema, owner resolution) and of the pi/Codex CLI/Claude CLI coordinator adapters. `skills/delivery-pipeline-herdr`, `skills/delivery-pipeline-codex-app`, `skills/delivery-pipeline-orca`, `skills/delivery-pipeline-t3code`, and `skills/delivery-pipeline-lody` are peer Transport Shells: each owns its channel-specific dispatch, monitoring, and lifecycle material, and reads the Core Chain. Dependencies point only from shell to core; the core may name shells and enumerate their runtime markers in shared state (the lane registry must parse lanes written by any runtime), but never references files inside a shell. Channel-specific content lives in its shell; shared content settles in the core; no fourth shared location exists.
 
+## Autonomy
+
+**Driver**
+所有 transport 共用的唯一 gate 判定程序：读取持久状态，自行执行能执行的 **Action**，
+遇到须宿主工具、判断或等待时只交回一条。壳只声明各类 Action 由程序还是 coordinator 执行，
+不写推进逻辑。分两级：map 级推进一个 MMF；Epic 级只决定哪个就绪 MMF 该开 map。
+_Avoid_: Scheduler、调度器
+
+**Action**
+Driver 每一步输出的单条指令：执行一次派发、fan-in 或清理，请求一次判断，停在 **Halt**，或结束本轮等待唤醒。
+交给 coordinator 的 Action 带 id；执行结果以同 id 的回执交回 Driver，registry 只由 Driver 写。
+
+**Coordinator**
+宿主会话里的 LLM：执行 Driver 交给它的 Action，当场回答轻判断，把重判断派成 lane。它不推导 gate。
+
+**Plan Review**
+每个 MMF 的 to-tickets 草稿通过脚本核对后、发布前，用户审阅一份 show-me HTML 页面，页面包含 Spec、切片表、波次、关键路径和测试选择默认值。
+通过即授予该 map 的 **Autonomy Grant**。
+
+**Autonomy Grant**
+Plan Review 通过后写入 map registry 的授权：在已批准计划内自动推进到 Merge Review，
+只在 Halt 时停下。不含远程发布授权。
+
+**Halt**
+自治运行中唯一的人工停点。只有命中封闭的异常清单才触发：计划的 T/R、范围或验收要改；补票超出已批准波次或改动合同票；
+`REVIEW_EXHAUSTED`；重拆后仍失败；需要远程权限、不可逆操作或授权外的决定。
+清单外的偏差自动处理，并在 Merge Review 时报告。
+
+**Merge Review**
+一个 MMF 开 PR 或合入 main 之前，用户审阅一份 show-me HTML 页面，对比计划与实际交付，包括自动处理过的偏差。
+通过即授权 push、建 PR、等 CI、按仓库分支合同合入并收尾；CI 红或阻塞评审意见触发 **Halt**。
+
 ## Relationships
 
 - One running Herdr session → many Herdr workspaces
@@ -139,6 +171,9 @@ The rule that arranges the entry skills. `skills/delivery-pipeline` is the Core 
 
 **Not a global scheduler**
 Epic coordinator 只协调同一 Epic 下的 Map。独立 Map 和其他 Epic 分别调度。
+
+**Not a cross-map resource coordinator**
+Maps share no worktrees, lanes, or capacity budget. The Epic-level Driver only decides which ready MMF opens a map; each map then manages only its own worktrees.
 
 **Not branch-free**
 Git worktrees fundamentally require branches. "No branches" is impossible — the design uses disciplined branch management instead.
