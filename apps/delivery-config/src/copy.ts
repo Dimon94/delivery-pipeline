@@ -2,6 +2,9 @@ import type {Evidence,Check} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
+ "复制到其他工作":"复制到其他工作",
+ "应用":"应用",
+ "取消":"取消",
  "可选模型":"可选模型",
  "搜索模型": "搜索模型",
  "搜索模型示例": "模型名或来源，如 sol 骏伯",
@@ -171,3 +174,5 @@ export function pickerUnavailable(check:Check,agent?:string,reading=false):strin
  if(check.kind!=='checked')return bannerText({kind:'checking'});
  if(agent!==undefined&&check.evidence.sources[agent]?.status!=='ok')return toolOffText(agent,undefined,{evidence:check.evidence,selected:true}).text;
 }
+
+export function applyTargetText(t:{name:string;now:string;next:string;same:boolean}):string {return t.same?`${t.name}：已相同`:`${t.name}：${t.now} → ${t.next}`;}

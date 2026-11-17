@@ -71,3 +71,10 @@ test('选择器名称、缺失原因、无结果和不可用提示不含内部�
   const v=pickerView(input);clean(v.empty||'');for(const g of v.groups){clean(g.label);for(const i of g.items){clean(i.label);clean(i.disabled||'');}}
  }
 });
+import {applyTargetText} from './copy';
+test('DD-605 目标文字显示变化或已相同，且没有内部词',()=>{
+ const t={name:'设计',now:'Claude Code · Beta · 低',next:'Pi · Alpha · 高',same:false};
+ expect(applyTargetText(t)).toBe('设计：Claude Code · Beta · 低 → Pi · Alpha · 高');
+ expect(applyTargetText({...t,same:true})).toBe('设计：已相同');
+ clean(applyTargetText(t));clean(applyTargetText({...t,same:true}));
+});
