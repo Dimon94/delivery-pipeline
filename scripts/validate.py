@@ -947,6 +947,21 @@ def check_closeout() -> None:
             record(f"cleanup must route through closeout.py: {shell_doc.relative_to(ROOT)}")
 
 
+def check_orchestration_metrics() -> None:
+    script = ROOT / "scripts" / "orchestration_metrics.py"
+    if not is_executable(script):
+        record("orchestration metrics must exist and remain executable: scripts/orchestration_metrics.py")
+        return
+    result = subprocess.run(
+        [sys.executable, str(script), "self-test"],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if result.returncode != 0:
+        record(f"orchestration_metrics self-test failed: {result.stdout}{result.stderr}")
+
+
 def main() -> None:
     check_manifest()
     check_frontmatter()
@@ -973,6 +988,7 @@ def main() -> None:
     check_review_gate()
     check_artifact_gc()
     check_closeout()
+    check_orchestration_metrics()
 
     if ERRORS:
         fail(
