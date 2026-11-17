@@ -91,3 +91,6 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 }
 
 .picker-search>span{white-space:nowrap}
+
+.model-popup .option.active{background:var(--selected);outline:2px solid var(--accent);outline-offset:-2px}
+.model-popup .picker-search:focus-within{outline:2px solid var(--accent);outline-offset:-2px}

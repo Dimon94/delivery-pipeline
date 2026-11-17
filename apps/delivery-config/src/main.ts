@@ -1,5 +1,5 @@
-import {pickerView} from './picker';
-import {modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy} from './copy';
+import {pickerView,moveActive} from './picker';
+import {modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount} from './copy';
 import './style.css';
 import {guide,shouldRereadOnFocus,type GuideInput} from './guide';
 
@@ -11,7 +11,7 @@ let appInfoLoaded=false; // 加载完成前标签留空，避免闪现“构建�
 let editor:Editor|undefined;
 declare const mygo: {call<T>(name: string,...args:unknown[]): Promise<T>};
 let draft:Draft|undefined;
-let picker:{path:string;query:string;source?:string}|undefined;
+let picker:{path:string;query:string;source?:string;active?:string}|undefined;
 
 let probeCounter=0;
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -167,7 +167,9 @@ function render() {
  });
  document.querySelectorAll<HTMLButtonElement>('button[data-path][data-field="model"]').forEach(button=>{
  button.disabled=!!locked||reading;
- button.addEventListener('click',()=>{picker={path:button.dataset.path!,query:''};renderPicker();});
+ const open=()=>{picker={path:button.dataset.path!,query:''};renderPicker();};
+  button.addEventListener('click',open);
+  button.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open();}});
  });
  renderPicker();
  const checking=draft?.check.kind==='checking';
@@ -175,14 +177,14 @@ function render() {
  if(locked||checking||reading){for(const id of ['refresh','undo','diff','reload']){const el=document.querySelector<HTMLButtonElement>('#'+id);if(el)el.disabled=true;}}
  document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(select=>select.addEventListener('change',()=>{saved='';draft!.select(select.dataset.path!,select.dataset.field as keyof ModelTriple,select.value);render();}));
 }
-function closePicker() {
+function closePicker(update=false) {
  const path=picker?.path;picker=undefined;
  document.querySelector('.model-popup')?.remove();
+ if(update)render();
  const button=document.querySelector<HTMLButtonElement>(`button[data-path="${path}"][data-field="model"]`);
  button?.setAttribute('aria-expanded','false');button?.focus();
 }
 function renderPicker() {
- document.querySelector('.model-popup')?.remove();
  if(!picker||!draft)return;
  const {path,query,source}=picker,c=cell(draft.config,path);
  const button=document.querySelector<HTMLButtonElement>(`button[data-path="${path}"][data-field="model"]`);
@@ -190,18 +192,45 @@ function renderPicker() {
  const check=draft.check,evidence=draft.evidence;
  const unavailable=check.kind==='unreachable'?bannerText({kind:'unreachable',cause:check.cause==='gateway'?'gateway':'call'}):check.kind!=='checked'?bannerText({kind:'checking'}):evidence?.sources[c.agent]?.status!=='ok'?toolOffText(c.agent,undefined,{evidence,selected:true}).text:undefined;
  const view=pickerView({models:evidence?.capabilities[c.agent]?.models||{},current:c.model,query,source,unavailable});
- const popup=document.createElement('div');popup.className='popup model-popup';
- popup.innerHTML=`<label class="picker-search"><span>${copy.搜索模型}</span><input aria-label="${copy.搜索模型}" placeholder="${copy.搜索模型示例}" value="${escape(query)}"></label><div class="picker-body"><div class="provider-tabs">${view.sources.map(s=>`<button data-source="${escape(s.id)}" class="${!query.trim()&&view.groups.some(g=>g.source===s.id)?'active':''}"><span>${escape(s.label)}</span><span>${s.count}</span></button>`).join('')}</div><div class="option-list">${view.groups.map(g=>`<div class="option-group">${escape(g.label)}</div>${g.items.map(i=>`<button class="option${i.selected?' selected':''}" data-model="${escape(i.id)}" ${i.disabled?'disabled':''}><span class="option-info"><span>${escape(i.label)}</span><span class="sub">${escape(i.disabled||copy.支持的思考程度+'：'+i.efforts)}</span></span>${i.selected?'<span class="check">✓</span>':''}</button>`).join('')}`).join('')}${view.empty?`<p class="empty">${escape(view.empty)}</p>`:''}</div></div>`;
- document.body.append(popup);button.setAttribute('aria-expanded','true');
+ const items=view.groups.flatMap(g=>g.items);
+ picker.active=items.find(i=>i.id===picker!.active&&!i.disabled)?.id||items.find(i=>i.selected&&!i.disabled)?.id;
+ let popup=document.querySelector<HTMLDivElement>('.model-popup');
+ if(!popup){
+  popup=document.createElement('div');popup.className='popup model-popup';
+  popup.innerHTML='<div class="picker-content"></div><div class="popup-note" role="status" aria-live="polite" aria-atomic="true"></div>';
+  popup.addEventListener('click',event=>event.stopPropagation());
+  document.body.append(popup);
+ }
+ popup.querySelector('.picker-content')!.innerHTML=`<label class="picker-search"><span>${copy.搜索模型}</span><input role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="picker-results" aria-label="${copy.搜索模型}" placeholder="${copy.搜索模型示例}" value="${escape(query)}"></label><div class="picker-body"><div class="provider-tabs">${view.sources.map(s=>`<button data-source="${escape(s.id)}" class="${!query.trim()&&view.groups.some(g=>g.source===s.id)?'active':''}"><span>${escape(s.label)}</span><span>${s.count}</span></button>`).join('')}</div><div class="option-list" id="picker-results" role="listbox" aria-label="${copy.可选模型}">${view.groups.map(g=>`<div class="option-group">${escape(g.label)}</div>${g.items.map(i=>`<button id="picker-option-${items.indexOf(i)}" role="option" tabindex="-1" aria-selected="${i.selected}" aria-disabled="${!!i.disabled}" class="option${i.selected?' selected':''}" data-model="${escape(i.id)}" ${i.disabled?'disabled':''}><span class="option-info"><span>${escape(i.label)}</span><span class="sub">${escape(i.disabled||copy.支持的思考程度+'：'+i.efforts)}</span></span>${i.selected?'<span class="check">✓</span>':''}</button>`).join('')}`).join('')}${view.empty?`<p class="empty">${escape(view.empty)}</p>`:''}</div></div>`;
+ popup.querySelector('[aria-live]')!.textContent=pickerCount(items.filter(i=>!i.disabled).length);
+ button.setAttribute('aria-expanded','true');
  const rect=button.getBoundingClientRect();
  popup.style.left=Math.max(10,Math.min(rect.left,window.innerWidth-popup.offsetWidth-10))+'px';
  popup.style.top=Math.max(10,rect.bottom+popup.offsetHeight>window.innerHeight?rect.top-popup.offsetHeight:rect.bottom+4)+'px';
  const input=popup.querySelector<HTMLInputElement>('input')!;
- input.addEventListener('input',()=>{picker!.query=input.value;renderPicker();});
- popup.querySelectorAll<HTMLButtonElement>('[data-source]').forEach(b=>b.addEventListener('click',()=>{picker!.source=b.dataset.source;renderPicker();}));
- popup.querySelectorAll<HTMLButtonElement>('[data-model]').forEach(b=>b.addEventListener('click',()=>{saved='';draft!.select(path,'model',b.dataset.model!);closePicker();render();document.querySelector<HTMLButtonElement>(`button[data-path="${path}"][data-field="model"]`)?.focus();}));
+ const highlight=()=>{
+  popup!.querySelectorAll<HTMLElement>('[data-model]').forEach(option=>option.classList.toggle('active',option.dataset.model===picker?.active));
+  const active=Array.from(popup!.querySelectorAll<HTMLElement>('[data-model]')).find(option=>option.dataset.model===picker?.active);
+  if(active){input.setAttribute('aria-activedescendant',active.id);active.scrollIntoView?.({block:'nearest'});}
+  else input.removeAttribute('aria-activedescendant');
+ };
+ input.addEventListener('keydown',event=>{
+  if(event.isComposing)return;
+  if(event.key==='Escape'||event.key==='Tab'){event.preventDefault();closePicker();}
+  else if(event.key==='ArrowUp'||event.key==='ArrowDown'||event.key==='Home'||event.key==='End'){
+   event.preventDefault();picker!.active=moveActive(view,picker!.active,event.key);highlight();
+  }else if(event.key==='Enter'){
+   event.preventDefault();
+   Array.from(popup!.querySelectorAll<HTMLButtonElement>('[data-model]')).find(b=>b.dataset.model===picker?.active&&!b.disabled)?.click();
+  }
+ });
+ const search=()=>{picker!.query=input.value;picker!.active=undefined;renderPicker();};
+ input.addEventListener('input',event=>{if(!event.isComposing)search();});
+ input.addEventListener('compositionend',search);
+ popup.querySelectorAll<HTMLButtonElement>('[data-source]').forEach(b=>b.addEventListener('click',()=>{picker!.source=b.dataset.source;picker!.active=undefined;renderPicker();}));
+ popup.querySelectorAll<HTMLButtonElement>('[data-model]').forEach(b=>b.addEventListener('click',()=>{saved='';draft!.select(path,'model',b.dataset.model!);closePicker(true);}));
  input.focus();input.setSelectionRange(query.length,query.length);
- popup.querySelector<HTMLElement>('.option.selected')?.scrollIntoView?.({block:'nearest'});
+ highlight();
 }
 document.addEventListener('click',event=>{
  const target=event.target as Element;

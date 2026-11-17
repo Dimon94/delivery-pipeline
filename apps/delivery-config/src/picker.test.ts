@@ -22,3 +22,22 @@ test('不可用时只有原因，无匹配时提示并保留可切换来源',()=
 test('模型支持的思考程度显示中文档位',()=>{
  expect(pickerView({models,current:'',query:''}).groups[0]!.items[0]!.efforts).toBe('中 · 高 · 很高');
 });
+import {moveActive,type PickerView} from './picker';
+test('键盘按可见顺序跨组移动，边界停留并跳过所有不可选项',()=>{
+ const v:PickerView={sources:[],groups:[
+ {source:'current',label:'当前模型',items:[{id:'gone',label:'旧模型',efforts:'',selected:true,disabled:'已不在清单'}]},
+ {source:'a',label:'来源一',items:[{id:'a',label:'甲',efforts:'',selected:false},{id:'off',label:'不可用',efforts:'',selected:false,disabled:'不可用'}]},
+ {source:'b',label:'来源二',items:[{id:'b',label:'乙',efforts:'',selected:false}]}]};
+ expect(moveActive(v,undefined,'ArrowDown')).toBe('a');
+ expect(moveActive(v,'gone','ArrowDown')).toBe('a');
+ expect(moveActive(v,'a','ArrowDown')).toBe('b');
+ expect(moveActive(v,'b','ArrowDown')).toBe('b');
+ expect(moveActive(v,'b','ArrowUp')).toBe('a');
+ expect(moveActive(v,'a','ArrowUp')).toBe('a');
+ expect(moveActive(v,undefined,'ArrowUp')).toBe('b');
+ expect(moveActive(v,'a','End')).toBe('b');
+ expect(moveActive(v,'b','Home')).toBe('a');
+ expect(moveActive(v,'filtered-out','ArrowDown')).toBe('a');
+ expect(moveActive({...v,groups:[v.groups[0]!]},'gone','Home')).toBeUndefined();
+ expect(moveActive({sources:[],groups:[]},undefined,'End')).toBeUndefined();
+});

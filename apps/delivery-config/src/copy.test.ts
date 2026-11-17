@@ -59,8 +59,10 @@ test('R1 实例标签文字集中并拦截内部词',()=>{
  for(const info of [undefined,{build:'',config_kind:'test'},{build:'',config_kind:'cli'}])clean(instanceLabel(info));
 });
 import {instanceLabel} from './appinfo';
+import {pickerCount} from './copy';
 import {pickerView} from './picker';
 test('选择器名称、缺失原因、无结果和不可用提示不含内部词',()=>{
+ for(const n of [0,1,58])clean(pickerCount(n));
  for(const input of [
  {models:{'magpie/auto/gpt-6.1-sol':['high']},current:'magpie/auto/gone',query:''},
  {models:{},current:'',query:'zz'},

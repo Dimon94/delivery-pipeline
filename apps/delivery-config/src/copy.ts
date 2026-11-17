@@ -2,6 +2,7 @@ import type {Evidence} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
+ 可选模型:'可选模型',
  搜索模型: "搜索模型",
  搜索模型示例: "模型名或来源，如 sol 骏伯",
  没有匹配的模型: "没有匹配的模型",
@@ -158,3 +159,5 @@ export function bannerText(input:BannerInput):string {
  return {checking:'正在检查哪些模型可以用…',saved:'已保存，新任务会使用新设置',loaded:'已读取当前设置。',recovered:'已重新读取当前设置。'}[input.kind];
 }
 export function diffVerdict(valid:boolean):string {return valid?'这些修改都可以使用':'有修改还不能用，请返回重新选择';}
+
+export function pickerCount(count:number):string {return `${count} 个可选模型`;}

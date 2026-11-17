@@ -18,3 +18,11 @@ export function pickerView(input:PickerInput):PickerView {
  if(input.current&&!Object.hasOwn(input.models,input.current))visible.unshift({source:'current',label:copy.当前模型,items:[{id:input.current,label:modelLabel(input.current),efforts:'',selected:true,disabled:copy.这个模型已不在可用清单里}]});
  return {sources:groups.map(g=>({id:g.source,label:g.label,count:g.items.length})),groups:visible,...(!visible.length?{empty:copy.没有匹配的模型}:{})};
 }
+export function moveActive(view:PickerView,active:string|undefined,key:'ArrowUp'|'ArrowDown'|'Home'|'End'):string|undefined {
+ const ids=view.groups.flatMap(g=>g.items.filter(i=>!i.disabled).map(i=>i.id));
+ if(key==='Home')return ids[0];
+ if(key==='End')return ids.at(-1);
+ const index=active===undefined?-1:ids.indexOf(active);
+ if(index<0)return key==='ArrowDown'?ids[0]:ids.at(-1);
+ return ids[Math.max(0,Math.min(ids.length-1,index+(key==='ArrowDown'?1:-1)))];
+}
