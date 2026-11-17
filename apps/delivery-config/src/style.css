@@ -105,3 +105,5 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .effort-note{color:var(--muted)}
 
 .fields>[data-field="agent"],.fields>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.review-preview{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;margin:0;padding:0 14px 8px;font-size:12px;line-height:1.5;color:var(--muted)}.review-preview small{font-size:11px;color:var(--faint)}

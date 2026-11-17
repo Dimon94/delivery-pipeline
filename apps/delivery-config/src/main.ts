@@ -124,7 +124,7 @@ function previewField(path:string) {
  if(!path.startsWith('review.whole-change.')||!cell(draft!.config,path).candidates?.length)return '';
  const result=preview[path.split('.')[2] as keyof ReviewPreview];
  const text=result?reviewPreviewText(result):{text:copy.核对完成后显示};
- return `<p class="row-foot" data-review-preview="${path}" title="${escape(text.title||'')}">${escape(text.text)}<small>${copy.按当前设置推算}</small></p>`;
+ return `<p class="review-preview" data-review-preview="${path}" title="${escape(text.title||'')}">${escape(text.text)}<small>${copy.按当前设置推算}</small></p>`;
 }
 async function probe() {
  if(!draft)return;

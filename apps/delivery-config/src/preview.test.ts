@@ -18,6 +18,8 @@ const click=(s:string)=>doc.querySelector<HTMLButtonElement>(s)!.click();
 test('删除声明卡片，只在有候选轴显示预计结果',()=>{
  expect(doc.querySelector('[data-family]')).toBeNull();expect(doc.body.textContent).not.toContain('共享家族声明');
  expect(doc.querySelectorAll('[data-review-preview]').length).toBe(1);
+ const node=doc.querySelector('[data-review-preview]')!;expect(node.classList.contains('review-preview')).toBe(true);expect(node.classList.contains('row-foot')).toBe(false);
+ const css=require('fs').readFileSync(new URL('./style.css',import.meta.url),'utf8');expect(css).toMatch(/\.review-preview\{[^}]*padding:[^}]*color:var\(--muted\)/);
  expect(doc.body.textContent).toContain('优先：');expect(doc.body.textContent).toContain('按当前设置推算');
 });
 test('重新核对更新三种结果与悬停，网关失败显示等待',async()=>{
