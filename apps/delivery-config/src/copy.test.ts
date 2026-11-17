@@ -107,3 +107,12 @@ test('DD-613 工具路由文案与禁用原因通过禁词扫描',()=>{
  const text=toolOffText('codex',undefined,{evidence});
  expect(text.title).toBe(reason);expect(text.text).toContain('暂不支持');clean(text.text);clean(text.title!);
 });
+
+test('DD-618 Claude 官方来源、可读模型名与禁用原因',()=>{
+ const label=agentLabel('claude','official');expect(label).toBe('Claude Code · Anthropic 官方清单');clean(label);
+ expect(agentLabel('claude','gateway')).toBe('Claude Code');
+ expect(modelLabel('claude-opus-5-5')).toBe('Claude Opus 5.5');
+ const reason='请先打开 Claude Code 完成登录后重新核对';
+ const off=toolOffText('claude',undefined,{evidence:{sources:{claude:{route:null,status:'unknown',next_step:'',reason}},capabilities:{claude:{binary:true,models:{}}}}});
+ expect(off.title).toBe(reason);expect(off.text).toContain('暂不支持');clean(off.text);
+});
