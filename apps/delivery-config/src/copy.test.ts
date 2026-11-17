@@ -78,3 +78,11 @@ test('DD-605 目标文字显示变化或已相同，且没有内部词',()=>{
  expect(applyTargetText({...t,same:true})).toBe('设计：已相同');
  clean(applyTargetText(t));clean(applyTargetText({...t,same:true}));
 });
+import {applyRefusalText,applyTriggerLabel} from './copy';
+test('DD-606 每种拒绝说明原因和下一步，入口有工作名，全部通过禁词扫描',()=>{
+ const reasons:import('./draft').ApplyRefusal[]=[{kind:'not_checked'},{kind:'no_target'},...(['checking','unverified','incomplete','model_gone','effort_gone'] as const).map(kind=>({kind:'source' as const,status:{kind}})),{kind:'source',status:{kind:'tool_off',reason:'probe Unknown'}}];
+ const expected=['核对','至少选择','正在核对','还未核实','选完整','模型已不在','不支持当前思考程度','运行工具当前用不了'];
+ reasons.forEach((r,i)=>{const text=applyRefusalText(r);clean(text);expect(text).toContain(expected[i]!);expect(text).toMatch(/请/);});
+ for(const check of [{kind:'checking',request:'x'},{kind:'unreachable',cause:'call_failed'}] as const)clean(applyRefusalText({kind:'not_checked'},check));
+ expect(applyTriggerLabel('设计')).toBe('把设计的设置复制到其他工作');clean(applyTriggerLabel('设计'));
+});

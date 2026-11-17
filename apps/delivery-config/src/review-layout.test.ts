@@ -301,3 +301,61 @@ test('DD-605 T1/T3/T6 鼠标复制、取消勾选、差异与撤销',()=>{
  click('#undo');expect(doc.querySelector('.footer-status')!.textContent).toBe('0 项修改待确认');
  click(trigger);doc.body.click();expect(doc.querySelector('.apply-popup')).toBeNull();
 });
+
+// DD-606 T2/T5：拒绝不能改变页面草稿；预期来自 DD-604。
+test('DD-606 拒绝原因可见，核对期间和失败不打开列表，重新核对后应用一项不改',async()=>{
+ const trigger='button[data-apply-from="work.planning"]';
+ click('#undo');
+ click('button[data-path="work.planning"][data-field="model"]');click('[data-source="junbo"]');click(`[data-model="${target}"]`);
+ const before=doc.querySelector('.footer-status')!.textContent;
+ click(trigger);click('input[data-apply-target="work.testing"]');
+ holdProbe=true;click('#refresh');click('#apply-primary');
+ expect(doc.querySelector('.apply-popup')).toBeNull();
+ expect(doc.querySelector('[data-apply-status]')?.textContent).toContain('核对');
+ expect(doc.querySelector('.footer-status')!.textContent).toBe(before);
+ click(trigger);expect(doc.querySelector('.apply-popup')).toBeNull();
+ expect(doc.querySelector('[data-apply-status]')?.textContent).toContain('正在核对');
+ expect(doc.querySelector('[data-apply-status]')?.getAttribute('role')).toBe('status');
+ pendingProbe!({request_id:pendingId,gateway:{status:'failed'},sources:{},capabilities:{}});await new Promise(r=>setTimeout(r,20));holdProbe=false;
+ click(trigger);expect(doc.querySelector('.apply-popup')).toBeNull();expect(doc.querySelector('[data-apply-status]')?.textContent).toContain('核对失败');
+ models={[a.model]:['high'],[b.model]:['high']};click('#refresh');await new Promise(r=>setTimeout(r,20));
+ click(trigger);expect(doc.querySelector('.apply-popup')).toBeNull();
+ expect(doc.querySelector('[data-apply-status]')?.textContent).toContain('模型已不在');
+ expect(doc.querySelector('.footer-status')!.textContent).toBe(before);
+ click('#diff');expect([...doc.querySelectorAll('.diff-panel article h3')].map(e=>e.textContent)).toEqual(['规划']);click('#back');click('#undo');
+ models={[a.model]:['high'],[b.model]:['high'],[target]:['high']};click('#refresh');await new Promise(r=>setTimeout(r,20));
+});
+test('DD-606 键盘入口、复选框名称、关闭与应用恢复焦点',()=>{
+ const trigger=()=>doc.querySelector<HTMLButtonElement>('button[data-apply-from="work.planning"]')!;
+ const key=(e:Element,k:string)=>e.dispatchEvent(new win.KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}));
+ expect(trigger().getAttribute('aria-label')).toBe('把规划的设置复制到其他工作');
+ for(const close of ['Escape','cancel','outside']){
+  trigger().focus();key(trigger(),'Enter');
+  const input=doc.querySelector<HTMLInputElement>('.apply-popup input')!;
+  expect(doc.activeElement===input).toBe(true);
+  expect(input.closest('label')!.textContent).toContain('设计：');
+  expect(trigger().getAttribute('aria-expanded')).toBe('true');
+  expect(doc.getElementById(trigger().getAttribute('aria-controls')!)?.getAttribute('role')).toBe('dialog');
+  if(close==='Escape')key(input,'Escape');else if(close==='cancel')click('#cancel-apply');else doc.body.click();
+  expect(doc.querySelector('.apply-popup')).toBeNull();expect(doc.activeElement===trigger()).toBe(true);
+  expect(trigger().getAttribute('aria-expanded')).toBe('false');expect(doc.querySelector('.footer-status')!.textContent).toBe('0 项修改待确认');
+ }
+ key(trigger(),' ');click('input[data-apply-target="work.design"]');click('#apply-primary');
+ expect(doc.activeElement===trigger()).toBe(true);expect(doc.querySelector('.apply-popup')).toBeNull();
+});
+test('DD-606 窄窗口列表靠右不出界、底部向上翻，resize/scroll 重定位',()=>{
+ const trigger=doc.querySelector<HTMLButtonElement>('button[data-apply-from="work.planning"]')!;
+ const original=trigger.getBoundingClientRect;
+ trigger.getBoundingClientRect=()=>({left:400,top:420,bottom:444,right:520,width:120,height:24,x:400,y:420,toJSON(){}});
+ Object.defineProperty(win,'innerWidth',{value:530,configurable:true});Object.defineProperty(win,'innerHeight',{value:500,configurable:true});
+ click('button[data-apply-from="work.planning"]');
+ const popup=doc.querySelector<HTMLElement>('.apply-popup')!;
+ Object.defineProperty(popup,'offsetWidth',{get:()=>510});Object.defineProperty(popup,'offsetHeight',{get:()=>300});
+ win.dispatchEvent(new win.Event('resize'));
+ expect(popup.style.left).toBe('10px');expect(popup.style.top).toBe('116px');expect(popup.style.maxHeight).toBe('406px');
+ popup.style.left='999px';doc.dispatchEvent(new win.Event('scroll',{bubbles:true}));expect(popup.style.left).toBe('10px');
+ const sheet=new win.CSSStyleSheet();sheet.replaceSync(readFileSync(new URL('./style.css',import.meta.url),'utf8'));
+ expect([...sheet.cssRules].filter(r=>(r as CSSStyleRule).selectorText==='.apply-popup').map(r=>(r as CSSStyleRule).style.maxWidth)).toContain('calc(100vw - 20px)');
+ doc.body.click();trigger.getBoundingClientRect=original;
+ Object.defineProperty(win,'innerWidth',{value:1024,configurable:true});Object.defineProperty(win,'innerHeight',{value:768,configurable:true});
+});

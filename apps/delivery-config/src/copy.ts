@@ -176,3 +176,20 @@ export function pickerUnavailable(check:Check,agent?:string,reading=false):strin
 }
 
 export function applyTargetText(t:{name:string;now:string;next:string;same:boolean}):string {return t.same?`${t.name}：已相同`:`${t.name}：${t.now} → ${t.next}`;}
+
+export function applyRefusalText(r:import('./draft').ApplyRefusal,check?:import('./draft').Check):string {
+ if(r.kind==='no_target')return '请至少选择一项工作再应用';
+ if(r.kind==='not_checked'&&check?.kind==='checking')return '正在核对，请等核对完成后再复制';
+ if(r.kind==='not_checked'&&check?.kind==='unreachable')return '核对失败，请点重新核对，完成后再复制';
+ if(r.kind==='not_checked')return '核对尚未完成，请在核对完成后复制；若核对失败，请点重新核对';
+ switch(r.status.kind){
+ case 'checking':return '正在核对，请等核对完成后再复制';
+ case 'unverified':return '还未核实这一行，请点重新核对后再复制';
+ case 'incomplete':return '请先选完整这一行的运行工具、模型和思考程度再复制';
+ case 'tool_off':return '这一行的运行工具当前用不了，请重新核对或换用其他工具再复制';
+ case 'model_gone':return '这一行的模型已不在可用列表里，请先换一个能用的模型再复制';
+ case 'effort_gone':return '这一行的模型不支持当前思考程度，请先换思考程度再复制';
+ }
+}
+
+export function applyTriggerLabel(name:string):string {return `把${name}的设置复制到其他工作`;}
