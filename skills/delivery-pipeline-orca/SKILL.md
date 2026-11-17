@@ -48,8 +48,10 @@ python3 scripts/preflight.py run --payload <json>
 
 helper 只校验 caller-declared 字段、绑定与可读绝对 source path（含 `model_config.py`
 校验 plan），不证明原生 provenance。字段缺失/格式非法 → `blocked`；dispatch 请求缺证据 →
-`dispatch unavailable`；结构成功仅 `preflight-ready`，并输出 `authority: false`——
-coordinator 必须核验原生 source provenance 后才授权。逐字段 request 合同与 CLI 探测顺序见
+`dispatch unavailable`；结构成功仅 `preflight-ready`，并输出 `authority: false`。无 Autonomy
+Grant 的 map 里 coordinator 必须核验原生 source provenance 后才授权；有 Autonomy Grant 的 map 里
+Driver 的 readback 校验通过即构成授权（ADR-0026 决策 11），版本匹配的 guides 与 capability 证据是
+前置条件，缺失时 halt，不回落其他 transport。逐字段 request 合同与 CLI 探测顺序见
 `references/orca-preflight.md`。
 
 ## 共享 registry caller
@@ -109,7 +111,9 @@ startup 后 FIFO 处理 terminal signal；fan-in 的 Execution Worktree、packet
 receipt 与 canonical cleanup 口径一致，worker 退出/丢失不自动重试。worker packet 必须携带
 `coordinator_terminal_handle`：worker 每条发向 coordinator 的 orchestration 消息后必须紧跟
 `terminal send` nudge 唤醒 coordinator（唤醒责任在发送方，runtime 不注入到达消息），详见
-`references/orca-dispatch.md`「FIFO wait/ack 与 settlement」。registry 最终 transition 经
+`references/orca-dispatch.md`「FIFO wait/ack 与 settlement」。map 有 driver.json 时，coordinator 收到
+nudge 先用 `../delivery-pipeline/scripts/driver.py signal` 交回终态行，再调 `driver.py run`：输出
+`wait` 即结束本轮，其余按 canonical Run 循环执行（ADR-0026 决策 4）。registry 最终 transition 经
 `scripts/project_lifecycle.py` 的 `project_lane_transition`。每条 lane 的 fan-in 以 `closed` 或
 持久化 `close_pending` 结束：integrated/consumed 后 live worker/pane/worktree/branch 任一残留即
 cleanup 未完成。收尾判据是 `python3 scripts/lane_cleanup_audit.py --registry-dir <registry 目录>`

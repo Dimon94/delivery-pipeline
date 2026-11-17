@@ -940,6 +940,23 @@ def check_closeout() -> None:
             record(f"cleanup must route through closeout.py: {shell_doc.relative_to(ROOT)}")
 
 
+def check_driver() -> None:
+    """ADR-0026：Driver 纯决定面与 Herdr run 循环可执行且自测通过；core 不引用壳文件。"""
+    core = CORE / "scripts" / "driver.py"
+    run = HERDR / "scripts" / "driver_run.py"
+    for script in (core, run):
+        if not is_executable(script):
+            record(f"Driver script must exist and remain executable: {script.relative_to(ROOT)}")
+            return
+    if re.search(r"delivery-pipeline-(?:herdr|codex-app|orca|t3code|lody)", core.read_text()):
+        record("Driver core must not reference transport shell files")
+    for cmd in ([sys.executable, str(core), "self-test"],
+                [sys.executable, str(HERDR / "scripts" / "driver_run_check.py")]):
+        result = subprocess.run(cmd, text=True, capture_output=True)
+        if result.returncode != 0:
+            record(f"Driver check failed: {' '.join(cmd[1:])}: {(result.stdout + result.stderr).strip()[-400:]}")
+
+
 def check_orchestration_metrics() -> None:
     script = ROOT / "scripts" / "orchestration_metrics.py"
     if not is_executable(script):
@@ -982,6 +999,7 @@ def main() -> None:
     check_artifact_gc()
     check_closeout()
     check_orchestration_metrics()
+    check_driver()
 
     if ERRORS:
         fail(

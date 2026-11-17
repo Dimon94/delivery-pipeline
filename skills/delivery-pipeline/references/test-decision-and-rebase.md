@@ -12,12 +12,17 @@ Execution graph 清空、configured testing/review lanes完成后读取。独立
 
 ## Test Decision Point
 
-先读 map registry 的 `test_strategy`。已有用户明确选择且范围与风险未变化时复用；
-选择缺失、范围变化、出现新风险或未知是否仍适用时，才写 `test_decision_paused` 并让用户选择：
+测试策略在 Plan Review 中随计划一起确认，写入 driver.json `plan.test_strategy` 与 map registry
+`test_strategy`（ADR-0026 决策 7）。到达本点时 Driver 比较当前范围与风险和 Plan Review 时的记录：
+未变化时沿用已定策略，不停；范围、风险变化或无法判断是否仍适用时，按 Halt 第 1 类停下，让用户
+在以下选项中重新选择：
 
 1. 在 Integration Worktree 进行额外手动测试；
 2. 先 rebase 到最新 main，再测试；
 3. 跳过额外手动测试并进入获授权的 remote closeout。
+
+无 Autonomy Grant 的旧 map 沿旧流程：选择缺失、范围变化、出现新风险或未知是否仍适用时写
+`test_decision_paused` 并让用户选择。
 
 选择持久化到 map registry，同时在 tracker checkpoint 记录对应范围与已知风险，供恢复时核对。
 旧记录不足以判断适用性时补问，不猜测。测试选择不授予 remote publication authority。

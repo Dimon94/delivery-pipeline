@@ -5,10 +5,24 @@
 # 不用 `herdr agent wait --until done`:CLI agent 完成回合回到 idle 不会触发
 # `done` 事件,listener 会永久阻塞。
 # Usage: lane-watch.sh <worker_pane_id> <coordinator_pane_id> <lane_id> <lane_label> [timeout_hours=2]
+# LANE_WATCH_MAP_DIR 指向有 driver.json 的 map 目录时（ADR-0026 决策 4），见到终态行先跑
+# Driver：driver_run.py 退出 0（wait 或程序已执行完）不唤醒；退出 10 带 Action 唤醒；出错回落旧 WAKE。
 set -u
 PANE="$1"; COORD="$2"; LANE_ID="$3"; LABEL="$4"; TIMEOUT_H="${5:-2}"
 export HERDR_ENV=1
 DEADLINE=$(( $(date +%s) + TIMEOUT_H*3600 ))
+DRIVER_RUN="${DP_DRIVER_RUN:-$(dirname "$0")/driver_run.py}"
+
+# 终态行交给 Driver；返回 0 表示已处理（静默或已带 Action 唤醒），非 0 表示走旧 WAKE。
+driver_wake() {
+  [ -n "${LANE_WATCH_MAP_DIR:-}" ] && [ -f "${LANE_WATCH_MAP_DIR}/driver.json" ] || return 1
+  ACTION=$(python3 "$DRIVER_RUN" watch "$LANE_WATCH_MAP_DIR" "$1" 2>/dev/null); RC=$?
+  case "$RC" in
+    0) return 0 ;;
+    10) herdr agent prompt "$COORD" "WAKE: Driver Action（$LABEL 终态已记录）：$ACTION 。执行该 Action 后用 driver.py record 交回回执，再调 driver_run.py run。" >/dev/null 2>&1; return 0 ;;
+    *) return 1 ;;
+  esac
+}
 # 可视通道 LANE_DONE 增量检测基线（空 = 首轮建档）：watcher 重挂时屏上可能残留
 # 上一轮 FINAL_REPORT 的 LANE_DONE 行，无增量检测会每次重挂都误唤醒（map#765 实证 4 次）。
 # 只跟踪数量变化：陈旧标记滚出（减）不唤醒，新一轮标记出现（增）才唤醒，兼容多轮 rework。
@@ -58,6 +72,7 @@ for line in open(sys.argv[1]):
     DONE_LAST=${DONE_LAST:-0}
     if [ "$DONE_NOW" -gt "$DONE_LAST" ]; then
       echo "$DONE_NOW" > "$DONE_COUNT_FILE"
+      driver_wake "$(printf '%s\n' "$MARKERS" | tail -1)" && exit 0
       herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(session jsonl 实证 LANE_DONE $LANE_ID 新增)。按 delivery-pipeline terminal fan-in:把 lane $LANE_ID 交给 integration lane(merger)收口;merger 自身终态则重算 ready frontier 并派发下一批。" >/dev/null 2>&1
       exit 0
     fi
@@ -71,6 +86,7 @@ for line in open(sys.argv[1]):
   if [ -z "$VISIBLE_DONE_LAST" ]; then
     VISIBLE_DONE_LAST=$VISIBLE_DONE_NOW
   elif [ "$VISIBLE_DONE_NOW" -gt "$VISIBLE_DONE_LAST" ]; then
+    driver_wake "$(printf '%s\n' "$OUT" | grep -E "^[[:space:]]*LANE_DONE ${LANE_ID}([[:space:]]|$)" | tail -1 | sed 's/^[[:space:]]*//')" && exit 0
     herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出新增 LANE_DONE $LANE_ID 标记)。按 delivery-pipeline terminal fan-in:把 lane $LANE_ID 交给 integration lane(merger)收口;merger 自身终态则重算 ready frontier 并派发下一批。" >/dev/null 2>&1
     exit 0
   fi

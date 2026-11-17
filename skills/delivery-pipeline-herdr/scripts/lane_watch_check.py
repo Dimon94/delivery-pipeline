@@ -136,6 +136,33 @@ def case_jsonl_sibling_lane_silent(root: Path):
     print('lane watcher: pass (sibling lane marker silent)')
 
 
+def case_driver_quiet_and_wake(root: Path):
+    """ADR-0026：有 driver.json 时终态行先交 Driver；退出 0 不唤醒，退出 10 带 Action 唤醒。"""
+    for rc, expect in ((0, 0), (10, 1)):
+        case = root / f'rc{rc}'
+        case.mkdir()
+        setup_case(case, ['worker idle'] * 6, jsonl_after=3)
+        (case / 'marker').write_text('LANE_DONE lane abc1234')
+        (case / 'driver.json').write_text('{}')
+        fake = case / 'driver_run.py'
+        fake.write_text(f'import sys\nopen({str(case / "driver_args")!r}, "w").write(" ".join(sys.argv[1:]))\n'
+                        f'print(\'{{"action":"judge","id":"j","args":{{}}}}\')\nraise SystemExit({rc})\n')
+        result = subprocess.run(
+            ['bash', str(SCRIPT), 'worker', 'coordinator', 'lane', '测试 lane'],
+            env={**os.environ, 'PATH': f'{case}:{os.environ["PATH"]}', 'LANE_WATCH_STATE_DIR': str(case),
+                 'LANE_WATCH_MAP_DIR': str(case), 'DP_DRIVER_RUN': str(fake)},
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0, (result.returncode, result.stderr)
+        args = (case / 'driver_args').read_text()
+        assert args == f'watch {case} LANE_DONE lane abc1234', args
+        prompts = prompts_of(case)
+        assert len(prompts) == expect, prompts
+        if expect:
+            assert 'Driver Action' in prompts[0][1] and '"judge"' in prompts[0][1], prompts
+    print('lane watcher: pass (driver wait silent, driver action wakes once)')
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
@@ -145,6 +172,7 @@ def main():
             case_jsonl_count_increase_wakes,
             case_jsonl_commit_suffix_wakes,
             case_jsonl_sibling_lane_silent,
+            case_driver_quiet_and_wake,
         )):
             root = base / f'case{i}'
             root.mkdir()

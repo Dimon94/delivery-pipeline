@@ -16,6 +16,11 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
 
 ## 覆盖
 
+0. **Driver run（ADR-0026）。** map 有 driver.json 时，每次唤醒先调一次
+   `../delivery-pipeline/scripts/driver.py run <map 目录>`；fan-in、consume、closeout 与审核页渲染已由程序完成。
+   交回的 `dispatch` / `prepare_map` 由 coordinator 用Lody session 工具按下列合同执行，回执经 `driver.py record` 交回；
+   worker 终态先用 `driver.py signal` 交回再 run，输出 `wait` 即结束本轮。第 4 项的亲自 Integration 只适用于旧 map；无 driver.json 的旧 map
+   按下列旧合同推进，直到下一次 Plan Review。
 1. 当前 Lody session 就是 coordinator，记录 `coordinator_runtime: lody`、`dispatch_runtime: lody`，
    宿主 agent 记入 `lody` overlay。coordinator 留在 Source Worktree。新建 lane 前加载
    `references/lody-dispatch.md`。

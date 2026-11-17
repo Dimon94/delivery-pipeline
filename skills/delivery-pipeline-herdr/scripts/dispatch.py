@@ -377,8 +377,11 @@ def main() -> int:
                 subprocess.run(["herdr", "pane", "close", pane["pane_id"]], capture_output=True)
                 raise DispatchError("agent did not reach working after one re-prompt")
         log = open(f"/tmp/lane-watch-{name}.log", "ab")
+        watch_env = dict(os.environ)
+        if args.map_registry != "none" and (Path(args.map_registry).parent / "driver.json").exists():
+            watch_env["LANE_WATCH_MAP_DIR"] = str(Path(args.map_registry).parent)  # ADR-0026：终态先交 Driver
         subprocess.Popen([str(WATCHER), pane["pane_id"], coord["pane_id"], args.lane, args.title],
-                         stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True)
+                         stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, env=watch_env)
         row["state"] = "running"
         row["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         write_registry(registry, row)

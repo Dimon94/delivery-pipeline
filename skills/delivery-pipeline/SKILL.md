@@ -6,51 +6,51 @@ disable-model-invocation: true
 
 # Delivery Pipeline（核心链路）
 
-本 skill 是 canonical 核心链路，由平级 transport 壳读取（`delivery-pipeline-herdr`、`delivery-pipeline-codex-app`、
-`delivery-pipeline-orca`、`delivery-pipeline-t3code`、`delivery-pipeline-lody`）；直接调用时改用对应壳，
-CLI 交付用 `delivery-pipeline-herdr`。当前调用会话就是 coordinator：调度归壳，产物质量归 owner，
-Integration 不变量归本链路。
+本 skill 是 canonical 核心链路，由平级 transport 壳（herdr、codex-app、orca、t3code、lody）读取；直接调用时改用
+对应壳。目标是一张 map 交付一个 MMF 到一条 **Integration** branch。状态机归程序（**Driver**，ADR-0026）：
+`scripts/driver.py` 推导 gate、frontier、收口、清理与停点；当前会话是 coordinator，只执行 Action 并回答判断。
 
-目标是一张 map 交付一个 MMF 到一条 **Integration** branch。判定与拆票链见 `references/gate-state-machine.md`。
-tickets 是带阻塞关系的任务图，始终有一个 ready **frontier**。
+## Run 循环
 
-## 调度职责
+1. **run。** 每次唤醒调所属壳的 run 入口（壳未提供时 `scripts/driver.py run <map 目录>`）。程序能执行的
+   Action（fan-in、consume、closeout、审核页渲染、壳的派发 helper）已在 run 内完成；只交回一行 JSON
+   `{"action","id","args"}`。
+2. **执行 Action。** 按 `action` 分支：
+   - `invoke_owner`：按 `references/owner-skill-resolution.md` 调用 owner（name + 绝对 SKILL.md path + invocation label），
+     回执带 owner 返回的 `NEXT` 与工件坐标；to-tickets 回执附 `plan`（票、波次、依赖、owner、HITL）与脚本检查结果。
+   - `dispatch` / `prepare_map`：按所属壳 dispatch 合同落位；packet 用 `references/lane-registry.md` §轻量交接。
+   - `ask_human`：Plan Review、Merge Review 把 `args.html` 交给用户；HITL 把全部问题一次问完。原文作回执。
+   - `judge`：轻判断当场从 `options` 选一项并附证据坐标；重判断（验收诊断、重拆、review 修复）派成 lane。
+     只在 judge 时按 `args.kind` 读取 `references/execution-worktree-integration.md`、`references/frontier-lanes.md`
+     或 `references/gate-state-machine.md` 对应章节。
+   - `remote`：按 `references/test-decision-and-rebase.md` §Remote Gate 执行 Merge Review 已授权的一步。
+   - `halt`：把 `args` 的原因、证据坐标与可选项原样交给用户；回复后 `driver.py record <map 目录> halt <决定>`。
+   - `wait`：结束本轮，等壳的唤醒；`legacy`：无 Autonomy Grant 的旧 map，按 `references/gate-state-machine.md`
+     逐 gate 推进到下一次 Plan Review。
+3. **record。** `scripts/driver.py record <map 目录> <id> <回执JSON>`；worker 终态行用
+   `driver.py signal <map 目录> "<LANE_DONE 行>"`。registry 只由 Driver 写，回执按 id 幂等。回到第 1 步。
 
-- coordinator 只推进最早未完成 gate、派发 frontier、读终态行；coordinator 不亲自实现或 fan-in。
-- 沟通走 **context pointers**：绝对路径或 tracker URL 加章节或 commit 定点，不复制 spec、ticket 与日志正文。
-- 失败交对应 owner 修复并按原判据复验，保留失败证据；证据缺失写 Unknown 并停在所属 gate。
-- 用户明确要求定时工作时才用 runtime 原生调度；日常等待按所属壳的真实唤醒合同。
+## 停点
 
-## Steps
+用户只在 Plan Review（to-tickets 草稿过脚本检查后、发布前，授予 Autonomy Grant）与 Merge Review（开 PR 前，
+授权 push、PR、CI 与合入收尾）各审一次。其余停点只有 Driver 的封闭 Halt 清单；清单外偏差自动处理并在
+Merge Review 报告。Test Decision Point 并入 Plan Review。
 
-1. **识别入口。** 读 repo instructions、tracker 与输入；裸编号须唯一解析。Epic 启动、恢复或 lane 唤醒走
-   `references/epic-scheduling.md`。想法、map、spec 或 ticket 按 `references/gate-state-machine.md` 选最早未完成 gate；
-   discovery 走 `references/wayfinder-frontier-loop.md`。
-2. **恢复坐标。** 新会话或压缩后按 `references/fresh-session-boundaries.md` §Coordinator Recovery，
-   只读恢复记录的合同入口所指章节并枚举 active writers。恢复既有 lane 不依赖当前 worker 配置，按 registry
-   runtime 续跑。按 `references/integration-worktree-management.md` 复用或创建 Map Integration Worktree；
-   Git 操作都指向隔离 worktree，不切换 coordinator 当前目录的 branch。
-3. **校验配置。** 新建 lane 前从 setup skill realpath 运行 `scripts/model_config.py validate <config>`
-   （version 5，见 `references/model-config-schema.md`）并验证本机 evidence；旧版本先 `migrate`；
-   缺失或非法时执行 `../delivery-pipeline-setup/SKILL.md`，不静默回落。
-4. **派发 frontier。** 每张 ready ticket 一个 lane、一个 owner（name + 绝对 SKILL.md path + invocation
-   label）、一个 Execution Worktree（默认从 Integration HEAD 建，例外见 `references/integration-worktree-management.md`）。lane 单轮直跑任务类型的 `{agent, model, effort}`
-   （ticket/map 点名 mode 时用其 `direct` 组），冻结进 packet 与 registry。按 `references/frontier-lanes.md`、
-   `references/owner-skill-resolution.md`、`references/model-role-routing.md` 与所属壳 dispatch 合同落位；
-   registry 先于 worker，packet 用 `references/lane-registry.md` §轻量交接。本批启动后到达 Dispatch Handoff；
-   本 map 尚无 lane `closed` 时本批只有一项。
-5. **收口。** 终态行到达后派 integration lane（merger）按 `references/execution-worktree-integration.md`
-   收口到 `closed`；merger 终态后重算 frontier，回到第 4 步。
-6. **Testing 与 Review。** frontier 清空后派 testing lane，再派一个 review lane：输入给出
-   fixed point（map registry base）与 `references/code-review-evidence-preflight.md`，worker 先生成
-   Review Evidence Bundle。轮次与 FIX 按 gate-state-machine §Review 预算，finding 交给同一个 implementer lane。
-7. **收尾。** 按 `references/test-decision-and-rebase.md` 处理测试选择、rebase 与 remote gate。
+## 恢复与配置
+
+- Epic 启动、恢复或 lane 唤醒走 `references/epic-scheduling.md`，从 Issue 恢复各 MMF 后逐 map 调 run。
+- 新会话或压缩后按 `references/fresh-session-boundaries.md` §Coordinator Recovery 恢复，再调 run；既有 lane
+  按 registry runtime 续跑。Map Integration Worktree 见 `references/integration-worktree-management.md`。
+- 新建 lane 前从 setup skill realpath 运行 `scripts/model_config.py validate <config>`（version 5，见
+  `references/model-config-schema.md`、`references/model-role-routing.md`）；缺失或非法时执行
+  `../delivery-pipeline-setup/SKILL.md`，不静默回落。
+- discovery 见 `references/wayfinder-frontier-loop.md`；review 证据见 `references/code-review-evidence-preflight.md`。
 
 ## 边界
 
-- 本地 worktree、修改与 commit 用 local execution authority；named-map tracker 迁移用 Map Run Authority；
-  push、PR/MR、merge 与 publication 需要 remote publication authority。
-- 面向用户、worker、tracker 与 PR/MR 的自然语言用中文；skill/tool/status/path/hash 保持原样。
+- coordinator 不亲自实现、cherry-pick 或 fan-in；沟通走 context pointers，不复制 spec、ticket 与日志正文。
+- 本地 worktree、修改与 commit 用 local execution authority；push、PR/MR、merge 与 publication 只在 Merge Review
+  授权后由 Driver 下发。证据缺失写 Unknown。面向用户与 tracker 的自然语言用中文。
 
-完成标准：map/spec/tickets 与各 lane 交付可追溯，execution graph 为空，whole-change testing/review 通过；
-远程获授权时 CI/CD 与 closeout 通过，否则报告唯一剩余 remote gate。
+完成标准：Driver 输出 `done`；map/spec/tickets 与各 lane 交付可追溯，whole-change testing/review 通过，
+Merge Review 授权范围内的 remote 步骤与 closeout 完成。
