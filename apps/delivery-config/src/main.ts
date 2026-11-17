@@ -325,7 +325,6 @@ document.addEventListener('click',event=>{
  if(picker&&!target.closest('.model-popup,button[data-path][data-field="model"],button[data-focus],#refresh,#reload'))closePicker();
 });
 function reload() {
- effortNote=undefined;
  if(reading)return;
  if(draft?.changes().length){message=copy.修改还在若要重新读取设置请先撤销修改;render();}else void read();
 }

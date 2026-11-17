@@ -423,9 +423,9 @@ describe('DD-610 自动思考程度提示',()=>{
   const effort=doc.querySelector<HTMLSelectElement>('select[data-path="work.design"][data-field="effort"]')!;
   effort.dispatchEvent(new win.Event('change',{bubbles:true}));expect(status()).toBeNull();
  });
- test('撤销、重新核对和重新读取清除提示',async()=>{
+ test('撤销和重新核对清除提示；有修改时重新读取被拒绝，提示保留',async()=>{
   change();expect(status()).not.toBeNull();click('#undo');expect(status()).toBeNull();
   change();click('#refresh');expect(status()).toBeNull();await new Promise(r=>setTimeout(r,20));
-  click('#undo');change();click('#reload');expect(status()).toBeNull();
+  click('#undo');change();click('#reload');expect(status()).not.toBeNull();
  });
 });
