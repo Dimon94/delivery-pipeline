@@ -59,3 +59,13 @@ test('R1 实例标签文字集中并拦截内部词',()=>{
  for(const info of [undefined,{build:'',config_kind:'test'},{build:'',config_kind:'cli'}])clean(instanceLabel(info));
 });
 import {instanceLabel} from './appinfo';
+import {pickerView} from './picker';
+test('选择器名称、缺失原因、无结果和不可用提示不含内部词',()=>{
+ for(const input of [
+ {models:{'magpie/auto/gpt-6.1-sol':['high']},current:'magpie/auto/gone',query:''},
+ {models:{},current:'',query:'zz'},
+ {models:{},current:'',query:'',unavailable:bannerText({kind:'unreachable',cause:'gateway'})}
+ ]){
+  const v=pickerView(input);clean(v.empty||'');for(const g of v.groups){clean(g.label);for(const i of g.items){clean(i.label);clean(i.disabled||'');}}
+ }
+});

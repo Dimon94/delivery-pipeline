@@ -2,6 +2,11 @@ import type {Evidence} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
+ 搜索模型: "搜索模型",
+ 搜索模型示例: "模型名或来源，如 sol 骏伯",
+ 没有匹配的模型: "没有匹配的模型",
+ 当前模型: "当前模型",
+ 支持的思考程度: "支持的思考程度",
  测试配置: "测试配置 · ",
  本机设置: "本机设置 · ",
  构建号未知: "构建号未知",
@@ -131,7 +136,7 @@ export const copy = {
   "检查失败修改还在请处理环境后再次检查": "检查失败，修改还在，请处理环境后再次检查。"
 };
 const families:Record<string,string>={glm:'GLM',minimax:'MiniMax',gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
-const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};
+export const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};
 export function modelLabel(raw:string):string {
  if(!raw)return '请选择模型';
  const parts=raw.split('/'),leaf=parts.pop()!,base=leaf.split('@')[0]!;
