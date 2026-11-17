@@ -133,10 +133,17 @@ review 四格精确为 `{agent, model, effort, candidates}`，candidates 同形�
 AI setup 显式 migrate 将 CLI v5 升 v6，仅补空列表；更旧版本先沿既有转换，同一事务保存。重复迁移零写入。App 不使用 CLI 迁移。
 新增或改值以及增加重复次数需本次精确能力证据；未改值排序和删除可保留 Unknown 原值。桌面与 setup 共用原有锁/hash/replace/readback 事务。列表消费由后续票实现。
 
-## v7：有序 review 候选与共享家族声明
+## v7：有序 review 候选与厂商手动覆盖
 
 显式 v6→v7 仅增加空 `model_families` 并更新版本；show/probe 不迁移。v6 空 candidates 的单模型路径继续有效。App 保持 v5，不增加字段。
 四格 candidates 保持 ModelTriple 有序列表，允许重复；新增或增加重复次数、改值须当前精确能力，排序/删除/仅声明变更无需构造新能力。删除候选不删除声明。
-`model_families` 为 `{agent: {native_model: {family, source: "user_declared"}}}`。family 使用小写 ASCII slug（字母数字段以单个连字符连接）；UI 将输入去首尾空白并转小写。检索只按精确 agent/native model，不看 effort，不按名称、路由、显示标签推断；缺失即 Unknown。声明仅为用户证据，不是外部认证。候选与声明共用 canonical apply/configure 原子事务。
+`model_families` 为 `{agent: {native_model: {family, source: "user_declared"}}}`。family 使用小写 ASCII slug（字母数字段以单个连字符连接）。默认按内置厂商对照表判断，手动声明覆盖：覆盖只按精确 agent/native model 检索，不看 effort；未声明时取模型代号最后一段、去掉 `@` 后缀、转小写后按前缀查表，未命中为 Unknown。仅影响有候选的整体交付检查选择。声明由 AI 助手维护，仅为用户证据，不是外部认证。候选与声明共用 canonical apply/configure 原子事务。
 
 新声明必须对应当前 work/review（含 fallback/candidate）引用的精确身份；已有声明可在删除候选后继续保留和维护，不接受新清单外身份注入。
+
+`preview-review --candidate <file> --evidence <file>` 只读预览当前草稿。证据沿用 `probe` 的
+`request_id`、`observed_at`、`sources`、`capabilities`；缺完整核对证据时报错。
+仅返回整体交付检查中有候选的轴，每轴含 `selected`、`selected_index`、`outcome`、`unrecognized`。
+`outcome` 为 `different`、`no_different_family`、`unrecognized` 或 `none_runnable`；
+无可运行模型时选择与索引均为 null。写代码一方取设计、前端、后端主模型，运行时则取实际执行身份，
+所以预览按当前设置推算，可能与备用接替后的结果不同。预览与运行时共用同一选择规则。

@@ -91,6 +91,14 @@ The hard limit on review rounds. CLI runs no per-ticket review: one whole-change
 **Worker Task Configuration**
 One canonical config schema (CLI version 7 with version 6 compatibility, App version 5) with two file instances: the CLI instance at user-level `~/.config/delivery-pipeline/model-roles.json` and the App instance at `skills/delivery-pipeline-codex-app/config/models.json`. The schema defines task types (`coordinator`, `research`, `prototype`, `planning`, `design`, `frontend`, `backend`, `testing`, `integration`, `assistance`, `second-opinion`), each bound to a non-empty `agent`, `model`, and `effort`; agent is one of `pi`, `codex`, `claude`, or `codex-app` and selects the transport. CLI lanes run each work entry's `{agent, model, effort}` directly in one pass (ADR-0018). Named `modes` presets carry `kind` (`staged`/`direct`) plus per-agent `starting`/`execution`/`direct` pairs; CLI modes must be `direct` and are consumed only when a ticket or map explicitly names one (its `direct` group overrides), while App lanes resolve them in ticket → map → `default_mode` order (`default_mode` is App-only). Formal review uses the `review.<implementation|whole-change>.<standards|spec>` matrix. The single schema authority is `skills/delivery-pipeline/references/model-config-schema.md`; each transport declares its required task-type subset. Canonical CLI skills contain no default model routing; missing, unknown, or invalid configuration blocks dispatch and runs `delivery-pipeline-setup`. Older config versions migrate mechanically via `model_config.py migrate`. Existing lanes recover from registry and are not migrated by a configuration change.
 
+**出自哪家（厂商）**
+
+整体交付检查有候选时，用于优先选择与所有写代码模型都不同厂商的检查模型。
+默认按内置模型前缀对照表判断（剥离路由与上下文后缀），精确 agent/native model 的
+`model_families` 手动声明可覆盖；未命中为 Unknown。厂商判断不代表能力核对或外部认证。
+预计结果按设计、前端、后端主模型计算，运行时按实际执行身份计算；两者共用选择函数。
+没有另一家或存在认不出的模型时按可运行池的用户顺序回退；实施检查不使用该规则。
+
 **Coordinator Runtime**
 The current session hosting the coordinator: `codex-cli`, `claude-cli`, or `pi-cli` entering through the `delivery-pipeline-herdr` shell; `t3code` when running in a T3 Code thread via the `delivery-pipeline-t3code` shell; `lody` when running in a Lody session via the `delivery-pipeline-lody` shell; `codex-app` only when the `delivery-pipeline-codex-app` shell is invoked; the current Orca terminal only when the `delivery-pipeline-orca` entrypoint is invoked. The current calling session is the coordinator; its model is chosen before skill invocation and is not part of Worker Task Configuration; a `coordinator` work entry only records recommendation observations.
 

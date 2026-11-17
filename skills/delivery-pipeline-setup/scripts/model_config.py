@@ -113,8 +113,73 @@ def _family_errors(families: object) -> list[str]:
 
 
 def family_declaration(document: dict, agent: str, native_model: str) -> dict | None:
-    """精确用户声明；effort 不参与身份，缺失即 Unknown，不推断家族。"""
+    """精确用户覆盖；effort 不参与身份，未声明时由 model_vendor 查对照表。"""
     return copy.deepcopy(document.get("model_families", {}).get(agent, {}).get(native_model))
+
+
+VENDOR_PREFIXES: tuple[tuple[str, str], ...] = (
+    ('gpt-', 'openai'), ('o1', 'openai'), ('o3', 'openai'), ('o4', 'openai'),
+    ('claude-', 'anthropic'), ('gemini-', 'google'), ('kimi-', 'moonshot'),
+    ('grok-', 'xai'), ('deepseek-', 'deepseek'),
+)
+ReviewOutcome = Literal['different', 'no_different_family', 'unrecognized', 'none_runnable']
+
+
+def model_vendor(document: dict, agent: str, model: str) -> str | None:
+    """手动覆盖优先；剥离路由和上下文后缀后查内置厂商表。"""
+    declaration = family_declaration(document, agent, model)
+    if declaration:
+        return declaration['family']
+    name = model.rsplit('/', 1)[-1].split('@', 1)[0].lower()
+    return next((vendor for prefix, vendor in VENDOR_PREFIXES if name.startswith(prefix)), None)
+
+
+def choose_review_candidate(pool: list[dict], runnable: list[bool],
+                            pool_vendors: list[str | None],
+                            implementation_vendors: list[str | None]) -> tuple[int | None, ReviewOutcome]:
+    """运行时与预览共用的顺序选择；没有完整厂商证据时按顺序回退。"""
+    available = [i for i in range(len(pool)) if runnable[i]]
+    if not available:
+        return None, 'none_runnable'
+    for i in available:
+        if (pool_vendors[i] and implementation_vendors and all(implementation_vendors)
+                and pool_vendors[i] not in implementation_vendors):
+            return i, 'different'
+    unknown = not implementation_vendors or any(v is None for v in [*pool_vendors, *implementation_vendors])
+    return available[0], 'unrecognized' if unknown else 'no_different_family'
+
+
+def preview_review_choice(document: dict, evidence: dict) -> dict:
+    """按当前草稿的设计/前端/后端主模型预计；不探测、不修改输入。"""
+    errors = validate_document(document)
+    if errors:
+        raise ValueError('; '.join(errors))
+    if (not isinstance(evidence, dict) or not evidence.get('request_id')
+            or not evidence.get('observed_at') or not isinstance(evidence.get('sources'), dict)
+            or not isinstance(evidence.get('capabilities'), dict)):
+        raise ValueError('preview-review requires complete current probe evidence')
+    implementations = [triple(document['work'][task]) for task in ('design', 'frontend', 'backend')]
+    axes = {axis: [triple(cell), *cell['candidates']]
+            for axis, cell in document['review']['whole-change'].items() if cell['candidates']}
+    for identity in [*implementations, *(item for pool in axes.values() for item in pool)]:
+        agent = identity['agent']
+        source = evidence['sources'].get(agent, {})
+        capability = evidence['capabilities'].get(agent)
+        if (source.get('status') != 'ok' or not isinstance(capability, dict)
+                or not isinstance(capability.get('binary'), bool)
+                or not isinstance(capability.get('models'), dict)):
+            raise ValueError('preview-review requires complete probe source for ' + agent)
+    vendors = [model_vendor(document, x['agent'], x['model']) for x in implementations]
+    result = {}
+    for axis, pool in axes.items():
+        pool_vendors = [model_vendor(document, x['agent'], x['model']) for x in pool]
+        runnable = [not capability_errors(**x, evidence=evidence['capabilities']) for x in pool]
+        index, outcome = choose_review_candidate(pool, runnable, pool_vendors, vendors)
+        unknown = [x for x, vendor in zip([*implementations, *pool], [*vendors, *pool_vendors]) if vendor is None]
+        result[axis] = {'selected': pool[index] if index is not None else None,
+                        'selected_index': index, 'outcome': outcome,
+                        'unrecognized': [x for i, x in enumerate(unknown) if x not in unknown[:i]]}
+    return result
 
 
 def validate_document(document: object, transport: str = "cli") -> list[str]:
@@ -1191,10 +1256,12 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
     def family(identity):
         declaration = (family_declaration(document, identity.get("agent"), identity.get("model"))
                        if identity else None)
-        item = {"identity": identity, "declaration": declaration, "source": "declared_at_review"}
+        vendor = model_vendor(document, identity.get("agent"), identity.get("model", "")) if identity else None
+        item = {"identity": identity, "declaration": declaration, "source": "declared_at_review",
+                "vendor_source": "user_declared" if declaration else "vendor_table" if vendor else "unknown"}
         if item not in family_evidence:
             family_evidence.append(item)
-        return declaration["family"] if declaration else None
+        return vendor
 
     observed = [(i.get("executed") if i.get("executed") is not None else i.get("requested"),
                  "executed" if i.get("executed") is not None else "requested") for i in implementations]
@@ -1258,8 +1325,12 @@ def resolve_review_plan(document, *, required_axes, implementations, evidence,
             runnable = [a for a in attempts if a["status"] == "runnable"]
             if not runnable:
                 raise ValueError("review_no_runnable_candidate: " + json.dumps(attempts))
-            different = [a for a in runnable if a["comparison"] == "different"]
-            selected = (different or runnable)[0]
+            pool = [a["identity"] for a in attempts]
+            index, outcome = choose_review_candidate(pool,
+                [a["status"] == "runnable" for a in attempts],
+                [family(identity) for identity in pool], implementation_families)
+            different = outcome == "different"
+            selected = attempts[index]
             for attempt in attempts:
                 if attempt["status"] == "runnable":
                     attempt["reason"] = ("selected" if attempt["index"] == selected["index"] else
@@ -1913,6 +1984,7 @@ def main() -> int:
         choices=(
             "validate",
             "show",
+            "preview-review",
             "self-test",
             "resolve",
             "freeze",
@@ -1928,6 +2000,7 @@ def main() -> int:
         "path", nargs="?", default="~/.config/delivery-pipeline/model-roles.json"
     )
     parser.add_argument("task", nargs="?")
+    parser.add_argument("--candidate", help="待预览配置 JSON 文件")
     parser.add_argument("--base-hash")
     parser.add_argument("--request-id")
     parser.add_argument("--ticket-mode")
@@ -1943,6 +2016,17 @@ def main() -> int:
     parser.add_argument("--fixed-point")
     args = parser.parse_args()
 
+    if args.command == "preview-review":
+        if not args.candidate or not args.evidence:
+            parser.error("preview-review 需要 --candidate 与 --evidence")
+        try:
+            document = json.loads(Path(args.candidate).expanduser().read_text())
+            evidence = json.loads(Path(args.evidence).expanduser().read_text())
+            print(json.dumps(preview_review_choice(document, evidence), ensure_ascii=False))
+            return 0
+        except (OSError, ValueError) as error:
+            print(json.dumps({"valid": False, "errors": [str(error)]}, ensure_ascii=False))
+            return 1
     if args.command == "recover":
         try:
             print(json.dumps(recover_registry(Path(args.path).expanduser(), args.task), ensure_ascii=False))
