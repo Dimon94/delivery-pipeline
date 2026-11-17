@@ -6,13 +6,19 @@ import type {Config} from './draft';
 const a={agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high'};
 const b={...a,model:'magpie/auto/claude-opus-5-5'};
 const target='magpie/junbo/gpt-6.1-sol';
-const config:Config={version:7,model_families:{},work:Object.fromEntries(['planning','design','frontend','backend','testing'].map(n=>[n,{...a,fallbacks:[]}])),modes:{},review:Object.fromEntries(['implementation','whole-change'].map(s=>[s,Object.fromEntries(['standards','spec'].map(x=>[x,{...a,candidates:[a,b]}]))]))};
+const config:Config={version:7,model_families:{},work:Object.fromEntries(['planning','design','frontend','backend','testing'].map(n=>[n,{...a,fallbacks:[]}])),modes:{},review:Object.fromEntries(['implementation','whole-change'].map(s=>[s,Object.fromEntries(['standards','spec'].map(x=>[x,{...a,candidates:[{...a},{...b}]}]))]))};
+config.work.planning!.fallbacks=[{...a},{...b}];
+let models:Record<string,string[]>={[a.model]:['high'],[b.model]:['high'],[target]:['high']};
+let pendingProbe:((v:unknown)=>void)|undefined;
+let holdProbe=false;
+let pendingId='';
 const win=new Window();const doc=win.document;
 Object.assign(globalThis,{window:win,document:doc,navigator:win.navigator,mygo:{call:async(name:string,id:string)=>{
  if(name==='Host.AppInfo')return {config_path:'/tmp/dd597/test.json'};
  if(name==='Host.ReadConfig')return {file_state:'ready',config,base_hash:'hash',cells:{}};
  if(name==='Host.Apply')return {status:'rejected',error:{code:'base_conflict'}};
- if(name==='Host.ProbeCapabilities')return {request_id:id,observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok'}},capabilities:{pi:{binary:true,models:{[a.model]:['high'],[b.model]:['high'],[target]:['high']}}}};
+ if(name==='Host.ProbeCapabilities'&&holdProbe)return new Promise(resolve=>{pendingProbe=resolve;pendingId=id;});
+ if(name==='Host.ProbeCapabilities')return {request_id:id,observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok'}},capabilities:{pi:{binary:true,models}}};
  throw Error(name);
 }}});
 doc.body.innerHTML='<div id="app"></div>';
@@ -20,6 +26,51 @@ await import('./main');
 await new Promise(r=>setTimeout(r,20));
 const click=(selector:string)=>{const e=doc.querySelector<HTMLButtonElement>(selector);expect(e).not.toBeNull();e!.click();};
 const p='review.implementation.standards';
+test('备用、结果检查、候选共用模型按钮，选择只修改对应草稿',()=>{
+ for(const [path,title,queue] of [
+  ['work.planning.fallbacks.0','规划','work.planning'],
+  [p,'实施结果 · 代码规范',undefined],
+  [p+'.candidates.1','实施结果 · 代码规范',p],
+ ] as const){
+  if(queue)click(`button[data-queue="${queue}"]`);
+  click('button[data-path="work.frontend"][data-field="model"]');
+  click(`button[data-path="${path}"][data-field="model"]`);
+  expect(doc.querySelectorAll('button[data-path][data-field="model"][aria-expanded="true"]').length).toBe(1);
+  expect(doc.querySelectorAll('.model-popup').length).toBe(1);
+  click('[data-source="junbo"]');click(`[data-model="${target}"]`);
+  expect(doc.querySelector('.model-popup')).toBeNull();
+  expect(doc.querySelector(`button[data-path="${path}"][data-field="model"]`)!.textContent).toContain('骏伯');
+  expect(doc.querySelector('.footer-status')!.textContent).toBe('1 项修改待确认');
+  click('#diff');
+  expect([...doc.querySelectorAll('.diff-panel article h3')].map(e=>e.textContent)).toEqual([title]);
+  expect(doc.querySelector('.diff-panel')!.textContent).toContain('GPT 6.1 Sol · 骏伯');
+  click('#back');click('#undo');
+  if(queue)click(`button[data-queue="${queue}"]`);
+ }
+});
+test('重读、核对到达保留唯一弹层和搜索，高亮消失回首个可选项',async()=>{
+ const input=()=>doc.querySelector<HTMLInputElement>('[role="combobox"]')!;
+ const active=()=>doc.getElementById(input().getAttribute('aria-activedescendant')!)?.getAttribute('data-model');
+ click('button[data-path="work.frontend"][data-field="model"]');
+ input().value='magpie';input().dispatchEvent(new win.Event('input',{bubbles:true}));
+ input().dispatchEvent(new win.KeyboardEvent('keydown',{key:'End',bubbles:true}));
+ expect(active()).toBe(target);
+ holdProbe=true;click('#refresh');
+ pendingProbe!({request_id:pendingId,observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok'}},capabilities:{pi:{binary:true,models}}});
+ await new Promise(r=>setTimeout(r,20));
+ holdProbe=false;
+ expect(doc.querySelectorAll('.model-popup').length).toBe(1);
+ expect(input().value).toBe('magpie');expect(active()).toBe(target);
+ click('#reload');
+ await new Promise(r=>setTimeout(r,20));
+ expect(input().value).toBe('magpie');expect(active()).toBe(target);
+ models={[b.model]:['high'],[a.model]:['high']};
+ click('#refresh');
+ await new Promise(r=>setTimeout(r,20));
+ expect(input().value).toBe('magpie');expect(active()).toBe(b.model);
+ doc.body.click();models={[a.model]:['high'],[b.model]:['high'],[target]:['high']};
+ click('#refresh');await new Promise(r=>setTimeout(r,20));
+});
 test('工作模型三次点击选中，差异中只有该项，点外部不修改',()=>{
  click('button[data-path="work.frontend"][data-field="model"]');
  expect(doc.querySelector('.model-popup')).not.toBeNull();
@@ -83,17 +134,17 @@ test('方案 B 两阶段四行：候选在名字旁，同一行包含三个设�
  for(const group of groups){
   const rows=group.querySelectorAll(':scope > .task-row');expect(rows.length).toBe(2);
   expect([...rows].map(r=>r.querySelector('.task-label')?.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('代码规范'),expect.stringContaining('需求符合度')]));
-  for(const row of rows){expect(row.querySelector('.task-label .qchip')).not.toBeNull();expect(row.querySelectorAll('.fields select').length).toBe(3);}
+  for(const row of rows){expect(row.querySelector('.task-label .qchip')).not.toBeNull();expect(row.querySelectorAll('.fields select,.fields button[data-field="model"]').length).toBe(3);}
  }
 });
 test('候选子行操作保序，编辑归属正确差异路径，候选异常计入原行',()=>{
  click(`[data-queue="${p}"]`);
- const select=(i:number)=>doc.querySelector<HTMLSelectElement>(`select[data-path="${p}.candidates.${i}"][data-field="model"]`)!;
+ const select=(i:number)=>doc.querySelector<HTMLButtonElement>(`button[data-path="${p}.candidates.${i}"][data-field="model"]`)!;
  expect(select(0).getAttribute('aria-label')).toContain('候选 1');
- click(`[data-review="${p}"][data-action="down"][data-index="0"]`);expect(select(0).value).toBe(b.model);
- click(`[data-review="${p}"][data-action="up"][data-index="1"]`);expect(select(0).value).toBe(a.model);
- click(`[data-review="${p}"][data-action="remove"][data-index="0"]`);expect(select(0).value).toBe(b.model);expect(select(1)).toBeNull();
- click(`[data-review="${p}"][data-action="add"]`);expect(select(1).value).toBe('');
+ click(`[data-review="${p}"][data-action="down"][data-index="0"]`);expect(select(0).textContent).toBe('Claude Opus 5.5 · 自动路由');
+ click(`[data-review="${p}"][data-action="up"][data-index="1"]`);expect(select(0).textContent).toBe('GPT 6.1 Sol · 自动路由');
+ click(`[data-review="${p}"][data-action="remove"][data-index="0"]`);expect(select(0).textContent).toBe('Claude Opus 5.5 · 自动路由');expect(select(1)).toBeNull();
+ click(`[data-review="${p}"][data-action="add"]`);expect(select(1).textContent).toBe('请选择模型');
  expect(doc.querySelector(`[data-queue="${p}"]`)!.textContent).toContain('1 项需处理');
  expect(doc.querySelector('.attention')!.textContent).toContain('1 项设置需要处理');
  expect(select(1).closest('.task-row')!.textContent).toContain('还没选完整');
