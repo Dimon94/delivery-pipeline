@@ -56,4 +56,18 @@ with tempfile.TemporaryDirectory(prefix='config-toml-') as tmp:
     catalog.write_text(json.dumps({'models': [{'slug': 'unmapped-native', 'supported_reasoning_levels': [{'effort': 'high'}]}]}))
     p = probe()
     assert p['capabilities']['codex']['models'] == {} and p['sources']['codex']['status'] == 'unknown'
+    bundled = {'models': [{'slug': 'gpt-6.1-sol', 'supported_reasoning_levels': [{'effort': e} for e in ['low', 'high', 'xhigh', 'max']]}]}
+    codex.write_text('#!/bin/sh\n[ "$*" = "debug models --bundled" ] || exit 1\n/bin/echo ' + "'" + json.dumps(bundled) + "'\n")
+    config.write_text('model_catalog_json = ' + json.dumps(str(catalog)) + '\n')
+    catalog.write_text('invalid catalog must not be read for direct')
+    p = probe()
+    assert p['sources']['codex']['route'] == 'direct'
+    assert p['sources']['codex']['status'] == 'ok'
+    assert '直连 OpenAI' in p['sources']['codex']['origin']
+    assert p['capabilities']['codex']['models'] == {'gpt-6.1-sol': ['low', 'high', 'xhigh', 'max']}
+    for failed in ('#!/bin/sh\nexit 1\n', '#!/bin/sh\n/bin/echo invalid-json\n'):
+        codex.write_text(failed)
+        p = probe()
+        assert p['sources']['codex']['status'] == 'unknown'
+        assert p['capabilities']['codex']['models'] == {}
 print('TOML public probe: pass (isolated HOME, no site packages, no tomllib)')

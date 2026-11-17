@@ -5,7 +5,7 @@ import argparse
 import fcntl
 import hashlib
 from contextlib import contextmanager
-from typing import TypedDict, Literal, Callable
+from typing import TypedDict, Literal, Callable, Mapping
 import json
 import os
 import sys
@@ -823,6 +823,22 @@ def migrate_path(path: Path) -> dict:
             "default_mode": migrated.get("default_mode")}
 
 
+CodexRoute = Literal["gateway", "direct"] | None
+
+
+def codex_route(config: dict, env: Mapping[str, str]) -> CodexRoute:
+    provider = config.get('model_provider', 'openai')
+    endpoint = (env.get('OPENAI_BASE_URL') or config.get('openai_base_url', '')
+                if provider == 'openai' else
+                config.get('model_providers', {}).get(provider, {}).get('base_url', ''))
+    if endpoint.rstrip('/') in ('http://127.0.0.1:3425/v1',
+                                'http://127.0.0.1:3425/backend-api/codex'):
+        return 'gateway'
+    if provider == 'openai' and not endpoint:
+        return 'direct'
+    return None
+
+
 def probe(raw: dict, request_id: str) -> ProbeEvidence:
     """只归一化 metadata；逐工具独立，不把 gateway 声明当 harness 能力。"""
     from datetime import datetime, timezone
@@ -837,19 +853,27 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
     for agent in sorted(CLI_AGENTS):
         harness = raw.get('harnesses', {}).get(agent, {})
         models = {}
-        if harness.get('binary') is True and harness.get('route') is True:
+        route = harness.get('route')
+        if harness.get('binary') is True and route in ('gateway', 'direct'):
             for model in harness.get('models', []):
                 native = model.get('native_id')
                 if not isinstance(native, str) or not native:
                     continue
-                allowed = ([e for e in model.get('efforts', [])
-                            if e in catalog.get(model.get('gateway_id'), [])]
-                           if gateway.get('status') == 'ok' else [])
+                if route == 'direct':
+                    allowed = model.get('efforts', [])
+                elif gateway.get('status') == 'ok':
+                    allowed = [e for e in model.get('efforts', [])
+                               if e in catalog.get(model.get('gateway_id'), [])]
+                else:
+                    allowed = []
                 if allowed:
                     models[native] = list(dict.fromkeys(allowed))
         capabilities[agent] = {'binary': harness.get('binary') is True, 'models': models}
-        sources[agent] = {'status': 'ok' if models else 'unknown',
-                          'observed_at': observed, 'reason': '' if models else '未取得精确模型与有效档位的完整证据链', 'origin': harness.get('origin', '本机工具元数据'),
+        reason = ('Codex 当前指向的地址既不是本机网关也不是 OpenAI 官方，无法确认可用模型'
+                  if agent == 'codex' and route is None and harness.get('binary') is True else
+                  '未取得精确模型与有效档位的完整证据链')
+        sources[agent] = {'route': route, 'status': 'ok' if models else 'unknown',
+                          'observed_at': observed, 'reason': '' if models else reason, 'origin': harness.get('origin', '本机工具元数据'),
                           'next_step': '能力仅核验配置与元数据；认证、额度和实际执行为 Unknown。' if models else
                           '请让 AI 助手核对该工具的接入、精确模型清单和思考档位，再重新核对。'}
     # 网关状态属于证据层：区分“网关挂了”与“工具未接入”，UI 不得从 sources 反推。
@@ -881,7 +905,6 @@ def collect_harnesses() -> dict:
         except (OSError, subprocess.TimeoutExpired):
             return None
     result = {}
-    # 精确 slug 只有在当前路由指向 magpie、且命中网关清单时才能成为候选。
     output = command('codex', ['debug', 'models', '--bundled'])
     try:
         try:
@@ -891,20 +914,16 @@ def collect_harnesses() -> dict:
         config = tomllib.loads((home/'.codex/config.toml').read_text())
         data = json.loads(output) if output else {}
         entries = data if isinstance(data, list) else data.get('models', [])
-        provider = config.get('model_provider', 'openai')
-        endpoint = (os.environ.get('OPENAI_BASE_URL') or config.get('openai_base_url', '')
-                    if provider == 'openai' else
-                    config.get('model_providers', {}).get(provider, {}).get('base_url', ''))
-        routed = endpoint.rstrip('/') in ('http://127.0.0.1:3425/v1',
-                                         'http://127.0.0.1:3425/backend-api/codex')
+        route = codex_route(config, os.environ)
         catalog_path = config.get('model_catalog_json')
-        if routed and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
+        if route == 'gateway' and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
             data = json.loads(Path(catalog_path).expanduser().read_text())
             entries = data if isinstance(data, list) else data.get('models', [])
-        result['codex'] = {'binary': output is not None, 'route': routed,
-            'origin': 'Codex 当前路由、精确 catalog 与 magpie 网关清单交集',
+        result['codex'] = {'binary': output is not None, 'route': route,
+            'origin': ('Codex 内置清单（直连 OpenAI）' if route == 'direct' else
+                       'Codex 当前路由、精确 catalog 与 magpie 网关清单交集'),
             'models': [{'native_id': m['slug'], 'gateway_id': m['slug'], 'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
-                        if e['effort'] not in ('ultra', 'persistent')]} for m in entries]}
+                        if route == 'direct' or e['effort'] not in ('ultra', 'persistent')]} for m in entries]}
     except (OSError, ValueError, KeyError, ImportError):
         result['codex'] = {'binary': output is not None}
     output = command('pi', ['--list-models', 'magpie'])
@@ -922,13 +941,13 @@ def collect_harnesses() -> dict:
                 if api == 'anthropic-messages' and not m.get('compat', {}).get('forceAdaptiveThinking'):
                     efforts = [e for e in efforts if e not in ('xhigh','max')]
                 models.append({'native_id': 'magpie/'+m['id'], 'gateway_id': m['id'], 'efforts': efforts})
-        result['pi'] = {'binary': output is not None,'route': bool(models), 'models': models,
+        result['pi'] = {'binary': output is not None,'route': 'gateway' if models else None, 'models': models,
                         'origin': 'Pi 注册清单、模型映射与网关清单交集'}
     except (OSError, ValueError, KeyError):
         result['pi'] = {'binary': output is not None}
     # Claude 无稳定无推理逐模型 catalog 命令；help 五档不构成逐模型证据。
     result['claude'] = {'binary': command('claude', ['--version']) is not None,
-                        'route': False, 'origin': 'Claude 逐模型有效能力尚缺可核验来源'}
+                        'route': None, 'origin': 'Claude 逐模型有效能力尚缺可核验来源'}
     return result
 
 

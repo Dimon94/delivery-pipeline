@@ -38,7 +38,13 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    网关来源仅取现有本机 `http://127.0.0.1:3425/v1/models` 的 GET；读取失败时传
    `{"gateway":{"status":"unknown"}}`。不输出凭据，不发推理，不修改接入或代理。
    Python 采集本机 harness 元数据并归一化；`capabilities` 是精确原生模型到有效档位的映射，
-   `sources` 给出来源、采集时间、状态与下一核验动作。只使用状态为 ok 的候选；
+   `sources` 给出来源、采集时间、状态、route 与下一核验动作。
+   Codex 直连 OpenAI（route=direct）时使用 `codex debug models --bundled` 内置清单及其档位，
+   不读取自定义 catalog，未与网关交叉核对；认证、账号可用模型与额度为 Unknown。
+   网关路由（route=gateway）仍取本机工具清单与网关清单的交集；其他代理（route=null）
+   不提供候选，reason 说明地址既不是本机网关也不是 OpenAI 官方。
+   网关不可达时，直连 Codex 的模型仍保留，gateway 状态仍为 unreachable。
+   只使用状态为 ok 的候选；
    Unknown 保留已有值，请用户或 AI 助手补齐来源后刷新。
 3. **逐项选择。** 按 `planning`、`design`、`frontend`、`backend`、`testing` 顺序，每个任务
    类型先选 agent，再从该 agent 的真实 evidence 选择 model 与 effort；随后选择 review 矩阵四格
