@@ -404,3 +404,28 @@ test('已有修改时取消复制，原有修改与差异保持',()=>{
  expect(doc.querySelector('.diff-panel')!.textContent).toContain('Claude Opus 5.5');
 });
 });
+
+describe('DD-610 自动思考程度提示',()=>{
+ beforeEach(async()=>{
+  doc.body.click();doc.querySelector<HTMLButtonElement>('#back')?.click();click('#undo');
+  models={[a.model]:['high'],[b.model]:['low','medium'],[target]:['high']};
+  click('#reload');await new Promise(r=>setTimeout(r,20));
+ });
+ const change=()=>{click('button[data-path="work.planning"][data-field="model"]');click(`[data-model="${b.model}"]`);};
+ const status=()=>doc.querySelector('.task-row [data-effort-note]');
+ test('选择后该格显示就近档位和可读屏提示，差异显示原来和现在，再修改清除',()=>{
+  change();expect(status()?.getAttribute('role')).toBe('status');
+  expect(status()?.closest('.task-row')?.querySelector('[data-path="work.planning"]')).not.toBeNull();
+  expect(status()?.textContent).toBe('思考程度已从“高”改为“中”，新模型不支持“高”');
+  expect(doc.querySelector<HTMLSelectElement>('select[data-path="work.planning"][data-field="effort"]')!.value).toBe('medium');
+  click('#diff');const text=doc.querySelector('.diff-panel')!.textContent!;
+  expect(text).toContain('高');expect(text).toContain('中');click('#back');
+  const effort=doc.querySelector<HTMLSelectElement>('select[data-path="work.design"][data-field="effort"]')!;
+  effort.dispatchEvent(new win.Event('change',{bubbles:true}));expect(status()).toBeNull();
+ });
+ test('撤销、重新核对和重新读取清除提示',async()=>{
+  change();expect(status()).not.toBeNull();click('#undo');expect(status()).toBeNull();
+  change();click('#refresh');expect(status()).toBeNull();await new Promise(r=>setTimeout(r,20));
+  click('#undo');change();click('#reload');expect(status()).toBeNull();
+ });
+});

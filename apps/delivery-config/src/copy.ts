@@ -198,3 +198,5 @@ export function modelSummary(c:import('./draft').ModelTriple):string {
  const agent=({pi:'Pi',codex:'Codex CLI',claude:'Claude Code'} as Record<string,string>)[c.agent]||copy.已配置工具;
  return `${agent} · ${modelLabel(c.model)} · ${effortLabel(c.effort)||copy.请选择思考程度}`;
 }
+
+export function effortChangedText(from:string,to:string):string {return `思考程度已从“${effortLabel(from)}”改为“${effortLabel(to)}”，新模型不支持“${effortLabel(from)}”`;}

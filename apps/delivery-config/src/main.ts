@@ -1,9 +1,9 @@
 import {pickerView,moveActive} from './picker';
-import {modelSummary,modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts,applyTargetText,applyRefusalText,applyTriggerLabel} from './copy';
+import {effortChangedText,modelSummary,modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts,applyTargetText,applyRefusalText,applyTriggerLabel} from './copy';
 import './style.css';
 import {guide,shouldRereadOnFocus,type GuideInput} from './guide';
 
-import {Draft,settleProbe,cell,paths,work,agentIds,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus,type ApplyRefusal} from './draft';
+import {Draft,settleProbe,cell,paths,work,agentIds,type EffortChange,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus,type ApplyRefusal} from './draft';
 import {Editor,type Snapshot,type Outcome} from './editor';
 import {instanceLabel,instanceTitle,isTestConfig,loadAppInfo,type AppInfo} from './appinfo';
 let appInfo:AppInfo|undefined;
@@ -11,6 +11,7 @@ let appInfoLoaded=false; // 加载完成前标签留空，避免闪现“构建�
 let editor:Editor|undefined;
 declare const mygo: {call<T>(name: string,...args:unknown[]): Promise<T>};
 let draft:Draft|undefined;
+let effortNote:EffortChange|undefined;
 let picker:{path:string;query:string;source?:string;active?:string}|undefined;
 
 let applyNotice:{from:string;reason:ApplyRefusal}|undefined;
@@ -75,7 +76,8 @@ function queueChip(path:string) {
 function foot(path:string,c:Cell,extra='') {
  const n=note(path,c);
  const refusal=applyNotice?.from===path?`<p class="row-foot" data-apply-status="${path}" role="status">${escape(applyRefusalText(applyNotice.reason,draft?.check))}</p>`:'';
- return refusal+(n?`<p class="row-foot" title="${escape(itemStatus(path)?.kind==='tool_off'?(itemStatus(path) as Extract<ItemStatus,{kind:'tool_off'}>).reason:'')}">${escape(n.why.replace(/[。.]+$/,''))}。${escape(extra)}<button class="inline-action" data-focus="${path}" data-field="${n.field}">${n.action}</button></p>`:'');
+ const effort=effortNote?.path===path?`<p class="row-foot effort-note" data-effort-note="${path}" role="status">${escape(effortChangedText(effortNote.from,effortNote.to))}</p>`:'';
+ return effort+refusal+(n?`<p class="row-foot" title="${escape(itemStatus(path)?.kind==='tool_off'?(itemStatus(path) as Extract<ItemStatus,{kind:'tool_off'}>).reason:'')}">${escape(n.why.replace(/[。.]+$/,''))}。${escape(extra)}<button class="inline-action" data-focus="${path}" data-field="${n.field}">${n.action}</button></p>`:'');
 }
 function itemStatus(path:string):ItemStatus|undefined {
  if(!draft)return;
@@ -108,6 +110,7 @@ function familyFields() {
 }
 async function probe() {
  if(!draft)return;
+ effortNote=undefined;
  const owner=draft;const id=`desktop-${Date.now()}-${++probeCounter}`;
  owner.beginProbe(id);render();
  try {const result=await mygo.call<Evidence>('Host.ProbeCapabilities',id);if(draft===owner)settleProbe(owner,id,result);}
@@ -147,23 +150,23 @@ function render() {
  const target=document.querySelector<HTMLButtonElement|HTMLSelectElement>(`[data-path="${button.dataset.focus}"][data-field="${button.dataset.field}"]`);
  if(target&&!target.disabled){target.focus();if(target.tagName==='BUTTON')target.click();else try{(target as HTMLSelectElement).showPicker();}catch{}}
  }));
- document.querySelector('#undo')?.addEventListener('click',()=>{saved='';draft!.undo();editor?.back();message=copy.修改已撤销已恢复读取时的设置;render();});
+ document.querySelector('#undo')?.addEventListener('click',()=>{saved='';effortNote=undefined;draft!.undo();editor?.back();message=copy.修改已撤销已恢复读取时的设置;render();});
  document.querySelector('#diff')?.addEventListener('click',()=>{editor?.preview();render();});
  document.querySelector('#back')?.addEventListener('click',()=>{editor?.back();render();});
  document.querySelector('#save')?.addEventListener('click',save);
  document.querySelector('#recover')?.addEventListener('click',recover);
  document.querySelectorAll<HTMLInputElement>('input[data-family]').forEach(input=>{
  input.disabled=!!locked||reading;
- input.addEventListener('change',()=>{saved='';const c=draft!.familyIdentities()[Number(input.dataset.family)]!;draft!.setFamilyDeclaration(c.agent,c.model,input.value);render();});
+ input.addEventListener('change',()=>{saved='';effortNote=undefined;const c=draft!.familyIdentities()[Number(input.dataset.family)]!;draft!.setFamilyDeclaration(c.agent,c.model,input.value);render();});
  });
  document.querySelectorAll<HTMLButtonElement>('button[data-review]').forEach(button=>{
  if(locked||reading||(button.dataset.action==='add'&&!draft?.canEdit().addToQueue)){button.disabled=true;return;}
- button.addEventListener('click',()=>{saved='';const path=button.dataset.review!,index=Number(button.dataset.index),action=button.dataset.action;
+ button.addEventListener('click',()=>{saved='';effortNote=undefined;const path=button.dataset.review!,index=Number(button.dataset.index),action=button.dataset.action;
  draft!.editCandidates(path,action==='add'?{kind:'add',item:{agent:'',model:'',effort:''}}:action==='remove'?{kind:'remove',index}:{kind:'move',index,to:index+(action==='up'?-1:1)});render();});
  });
  document.querySelectorAll<HTMLButtonElement>('button[data-work]').forEach(button=>{
  if(locked||reading||(button.dataset.action==='add'&&!draft?.canEdit().addToQueue)){button.disabled=true;return;}
- button.addEventListener('click',()=>{saved='';const name=button.dataset.work!,index=Number(button.dataset.index),action=button.dataset.action;
+ button.addEventListener('click',()=>{saved='';effortNote=undefined;const name=button.dataset.work!,index=Number(button.dataset.index),action=button.dataset.action;
  draft!.editFallbacks(name,action==='add'?{kind:'add',item:{agent:'',model:'',effort:''}}:action==='remove'?{kind:'remove',index}:{kind:'move',index,to:index+(action==='up'?-1:1)});render();});
  });
  document.querySelectorAll<HTMLButtonElement>('button[data-path][data-field="model"]').forEach(button=>{
@@ -189,7 +192,7 @@ function render() {
  const checking=draft?.check.kind==='checking';
  if(locked||reading||!draft?.canEdit().select)document.querySelectorAll<HTMLSelectElement>('select').forEach(el=>el.disabled=true);
  if(locked||checking||reading){for(const id of ['refresh','undo','diff','reload']){const el=document.querySelector<HTMLButtonElement>('#'+id);if(el)el.disabled=true;}}
- document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(select=>select.addEventListener('change',()=>{saved='';draft!.select(select.dataset.path!,select.dataset.field as keyof ModelTriple,select.value);render();}));
+ document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(select=>select.addEventListener('change',()=>{saved='';effortNote=draft!.select(select.dataset.path!,select.dataset.field as keyof ModelTriple,select.value);render();}));
 }
 function showApplyRefusal(from:string,reason:ApplyRefusal) {
  applyNotice={from,reason};render();
@@ -217,6 +220,7 @@ function renderApply(focus=false) {
  }));
  popup.querySelector('#cancel-apply')!.addEventListener('click',()=>closeApply(true));
  popup.querySelector('#apply-primary')!.addEventListener('click',()=>{
+ effortNote=undefined;
  const result=draft!.applyPrimary(from,[...selected]);
  closeApply();
  if(result.kind==='applied'){applyNotice=undefined;saved='';render();document.querySelector<HTMLButtonElement>(`button[data-apply-from="${from}"]`)?.focus();}
@@ -286,7 +290,7 @@ function renderPicker() {
  };
  input.oninput=event=>{if(!event.isComposing)search(input);};
  popup.querySelectorAll<HTMLButtonElement>('[data-source]').forEach(b=>b.addEventListener('click',()=>{picker!.source=b.dataset.source;picker!.active=undefined;renderPicker();}));
- popup.querySelectorAll<HTMLButtonElement>('[data-model]').forEach(b=>b.addEventListener('click',()=>{saved='';draft!.select(path,'model',b.dataset.model!);closePicker(true);}));
+ popup.querySelectorAll<HTMLButtonElement>('[data-model]').forEach(b=>b.addEventListener('click',()=>{saved='';effortNote=draft!.select(path,'model',b.dataset.model!);closePicker(true);}));
  if(document.activeElement!==input)input.focus();
  highlight();
 }
@@ -321,6 +325,7 @@ document.addEventListener('click',event=>{
  if(picker&&!target.closest('.model-popup,button[data-path][data-field="model"],button[data-focus],#refresh,#reload'))closePicker();
 });
 function reload() {
+ effortNote=undefined;
  if(reading)return;
  if(draft?.changes().length){message=copy.修改还在若要重新读取设置请先撤销修改;render();}else void read();
 }
@@ -331,7 +336,7 @@ function disableReload(disabled:boolean) {
 }
 async function read(automatic=false) {
  const previous=guideInput&&appInfoLoaded?guide(guideInput,appInfo):undefined;
- reading=true; saved='';
+ reading=true; saved='';effortNote=undefined;
  // 自动读取保留卡片 DOM，复制提示、焦点和文字选区不受影响。
  if(automatic)disableReload(true);
  else {message=copy.正在读取本机设置;render();}

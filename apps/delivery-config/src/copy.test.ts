@@ -1,4 +1,4 @@
-import {modelSummary} from './copy';
+import {effortChangedText,modelSummary} from './copy';
 import {expect,test} from 'bun:test';
 import {modelLabel} from './copy';
 import {readFileSync} from 'node:fs';
@@ -93,4 +93,9 @@ test('复制摘要对未知工具、空模型及空思考程度给出可读兜�
 });
 test('空目标拒绝与其他拒绝一样提示再复制',()=>{
  expect(applyRefusalText({kind:'no_target'})).toBe('请至少选择一项工作再复制');
+});
+
+test('DD-610 自动变化文字使用中文档位并通过禁词扫描',()=>{
+ const text=effortChangedText('xhigh','high');
+ expect(text).toBe('思考程度已从“很高”改为“高”，新模型不支持“很高”');clean(text);
 });

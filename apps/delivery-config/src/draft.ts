@@ -35,6 +35,18 @@ export function cell(config: Config, path:string):Cell {
  const list=p[0]==='work'?'fallbacks':'candidates';const offset=p[0]==='work'?2:3;
  return p[offset]===list?parent[list]![Number(p[offset+1])]!:parent;
 }
+export type EffortChange = {path:string;from:string;to:string};
+export const EFFORT_ORDER = ['none','minimal','low','medium','high','xhigh','max','ultra'] as const;
+export function nearestEffort(current:string,supported:string[]):string {
+ if(supported.includes(current))return current;
+ const order:readonly string[]=EFFORT_ORDER,index=order.indexOf(current);
+ if(index<0)return '';
+ let nearest='',distance=Infinity;
+ for(const [i,effort] of order.entries())if(supported.includes(effort)&&Math.abs(i-index)<distance){
+ nearest=effort;distance=Math.abs(i-index);
+ }
+ return nearest;
+}
 export class Draft {
  config:Config;
  check:Check={kind:'idle'};
@@ -131,11 +143,14 @@ export class Draft {
  // 删除与调序始终允许（R7）；选择与新增只在已核对时开放。
  canEdit() {const on=pickerUnavailable(this.check)===undefined;return {select:on,addToQueue:this.check.kind==='checked'};}
  options(c:Cell) {return this.evidence?.sources[c.agent]?.status==='ok'?this.evidence.capabilities[c.agent]?.models[c.model] || []:[];}
- select(path:string, field:keyof ModelTriple,value:string) {
+ select(path:string, field:keyof ModelTriple,value:string):EffortChange|undefined {
  const c=cell(this.config,path); if(c[field]===value)return;
  c[field]=value;
  if(field==='agent') {c.model='';c.effort='';}
- if(field==='model' && !this.options(c).includes(c.effort))c.effort='';
+ if(field==='model' && !this.options(c).includes(c.effort)){
+ const from=c.effort;c.effort=nearestEffort(from,this.options(c));
+ if(c.effort&&c.effort!==from)return {path,from,to:c.effort};
+ }
  }
  valid() {
  const key=(c:ModelTriple)=>JSON.stringify([c.agent,c.model,c.effort]);
