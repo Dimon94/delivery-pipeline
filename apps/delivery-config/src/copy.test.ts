@@ -1,4 +1,4 @@
-import {effortChangedText,modelSummary} from './copy';
+import {agentLabel,effortChangedText,modelSummary} from './copy';
 import {expect,test} from 'bun:test';
 import {modelLabel} from './copy';
 import {readFileSync} from 'node:fs';
@@ -98,4 +98,12 @@ test('空目标拒绝与其他拒绝一样提示再复制',()=>{
 test('DD-610 自动变化文字使用中文档位并通过禁词扫描',()=>{
  const text=effortChangedText('xhigh','high');
  expect(text).toBe('思考程度已从“很高”改为“高”，新模型不支持“很高”');clean(text);
+});
+
+test('DD-613 工具路由文案与禁用原因通过禁词扫描',()=>{
+ for(const agent of ['pi','codex','claude'])for(const route of ['direct','gateway',null,undefined] as const)clean(agentLabel(agent,route));
+ const reason='Codex 当前指向的地址既不是本机网关也不是 OpenAI 官方，无法确认可用模型';
+ const evidence={sources:{codex:{status:'unknown',next_step:'',route:null,reason}},capabilities:{codex:{binary:true,models:{}}}};
+ const text=toolOffText('codex',undefined,{evidence});
+ expect(text.title).toBe(reason);expect(text.text).toContain('暂不支持');clean(text.text);clean(text.title!);
 });

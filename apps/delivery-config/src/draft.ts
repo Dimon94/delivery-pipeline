@@ -3,7 +3,8 @@ export type ModelTriple = {agent: string; model: string; effort: string};
 export type Cell = ModelTriple & {fallbacks?:ModelTriple[]; candidates?:ModelTriple[]};
 export type FallbackEdit = {kind:"add";item:ModelTriple}|{kind:"set";index:number;item:ModelTriple}|{kind:"move";index:number;to:number}|{kind:"remove";index:number};
 export type Config = {model_families?:Record<string,Record<string,{family:string;source:"user_declared"}>>;work: Record<string, Cell>; review: Record<string, Record<string, Cell>>; modes: Record<string, unknown>; [key: string]: unknown};
-export type Evidence = {request_id:string; observed_at:string; gateway:{status:string}; capabilities:Record<string,{binary:boolean;models:Record<string,string[]>}>; sources:Record<string,{status:string;next_step:string;reason?:string}>};
+export type SourceEvidence = {status:string;next_step:string;reason?:string;route?:'gateway'|'direct'|null};
+export type Evidence = {request_id:string; observed_at:string; gateway:{status:string}; capabilities:Record<string,{binary:boolean;models:Record<string,string[]>}>; sources:Record<string,SourceEvidence>};
 // 唯一的核对状态；网关是否可达只看证据里的 gateway.status，不从 sources 反推。
 export type Check =
  | {kind:'idle'}

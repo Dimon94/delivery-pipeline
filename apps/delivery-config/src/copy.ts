@@ -1,4 +1,4 @@
-import type {Evidence,Check} from './draft';
+import type {Evidence,Check,SourceEvidence} from './draft';
 // 用户文字的唯一入口；运行数据与原始诊断原因不改写。
 export const FORBIDDEN = ['Unknown','证据','元数据','未联网','草稿','原值','slug','probe'] as const;
 export const copy = {
@@ -151,9 +151,14 @@ export function modelLabel(raw:string):string {
  const source=parts.filter(p=>p!=='magpie').pop(),context=leaf.match(/@(\d+)k$/)?.[1];
  return label+(source&&sources[source]?` · ${sources[source]}`:'')+(context?` · ${Number(context)/10}万上下文`:'');
 }
+export function agentLabel(agent:string,route?:SourceEvidence['route']):string {
+ if(agent==='codex'&&route==='direct')return 'Codex CLI · 直连 OpenAI';
+ return ({pi:'Pi',codex:'Codex CLI',claude:'Claude Code'} as Record<string,string>)[agent]||copy.已配置工具;
+}
 // unknown + 已安装 + 空模型清单表示尚无完整能力；不匹配来源原因文字。
 export function toolOffText(agent:string,reason?:string,context:{evidence?:Pick<Evidence,'sources'|'capabilities'>;selected?:boolean}={}):{text:string;title?:string} {
  const source=context.evidence?.sources[agent],cap=context.evidence?.capabilities[agent];
+ reason=agent==='codex'&&source?.route===null&&source.reason?source.reason:reason;
  const unsupported=['codex','claude'].includes(agent)&&source?.status==='unknown'&&cap?.binary===true&&Object.keys(cap.models).length===0;
  return {text:context.selected?'当前用不了，可点重新核对':unsupported?'暂不支持：还不能确认它有哪些模型可用':'暂时用不了，可点重新核对',...(reason?{title:reason}:{})};
 }
@@ -194,8 +199,8 @@ export function applyRefusalText(r:import('./draft').ApplyRefusal,check?:import(
 
 export function applyTriggerLabel(name:string):string {return `把${name}的设置复制到其他工作`;}
 
-export function modelSummary(c:import('./draft').ModelTriple):string {
- const agent=({pi:'Pi',codex:'Codex CLI',claude:'Claude Code'} as Record<string,string>)[c.agent]||copy.已配置工具;
+export function modelSummary(c:import('./draft').ModelTriple,route?:SourceEvidence['route']):string {
+ const agent=agentLabel(c.agent,route);
  return `${agent} · ${modelLabel(c.model)} · ${effortLabel(c.effort)||copy.请选择思考程度}`;
 }
 
