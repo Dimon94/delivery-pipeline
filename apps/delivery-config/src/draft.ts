@@ -42,19 +42,24 @@ export class Draft {
  get evidence():Evidence|undefined {return this.check.kind==='checked'?this.check.evidence:undefined;}
  applyTargets(from:string):ApplyTarget[] {
  const source=cell(this.config,from);
- return work.map(n=>`work.${n}`).filter(p=>p!==from).map(path=>{
+ return paths.filter(p=>p.startsWith('work.')&&p!==from).map(path=>{
  const target=cell(this.config,path);
  return {path,same:source.agent===target.agent&&source.model===target.model&&source.effort===target.effort};
  });
  }
+ applyBlocked(from:string):ApplyRefusal|undefined {
+ if(!this.canEdit().select||this.check.kind!=='checked')return {kind:'not_checked'};
+ const status=this.itemStatus(cell(this.config,from));
+ if(status.kind!=='ok')return {kind:'source',status};
+ }
  applyPrimary(from:string,to:string[]):ApplyResult {
- if(this.check.kind!=='checked')return {kind:'refused',reason:{kind:'not_checked'}};
- const source=cell(this.config,from),status=this.itemStatus(source);
- if(status.kind!=='ok')return {kind:'refused',reason:{kind:'source',status}};
+ const reason=this.applyBlocked(from);
+ if(reason)return {kind:'refused',reason};
+ const source=cell(this.config,from);
  const targets=this.applyTargets(from).filter(t=>to.includes(t.path));
  if(!targets.length)return {kind:'refused',reason:{kind:'no_target'}};
  const changed=targets.filter(t=>!t.same).map(t=>t.path);
- for(const p of changed)Object.assign(cell(this.config,p),{agent:source.agent,model:source.model,effort:source.effort});
+ for(const p of changed)for(const field of ['agent','model','effort'] as const)this.select(p,field,source[field]);
  return {kind:'applied',changed};
  }
  changes() {return [...paths.filter(p=>JSON.stringify(cell(this.snapshot,p))!==JSON.stringify(cell(this.config,p))),...(JSON.stringify(this.snapshot.model_families)!==JSON.stringify(this.config.model_families)?['model_families']:[])];}

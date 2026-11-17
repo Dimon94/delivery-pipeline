@@ -178,7 +178,7 @@ export function pickerUnavailable(check:Check,agent?:string,reading=false):strin
 export function applyTargetText(t:{name:string;now:string;next:string;same:boolean}):string {return t.same?`${t.name}：已相同`:`${t.name}：${t.now} → ${t.next}`;}
 
 export function applyRefusalText(r:import('./draft').ApplyRefusal,check?:import('./draft').Check):string {
- if(r.kind==='no_target')return '请至少选择一项工作再应用';
+ if(r.kind==='no_target')return '请至少选择一项工作再复制';
  if(r.kind==='not_checked'&&check?.kind==='checking')return '正在核对，请等核对完成后再复制';
  if(r.kind==='not_checked'&&check?.kind==='unreachable')return '核对失败，请点重新核对，完成后再复制';
  if(r.kind==='not_checked')return '核对尚未完成，请在核对完成后复制；若核对失败，请点重新核对';
@@ -193,3 +193,8 @@ export function applyRefusalText(r:import('./draft').ApplyRefusal,check?:import(
 }
 
 export function applyTriggerLabel(name:string):string {return `把${name}的设置复制到其他工作`;}
+
+export function modelSummary(c:import('./draft').ModelTriple):string {
+ const agent=({pi:'Pi',codex:'Codex CLI',claude:'Claude Code'} as Record<string,string>)[c.agent]||copy.已配置工具;
+ return `${agent} · ${modelLabel(c.model)} · ${effortLabel(c.effort)||copy.请选择思考程度}`;
+}

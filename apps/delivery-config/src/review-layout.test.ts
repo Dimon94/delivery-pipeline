@@ -1,4 +1,4 @@
-import {test,expect} from 'bun:test';
+import {test,expect,describe,beforeEach} from 'bun:test';
 import {Window} from 'happy-dom';
 import type {Config} from './draft';
 
@@ -273,6 +273,14 @@ test('R1 冲突恢复仅一条成功提示',async()=>{
  const notices=[...doc.querySelectorAll('[role="status"]')].filter(e=>e.textContent?.includes('已重新读取当前设置。'));
  expect(notices.length).toBe(1);expect(notices[0]!.classList.contains('success')).toBe(true);
 });
+describe('M5b 独立页面场景',()=>{
+ beforeEach(async()=>{
+  holdProbe=false;models={[a.model]:['high'],[b.model]:['high'],[target]:['high']};
+  doc.body.click();
+  doc.querySelector<HTMLButtonElement>('#back')?.click();
+  doc.querySelector<HTMLButtonElement>('#undo')?.click();
+  click('#reload');await new Promise(r=>setTimeout(r,20));
+ });
 test('DD-605 T1/T3/T6 鼠标复制、取消勾选、差异与撤销',()=>{
  const trigger='button[data-apply-from="work.planning"]';
  click(trigger);
@@ -329,7 +337,7 @@ test('DD-606 键盘入口、复选框名称、关闭与应用恢复焦点',()=>{
  const trigger=()=>doc.querySelector<HTMLButtonElement>('button[data-apply-from="work.planning"]')!;
  const key=(e:Element,k:string)=>e.dispatchEvent(new win.KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}));
  expect(trigger().getAttribute('aria-label')).toBe('把规划的设置复制到其他工作');
- for(const close of ['Escape','cancel','outside']){
+ for(const close of ['Escape','cancel']){
   trigger().focus();key(trigger(),'Enter');
   const input=doc.querySelector<HTMLInputElement>('.apply-popup input')!;
   expect(doc.activeElement===input).toBe(true);
@@ -346,6 +354,8 @@ test('DD-606 键盘入口、复选框名称、关闭与应用恢复焦点',()=>{
 test('DD-606 窄窗口列表靠右不出界、底部向上翻，resize/scroll 重定位',()=>{
  const trigger=doc.querySelector<HTMLButtonElement>('button[data-apply-from="work.planning"]')!;
  const original=trigger.getBoundingClientRect;
+ const width=win.innerWidth,height=win.innerHeight;
+ try {
  trigger.getBoundingClientRect=()=>({left:400,top:420,bottom:444,right:520,width:120,height:24,x:400,y:420,toJSON(){}});
  Object.defineProperty(win,'innerWidth',{value:530,configurable:true});Object.defineProperty(win,'innerHeight',{value:500,configurable:true});
  click('button[data-apply-from="work.planning"]');
@@ -355,7 +365,42 @@ test('DD-606 窄窗口列表靠右不出界、底部向上翻，resize/scroll �
  expect(popup.style.left).toBe('10px');expect(popup.style.top).toBe('116px');expect(popup.style.maxHeight).toBe('406px');
  popup.style.left='999px';doc.dispatchEvent(new win.Event('scroll',{bubbles:true}));expect(popup.style.left).toBe('10px');
  const sheet=new win.CSSStyleSheet();sheet.replaceSync(readFileSync(new URL('./style.css',import.meta.url),'utf8'));
- expect([...sheet.cssRules].filter(r=>(r as CSSStyleRule).selectorText==='.apply-popup').map(r=>(r as CSSStyleRule).style.maxWidth)).toContain('calc(100vw - 20px)');
- doc.body.click();trigger.getBoundingClientRect=original;
- Object.defineProperty(win,'innerWidth',{value:1024,configurable:true});Object.defineProperty(win,'innerHeight',{value:768,configurable:true});
+ expect([...sheet.cssRules].filter(r=>['.popup','.apply-popup'].includes((r as CSSStyleRule).selectorText)).map(r=>(r as CSSStyleRule).style.maxWidth)).toContain('calc(100vw - 24px)');
+ } finally {doc.body.click();trigger.getBoundingClientRect=original;
+ Object.defineProperty(win,'innerWidth',{value:width,configurable:true});Object.defineProperty(win,'innerHeight',{value:height,configurable:true});
+ }
+});
+test('点外部控件关闭复制列表，焦点留在该控件',()=>{
+ click('button[data-apply-from="work.planning"]');
+ const control=doc.querySelector<HTMLSelectElement>('select[data-path="work.design"][data-field="agent"]')!;control.focus();control.click();
+ expect(doc.querySelector('.apply-popup')).toBeNull();
+ expect(doc.activeElement===control).toBe(true);
+});
+test('复制列表 Tab 与 picker 一样关闭，入口 Esc 也关闭，controls 仅在展开存在',()=>{
+ const trigger=()=>doc.querySelector<HTMLButtonElement>('button[data-apply-from="work.planning"]')!;
+ expect(trigger().hasAttribute('aria-controls')).toBe(false);
+ trigger().click();
+ doc.querySelector('.apply-popup input')!.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));
+ expect(doc.querySelector('.apply-popup')).toBeNull();expect(doc.activeElement===trigger()).toBe(true);
+ expect(trigger().hasAttribute('aria-controls')).toBe(false);
+ trigger().click();trigger().focus();trigger().dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ expect(doc.querySelector('.apply-popup')).toBeNull();
+});
+test('拒绝提示随重绘保留，点另一入口或成功复制后清除',async()=>{
+ models={[b.model]:['high']};click('#refresh');await new Promise(r=>setTimeout(r,20));
+ click('button[data-apply-from="work.planning"]');
+ expect(doc.querySelector('[data-apply-status]')?.textContent).toContain('模型已不在');
+ click('#help');expect(doc.querySelector('[data-apply-status]')?.textContent).toContain('模型已不在');
+ models={[a.model]:['high'],[b.model]:['high']};click('#refresh');await new Promise(r=>setTimeout(r,20));
+ click('button[data-apply-from="work.design"]');expect(doc.querySelector('[data-apply-status]')).toBeNull();
+ click('input[data-apply-target="work.frontend"]');click('#apply-primary');
+ expect(doc.querySelector('[data-apply-status]')).toBeNull();
+});
+test('已有修改时取消复制，原有修改与差异保持',()=>{
+ click('button[data-path="work.planning"][data-field="model"]');click(`[data-model="${b.model}"]`);
+ click('button[data-apply-from="work.planning"]');click('#cancel-apply');
+ expect(doc.querySelector('.footer-status')!.textContent).toBe('1 项修改待确认');
+ click('#diff');expect([...doc.querySelectorAll('.diff-panel article h3')].map(e=>e.textContent)).toEqual(['规划']);
+ expect(doc.querySelector('.diff-panel')!.textContent).toContain('Claude Opus 5.5');
+});
 });

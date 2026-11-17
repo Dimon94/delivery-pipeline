@@ -1,9 +1,9 @@
 import {pickerView,moveActive} from './picker';
-import {modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts,applyTargetText,applyRefusalText,applyTriggerLabel} from './copy';
+import {modelSummary,modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts,applyTargetText,applyRefusalText,applyTriggerLabel} from './copy';
 import './style.css';
 import {guide,shouldRereadOnFocus,type GuideInput} from './guide';
 
-import {Draft,settleProbe,cell,paths,work,agentIds,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus} from './draft';
+import {Draft,settleProbe,cell,paths,work,agentIds,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus,type ApplyRefusal} from './draft';
 import {Editor,type Snapshot,type Outcome} from './editor';
 import {instanceLabel,instanceTitle,isTestConfig,loadAppInfo,type AppInfo} from './appinfo';
 let appInfo:AppInfo|undefined;
@@ -13,6 +13,7 @@ declare const mygo: {call<T>(name: string,...args:unknown[]): Promise<T>};
 let draft:Draft|undefined;
 let picker:{path:string;query:string;source?:string;active?:string}|undefined;
 
+let applyNotice:{from:string;reason:ApplyRefusal}|undefined;
 let applying:{from:string;selected:Set<string>}|undefined;
 let probeCounter=0;
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -73,7 +74,8 @@ function queueChip(path:string) {
 }
 function foot(path:string,c:Cell,extra='') {
  const n=note(path,c);
- return n?`<p class="row-foot" title="${escape(itemStatus(path)?.kind==='tool_off'?(itemStatus(path) as Extract<ItemStatus,{kind:'tool_off'}>).reason:'')}">${escape(n.why.replace(/[。.]+$/,''))}。${escape(extra)}<button class="inline-action" data-focus="${path}" data-field="${n.field}">${n.action}</button></p>`:'';
+ const refusal=applyNotice?.from===path?`<p class="row-foot" data-apply-status="${path}" role="status">${escape(applyRefusalText(applyNotice.reason,draft?.check))}</p>`:'';
+ return refusal+(n?`<p class="row-foot" title="${escape(itemStatus(path)?.kind==='tool_off'?(itemStatus(path) as Extract<ItemStatus,{kind:'tool_off'}>).reason:'')}">${escape(n.why.replace(/[。.]+$/,''))}。${escape(extra)}<button class="inline-action" data-focus="${path}" data-field="${n.field}">${n.action}</button></p>`:'');
 }
 function itemStatus(path:string):ItemStatus|undefined {
  if(!draft)return;
@@ -90,8 +92,7 @@ function banner() {
  return message;
 }
 function pathLabel(path:string) {if(path==='model_families')return copy.共享家族声明;const p=path.split('.');return p[0]==='work'?workNames[p[1]!]!+(p[2]==='fallbacks'?` · ${copy.备用} ${Number(p[3])+1}`:''): `${p[1]==='implementation'?copy.实施结果:copy.整体交付} · ${p[2]==='standards'?copy.代码规范:copy.需求符合度}${p[3]==='candidates'?` · ${copy.候选2} ${Number(p[4])+1}`:''}`;}
-function summary(c:Cell) {return `${agents[c.agent] || copy.已配置工具} · ${modelLabel(c.model)} · ${effortLabel(c.effort) || copy.请选择思考程度}`;}
-function ordered(c:Cell) {if(c.candidates)return summary(c)+`；${copy.候选}${c.candidates.length?c.candidates.map((v,i)=>`${i+1}. ${summary(v)}`).join(' → '):copy.空}`;return summary(c)+(c.fallbacks?`；${copy.备用2}${c.fallbacks.length?c.fallbacks.map((v,i)=>`${i+1}. ${summary(v)}`).join(' → '):copy.空}`:'');}
+function ordered(c:Cell) {if(c.candidates)return modelSummary(c)+`；${copy.候选}${c.candidates.length?c.candidates.map((v,i)=>`${i+1}. ${modelSummary(v)}`).join(' → '):copy.空}`;return modelSummary(c)+(c.fallbacks?`；${copy.备用2}${c.fallbacks.length?c.fallbacks.map((v,i)=>`${i+1}. ${modelSummary(v)}`).join(' → '):copy.空}`:'');}
 function changeSummary(config:Config,path:string) {
  if(path!=='model_families')return ordered(cell(config,path));
  return Object.entries(config.model_families||{}).flatMap(([agent,models])=>Object.entries(models).map(([model,d])=>`${agents[agent]} · ${modelLabel(model)}：${d.family}（${copy.用户声明}`)).join('；')||copy.未声明;
@@ -125,7 +126,7 @@ function render() {
  const config = draft?.config || null;
  if(diagnosing){app.innerHTML=`<main class="frame"><h1>${copy.独立诊断}</h1><p>${copy.此页包含配置工具的机器结果不会修改配置}</p><pre>${escape(JSON.stringify(diagnostic??snapshot,null,2))}</pre><button id="close-diagnostic">${copy.返回设置}</button></main>`;document.querySelector('#close-diagnostic')!.addEventListener('click',()=>{diagnosing=false;render();});return;}
 
- app.innerHTML = `<header class="app-bar"><div class="app-brand">Delivery Pipeline</div><div class="app-location">${copy.设置模型设置}</div><div class="right"><button class="plain" id="help">${copy.使用说明}</button></div></header><main class="frame"><div class="page-title"><div><h1>${copy.模型设置}</h1><p>${copy.调整每种工作使用的AI核对差异后保存}</p></div>${appInfoLoaded?`<span class="instance${isTestConfig(appInfo)?' test-config':''}" title="${escape(instanceTitle(appInfo))}">${escape(instanceLabel(appInfo))}</span>`:''}</div>${help?`<aside class="help-panel"><h2>${copy.使用说明}</h2><p>${copy.每行是一种工作依次显示运行工具模型和思考程度}</p><p>${copy.点模型格搜索或按来源选择备用会在主模型启动失败时依次接替}</p><p>${copy.改好后点击查看差异确认后保存新任务会使用新设置指定预设的任务和正}</p><p>${copy.遇到问题先按页面提示处理也可点击重新核对或打开诊断把结果交给AI}</p></aside>`:''}${guideCard()}${(!guideInput||reading)&&banner()?`<div class="notice${draft?.check.kind==='checked'||draft?.check.kind==='checking'||reading||kind==='saving'?' calm':''}" role="status">${escape(banner())}</div>`:''}${saved?`<div class="notice success" role="status">${escape(saved)}</div>`:''}${draft&&draft.attention()?`<div class="notice attention" role="status">${draft.attention()} ${copy.项设置需要处理其余} ${paths.length-draft.attention()} ${copy.项可以正常使用}</div>`:''}${editor&&'retained' in editor.state&&editor.state.retained?`<aside class="notice"><h2>${copy.请人工核对后重新选择}</h2><p>${copy.当前页面以最新设置为起点上次修改仅供参考请逐项重新选择再查看差异}</p>${[...paths,'model_families'].map(p=>`<p>${escape(pathLabel(p))}：${copy.上次修改} ${escape(changeSummary((editor!.state as Extract<import('./editor').State,{kind:'draft'|'preview'}>).retained!.config,p))}；${copy.最新} ${escape(changeSummary(draft!.snapshot,p))}</p>`).join('')}</aside>`:''}${kind==='conflict'||kind==='uncertain'?`<aside class="notice"><h2>${kind==='conflict'?copy.设置已在别处更新:copy.保存结果待确认}</h2><p>${copy.修改还在请检查当前设置并人工核对不会自动重试或回滚}</p><button id="recover" ${reading?'disabled':''}>${kind==='conflict'?copy.读取最新设置并核对:copy.检查当前保存结果}</button></aside>`:''}${config?`<section class="work-section"><div class="section-label"><h2>${copy.工作模型}</h2><p>${copy.每种工作的当前设置}</p></div><div class="card"><div class="table-head"><span>${copy.工作}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${work.map(name=>`<div class="task-row ${rowClass(`work.${name}`)}"><span class="task-label"><span>${workNames[name]}<small class="task-hint">${workHints[name]}</small>${queueChip(`work.${name}`)}${config.work[name]!.agent&&config.work[name]!.model&&config.work[name]!.effort?`<button class="plain apply-trigger" aria-label="${escape(applyTriggerLabel(workNames[name]!))}" aria-haspopup="dialog" aria-expanded="false" aria-controls="apply-targets" data-apply-from="work.${name}">${copy.复制到其他工作}</button>`:''}</span></span>${fields(config.work[name]!,`work.${name}`)}${foot(`work.${name}`,config.work[name]!,takeoverText(`work.${name}`))}</div>${!openQueues.has(`work.${name}`)?'':`<div class="fallbacks">${(config.work[name]!.fallbacks||[]).map((c,i)=>`<div class="task-row ${rowClass(`work.${name}.fallbacks.${i}`)}"><span>${copy.备用} ${i+1}</span>${fields(c,`work.${name}.fallbacks.${i}`)}<div class="fallback-actions"><button data-work="${name}" data-action="up" data-index="${i}" ${i===0?"disabled":""}>${copy.上移}</button><button data-work="${name}" data-action="down" data-index="${i}" ${i===(config.work[name]!.fallbacks!.length-1)?"disabled":""}>${copy.下移}</button><button data-work="${name}" data-action="remove" data-index="${i}">${copy.删除}</button></div>${foot(`work.${name}.fallbacks.${i}`,c)}</div>`).join("")}<button class="add-queue" data-work="${name}" data-action="add" aria-label="${copy.添加备用} · ${workNames[name]}" ${draft?.canEdit().addToQueue?'':copy.title核对完成后才能新增}>＋ ${copy.添加备用}</button></div>`}`).join('')}</div></section><section class="review-section"><div class="section-label"><h2>${copy.结果检查}</h2><p>${copy.分别检查代码写法和需求完成情况}</p></div><div class="card"><div class="table-head"><span>${copy.检查}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${['implementation','whole-change'].map((scope,i)=>`<section class="review-stage"><h3>${i?copy.整体交付:copy.实施结果} · ${i?copy.合并前看整体:copy.每张票写完后}</h3>${['standards','spec'].map(axis=>{const path=`review.${scope}.${axis}`;return `<div class="task-row ${rowClass(path)}"><span class="task-label"><span>${axis==='standards'?copy.代码规范:copy.需求符合度}<small class="task-hint">${axis==='standards'?copy.写法是否合规:copy.是否做到Spec的要求}</small>${queueChip(path)}</span></span>${fields(config.review[scope]![axis]!,path)}${foot(path,config.review[scope]![axis]!,takeoverText(path))}</div>${candidateFields(config,path)}`;}).join('')}</section>`).join('')}</div></section>${familyFields()}<details class="card read-only"><summary>${copy.其他设置仅查看}</summary><div class="readonly-body"><p class="compact-note">${copy.由初始化助手维护}${Object.keys(config.modes).length} ${copy.组预设仅在任务明确指定时使用}</p><div class="readonly-grid">${Object.entries(config.work).filter(([key])=>!work.includes(key)).map(([key,cell])=>`<div class="readonly-item">${workNames[key] || copy.其他工作}<span>${escape(modelLabel(cell.model))}</span><small>${agents[cell.agent] || copy.已配置工具} · ${effortLabel(cell.effort)}</small></div>`).join('') || `<p class="compact-note">${copy.没有其他工作设置}</p>`}</div></div></details>`:''}<footer class="footer"><span class="footer-status">${config?`${draft!.changes().length} ${copy.项修改待确认}`:copy.请按页面提示完成设置}</span>${config?`<button class="plain" id="refresh" ${draft!.check.kind==='checking'?'disabled':''}>${copy.重新核对}</button><button class="plain" id="undo" ${!draft!.changes().length?'disabled':''}>${copy.撤销修改}</button><button class="primary" id="diff" ${!draft!.changes().length?'disabled':''}>${copy.查看差异}</button>`:''}<button class="plain" id="reload" ${reading?'disabled':''}>${copy.重新读取}</button><button class="text-button" id="diagnostic">${copy.打开诊断}</button></footer>${reviewing&&draft?`<section class="diff-panel" role="dialog" aria-label="${copy.查看差异}"><h2>${copy.核对修改}</h2>${draft.changes().map(p=>`<article><h3>${escape(pathLabel(p))}</h3><p>${copy.原来}${escape(changeSummary(draft!.snapshot,p))}</p><p>${copy.现在}${escape(changeSummary(draft!.config,p))}</p></article>`).join('')}<p>${diffVerdict(draft.valid())}。${copy.确认后保存保存期间不能继续修改}</p><button class="plain" id="back">${copy.返回继续修改}</button><button class="primary" id="save" ${draft.valid()?'':'disabled'}>${copy.确认保存设置}</button></section>`:''}</main>`;
+ app.innerHTML = `<header class="app-bar"><div class="app-brand">Delivery Pipeline</div><div class="app-location">${copy.设置模型设置}</div><div class="right"><button class="plain" id="help">${copy.使用说明}</button></div></header><main class="frame"><div class="page-title"><div><h1>${copy.模型设置}</h1><p>${copy.调整每种工作使用的AI核对差异后保存}</p></div>${appInfoLoaded?`<span class="instance${isTestConfig(appInfo)?' test-config':''}" title="${escape(instanceTitle(appInfo))}">${escape(instanceLabel(appInfo))}</span>`:''}</div>${help?`<aside class="help-panel"><h2>${copy.使用说明}</h2><p>${copy.每行是一种工作依次显示运行工具模型和思考程度}</p><p>${copy.点模型格搜索或按来源选择备用会在主模型启动失败时依次接替}</p><p>${copy.改好后点击查看差异确认后保存新任务会使用新设置指定预设的任务和正}</p><p>${copy.遇到问题先按页面提示处理也可点击重新核对或打开诊断把结果交给AI}</p></aside>`:''}${guideCard()}${(!guideInput||reading)&&banner()?`<div class="notice${draft?.check.kind==='checked'||draft?.check.kind==='checking'||reading||kind==='saving'?' calm':''}" role="status">${escape(banner())}</div>`:''}${saved?`<div class="notice success" role="status">${escape(saved)}</div>`:''}${draft&&draft.attention()?`<div class="notice attention" role="status">${draft.attention()} ${copy.项设置需要处理其余} ${paths.length-draft.attention()} ${copy.项可以正常使用}</div>`:''}${editor&&'retained' in editor.state&&editor.state.retained?`<aside class="notice"><h2>${copy.请人工核对后重新选择}</h2><p>${copy.当前页面以最新设置为起点上次修改仅供参考请逐项重新选择再查看差异}</p>${[...paths,'model_families'].map(p=>`<p>${escape(pathLabel(p))}：${copy.上次修改} ${escape(changeSummary((editor!.state as Extract<import('./editor').State,{kind:'draft'|'preview'}>).retained!.config,p))}；${copy.最新} ${escape(changeSummary(draft!.snapshot,p))}</p>`).join('')}</aside>`:''}${kind==='conflict'||kind==='uncertain'?`<aside class="notice"><h2>${kind==='conflict'?copy.设置已在别处更新:copy.保存结果待确认}</h2><p>${copy.修改还在请检查当前设置并人工核对不会自动重试或回滚}</p><button id="recover" ${reading?'disabled':''}>${kind==='conflict'?copy.读取最新设置并核对:copy.检查当前保存结果}</button></aside>`:''}${config?`<section class="work-section"><div class="section-label"><h2>${copy.工作模型}</h2><p>${copy.每种工作的当前设置}</p></div><div class="card"><div class="table-head"><span>${copy.工作}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${work.map(name=>`<div class="task-row ${rowClass(`work.${name}`)}"><span class="task-label"><span>${workNames[name]}<small class="task-hint">${workHints[name]}</small>${queueChip(`work.${name}`)}${config.work[name]!.agent&&config.work[name]!.model&&config.work[name]!.effort?`<button class="plain apply-trigger" aria-label="${escape(applyTriggerLabel(workNames[name]!))}" aria-haspopup="dialog" aria-expanded="false" data-apply-from="work.${name}">${copy.复制到其他工作}</button>`:''}</span></span>${fields(config.work[name]!,`work.${name}`)}${foot(`work.${name}`,config.work[name]!,takeoverText(`work.${name}`))}</div>${!openQueues.has(`work.${name}`)?'':`<div class="fallbacks">${(config.work[name]!.fallbacks||[]).map((c,i)=>`<div class="task-row ${rowClass(`work.${name}.fallbacks.${i}`)}"><span>${copy.备用} ${i+1}</span>${fields(c,`work.${name}.fallbacks.${i}`)}<div class="fallback-actions"><button data-work="${name}" data-action="up" data-index="${i}" ${i===0?"disabled":""}>${copy.上移}</button><button data-work="${name}" data-action="down" data-index="${i}" ${i===(config.work[name]!.fallbacks!.length-1)?"disabled":""}>${copy.下移}</button><button data-work="${name}" data-action="remove" data-index="${i}">${copy.删除}</button></div>${foot(`work.${name}.fallbacks.${i}`,c)}</div>`).join("")}<button class="add-queue" data-work="${name}" data-action="add" aria-label="${copy.添加备用} · ${workNames[name]}" ${draft?.canEdit().addToQueue?'':copy.title核对完成后才能新增}>＋ ${copy.添加备用}</button></div>`}`).join('')}</div></section><section class="review-section"><div class="section-label"><h2>${copy.结果检查}</h2><p>${copy.分别检查代码写法和需求完成情况}</p></div><div class="card"><div class="table-head"><span>${copy.检查}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${['implementation','whole-change'].map((scope,i)=>`<section class="review-stage"><h3>${i?copy.整体交付:copy.实施结果} · ${i?copy.合并前看整体:copy.每张票写完后}</h3>${['standards','spec'].map(axis=>{const path=`review.${scope}.${axis}`;return `<div class="task-row ${rowClass(path)}"><span class="task-label"><span>${axis==='standards'?copy.代码规范:copy.需求符合度}<small class="task-hint">${axis==='standards'?copy.写法是否合规:copy.是否做到Spec的要求}</small>${queueChip(path)}</span></span>${fields(config.review[scope]![axis]!,path)}${foot(path,config.review[scope]![axis]!,takeoverText(path))}</div>${candidateFields(config,path)}`;}).join('')}</section>`).join('')}</div></section>${familyFields()}<details class="card read-only"><summary>${copy.其他设置仅查看}</summary><div class="readonly-body"><p class="compact-note">${copy.由初始化助手维护}${Object.keys(config.modes).length} ${copy.组预设仅在任务明确指定时使用}</p><div class="readonly-grid">${Object.entries(config.work).filter(([key])=>!work.includes(key)).map(([key,cell])=>`<div class="readonly-item">${workNames[key] || copy.其他工作}<span>${escape(modelLabel(cell.model))}</span><small>${agents[cell.agent] || copy.已配置工具} · ${effortLabel(cell.effort)}</small></div>`).join('') || `<p class="compact-note">${copy.没有其他工作设置}</p>`}</div></div></details>`:''}<footer class="footer"><span class="footer-status">${config?`${draft!.changes().length} ${copy.项修改待确认}`:copy.请按页面提示完成设置}</span>${config?`<button class="plain" id="refresh" ${draft!.check.kind==='checking'?'disabled':''}>${copy.重新核对}</button><button class="plain" id="undo" ${!draft!.changes().length?'disabled':''}>${copy.撤销修改}</button><button class="primary" id="diff" ${!draft!.changes().length?'disabled':''}>${copy.查看差异}</button>`:''}<button class="plain" id="reload" ${reading?'disabled':''}>${copy.重新读取}</button><button class="text-button" id="diagnostic">${copy.打开诊断}</button></footer>${reviewing&&draft?`<section class="diff-panel" role="dialog" aria-label="${copy.查看差异}"><h2>${copy.核对修改}</h2>${draft.changes().map(p=>`<article><h3>${escape(pathLabel(p))}</h3><p>${copy.原来}${escape(changeSummary(draft!.snapshot,p))}</p><p>${copy.现在}${escape(changeSummary(draft!.config,p))}</p></article>`).join('')}<p>${diffVerdict(draft.valid())}。${copy.确认后保存保存期间不能继续修改}</p><button class="plain" id="back">${copy.返回继续修改}</button><button class="primary" id="save" ${draft.valid()?'':'disabled'}>${copy.确认保存设置}</button></section>`:''}</main>`;
  document.querySelector('#diagnostic')!.addEventListener('click',()=>{diagnosing=true;render();});
  document.querySelector('#help')!.addEventListener('click',()=>{help=!help;render();});
  document.querySelector('#copy-guide')?.addEventListener('click',async()=>{
@@ -167,21 +168,21 @@ function render() {
  });
  document.querySelectorAll<HTMLButtonElement>('button[data-path][data-field="model"]').forEach(button=>{
  button.disabled=!!locked||reading;
- const open=()=>{closeApply();closePicker();picker={path:button.dataset.path!,query:''};renderPicker();};
+ const open=()=>{closeApply();closePicker();if(applyNotice){applyNotice=undefined;render();}picker={path:button.dataset.path!,query:''};renderPicker();};
   button.addEventListener('click',open);
   button.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open();}});
  });
  document.querySelectorAll<HTMLButtonElement>('button[data-apply-from]').forEach(button=>{
  button.disabled=!!locked||reading;
  button.addEventListener('click',()=>{
- closePicker();closeApply();
+ closePicker();closeApply();if(applyNotice){applyNotice=undefined;render();}
  const from=button.dataset.applyFrom!;
- const reason=draft!.check.kind!=='checked'?{kind:'not_checked' as const}:draft!.status(from).primary.kind!=='ok'?{kind:'source' as const,status:draft!.status(from).primary as Exclude<ItemStatus,{kind:'ok'}>}:undefined;
+ const reason=draft!.applyBlocked(from);
  if(reason){showApplyRefusal(from,reason);return;}
  applying={from,selected:new Set(draft!.applyTargets(from).filter(t=>!t.same).map(t=>t.path))};
  renderApply(true);
  });
- button.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();button.click();}});
+ button.addEventListener('keydown',event=>{if(event.key==='Escape'&&applying){event.preventDefault();closeApply(true);}else if(event.key==='Enter'||event.key===' '){event.preventDefault();button.click();}});
  });
  renderApply();
  renderPicker();
@@ -190,15 +191,15 @@ function render() {
  if(locked||checking||reading){for(const id of ['refresh','undo','diff','reload']){const el=document.querySelector<HTMLButtonElement>('#'+id);if(el)el.disabled=true;}}
  document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(select=>select.addEventListener('change',()=>{saved='';draft!.select(select.dataset.path!,select.dataset.field as keyof ModelTriple,select.value);render();}));
 }
-function showApplyRefusal(from:string,reason:import('./draft').ApplyRefusal) {
- document.querySelectorAll('[data-apply-status]').forEach(e=>e.remove());
- const status=document.createElement('p');status.dataset.applyStatus=from;status.className='row-foot';status.setAttribute('role','status');status.textContent=applyRefusalText(reason,draft?.check);
- document.querySelector(`button[data-apply-from="${from}"]`)!.closest('.task-row')!.append(status);
+function showApplyRefusal(from:string,reason:ApplyRefusal) {
+ applyNotice={from,reason};render();
 }
-function closeApply() {
+function closeApply(restoreFocus=false) {
  const from=applying?.from;
  applying=undefined;document.querySelector('.apply-popup')?.remove();
- const button=document.querySelector<HTMLButtonElement>(`button[data-apply-from="${from}"]`);button?.setAttribute('aria-expanded','false');button?.focus();
+ const button=document.querySelector<HTMLButtonElement>(`button[data-apply-from="${from}"]`);
+ button?.setAttribute('aria-expanded','false');button?.removeAttribute('aria-controls');
+ if(restoreFocus)button?.focus();
 }
 function renderApply(focus=false) {
  const active=document.activeElement as HTMLElement|null;
@@ -207,25 +208,23 @@ function renderApply(focus=false) {
  if(!applying||!draft)return;
  if(editor?.state.kind!=='draft'){closeApply();return;}
  const {from,selected}=applying,source=cell(draft.config,from);
- const summary=(c:ModelTriple)=>`${agents[c.agent]} · ${modelLabel(c.model)} · ${effortLabel(c.effort)}`;
  const popup=document.createElement('div');popup.className='popup apply-popup';popup.id='apply-targets';popup.setAttribute('role','dialog');popup.setAttribute('aria-label',copy.复制到其他工作);
- popup.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeApply();}});
- popup.innerHTML=`<div class="apply-targets">${draft.applyTargets(from).map(t=>`<label><input type="checkbox" data-apply-target="${t.path}" ${selected.has(t.path)?'checked':''}><span>${escape(applyTargetText({name:pathLabel(t.path),now:summary(cell(draft!.config,t.path)),next:summary(source),same:t.same}))}</span></label>`).join('')}</div><div class="apply-actions"><button id="cancel-apply">${copy.取消}</button><button class="primary" id="apply-primary" ${selected.size?'':'disabled'}>${copy.应用}</button></div>`;
- popup.addEventListener('click',e=>e.stopPropagation());
+ popup.addEventListener('keydown',event=>{if(event.key==='Escape'||event.key==='Tab'){event.preventDefault();closeApply(true);}});
+ popup.innerHTML=`<div class="apply-targets">${draft.applyTargets(from).map(t=>`<label><input type="checkbox" data-apply-target="${t.path}" ${selected.has(t.path)?'checked':''}><span>${escape(applyTargetText({name:pathLabel(t.path),now:modelSummary(cell(draft!.config,t.path)),next:modelSummary(source),same:t.same}))}</span></label>`).join('')}</div><div class="apply-actions"><button id="cancel-apply">${copy.取消}</button><button class="primary" id="apply-primary" ${selected.size?'':'disabled'}>${copy.应用}</button></div>`;
  popup.querySelectorAll<HTMLInputElement>('input').forEach(input=>input.addEventListener('change',()=>{
  if(input.checked)selected.add(input.dataset.applyTarget!);else selected.delete(input.dataset.applyTarget!);
  popup.querySelector<HTMLButtonElement>('#apply-primary')!.disabled=!selected.size;
  }));
- popup.querySelector('#cancel-apply')!.addEventListener('click',closeApply);
+ popup.querySelector('#cancel-apply')!.addEventListener('click',()=>closeApply(true));
  popup.querySelector('#apply-primary')!.addEventListener('click',()=>{
  const result=draft!.applyPrimary(from,[...selected]);
  closeApply();
- if(result.kind==='applied'){saved='';render();document.querySelector<HTMLButtonElement>(`button[data-apply-from="${from}"]`)?.focus();}
+ if(result.kind==='applied'){applyNotice=undefined;saved='';render();document.querySelector<HTMLButtonElement>(`button[data-apply-from="${from}"]`)?.focus();}
  else showApplyRefusal(from,result.reason);
  });
  document.body.append(popup);
  const button=document.querySelector<HTMLElement>(`button[data-apply-from="${from}"]`)!;
- button.setAttribute('aria-expanded','true');
+ button.setAttribute('aria-expanded','true');button.setAttribute('aria-controls','apply-targets');
  positionPopup(popup,button);
  if(focus)popup.querySelector<HTMLInputElement>('input')?.focus();
  else if(focused)popup.querySelector<HTMLElement>(`[data-apply-target="${focused}"],#${focused.replaceAll('.','\\.')}`)?.focus();

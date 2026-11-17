@@ -1,14 +1,20 @@
+import {modelSummary} from './copy';
 import {expect,test} from 'bun:test';
 import {modelLabel} from './copy';
+import {readFileSync} from 'node:fs';
+import {copy,FORBIDDEN,toolOffText,bannerText,diffVerdict,effortLabel,type BannerInput} from './copy';
+import {guide} from './guide';
+import {instanceLabel} from './appinfo';
+import {pickerCount} from './copy';
+import {pickerView} from './picker';
+import {applyTargetText} from './copy';
+import {applyRefusalText,applyTriggerLabel} from './copy';
 // DD-595 的确定示例，预期独立于实现。
 test('模型名称按家族与后缀规范显示，陌生名称保留',()=>{
  expect(modelLabel('gpt-6.1-sol')).toBe('GPT 6.1 Sol');
  expect(modelLabel('magpie/group/kimi-k3.1-pro')).toBe('Kimi K3.1 Pro · 模型分组');
  expect(modelLabel('foo-bar-1')).toBe('foo-bar-1');
 });
-import {readFileSync} from 'node:fs';
-import {copy,FORBIDDEN,toolOffText,bannerText,diffVerdict,effortLabel,type BannerInput} from './copy';
-import {guide} from './guide';
 const clean=(text:string)=>{for(const word of FORBIDDEN)expect(text).not.toContain(word);};
 test('全部固定文字、状态提示和引导均不含内部词',()=>{
  const inputs:BannerInput[]=[{kind:'checking'},{kind:'unreachable',cause:'gateway'},{kind:'unreachable',cause:'call'},{kind:'saved'},{kind:'loaded'},{kind:'recovered'}];
@@ -58,9 +64,6 @@ test('R1 实例标签文字集中并拦截内部词',()=>{
  expect(source).not.toMatch(/[\u4e00-\u9fff]/);
  for(const info of [undefined,{build:'',config_kind:'test'},{build:'',config_kind:'cli'}])clean(instanceLabel(info));
 });
-import {instanceLabel} from './appinfo';
-import {pickerCount} from './copy';
-import {pickerView} from './picker';
 test('选择器名称、缺失原因、无结果和不可用提示不含内部词',()=>{
  for(const n of [0,1,58])clean(pickerCount(n));
  for(const input of [
@@ -71,18 +74,23 @@ test('选择器名称、缺失原因、无结果和不可用提示不含内部�
   const v=pickerView(input);clean(v.empty||'');for(const g of v.groups){clean(g.label);for(const i of g.items){clean(i.label);clean(i.disabled||'');}}
  }
 });
-import {applyTargetText} from './copy';
 test('DD-605 目标文字显示变化或已相同，且没有内部词',()=>{
  const t={name:'设计',now:'Claude Code · Beta · 低',next:'Pi · Alpha · 高',same:false};
  expect(applyTargetText(t)).toBe('设计：Claude Code · Beta · 低 → Pi · Alpha · 高');
  expect(applyTargetText({...t,same:true})).toBe('设计：已相同');
  clean(applyTargetText(t));clean(applyTargetText({...t,same:true}));
 });
-import {applyRefusalText,applyTriggerLabel} from './copy';
 test('DD-606 每种拒绝说明原因和下一步，入口有工作名，全部通过禁词扫描',()=>{
  const reasons:import('./draft').ApplyRefusal[]=[{kind:'not_checked'},{kind:'no_target'},...(['checking','unverified','incomplete','model_gone','effort_gone'] as const).map(kind=>({kind:'source' as const,status:{kind}})),{kind:'source',status:{kind:'tool_off',reason:'probe Unknown'}}];
- const expected=['核对','至少选择','正在核对','还未核实','选完整','模型已不在','不支持当前思考程度','运行工具当前用不了'];
+ const expected=['核对尚未完成','至少选择','正在核对','还未核实','选完整','模型已不在','不支持当前思考程度','运行工具当前用不了'];
  reasons.forEach((r,i)=>{const text=applyRefusalText(r);clean(text);expect(text).toContain(expected[i]!);expect(text).toMatch(/请/);});
  for(const check of [{kind:'checking',request:'x'},{kind:'unreachable',cause:'call_failed'}] as const)clean(applyRefusalText({kind:'not_checked'},check));
  expect(applyTriggerLabel('设计')).toBe('把设计的设置复制到其他工作');clean(applyTriggerLabel('设计'));
+});
+test('复制摘要对未知工具、空模型及空思考程度给出可读兜底',()=>{
+ expect(modelSummary({agent:'unknown',model:'',effort:''})).toBe('已配置工具 · 请选择模型 · 请选择思考程度');
+ expect(modelSummary({agent:'pi',model:'gpt-6.1-sol',effort:'high'})).toBe('Pi · GPT 6.1 Sol · 高');
+});
+test('空目标拒绝与其他拒绝一样提示再复制',()=>{
+ expect(applyRefusalText({kind:'no_target'})).toBe('请至少选择一项工作再复制');
 });

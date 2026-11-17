@@ -20,7 +20,7 @@ test('R2 未核对与来源不可用均拒绝，拒绝前后一字不改',()=>{
  for(const kind of ['idle','checking','unreachable','tool_off','model_gone','effort_gone','incomplete','no_target']){
  const d=setup();
  if(kind==='idle')d.check={kind:'idle'};
- if(kind==='checking'){d.applyTargets('work.planning');d.beginProbe('2');}
+ if(kind==='checking')d.beginProbe('2');
  if(kind==='unreachable')d.check={kind:'unreachable',cause:'gateway'};
  if(kind==='tool_off')d.evidence!.sources.pi!.status='off';
  if(kind==='model_gone')d.config.work.planning!.model='gone';
@@ -37,4 +37,10 @@ test('R4 按页面顺序列四项，已相同不计数',()=>{
  expect(d.applyTargets('work.planning')).toEqual([{path:'work.design',same:true},{path:'work.frontend',same:false},{path:'work.backend',same:false},{path:'work.testing',same:false}]);
  expect(d.applyPrimary('work.planning',targets)).toEqual({kind:'applied',changed:targets.slice(1)});
  expect(d.applyPrimary('work.planning',targets)).toEqual({kind:'applied',changed:[]});
+});
+test('复制遵守选择闸门，已核对但选择被禁用也不能写草稿',()=>{
+ const d=setup();d.canEdit=()=>({select:false,addToQueue:false});const before=structuredClone(d.config);
+ expect(d.canEdit().select).toBe(false);
+ expect(d.applyPrimary('work.planning',targets)).toEqual({kind:'refused',reason:{kind:'not_checked'}});
+ expect(d.config).toEqual(before);
 });
