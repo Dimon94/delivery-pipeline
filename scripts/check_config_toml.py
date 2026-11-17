@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='config-toml-') as tmp:
     codex.write_text('#!/bin/sh\n/bin/echo \'{"models": []}\'\n')
     codex.chmod(0o755)
     catalog = home / 'catalog.json'
-    catalog.write_text(json.dumps({'models': [{'slug': 'vendor/model@large', 'supported_reasoning_levels': [{'effort': e} for e in ['high', 'xhigh', 'ultra']]}]}))
+    catalog.write_text(json.dumps({'models': [{'slug': 'vendor/model@large', 'supported_reasoning_levels': [{'effort': e} for e in ['high', 'xhigh', 'ultra', 'persistent']]}]}))
     config = home / '.codex/config.toml'
     valid = ('model_provider = "local.magpie"\nmodel_catalog_json = ' + json.dumps(str(catalog)) + '\n'
              '# 完整 TOML：带点的 quoted key、inline table、multiline string\n'
@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='config-toml-') as tmp:
     catalog.write_text(json.dumps({'models': [{'slug': 'unmapped-native', 'supported_reasoning_levels': [{'effort': 'high'}]}]}))
     p = probe()
     assert p['capabilities']['codex']['models'] == {} and p['sources']['codex']['status'] == 'unknown'
-    bundled = {'models': [{'slug': 'gpt-6.1-sol', 'supported_reasoning_levels': [{'effort': e} for e in ['low', 'high', 'xhigh', 'max']]}]}
+    bundled = {'models': [{'slug': 'gpt-6.1-sol', 'supported_reasoning_levels': [{'effort': e} for e in ['low', 'high', 'xhigh', 'max', 'ultra', 'persistent']]}]}
     codex.write_text('#!/bin/sh\n[ "$*" = "debug models --bundled" ] || exit 1\n/bin/echo ' + "'" + json.dumps(bundled) + "'\n")
     config.write_text('model_catalog_json = ' + json.dumps(str(catalog)) + '\n')
     catalog.write_text('invalid catalog must not be read for direct')
@@ -65,9 +65,23 @@ with tempfile.TemporaryDirectory(prefix='config-toml-') as tmp:
     assert p['sources']['codex']['status'] == 'ok'
     assert '直连 OpenAI' in p['sources']['codex']['origin']
     assert p['capabilities']['codex']['models'] == {'gpt-6.1-sol': ['low', 'high', 'xhigh', 'max']}
+    config.unlink()
+    p = probe()
+    assert p['sources']['codex']['route'] == 'direct', '缺失配置应使用默认直连'
+    assert p['sources']['codex']['status'] == 'ok'
     for failed in ('#!/bin/sh\nexit 1\n', '#!/bin/sh\n/bin/echo invalid-json\n'):
         codex.write_text(failed)
         p = probe()
         assert p['sources']['codex']['status'] == 'unknown'
         assert p['capabilities']['codex']['models'] == {}
+        assert p['sources']['codex']['route'] == 'direct'
+        assert p['sources']['codex']['reason'] == '无法读取 Codex 内置模型清单'
+        config.write_text(valid)
+        p = probe()
+        assert p['sources']['codex']['route'] == 'gateway'
+        assert p['sources']['codex']['reason'] == '无法读取 Codex 内置模型清单'
+        config.write_text(valid.replace('127.0.0.1:3425', '127.0.0.1:9999'))
+        p = probe()
+        assert p['sources']['codex']['reason'] == 'Codex 当前指向的地址既不是本机网关也不是 OpenAI 官方，无法确认可用模型'
+        config.unlink()
 print('TOML public probe: pass (isolated HOME, no site packages, no tomllib)')

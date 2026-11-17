@@ -69,7 +69,7 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .work-section .card,.review-section .card{overflow-x:auto}
 .work-section .table-head,.review-section .table-head,.work-section .task-row,.review-section .task-row{min-width:940px}
 .work-section .task-row,.review-section .task-row{grid-template-columns:minmax(0,1fr) 600px}
-.work-section .fields,.review-section .fields{width:600px;grid-template-columns:150px minmax(0,1fr) 96px}
+.work-section .fields,.review-section .fields{width:600px;grid-template-columns:210px minmax(0,1fr) 96px}
 .work-section .fallbacks,.review-section .fallbacks{padding:0;background:var(--card-2)}
 .work-section .fallbacks .task-row,.review-section .fallbacks .task-row{padding-left:28px;padding-right:14px}
 .work-section .fallback-actions,.review-section .fallback-actions{grid-column:2;margin-top:8px}
@@ -103,3 +103,5 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .apply-trigger{display:inline-block;margin-top:6px;min-height:30px;min-width:44px;font-size:11px;padding:4px 8px;border:1px solid var(--line);border-radius:6px}
 
 .effort-note{color:var(--muted)}
+
+.fields>[data-field="agent"],.fields>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -873,7 +873,7 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
                   if agent == 'codex' and route is None and harness.get('binary') is True else
                   '未取得精确模型与有效档位的完整证据链')
         sources[agent] = {'route': route, 'status': 'ok' if models else 'unknown',
-                          'observed_at': observed, 'reason': '' if models else reason, 'origin': harness.get('origin', '本机工具元数据'),
+                          'observed_at': observed, 'reason': '' if models else harness.get('reason', reason), 'origin': harness.get('origin', '本机工具元数据'),
                           'next_step': '能力仅核验配置与元数据；认证、额度和实际执行为 Unknown。' if models else
                           '请让 AI 助手核对该工具的接入、精确模型清单和思考档位，再重新核对。'}
     # 网关状态属于证据层：区分“网关挂了”与“工具未接入”，UI 不得从 sources 反推。
@@ -906,26 +906,36 @@ def collect_harnesses() -> dict:
             return None
     result = {}
     output = command('codex', ['debug', 'models', '--bundled'])
+    codex = {'binary': bool(shutil.which('codex') or (home/'.local/bin/codex').exists()),
+             'route': None}
+    result['codex'] = codex
     try:
         try:
             import tomllib
         except ModuleNotFoundError:
             from _vendor import tomli as tomllib
-        config = tomllib.loads((home/'.codex/config.toml').read_text())
-        data = json.loads(output) if output else {}
-        entries = data if isinstance(data, list) else data.get('models', [])
-        route = codex_route(config, os.environ)
-        catalog_path = config.get('model_catalog_json')
-        if route == 'gateway' and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
-            data = json.loads(Path(catalog_path).expanduser().read_text())
-            entries = data if isinstance(data, list) else data.get('models', [])
-        result['codex'] = {'binary': output is not None, 'route': route,
-            'origin': ('Codex 内置清单（直连 OpenAI）' if route == 'direct' else
-                       'Codex 当前路由、精确 catalog 与 magpie 网关清单交集'),
-            'models': [{'native_id': m['slug'], 'gateway_id': m['slug'], 'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
-                        if route == 'direct' or e['effort'] not in ('ultra', 'persistent')]} for m in entries]}
-    except (OSError, ValueError, KeyError, ImportError):
-        result['codex'] = {'binary': output is not None}
+        config_path = home/'.codex/config.toml'
+        config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
+        codex['route'] = codex_route(config, os.environ)
+    except (OSError, ValueError, ImportError):
+        codex['reason'] = '无法读取 Codex 配置'
+    route = codex['route']
+    codex['origin'] = ('Codex 内置清单（直连 OpenAI）' if route == 'direct' else
+                       'Codex 当前路由、精确 catalog 与 magpie 网关清单交集')
+    if route in ('direct', 'gateway'):
+        try:
+            data = json.loads(output or '')
+            entries = data if isinstance(data, list) else data['models']
+            catalog_path = config.get('model_catalog_json')
+            if route == 'gateway' and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
+                data = json.loads(Path(catalog_path).expanduser().read_text())
+                entries = data if isinstance(data, list) else data['models']
+            # 两种路由沿用 Codex 既有档位边界，均不提供 ultra/persistent 扩展档位。
+            codex['models'] = [{'native_id': m['slug'], 'gateway_id': m['slug'],
+                'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
+                            if e['effort'] not in ('ultra', 'persistent')]} for m in entries]
+        except (OSError, ValueError, KeyError, TypeError):
+            codex['reason'] = '无法读取 Codex 内置模型清单'
     output = command('pi', ['--list-models', 'magpie'])
     try:
         config = json.loads((home/'.pi/agent/models.json').read_text())

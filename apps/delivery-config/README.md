@@ -22,7 +22,7 @@ python3 build.py --python /absolute/path/to/python3 --install
 
 检查：根目录 `python3 scripts/check_config_show.py` 已接入 `scripts/validate.py`；本目录 `go test ./...` 穿过公开 Host 到真实 Python 进程，并覆盖 `hostFromArgs` 的启动参数解析。测试配置不能用来改写真实配置。Finder、窗口交互和异常恢复须另留本机证据，不能由这些命令替代。`scripts/check_config_apply.py` 验证桌面与 setup 的共享事务兼容性。
 
-九格可编辑为窗口内待保存修改，打开、保存成功和恢复后自动核对能力（页面可点“重新核对”），支持差异核对、返回与撤销；确认保存调用 apply，不调用 configure。修改完整保留 CLI v7 文档及只读区。能力经 Host 的本机网关 GET 与 canonical `model_config.py probe` 归一化，三种工具独立报告；未能核对的工具保留原设置，并提示重新核对；Codex CLI / Claude Code 尚缺完整模型与档位支持时禁用。Probe 不验证认证、额度或模型执行。
+九格可编辑为窗口内待保存修改，打开、保存成功和恢复后自动核对能力（页面可点“重新核对”），支持差异核对、返回与撤销；确认保存调用 apply，不调用 configure。修改完整保留 CLI v7 文档及只读区。能力经 Host 的本机网关 GET 与 canonical `model_config.py probe` 归一化，三种工具独立报告；未能核对的工具保留原设置，并提示重新核对；Codex 默认直连时显示“Codex CLI · 直连 OpenAI”，模型与档位来自内置清单；网关路由仍取交集，两种路由均不提供 ultra/persistent。其他代理或清单读取失败时说明原因并禁用；Claude Code 尚缺完整模型与档位支持时禁用。Probe 不验证认证、额度或模型执行。
 
 `bun test src/draft.test.ts` 覆盖受控延迟与修改行为，`go test ./...` 穿过真实 Python 公开入口。可重复的来源归一化合同由根 `scripts/check_config_probe.py` 进入 validate；真实 MyGo 证据独立记录。
 

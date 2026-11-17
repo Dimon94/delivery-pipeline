@@ -37,12 +37,12 @@ const workHints: Record<string,string> = {planning:copy.拆需求定方案,desig
 const toolLabel=(agent:string)=>agentLabel(agent,draft?.evidence?.sources[agent]?.route);
 const summary=(c:ModelTriple)=>modelSummary(c,draft?.evidence?.sources[c.agent]?.route);
 function fields(c: Cell, path?:string) {
- if(!path)return `<div class="fields"><span class="pill">${toolLabel(c.agent)}</span><span class="pill">${escape(modelLabel(c.model))}</span><span class="pill">${effortLabel(c.effort)}</span></div>`;
+ if(!path)return `<div class="fields"><span class="pill" title="${escape(toolLabel(c.agent))}">${toolLabel(c.agent)}</span><span class="pill">${escape(modelLabel(c.model))}</span><span class="pill">${effortLabel(c.effort)}</span></div>`;
  const evidence=draft?.evidence;
  const levels=draft?.options(c) || [];
  function select(field:keyof ModelTriple,values:string[],label:(v:string)=>string,all:string[]=[]) {
   const current=c[field]; const entries=[...new Set([...(current?[current]:[]),...all,...values])];
-  return `<select class="pill" aria-label="${escape(pathLabel(path!))} · ${{agent:copy.运行工具,model:copy.模型,effort:copy.思考程度}[field]}" data-path="${path}" data-field="${field}"><option value="" disabled ${!current?'selected':''}>${copy.请选择}</option>${entries.map(v=>`<option title="${escape(field==='agent'?(toolOffText(v,choices.find(a=>a.agent===v)?.reason).title||''):'')}" value="${escape(v)}" ${v===current?'selected':''} ${!values.includes(v)?'disabled':''}>${escape(label(v))}</option>`).join('')}</select>`;
+  return `<select class="pill" title="${escape(label(current))}" aria-label="${escape(pathLabel(path!))} · ${{agent:copy.运行工具,model:copy.模型,effort:copy.思考程度}[field]}" data-path="${path}" data-field="${field}"><option value="" disabled ${!current?'selected':''}>${copy.请选择}</option>${entries.map(v=>`<option title="${escape(field==='agent'?(toolOffText(v,choices.find(a=>a.agent===v)?.reason).title||''):'')}" value="${escape(v)}" ${v===current?'selected':''} ${!values.includes(v)?'disabled':''}>${escape(label(v))}</option>`).join('')}</select>`;
  }
  const choices=draft?.agentChoices()||[];
  // 已选中却不可用的工具保持选中并标“工具不可用”；其余不可用工具写来源给的原因。
