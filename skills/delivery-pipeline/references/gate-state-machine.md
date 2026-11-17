@@ -68,8 +68,7 @@ whole-map `testing/review`、`test-decision`、`rebase` 与 summary MR。
 
 如果 linked implementation tickets 已存在且前置 gate 证据齐全，直接复用。只有精确 parent/backlink 关系算 linked；
 宽关键词或相似标题不算。无票或缺 owner/确认执行证据时回到 §tickets 前链路；已有票坐标则复用，发布后重新 readback。
-不得因 ticket 大小、拆分方式、描述详细度、验收内容或主观”合理性”阻止 dispatch。
-拆分信号的使用边界见 resolved `ticket-sizing` 的绝对 SKILL.md 路径。
+不得因 ticket 大小、拆分方式、描述详细度、验收内容或主观”合理性”阻止 dispatch；coordinator 不估算、不复核拆票。
 
 ## tickets 前链路
 
@@ -77,20 +76,19 @@ discovery 收口后、发布实施票之前只按本节。一张 map 交付一�
 切分测试：存在一种切法，使每半都能单独上线且单独有人用，就是多个 MMF。
 
 1. `to-spec` 按 **MMF** 的切分测试判定。多个 MMF：停在 spec gate，向用户报告，并请其在编排器外跑 `to-epic`。每个 MMF 另开一张 map。不在本 map 再发布 Spec。切不开且这一整体有人用：发布这一份 Spec。整体没人用：不足一个 MMF，是某个 MMF 里的 ticket，不在本 map 发布 Spec。
-2. `to-tickets` 接着切票：合同票加行为票，单票也走它，切片表只有一行。它调用 `ticket-sizing` 给出逐票拆分信号、票数、拆分信号合计与推荐，超过拆分线的票按 `ticket-sizing`「拆分线」拆开；估算口径只在 resolved `ticket-sizing` 的绝对 SKILL.md 路径。
-3. 向用户报告合计与推荐。用户三选一：照此执行；回 `to-epic` 重切，落点同第 1 步；确认切不开则转入 Ticket Release Mode。启用条件只按 `integration-worktree-management.md` §独立票模式。
-4. 照此执行：由 `to-tickets` 发布并读回。先估算，后发布。
+2. `to-tickets` 接着切票并发布，单票也走它。切法、粒度与发布前的用户确认全归 `to-tickets`；coordinator 只读回发布结果。
+   用户要求逐票上线时，按 `integration-worktree-management.md` §独立票模式。
 
 ## 实施前置检查
 
 每次选 frontier、发布实施票、创建或接续 implementation lane 前，先重建最早未完成 gate。
 `to-spec → to-tickets → dispatch` 是实施证据要求；`spec` 与 `ticket` 两段执行证据缺一不可。证据怎么产生只按 §tickets 前链路。
-已有且仍适用的执行证据可以复用；只读过 skill、存在票或补齐字段不算已执行。
+已发布且精确回链 Spec 的票就是 `to-tickets` 执行证据，直接复用，不补做估算或拆票评审；只读过 skill 或事后补字段不算已执行。
 Map Run Authority 的 follow-up decision ticket 只扩展 discovery；原型报告里的实施建议是
-规划输入，不是 Spec、获批拆票或实施授权。coordinator 将输入交给对应 owner：
+规划输入，不是 Spec、已发布的票或实施授权。coordinator 将输入交给对应 owner：
 
 - 缺 Spec：调用 resolved `to-spec`，按 §tickets 前链路 做 MMF 判定；通过后核验测试切入点等用户确认，并发布这一份 Spec。
-- Spec 已通过但缺获批拆票：按 §tickets 前链路 完成估算与用户选定，再调用 resolved `to-tickets` 发布。
+- Spec 已通过但无 linked tickets：调用 resolved `to-tickets` 切票并发布。
 - 既有票缺上述证据：保留票与 worktree，阻塞实施，回到最早缺失 gate；不靠补标签或只补 Parent 放行。
 - discovery 原型需要尚未实现的生产功能：保留 blocked 和缺口，回到 decision owner 收窄为可独立验证的
   原型，或由用户明确调整 discovery 验收范围并记录延期事项；满足 discovery 后才进入 Spec。
@@ -113,7 +111,7 @@ Map Run Authority 的 follow-up decision ticket 只扩展 discovery；原型报�
     "ticket": {
       "url": "<ticket URL>", "parent": "<Spec URL>", "body": "<回读正文>",
       "owner_run": "<to-tickets 执行产物坐标>",
-      "confirmation": "<拆分与依赖获批的来源与内容>",
+      "confirmation": "<to-tickets 发布来源>",
       "dependencies": []
     }
   }
