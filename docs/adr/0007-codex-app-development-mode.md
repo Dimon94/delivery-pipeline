@@ -25,13 +25,11 @@ App task 的模型请求与宿主运行 readback 分开保存；旧 lane 沿原 
 与内部辅助规则同时传给 coordinator 和 worker。此决定补充 ADR-0004 的 App 例外，CLI 的
 六角色显式配置、owner、权限、Integration、archive 与远程授权边界不变。
 
-2026-09-10 用户要求统一 App 模型配置，Prewalk 默认选择 astra-sol。
+2026-09-10 用户要求统一 App 模型配置。
 唯一模型值来源为 App skill 的 `config/models.json`；模式、各阶段 model/effort、工作分工和
 两轴 Review 参数均由 helper 读取。SKILL、packet、dispatch reference 查询配置，不复制模型值。
-新分派按本票 → map → config.default_mode 选择；resolve 冻结阶段计划和来源到 packet/registry。
-prepare 沿冻结目标与 canonical checkpoint 精确核验，配置变更不迁移既有 lane。
-旧 canonical checkpoint 以持久 phase_plan 恢复；无计划的 legacy App 格式使用配置中的
-legacy_execution，显式标记历史兼容与 Unknown。该配置段只用于旧格式恢复，不当作新票模式。
+新分派按本票 → map → config.default_mode 选择；resolve 冻结 direct 计划和来源到 packet/registry，
+配置变更不迁移既有 lane。
 
 配置位于 skill realpath 内，软链安装即可使用；可显式传另一份完整配置的绝对路径，记录到
 packet/registry。缺配置或非法配置阻塞新分派，不回落到 CLI 或宿主模型默认。
@@ -41,9 +39,10 @@ service tier 沿宿主默认；不改变宿主或其他仓库的配置。
 
 ## Consequences
 
-App Prewalk 新检查点复用 canonical checkpoint 的 Git 隔离、ignored/staged/unstaged 指纹、整体
-SHA-256、原子持久读回与阶段信号判定；旧 App 检查点只能在 registry 已持久化旧模式、格式与
-exact path 同时匹配且 ignored 交付输入为 none 时显式走 legacy 兼容，不补造指纹。
+2026-11-17 修订（Prewalk 退役）：用户确认废弃 App Prewalk（起步 → checkpoint → 同任务换模接续）。
+App implementation 与 CLI 一样只跑 direct；`scripts/prewalk.py` 及其 canonical checkpoint helper、
+PREWALK_READY 信号、`legacy_execution` 配置段一并删除，保留的模型解析/Review/subagent 入口迁到
+`scripts/app_dispatch.py`。仍处于 starting/switching 的旧 lane 不再接续，按 registry 证据人工收口。
 
 2026-09-08 补充：正式两轴 Review 的生命周期与最终放行归 coordinator，实施 worker 只能提交
 候选代码和修复说明。中断、超时或测试成功不能替代独立 verdict；集成前核对宿主原始结论、

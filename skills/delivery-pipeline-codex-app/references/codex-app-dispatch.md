@@ -33,15 +33,9 @@ agent: codex-app
 development_mode: <配置 modes 中的 key | none；恢复沿持久值>
 mode_source: <ticket | map | default | existing lane>
 config_path: <absolute resolved config/models.json>
-execution_kind: <staged | direct>
-phase_plan: <frozen starting/execution/direct model + effort>
-phase_targets: <frozen phase model/effort/source/scope>
-execution_target: <frozen execution model/effort/source/scope>
-execution_phase: <starting | switching | executing | none>
-checkpoint: <absolute artifact path | none>
-checkpoint_format: <canonical-v1 | legacy-app-v0>
-checkpoint_sha256: <SHA-256 | Unknown，仅 legacy 恢复>
-requested_model: <development-mode current phase selection>
+execution_kind: direct
+target: <frozen direct model/effort/source/scope>
+requested_model: <development-mode direct selection>
 requested_effort: <development-mode work selection>
 model: Unknown
 effort: Unknown
@@ -56,23 +50,24 @@ coordinator_host_id: <coordinator-host-id>
 ```
 
 这些字段只定义在本 App reference，不进入 canonical Herdr registry schema。
-requested 字段保存当前阶段请求，切换前的请求及证据保存在 checkpoint；model/effort 保存宿主实际 readback，model_evidence 保存来源与时间。
+requested 字段保存创建请求；model/effort 保存宿主实际 readback，model_evidence 保存来源与时间。
 工具接受请求不代表已验证模型；缺 readback 保持 Unknown。旧 lane 的 app-owned 值保留为
 历史记录，不反推 requested 值、不静默换模型或 transport；继续按 registry 和产物恢复。
+旧 Prewalk lane 的 phase_plan/checkpoint 字段只作历史证据；仍在 starting/switching 的不再接续，按 registry 证据人工收口。
 
 ## 创建
 
-先从宿主读取当前 task 的实际 model/effort/source，用 `scripts/prewalk.py coordinator` 记录；
+先从宿主读取当前 task 的实际 model/effort/source，用 `scripts/app_dispatch.py coordinator` 记录；
 推荐配置允许用户覆盖，Unknown 或偏离推荐值本身不阻断创建或恢复。
 
 1. implementation 新 lane 先回读 canonical gate-state-machine 的实施前置证据，再按开发模式合同
-   调用 `scripts/prewalk.py resolve`；非零退出不得创建任务，把通过后的模式与
-   完整返回 overlay（含配置路径、阶段计划和来源）持久化到既有 registry 或工件，packet 传其
+   调用 `scripts/app_dispatch.py resolve`；非零退出不得创建任务，把通过后的模式与
+   完整返回 overlay（含配置路径、direct target 和来源）持久化到既有 registry 或工件，packet 传其
    绝对路径/字段与当前阶段请求；recover 只恢复、不新建。解析并持久化 Source owner projectId
    与 coordinator task/host；project/path 未变化时复用。
    packet 填入真实 coordinator 坐标、repo 外 lane registry 绝对路径与本文件绝对路径作为 Terminal 回传合同；新建与接管 packet
    都保留该入口。完成回传属于本 lane 的调度授权。
-   非 implementation artifact 根据工作内容调用 `prewalk.py model`（planning/research/prototype），保存 target/config_path 与模型请求；恢复沿原记录。
+   非 implementation artifact 根据工作内容调用 `app_dispatch.py model`（planning/research/prototype），保存 target/config_path 与模型请求；恢复沿原记录。
 2. 按 `task-coordinate-title.md` 生成 role-aware title；同批 lanes 并行调用 `create_thread`，显式
    设置 title、project、Integration branch `startingState`（独立票模式为刚 fetch 的远端默认分支 SHA，
    见 canonical `integration-worktree-management.md` §独立票模式）及 requested_model → `model`、
@@ -90,21 +85,10 @@ requested 字段保存当前阶段请求，切换前的请求及证据保存在 
    保存返回 cursor；已终态的 lane 立即 fan-in，其余在确认 packet 包含回传合同后 Dispatch Handoff。
 
 Testing 和 Review gate 不进入本节创建流程。coordinator 先持久化 gate fixed point 与不可变证据，
-再通过 `scripts/prewalk.py subagent` 取得显式模型参数；Testing 单独读取 work.testing，Review
+再通过 `scripts/app_dispatch.py subagent` 取得显式模型参数；Testing 单独读取 work.testing，Review
 传 review_scope 取得 review_models，再把参数与 `implementation` 或 `whole-change` scope 交给 owner。两者都只读并在回传后由 coordinator
 核验结果。逐票 Integration 也走 subagent 入口，但要求父任务可写、active_count 为 0，并只允许
 写指定 Integration Worktree；完成后 coordinator 重新读取 HEAD、commit、worktree 状态与 checks。
-
-## Prewalk 中间回传
-
-收到 `PREWALK_READY` 时按 `development-mode.md` 的机械核验入口运行 prepare，先持久化
-返回 overlay，再按 Prewalk 接续步骤向原 task
-发送下一轮。通知可能早于起步轮停止：prepare 返回 wait-for-stop 时，对返回 target 调用
-wait_threads（每次最多 60000 ms，沿用 cursor），读到停止后重新读取现场并 prepare。
-超时且仍 active 时继续有界等待并按需报告进度；不把正常结束时序误判成 blocked 或直接
-结束协调轮，避免起步结束后再无通知可唤醒。活动状态 Unknown 时保留现场并报告，不能
-启动接续。只有 persist-before-send 才能写 switching 并发送；不进入 Terminal fan-in、archive 或 cherry-pick。恢复 starting/switching lane
-先读原 task 与 checkpoint；原轮未停止或发送结果未知时不启动第二个执行者。
 
 ## Terminal 回传
 
@@ -157,7 +141,7 @@ coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，�
 并复核；旧 head 的 PASS 不覆盖新代码。
 
 cherry-pick、integrated、关闭实施票（独立票模式为记 `release_stage: candidate` 与申请合并）之前，coordinator 必须直接读取 reviewer 宿主记录，调用
-`scripts/prewalk.py review`。输入 worktree、worker_id、base_commit、head_commit、resolved owner
+`scripts/app_dispatch.py review`。输入 worktree、worker_id、base_commit、head_commit、resolved owner
 triple、review_scope 与 reviews；reviews 必须包含 standards/spec 两轴，每轴包含 reviewer_id、
 source（宿主任务/轮次与时间）、status、verdict、verdict_text（原始最终结论）、
 blocking_findings（未解决阻断项数）、review_scope、base_commit、head_commit。只有 completed + pass

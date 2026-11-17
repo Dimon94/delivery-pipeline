@@ -123,7 +123,7 @@ Map Run Authority 的 follow-up decision ticket 只扩展 discovery；原型报�
 ```
 
 dependencies 是回读的 blocking 坐标列表，空列表仅表示确认无依赖。证据保存到既有 repo 外
-lane registry 旁并在 packet 引用；App 的 resolve/prepare 直接校验同一输入。
+lane registry 旁并在 packet 引用；App 的 resolve 直接校验同一输入。
 helper 只验证必填证据与精确回链，不访问 tracker，不判断正文质量，也不证明确认真实。
 coordinator 必须核对内容、范围与确认有效性；Unknown、任务 completed、ready label 或仅模型选择
 均不能替代证据。用户已确认且仍适用时复用，不增加内容复审 gate。

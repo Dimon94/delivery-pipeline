@@ -22,7 +22,9 @@ send lease、三个 agent adapter（pi/codex/claude）与 PREWALK watcher，占 
    recovery 删除 `staged` operation，question 绑定 lane 的 orca 坐标而非 checkpoint。
 3. 迁移：CLI v3/v4 的 staged 计划 execution 与 starting 不同时 `migrate` 报错，相同时按 direct
    迁移；v5 配置带 `execution` 则 `validate` 失败。两者都重跑 setup。已有 staged lane 不迁移，按 registry 证据人工收口。
-4. Codex App 的 staged/Prewalk 路径（checkpoint、prewalk、implementation gate）不变。
+4. ~~Codex App 的 staged/Prewalk 路径（checkpoint、prewalk、implementation gate）不变。~~
+   2026-11-17 修订：App Prewalk 也已退役（见 ADR-0007 修订），App 同样只跑 direct；
+   implementation gate 保留。
 5. 本 ADR 取代 ADR-0010 决策 1 中 CLI `execution` 与 staged 部分；ADR-0010 的 per-task-type
    权威与 App-only `default_mode` 保留。
 

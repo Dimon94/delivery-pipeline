@@ -22,7 +22,7 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
 1. 当前 Codex App 会话就是 coordinator，记录 `coordinator_runtime: codex-app`、
    `dispatch_runtime: codex-app`。启动时读取 `references/development-mode.md` 的工作分工、执行入口
    与参数与证据；
-   通过 `scripts/prewalk.py models` 读取本 skill 的 `config/models.json`，查询 coordinator 推荐值。用户明确选择可覆盖所有阶段的模型与档位。
+   通过 `scripts/app_dispatch.py models` 读取本 skill 的 `config/models.json`，查询 coordinator 推荐值。用户明确选择可覆盖模型与档位；implementation 只跑 direct（Prewalk 已退役）。
    核对新任务的模型请求，按本次操作完成“每次调用的执行核验”；worker 按 packet 选择当前章节，
    内部委派必须经过 subagent 入口的模型、权限与并发核验。
 2. 本壳使用 `config/models.json` 这个 App 配置实例：它与 CLI 实例共用
@@ -50,9 +50,7 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
    正式 Review 由 coordinator 按
    `review_scope: implementation | whole-change` 调用 resolved code-review owner；App 壳从配置传递
    两轴 model/effort，resolved owner 保持不变。实施 worker 的自评不能放行。候选 commit 在 Integration 前必须通过
-   `references/codex-app-dispatch.md` 的“独立 Review 放行”和 `scripts/prewalk.py review`。
-   新 Prewalk checkpoint 由 `scripts/prewalk.py checkpoint` 复用 canonical helper 原子写入并读回；
-   legacy checkpoint 仅恢复已持久 lane。
+   `references/codex-app-dispatch.md` 的“独立 Review 放行”和 `scripts/app_dispatch.py review`。
 5. 当前 App 明确选择 Herdr 时退出本壳，改用 `delivery-pipeline-herdr`；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 

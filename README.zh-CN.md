@@ -31,7 +31,7 @@ planning  design  frontend  backend  testing  review(implementation/whole-change
 
 配置写入 `~/.config/delivery-pipeline/model-roles.json`（version 4）；schema 在
 `skills/delivery-pipeline/references/model-config-schema.md` 单一定义，与 Codex App 壳的
-`config/models.json` 共用。CLI lane 单轮直跑；命名 `modes` 预设按 agent 保存 model/effort 对（App 仍支持 staged）；
+`config/models.json` 共用。CLI lane 单轮直跑；命名 `modes` 预设按 agent 保存 model/effort 对（App 同样只跑 direct）；
 新 implementation lane 冻结 mode 名选择，已有 lane 沿 registry 恢复。
 Skill 不包含默认模型；配置缺失、未知 version 或字段非法都会阻塞派发并重新进入 setup。
 Coordinator 不在配置中，当前会话使用什么 agent/model，就由什么 agent/model 负责调度。
@@ -99,7 +99,7 @@ App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/conf
 
 #### Codex App 开发流程
 
-下图覆盖 gate 恢复、配置的实施模式、同任务 Prewalk 接续、终态 fan-in、独立 whole-change 测试、
+下图覆盖 gate 恢复、配置的实施模式（只跑 direct）、终态 fan-in、独立 whole-change 测试、
 按 scope 分配的双轴 Review 与 Integration 收尾。
 
 [![Delivery Pipeline Codex App 开发流程](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)](docs/images/delivery-pipeline-codex-app-flow.zh-CN.svg)

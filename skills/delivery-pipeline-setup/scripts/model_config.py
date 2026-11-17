@@ -195,14 +195,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
         top_level.add("model_families")
     if transport == "app":
         top_level = top_level | {"default_mode"}
-        allowed = top_level | {"legacy_execution"}
-    else:
-        allowed = top_level
-    if not set(document) <= allowed or not top_level <= set(document):
-        errors.append(
-            f"top-level keys must be exactly {sorted(top_level)}"
-            + (" plus optional legacy_execution" if transport == "app" else "")
-        )
+    if set(document) != top_level:
+        errors.append(f"top-level keys must be exactly {sorted(top_level)}")
     if transport == "cli" and "default_mode" in document:
         errors.append("default_mode is App-only; CLI 默认计划来自 work 项")
     if document.get("version") not in ((6, 7) if transport == "cli" else (5,)):
@@ -239,8 +233,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                 continue
             if mode["kind"] not in KINDS:
                 errors.append(f"{prefix}.kind must equal staged or direct")
-            elif transport == "cli" and mode["kind"] != "direct":
-                errors.append(f"{prefix}.kind must equal direct; CLI 只跑 direct")
+            elif mode["kind"] != "direct":
+                errors.append(f"{prefix}.kind must equal direct; CLI 与 App 只跑 direct")
             plans = mode["agents"]
             if not isinstance(plans, dict) or not plans:
                 errors.append(f"{prefix}.agents must be a non-empty object")
@@ -284,15 +278,6 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
                 errors.extend(
                     _cell_errors(f"review.{scope}.{axis}", axes[axis], agents, "candidates" if transport == "cli" else None)
                 )
-    if "legacy_execution" in document:
-        legacy = document["legacy_execution"]
-        if not isinstance(legacy, dict) or set(legacy) != LEGACY_EXECUTION_KEYS:
-            errors.append(
-                f"legacy_execution keys must be exactly {sorted(LEGACY_EXECUTION_KEYS)}"
-            )
-        else:
-            for key, value in legacy.items():
-                errors.extend(_pair_errors(f"legacy_execution.{key}", value))
     return errors
 
 
@@ -603,6 +588,13 @@ def _migrate_legacy_document(document: dict) -> tuple[dict, str]:
         errors = _validate_legacy_app(document)
         if errors:
             raise ValueError("; ".join(errors))
+        for name, mode in document["modes"].items():
+            plan = mode["phase_plan"]
+            if mode["kind"] == "staged" and plan["starting"] != plan["execution"]:
+                raise ValueError(
+                    f"App v1 modes.{name} 的 staged execution 已移除（Prewalk 退役，App 只跑 direct）；"
+                    "rerun delivery-pipeline-setup"
+                )
         migrated = {
             "version": 5,
             "default_mode": document["default_mode"],
@@ -612,7 +604,7 @@ def _migrate_legacy_document(document: dict) -> tuple[dict, str]:
             },
             "modes": {
                 name: {
-                    "kind": mode["kind"],
+                    "kind": "direct",
                     "agents": {"codex-app": mode["phase_plan"]},
                 }
                 for name, mode in document["modes"].items()
@@ -624,7 +616,6 @@ def _migrate_legacy_document(document: dict) -> tuple[dict, str]:
                 }
                 for scope, axes in document["review"].items()
             },
-            "legacy_execution": document["legacy_execution"],
         }
         errors = validate_document(migrated, "app")
         if errors:
@@ -1544,7 +1535,7 @@ def valid_app_fixture() -> dict:
         "work": {task: dict(pair) for task in sorted(APP_REQUIRED_WORK)},
         "modes": {
             "standard": {
-                "kind": "staged",
+                "kind": "direct",
                 "agents": {
                     "codex-app": {
                         stage: {"model": "provider/model", "effort": "effort"}
@@ -1559,10 +1550,6 @@ def valid_app_fixture() -> dict:
         },
         "review": {
             scope: {axis: dict(pair) for axis in REVIEW_AXES} for scope in REVIEW_SCOPES
-        },
-        "legacy_execution": {
-            key: {"model": "provider/model", "effort": "high"}
-            for key in sorted(LEGACY_EXECUTION_KEYS)
         },
     }
 
@@ -1580,6 +1567,10 @@ def self_test() -> list[str]:
     case["default_mode"] = "standard"
     if not validate_document(case):
         failures.append("CLI config with default_mode was accepted")
+    case = valid_app_fixture()
+    case["modes"]["standard"]["kind"] = "staged"
+    if not validate_document(case, "app"):
+        failures.append("staged App mode was accepted after Prewalk retirement")
     case = valid_app_fixture()
     case["modes"] = {}
     if not validate_document(case, "app"):
@@ -1778,6 +1769,9 @@ def self_test() -> list[str]:
     case = valid_fixture()
     case["legacy_execution"] = {}
     cases["legacy-in-cli"] = case
+    case = valid_app_fixture()
+    case["legacy_execution"] = {}
+    cases["legacy-in-app"] = case
     case = valid_fixture()
     case["default_mode"] = "missing"
     cases["default-mode-in-cli"] = case

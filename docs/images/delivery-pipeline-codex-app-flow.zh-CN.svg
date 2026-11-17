@@ -84,23 +84,23 @@
 
   <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
   <text x="240" y="570" text-anchor="middle" class="label">default_mode（配置）</text>
-  <text x="240" y="593" text-anchor="middle" class="detail">配置模型 Prewalk 与首改</text>
-  <text x="240" y="612" text-anchor="middle" class="detail">同任务接续 配置模型 实现与测试</text>
+  <text x="240" y="593" text-anchor="middle" class="detail">默认 direct 计划</text>
+  <text x="240" y="612" text-anchor="middle" class="detail">配置模型 单轮实现与测试</text>
 
   <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="600" y="570" text-anchor="middle" class="label">staged (mode)</text>
-  <text x="600" y="593" text-anchor="middle" class="detail">配置模型 Prewalk 与首改</text>
-  <text x="600" y="612" text-anchor="middle" class="detail">同任务接续 配置模型 实现与测试</text>
+  <text x="600" y="570" text-anchor="middle" class="label">ticket / map mode</text>
+  <text x="600" y="593" text-anchor="middle" class="detail">命名 direct 预设</text>
+  <text x="600" y="612" text-anchor="middle" class="detail">配置模型 单轮实现与测试</text>
 
   <rect x="820" y="545" width="280" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
-  <text x="960" y="570" text-anchor="middle" class="label">direct (mode)</text>
-  <text x="960" y="593" text-anchor="middle" class="detail">跳过 Prewalk</text>
+  <text x="960" y="570" text-anchor="middle" class="label">model_overrides.direct</text>
+  <text x="960" y="593" text-anchor="middle" class="detail">用户显式覆盖</text>
   <text x="960" y="612" text-anchor="middle" class="detail">配置模型 从头实现与测试</text>
 
   <rect x="420" y="660" width="360" height="62" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
   <text x="600" y="686" text-anchor="middle" class="label">完成 owner 流程 · 配置模型 实施票 Review</text>
-  <text x="600" y="708" text-anchor="middle" class="detail">Prewalk 不新增 gate；无法原任务换模则保留现场并受阻</text>
-  <text x="600" y="750" text-anchor="middle" class="detail">同一 threadId + hostId + Execution Worktree · checkpoint 核验 HEAD / dirty / 首改 / TODO</text>
+  <text x="600" y="708" text-anchor="middle" class="detail">不新增 gate；模型请求被拒则保留现场并受阻</text>
+  <text x="600" y="750" text-anchor="middle" class="detail">同一 threadId + hostId + Execution Worktree · 单轮直跑</text>
 
   <text x="614" y="798" class="edge-label">FINAL_REPORT · 异步唤醒</text>
   <rect x="390" y="815" width="420" height="75" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>

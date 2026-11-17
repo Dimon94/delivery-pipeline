@@ -422,18 +422,15 @@ def check_context_loading() -> None:
             refs = re.findall(r"`([^`]+\.md)` §([^；|\n]+)", cells[2])
             if refs:
                 branches[key] = "\n".join(read_contract_section((packet.parent / p).resolve(), h.strip()) for p, h in refs)
-        if set(branches) != {"全部", "commit", "staged", "planning", "内部委派", "正式 Review"}:
+        if set(branches) != {"全部", "commit", "planning", "内部委派", "正式 Review"}:
             raise ValueError("App 加载表缺少角色或阶段")
         direct = branches["全部"] + branches["commit"] + read_contract_section(packet, "Worker 执行")
         for required in ("Owner SKILL.md", "HEAD 包含 base", "to-spec", "send_message_to_thread", "Unknown", "phase: executing"):
             if required not in direct:
                 raise ValueError(f"direct 缺少必要合同: {required}")
-        for unrelated in ("### Prewalk 接续", "legacy_checkpoint: true", "## 创建", "## 恢复、Archive 与 Cleanup"):
+        for unrelated in ("## 创建", "## 恢复、Archive 与 Cleanup"):
             if unrelated in direct:
                 raise ValueError(f"direct 多加载分支: {unrelated}")
-        for required in ("PREWALK_READY", "同一个 threadId/hostId", "不能盲目重发", "canonical build/write/read"):
-            if required not in branches["staged"]:
-                raise ValueError(f"staged 缺少恢复合同: {required}")
         for required in ("Standards/Spec", "Review Evidence Bundle", "blocking_findings", "不验证宿主来源真实性"):
             if required not in branches["正式 Review"]:
                 raise ValueError(f"Review 缺少审查证据: {required}")
@@ -502,15 +499,15 @@ def check_lane_wakeup() -> None:
 
 
 def check_app_shell() -> None:
-    if not is_executable(APP / "scripts" / "prewalk.py"):
-        record("App prewalk helper must be executable")
+    if not is_executable(APP / "scripts" / "app_dispatch.py"):
+        record("App dispatch helper must be executable")
     subprocess.run(
-        [sys.executable, str(APP / "scripts" / "check_prewalk.py")], check=True
+        [sys.executable, str(APP / "scripts" / "check_app_dispatch.py")], check=True
     )
     # App 请求值与运行证据分离；这只是提示合同检查。
     for path in [
         APP / "SKILL.md",
-        APP / "scripts/prewalk.py",
+        APP / "scripts/app_dispatch.py",
         *APP.glob("references/*.md"),
         APP / "assets/APP_ROLE_DISPATCH_PACKET.md",
         ROOT / ".codex/config.toml",
@@ -823,19 +820,15 @@ def check_metadata_and_helpers() -> None:
 
 
 def check_checkpoint_contract() -> None:
-    """App Prewalk 仍用 canonical checkpoint；CLI 已无 staged 续接（ADR-0018）。"""
-    helper = CORE / "scripts" / "checkpoint.py"
-    probe = CORE / "scripts" / "checkpoint_check.py"
-    for path in (helper, probe):
-        if not path.exists():
-            record(f"missing checkpoint helper: {path.relative_to(ROOT)}")
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-    for args, label in (([str(helper), "self-test"], "self-test"), ([str(probe)], "isolation check")):
-        if not Path(args[0]).exists():
-            continue
-        result = subprocess.run([sys.executable, *args], text=True, capture_output=True, env=env)
-        if result.returncode != 0:
-            record(f"checkpoint {label} failed: {result.stdout}{result.stderr}")
+    """CLI staged 已删（ADR-0018）；App Prewalk 已退役，checkpoint/prewalk helper 不得复活。"""
+    for retired in (
+        CORE / "scripts" / "checkpoint.py",
+        CORE / "scripts" / "checkpoint_check.py",
+        APP / "scripts" / "prewalk.py",
+        APP / "scripts" / "check_prewalk.py",
+    ):
+        if retired.exists():
+            record(f"retired Prewalk helper resurrected: {retired.relative_to(ROOT)}")
     for removed in ("continuation.py", "pi_adapter.py", "codex_cli_adapter.py", "claude_adapter.py"):
         if (CORE / "scripts" / removed).exists():
             record(f"CLI staged helper resurrected: {removed}")

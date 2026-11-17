@@ -44,63 +44,6 @@
     }
   },
   "modes": {
-    "astra-sol": {
-      "kind": "staged",
-      "agents": {
-        "codex-app": {
-          "starting": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          },
-          "execution": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          },
-          "direct": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          }
-        }
-      }
-    },
-    "sol-luna": {
-      "kind": "staged",
-      "agents": {
-        "codex-app": {
-          "starting": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          },
-          "execution": {
-            "model": "gpt-6.1-sol",
-            "effort": "max"
-          },
-          "direct": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          }
-        }
-      }
-    },
-    "sol-sol": {
-      "kind": "staged",
-      "agents": {
-        "codex-app": {
-          "starting": {
-            "model": "gpt-6.1-sol",
-            "effort": "xhigh"
-          },
-          "execution": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          },
-          "direct": {
-            "model": "gpt-6.1-sol",
-            "effort": "high"
-          }
-        }
-      }
-    },
     "sol-direct": {
       "kind": "direct",
       "agents": {
@@ -145,16 +88,6 @@
         "model": "gpt-6.1-sol",
         "effort": "xhigh"
       }
-    }
-  },
-  "legacy_execution": {
-    "astra-luna": {
-      "model": "gpt-6.1-sol",
-      "effort": "max"
-    },
-    "astra-sol": {
-      "model": "gpt-6.1-sol",
-      "effort": "high"
     }
   }
 }

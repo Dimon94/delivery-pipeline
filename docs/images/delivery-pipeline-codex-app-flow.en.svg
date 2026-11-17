@@ -84,23 +84,23 @@
 
   <rect x="100" y="545" width="280" height="80" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
   <text x="240" y="570" text-anchor="middle" class="label">default_mode (config)</text>
-  <text x="240" y="593" text-anchor="middle" class="detail">Configured model Prewalk and first edit</text>
-  <text x="240" y="612" text-anchor="middle" class="detail">Same task continues with Configured model</text>
+  <text x="240" y="593" text-anchor="middle" class="detail">Default direct plan</text>
+  <text x="240" y="612" text-anchor="middle" class="detail">Configured model implements and tests in one pass</text>
 
   <rect x="460" y="545" width="280" height="80" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="600" y="570" text-anchor="middle" class="label">staged (mode)</text>
-  <text x="600" y="593" text-anchor="middle" class="detail">Configured model Prewalk and first edit</text>
-  <text x="600" y="612" text-anchor="middle" class="detail">Same task continues with Configured model</text>
+  <text x="600" y="570" text-anchor="middle" class="label">ticket / map mode</text>
+  <text x="600" y="593" text-anchor="middle" class="detail">Named direct preset</text>
+  <text x="600" y="612" text-anchor="middle" class="detail">Configured model implements and tests in one pass</text>
 
   <rect x="820" y="545" width="280" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
-  <text x="960" y="570" text-anchor="middle" class="label">direct (mode)</text>
-  <text x="960" y="593" text-anchor="middle" class="detail">Skip Prewalk</text>
+  <text x="960" y="570" text-anchor="middle" class="label">model_overrides.direct</text>
+  <text x="960" y="593" text-anchor="middle" class="detail">Explicit user override</text>
   <text x="960" y="612" text-anchor="middle" class="detail">Configured model implements and tests from start</text>
 
   <rect x="420" y="660" width="360" height="62" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
   <text x="600" y="686" text-anchor="middle" class="label">Complete owner flow · Configured model ticket review</text>
-  <text x="600" y="708" text-anchor="middle" class="detail">Same-task switch failure preserves state and blocks</text>
-  <text x="600" y="750" text-anchor="middle" class="detail">Same threadId + hostId + Execution Worktree · checkpoint verifies HEAD / dirty / first edit / TODO</text>
+  <text x="600" y="708" text-anchor="middle" class="detail">Rejected model request preserves state and blocks</text>
+  <text x="600" y="750" text-anchor="middle" class="detail">Same threadId + hostId + Execution Worktree · one-pass direct run</text>
 
   <text x="614" y="798" class="edge-label">FINAL_REPORT · asynchronous wake-up</text>
   <rect x="390" y="815" width="420" height="75" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>

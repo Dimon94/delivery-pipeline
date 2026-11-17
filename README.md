@@ -33,7 +33,7 @@ planning  design  frontend  backend  testing  review(implementation/whole-change
 
 Configuration lives at `~/.config/delivery-pipeline/model-roles.json` (version 4); the schema is
 defined once in `skills/delivery-pipeline/references/model-config-schema.md` and shared with the Codex App
-shell's `config/models.json`. CLI lanes run direct in one pass; named `modes` presets carry model/effort pairs per agent (App keeps staged); new
+shell's `config/models.json`. CLI lanes run direct in one pass; named `modes` presets carry model/effort pairs per agent (App is direct-only too); new
 implementation lanes freeze their mode selection and existing lanes recover from their registry. Skills
 contain no default models: missing, unknown, or invalid configuration blocks dispatch and re-enters setup.
 The coordinator is not configured — whichever agent/model invoked the skill remains coordinator. Per-agent
@@ -109,7 +109,7 @@ development contract](skills/delivery-pipeline-codex-app/references/development-
 
 #### Codex App development flow
 
-The flow below shows gate recovery, configured implementation modes, same-task Prewalk continuation,
+The flow below shows gate recovery, configured implementation modes (direct only),
 terminal fan-in, separate whole-change testing, scope-aware dual-axis review, and Integration closeout.
 
 [![Delivery Pipeline Codex App development flow](docs/images/delivery-pipeline-codex-app-flow.en.svg)](docs/images/delivery-pipeline-codex-app-flow.en.svg)
