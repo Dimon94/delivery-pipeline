@@ -34,8 +34,10 @@ load-on-demand：
 ## Epic 入口
 
 启动或恢复已发布 Epic 时，读 `../delivery-pipeline/references/epic-scheduling.md` 的 Issue 证据与快照合同，
-用共享 helper 计算跨 MMF 批次。以本壳 Issue／队列读回填充 MMF 状态，把就绪项交给下方 Issue frontier，
-每次宿主终态回流后重算。Epic 持有跨 MMF 的开工／上线边，本壳 Orchestration 块持有 MMF 内的票依赖。
+用共享 helper 计算跨 MMF 批次。尚无 Map／Spec 时，由持有 Epic claim 的 coordinator 调用 Wayfinder
+owner 创建并读回 Map Issue，关联 Epic 与 MMF。缺 Spec 或实施票时，创建并读回本 Map 下由对应 owner
+执行的 planning Issue，依本壳 Orchestration 格式通过宿主事务派发。Spec／tickets 发布并读回后，
+将该 MMF 的实施票交给下方 Issue frontier。每次宿主终态回流后重算。Epic 持有跨 MMF 的开工／上线边，本壳 Orchestration 块持有 MMF 内的票依赖。
 每个 Issue 的写入 claim、HITL、验收和恢复沿本壳合同。到达上线动作时核对 Epic 的 `release` frontier，
 从 Spec 及发布证据读回 `accepted`，再解除下游依赖。
 

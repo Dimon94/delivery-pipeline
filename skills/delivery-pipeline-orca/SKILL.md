@@ -96,6 +96,7 @@ Browser/automation 操作先读 `references/orca-browser-automation.md`，每次
 
 ## Remote publication gate（Phase 4）
 
+所属 Epic 有上线边时，在受约束的动作前按 `../delivery-pipeline/references/epic-scheduling.md` 核对 release frontier。
 Remote publication 操作先读 `references/orca-remote-publication.md`，每次运行
 `scripts/remote_publication.py check <payload>`。任一 gate 缺证据 → 该操作不可执行，
 registry 写 `close_pending`。不代用户发起 push/PR/MR/merge/publication。

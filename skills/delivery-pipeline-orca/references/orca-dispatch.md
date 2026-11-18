@@ -4,7 +4,9 @@
 
 ## 操作顺序
 
-1. coordinator 从已通过的 implementation gate 读取 lane、owner 三字段、output mode、冻结 mode、Integration HEAD、权限和 review fixed point。
+1. coordinator 按当前 gate 读取 lane、owner 三字段、output mode、冻结配置、Integration HEAD 和权限。
+   实施 lane 读已通过的 implementation gate 与 review fixed point。Epic 的 Spec／tickets 规划用
+   `planning/artifact`，以已读回的 Map、该阶段输入和 Integration HEAD 为启动证据。
 2. 沿 #121 的共享 overlay 先写 `task-create` intent；创建真实 Task 后写回 Task/Run readback。随后写 Dispatch intent，再执行原生 `orchestration worker-start`。无依赖 fan-out 允许 `worker-start --spec` 一次调用合并 Task 创建与 Dispatch 启动：overlay 落一次合并 intent，`--spec` receipt 返回后一次写回 Task/Run/Dispatch readback（bind_lane_task + bind_attempt）；有依赖的 planned fan-out 仍走 `task-create --deps` + `worker-start --task`。
 3. `worker-start` 必须绑定 `--task`、冻结 Integration HEAD 的显式 base、明确 worker name/selector、共享 policy 的 agent 与 setup policy。Source Worktree 不切 branch。launch transport 按 agent 能力二选一（见下节）。
 
@@ -14,7 +16,7 @@
 
 并发只跨 lane；lane 内仍按上方「操作顺序」逐步执行，每步的 readback 与隔离纪律不变。
 
-1. **批级前置（唯一串行段）**：implementation gate 读取（步骤 1，全批共享一次）与共享
+1. **批级前置（唯一串行段）**：各 Map 当前 gate 的证据读回（步骤 1，同 Map 同阶段共用）与共享
    overlay 的全部写入（task-create intent、Task/Run readback 写回、Dispatch intent、
    settlement record）。overlay 单写者：同一时刻只进行一个 overlay 写入与 readback 往返。
 2. **并发段 A（native 只读 readback）**：各 lane 的 receipt 解析、worker-show、terminal

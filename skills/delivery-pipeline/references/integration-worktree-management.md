@@ -20,6 +20,8 @@ active writer。
 
 ## 独立票模式（Ticket Release Mode）
 
+票所属 MMF 有 Epic 上线边时，执行受约束的验收或发布动作前，按 `epic-scheduling.md` 核对该 MMF 的 release frontier。
+
 用户明确要求本 MMF 逐票上线时，才写入 map registry `delivery_mode: ticket_release` 并 readback。
 未写明时沿用 Map 集成模式。本节是该模式的唯一规则，其他合同只指向这里。
 

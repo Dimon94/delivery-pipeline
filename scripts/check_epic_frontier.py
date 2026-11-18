@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 
@@ -33,7 +34,47 @@ def dependency(source, gate, requires, evidence=None):
     return {"source": source, "gate": gate, "requires": requires, "evidence": evidence}
 
 
+def check_claim():
+    # 两个不同原生会话同时从空现场启动，只有一个能拿写入权。
+    with TemporaryDirectory() as scratch:
+        code = """
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from epic_claim import transition
+try:
+    path, action, epic, owner, *handoff = sys.argv[2:]
+    transition(Path(path), action, epic, owner, *handoff)
+except ValueError as error:
+    sys.exit(str(error))
+"""
+        prefix = [sys.executable, "-B", "-c", code, str(HELPER.parent),
+                  str(Path(scratch) / "epic.md")]
+        attempts = [
+            subprocess.Popen([*prefix, "claim", EPIC, owner], stderr=subprocess.PIPE, text=True)
+            for owner in ("session-A", "session-B")
+        ]
+        errors = [process.communicate(timeout=10)[1] for process in attempts]
+        assert sorted(process.returncode for process in attempts) == [0, 1], errors
+        assert any("已有 coordinator" in error for error in errors), errors
+        holder = "session-A" if attempts[0].returncode == 0 else "session-B"
+
+        def reader(action, owner, *args):
+            return subprocess.run(
+                [*prefix, action, EPIC, owner, *args], capture_output=True, text=True,
+            )
+
+        assert reader("verify", holder).returncode == 0
+        assert reader("release", "other-session").returncode != 0
+        assert reader("handoff", "new-session", holder, "Unknown").returncode != 0
+        assert reader("handoff", "new-session", holder, EPIC + "#handoff").returncode == 0
+        assert reader("verify", holder).returncode != 0
+        assert reader("release", "new-session").returncode == 0
+        assert reader("claim", "other-session").returncode == 0
+
+
 def main():
+    check_claim()
     # #30 的依赖形状：A 每日核价、B 官方测试入口、C 三网实测、
     # D 目录扩充、G 退款。D 可在 Interface 对齐后开发，真实上线等 A。
     a = {"id": "A", "state": "development", "dependencies": []}
@@ -53,6 +94,9 @@ def main():
     first = run([a, b, c, d, g])
     assert first["development"] == [{"id": "A"}, {"id": "G"}], first
     assert set(first["waiting"]) == {"B", "C", "D"} and not first["release"], first
+    partial = run([a, b, {**c, "state": "blocked", "dependencies": None}, d, g])
+    assert partial["development"] == first["development"], partial
+    assert partial["waiting"]["C"] == {"state": "blocked"}, partial
 
     # 已有 writer 时只续接该 lane，其他 MMF 继续。Interface 读回即可解锁 B、D。
     a.update(state="active", map=MAP_A, spec=SPEC_A)

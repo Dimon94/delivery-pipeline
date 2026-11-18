@@ -58,6 +58,8 @@ def read_items(snapshot):
 
 def pending_dependencies(key, item, items):
     dependencies = item.get("dependencies")
+    if dependencies is None and item["state"] in {"candidate", "blocked", "active"}:
+        return []
     if not isinstance(dependencies, list):
         raise ValueError(f"{key}.dependencies 需要数组")
     pending = []
