@@ -40,7 +40,7 @@ requirements与测试证据。解决后重新运行 testing/review所需的最�
 
 ## Remote Gate
 
-所属 Epic 有上线边时，在受约束的验收或远程动作前重读 `epic-scheduling.md` 的 release frontier 判定。
+MMF 从属于 Epic 时，在受约束的验收或远程动作前重读 `epic-scheduling.md` 的 release frontier 判定。
 等待期间保留已通过的本地证据。进入每个不可逆发布动作前再次核对 release 结果。
 
 没有 remote publication authority 时停在 clean、已验证的 Integration branch并报告唯一剩余

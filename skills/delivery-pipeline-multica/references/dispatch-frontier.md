@@ -3,6 +3,13 @@
 计算 frontier、执行一次派发、消费一次终态回流的完整流程。新 coordinator 会话读完本文件
 + SKILL.md 应能独立完成一次派发，无需口头补充。
 
+## Epic 票发布交接
+
+该 MMF 的 `to-tickets` owner 发布实施票后，coordinator 在首次派发前用共同 Epic 写入权读回精确
+Spec 回链与票级依赖。按同一批 Issue 的原生 ID 补齐各票的 `## Orchestration` 块。
+`blocked_by` 使用读回的票 ID，已确认无依赖才写空数组；实施 `work_class` 为 `write`。
+已有合法块须与原发布证据一致并复用；缺证据或冲突只阻塞该票。写入读回后按下节选择 frontier。
+
 ## Frontier 算法
 
 输入（全部持久证据，现读现算）：

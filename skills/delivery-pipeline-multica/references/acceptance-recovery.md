@@ -13,9 +13,10 @@ worker 终态回流到达后，coordinator 对该 run 做验收。判定输入�
 ### 默认判据（三件套，全部 pass 才算 pass）
 
 1. **产物存在**：终态回流所述产物在其声明位置实际存在——文件系统读回、
-   Git 读回（分支/SHA/diff）核对，不采信 worker 自述。
-2. **CI 绿**：该票声明的 checks 全绿（本地实跑或读 CI 状态）；checks 集合 = 票正文
-   明示的检查命令，缺省时按宿主该工作区标准检查集（frontend `pnpm typecheck` 等）。
+   Git 读回（分支/SHA/diff）核对。Epic planning/artifact 的产物在 Issue 时，从 tracker 读回
+   Map、Spec 或票链接以及该 gate 所需的确认和关系。
+2. **检查通过**：实施票按票面命令或工作区标准检查集实跑或读回 CI 状态。Epic planning/artifact 核对
+   canonical `../../delivery-pipeline/references/gate-state-machine.md` 对应阶段的通过证据和 owner 要求的检查。
 3. **状态机到位**：`agent_task_queue` 中本 run 任务行已达终态（completed/failed/
    cancelled），不存在同票残留 `queued|dispatched|running` 行；Issue metadata 无悬空
    `waiting` 指针指向已结束的工作。

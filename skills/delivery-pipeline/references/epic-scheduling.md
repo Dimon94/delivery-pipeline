@@ -64,8 +64,8 @@ JSON 只用于本轮决策，恢复时重建。传入当前已批准结果所需
 - 当前 Epic coordinator 按就绪批次推进各 Map 或独立 Spec 的最早未完成 gate，并创建所属壳的
   常规 lane。不同 MMF 可同批派发。各 Map 的批次、Integration 和单 active writer 各自核验。
   一个 Epic 由一个 coordinator 写入。接手前按各 Map 恢复合同核验原 owner 与现场。
-- MMF 没有 Map 与 Spec 时，coordinator 在当前会话先按 resolved Wayfinder owner 的合同建 Map，
-  写入两项关联字段并读回。再按本壳建立该 Map 的 Integration 坐标，供 planning lane 绑定。
+- MMF 没有 Map 与 Spec 时，coordinator 按本壳的建图入口运行 resolved Wayfinder owner，
+  写入两项关联字段并读回。本壳未单列入口时在当前会话建图。建图后建立该 Map 的 Integration 坐标。
 - 新 Spec 用 `planning/artifact` lane 调用 resolved `to-spec` owner。先认领唯一 `Epic URL + MMF id + spec gate`
   work item，发布前重读精确关联。仅该 lane 可创建这个 Spec，coordinator 汇总 Epic 回链与待连的原生依赖。
   按原 gate 保留确认与权限。已有 Spec 从实际 gate 续跑。显式 `Epic URL + MMF id` 输入沿单项调度。

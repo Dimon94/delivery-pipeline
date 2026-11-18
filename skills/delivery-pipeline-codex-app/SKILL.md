@@ -13,7 +13,9 @@ disable-model-invocation: true
 委派、阻塞与恢复时执行 canonical「调度职责」；以 context pointers 组织外层 packet 与内部
 subagent prompt，后台任务回传与验收沿本壳合同。
 
-Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue 恢复各 MMF，使用本壳派发和等待终态。
+Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue 恢复各 MMF。
+缺 Map 和 Spec 时，沿 `references/development-mode.md` 的无 Map planning artifact 入口建图。
+规划 lane 用已认领的 Epic URL、MMF 标识与建图 gate 定位，读回 Map 后再建立 Integration。
 
 ## 覆盖
 
