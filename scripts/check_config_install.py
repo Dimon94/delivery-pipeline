@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'apps/delivery-config/build.py'
@@ -239,16 +240,20 @@ def check_b_backup_and_stale(mod, new, fresh):
     """备份删不掉要警告并留下路径；安装前清理本应用的遗留件，且只清本应用的。"""
     parent, dest = fresh('b1')
     make_app(dest, mod.BUNDLE_ID, 'old')
-    locked = dest / 'Contents/Resources'
-    locked.chmod(0o555)  # 目录只读：交换后备份里的文件删不掉
     backup = parent / old_name()
-    try:
+    remove = shutil.rmtree
+
+    def fail_backup_removal(path, *args, **kwargs):
+        if Path(path) == backup:
+            # 错误本身不提供路径，验证应用能明确报告残留位置。
+            raise PermissionError(errno.EACCES, 'injected backup removal failure')
+        return remove(path, *args, **kwargs)
+
+    with patch.object(shutil, 'rmtree', side_effect=fail_backup_removal):
         result, warning = install_quietly(mod, new, dest)
-        assert result == dest and snapshot(dest) == snapshot(new), 'b1 备份删不掉时安装仍应成功'
-        assert backup.exists(), 'b1 删不掉的备份应留在原处'
-        assert str(backup) in warning, 'b1 警告必须带残留路径：'+repr(warning)
-    finally:
-        (backup / 'Contents/Resources').chmod(0o755)
+    assert result == dest and snapshot(dest) == snapshot(new), 'b1 备份删不掉时安装仍应成功'
+    assert backup.exists(), 'b1 删不掉的备份应留在原处'
+    assert str(backup) in warning, 'b1 警告必须带残留路径：'+repr(warning)
     # 下一次安装先清掉遗留的备份
     install_quietly(mod, new, dest)
     assert entries(parent) == [NAME], 'b1 下一次安装应清掉遗留备份：'+str(entries(parent))
