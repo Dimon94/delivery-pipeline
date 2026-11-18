@@ -12,6 +12,8 @@ T3 task 生命周期与 T3Code packet，其他 gate、owner、worktree、Integra
 委派、阻塞与恢复时执行 canonical「调度职责」；以 context pointers 填写本壳 packet，
 后台 T3 task 与完成唤醒沿本壳生命周期合同。
 
+Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue 恢复各 MMF，使用本壳派发和等待终态。
+
 ## 覆盖
 
 1. 当前 T3 线程就是 coordinator，记录 `coordinator_runtime: t3code`、`dispatch_runtime: t3code`，

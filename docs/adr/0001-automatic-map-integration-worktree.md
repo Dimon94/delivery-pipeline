@@ -74,12 +74,9 @@ After all tickets integrated and whole-change checks pass:
 
 ### Concurrent Maps Isolation
 
-Each orchestrator session manages only its own map:
-
-- No global resource coordination
-- No cross-map scheduling
-- Each map independently creates worktrees
-- Multiple maps can rebase to main sequentially (first-come-first-served, with auto-rebase for later ones)
+每个 Map 独立管理自己的 worktree 和 Integration。多个 Map 依次 rebase 到最新 main。
+用户从 Epic 启动时，coordinator 可在该 Epic 范围内按开工与上线依赖推进多个 Map。
+规则见 `../../skills/delivery-pipeline/references/epic-scheduling.md`。
 
 ## Consequences
 
@@ -198,4 +195,4 @@ Rejected: More complex than worktrees, doesn't solve branch isolation problem.
 Rejected: User wants rebase-based flow, PR/MR adds friction for high-frequency changes.
 
 **Alternative 5: Global scheduler coordinating all maps**  
-Rejected: Adds complexity, violates "each session owns one map" principle.
+Rejected: Global scheduling spans unrelated delivery runs and adds shared coordination.

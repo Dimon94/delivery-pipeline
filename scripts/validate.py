@@ -844,6 +844,22 @@ def check_checkpoint_contract() -> None:
         record("Herdr watcher still handles PREWALK (CLI is direct-only)")
 
 
+def check_epic_frontier() -> None:
+    entrypoints = (CORE, HERDR, APP, T3CODE, LODY, ORCA, ROOT / "skills/delivery-pipeline-multica")
+    for entrypoint in entrypoints:
+        skill = entrypoint / "SKILL.md"
+        if "references/epic-scheduling.md" not in skill.read_text():
+            record(f"missing Epic entrypoint: {skill.relative_to(ROOT)}")
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/check_epic_frontier.py")],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        record(f"epic frontier check failed: {result.stdout}{result.stderr}")
+
+
 def check_lane_graph() -> None:
     script = CORE / "scripts" / "lane_graph.py"
     if not is_executable(script):
@@ -952,6 +968,7 @@ def main() -> None:
     check_metadata_and_helpers()
     check_checkpoint_contract()
     check_lane_graph()
+    check_epic_frontier()
     check_recovery_record()
     check_review_gate()
     check_artifact_gc()

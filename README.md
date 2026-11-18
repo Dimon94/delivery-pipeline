@@ -77,7 +77,7 @@ Initialize once:
 Use delivery-pipeline-setup to initialize or reconfigure worker routing.
 ```
 
-Then invoke the canonical `delivery-pipeline` with any map/spec/ticket issue. It reconstructs the
+Then invoke `delivery-pipeline-herdr` with an Epic, Map, Spec, or ticket issue. It reconstructs the
 chain from tracker relationships and dispatches planning/design/frontend/backend/testing/review
 lanes according to the frozen configuration. New Herdr lanes stay in the
 coordinator's current workspace by default; a new workspace is created only when the user explicitly
@@ -94,7 +94,7 @@ and whole-change closeout.
 ### Codex App
 
 ```text
-Use $delivery-pipeline-codex-app with <any-map-spec-or-ticket-issue>.
+Use $delivery-pipeline-codex-app with <Epic, Map, Spec, or ticket issue>.
 ```
 
 The App shell uses native tasks and App-managed Execution Worktrees and does not read the CLI worker
@@ -117,7 +117,7 @@ terminal fan-in, separate whole-change testing, scope-aware dual-axis review, an
 ### T3 Code
 
 ```text
-Use $delivery-pipeline-t3code with <any-map-spec-or-ticket-issue>.
+Use $delivery-pipeline-t3code with <Epic, Map, Spec, or ticket issue>.
 ```
 
 Run it in a T3 Code thread on this repo's Source Worktree. The shell reuses the version 5 CLI worker
@@ -129,7 +129,7 @@ own T3 worktrees, aligned to the packet's base commit; T3 completion wakes the c
 ### Lody
 
 ```text
-Use $delivery-pipeline-lody with <any-map-spec-or-ticket-issue>.
+Use $delivery-pipeline-lody with <Epic, Map, Spec, or ticket issue>.
 ```
 
 Run it in a Lody session on this repo's Source Worktree. The shell reuses the version 5 CLI worker
@@ -142,7 +142,7 @@ Contracts live in `skills/delivery-pipeline-lody/references/`.
 ### Orca
 
 ```text
-Use $delivery-pipeline-orca with <any-map-spec-or-ticket-issue>.
+Use $delivery-pipeline-orca with <Epic, Map, Spec, or ticket issue>.
 ```
 
 The Orca entrypoint reuses the same version 4 CLI worker configuration and owner contracts. Each
@@ -154,6 +154,13 @@ coordinator authorizes only after reading the native source. Missing or Unknown 
 `blocked` / `dispatch unavailable`; the entrypoint never falls back to Herdr/Codex App, and installation
 plus static validation do not prove a live Orca operation. The dispatch, batch-concurrency, and FIFO
 settlement contract lives in `skills/delivery-pipeline-orca/references/orca-dispatch.md`.
+
+### Epic scheduling
+
+Give the Herdr, T3 Code, Lody, Codex App, or Orca entrypoint an Epic Issue URL. The coordinator advances
+independent MMFs in parallel and checks release dependencies at the relevant gate. The Epic and Spec Issues
+hold the plan and dependencies. Use the same link to resume. The standalone Multica skill advances the same
+frontier through its native Issue queue.
 
 ## Invariants
 

@@ -15,6 +15,8 @@ disable-model-invocation: true
 - 调度职责：委派、阻塞与恢复时读取 `../delivery-pipeline/SKILL.md` 的「调度职责」；
   仅复用该节的责任与证据原则，startup 仍走本入口的 native preflight。
 - 执行真相源：owner 三字段（name、绝对 SKILL.md path、runtime-specific invocation label）。
+- Epic 输入、恢复和 lane 唤醒按 `../delivery-pipeline/references/epic-scheduling.md` 计算跨 MMF 批次。
+  每条 Orca lane 仍在本入口完成 native preflight。
 - canonical gate 与实施前置证据：`../delivery-pipeline/references/gate-state-machine.md`。
 - owner 解析：`../delivery-pipeline/references/owner-skill-resolution.md`。
 - worker policy：`../delivery-pipeline/references/model-config-schema.md`；只读现有
@@ -94,6 +96,7 @@ Browser/automation 操作先读 `references/orca-browser-automation.md`，每次
 
 ## Remote publication gate（Phase 4）
 
+MMF 从属于 Epic 时，在受约束的动作前按 `../delivery-pipeline/references/epic-scheduling.md` 核对 release frontier。
 Remote publication 操作先读 `references/orca-remote-publication.md`，每次运行
 `scripts/remote_publication.py check <payload>`。任一 gate 缺证据 → 该操作不可执行，
 registry 写 `close_pending`。不代用户发起 push/PR/MR/merge/publication。

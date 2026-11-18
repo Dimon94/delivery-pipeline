@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Delivery Pipeline Multica（编排合同核心）
 
 当前调用会话就是 coordinator，Multica 会话即调度现场。本 skill 是编排合同的
-**唯一住所**：frontier 计算、依赖声明、每 Issue 单活跃写入 run、四类永远留给人类的事项、
+**唯一住所**：MMF 内 Issue frontier 与依赖、每 Issue 单活跃写入 run、四类永远留给人类的事项、
 HITL 等待与恢复。宿主（Multica 后端 + Daemon）只提供通用原语；不另起调度服务、不建核心
 状态机、不激活 `issue_dependency` 表、不做插件事件桥（决策 02/03/07 已定量否决，勿重开）。
 
@@ -30,6 +30,17 @@ load-on-demand：
 | 需要人参与（提问/等待/恢复/授权） | `references/hitl-waiting-recovery.md` |
 | 验收、失败回投、授权判定 | `references/acceptance-recovery.md` |
 | 执行 C1 演练 | `references/c1-drill.md` |
+
+## Epic 入口
+
+启动或恢复已发布 Epic 时，读 `../delivery-pipeline/references/epic-scheduling.md` 的 Issue 证据与快照合同，
+用共享 helper 计算跨 MMF 批次。尚无 Map／Spec 时，由持有 Epic claim 的 coordinator 调用 Wayfinder
+owner 创建并读回 Map Issue，关联 Epic 与 MMF。缺 Spec 或实施票时，创建并读回本 Map 下由对应 owner
+执行的 planning Issue，依本壳 Orchestration 格式通过宿主事务派发。Spec／tickets 发布并读回后，
+按 `references/dispatch-frontier.md` 的 Epic 票发布交接准备该 MMF 的实施票，再交给下方 Issue frontier。
+每次宿主终态回流后重算。Epic 持有跨 MMF 的开工／上线边，本壳 Orchestration 块持有 MMF 内的票依赖。
+每个 Issue 的写入 claim、HITL、验收和恢复沿本壳合同。到达上线动作时核对 Epic 的 `release` frontier，
+从 Spec 及发布证据读回 `accepted`，再解除下游依赖。
 
 ## 权责模型（决策 02 所有权表，勿双写）
 

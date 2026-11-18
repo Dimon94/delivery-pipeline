@@ -73,7 +73,7 @@ triage labels 与 domain docs；这与 worker model routing 的 `delivery-pipeli
 使用 delivery-pipeline-setup 初始化或重配 worker 路由。
 ```
 
-随后在任一 CLI 中用 canonical `delivery-pipeline` 继续 map/spec/ticket。Skill 会沿 tracker
+随后在任一 CLI 中用 `delivery-pipeline-herdr` 继续 Epic、Map、Spec 或 ticket。Skill 会沿 tracker
 relationships 从最早未完成 gate 恢复，并按配置派发 planning/design/frontend/backend/testing/review
 lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户显式要求时才创建新 Workspace。
 
@@ -87,7 +87,7 @@ lanes。新 Herdr lane 默认留在 coordinator 当前 Workspace；只有用户�
 ### Codex App
 
 ```text
-使用 $delivery-pipeline-codex-app 继续 <任意 map/spec/ticket issue>。
+使用 $delivery-pipeline-codex-app 继续 <Epic、Map、Spec 或 ticket Issue>。
 ```
 
 App 壳使用 native task + App-managed Execution Worktree，任务类型全部绑定 `agent: codex-app` 的独立配置实例。若希望
@@ -107,7 +107,7 @@ App 模型统一在 [config/models.json](skills/delivery-pipeline-codex-app/conf
 ### T3 Code
 
 ```text
-使用 $delivery-pipeline-t3code 继续 <任意 map/spec/ticket issue>。
+使用 $delivery-pipeline-t3code 继续 <Epic、Map、Spec 或 ticket Issue>。
 ```
 
 在本仓 Source Worktree 上的 T3 Code 线程里调用。本壳复用 version 5 CLI worker 配置，把 work 项映射为
@@ -118,7 +118,7 @@ T3 provider target，每批派发前用 `orchestrator_capabilities` 核对 model
 ### Lody
 
 ```text
-使用 $delivery-pipeline-lody 继续 <任意 map/spec/ticket issue>。
+使用 $delivery-pipeline-lody 继续 <Epic、Map、Spec 或 ticket Issue>。
 ```
 
 在本仓 Source Worktree 上的 Lody session 里调用。本壳复用 version 5 CLI worker 配置，把 work 项映射为
@@ -130,7 +130,7 @@ Lody-managed worktree 的 `lody_session_create` 子 session，先对齐 packet �
 ### Orca
 
 ```text
-使用 $delivery-pipeline-orca 继续 <任意 map/spec/ticket issue>。
+使用 $delivery-pipeline-orca 继续 <Epic、Map、Spec 或 ticket Issue>。
 ```
 
 Orca 入口复用同一 version 4 CLI worker 配置与 owner 合同。每次 operation 前只固定一个 Orca
@@ -141,6 +141,12 @@ agent/model/effort 字段是 caller-declared evidence 指针；helper 是纯核�
 Unknown 即明确 `blocked` / `dispatch unavailable`，不 fallback 到 Herdr/Codex App；安装与静态
 validator 通过不证明 Orca 真机 operation 可运行。dispatch、批级并发与 FIFO settlement 合同见
 `skills/delivery-pipeline-orca/references/orca-dispatch.md`。
+
+### Epic 调度
+
+把 Epic Issue 链接交给当前环境的 Herdr、T3 Code、Lody、Codex App 或 Orca 入口，即可按开工依赖
+并发推进多个 MMF，并按上线依赖独立交付。Epic 和 Spec Issue 保存计划与依赖，重启后用同一链接接续。
+仓内独立入口 Multica 通过其原生 Issue 队列推进同一批次。
 
 ## 不变量
 
