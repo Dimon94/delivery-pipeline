@@ -3,7 +3,7 @@
 ## Core Concepts
 
 **Epic**
-A goal that does not fit in one **MMF**. `to-epic`, outside this orchestrator, cuts it into multiple MMFs. Each MMF runs on its own map. A map is not an Epic.
+一个 MMF 容纳不下的交付目标，由多个独立验收、合入及上线的 MMF 组成。Epic Issue 记录该目标、MMF 索引和跨 MMF 依赖。
 
 **MMF**
 Minimal Marketable Feature. The unit of acceptance, merge, and release: one Spec, one MR, and zero or more tickets. One map delivers one MMF. Boundary test: a cut that lets each half ship alone, and that someone would use alone, is multiple MMFs. Spec-gate action: `skills/delivery-pipeline/references/gate-state-machine.md` §tickets 前链路.
@@ -32,7 +32,7 @@ Exception mode. The trigger lives only in `skills/delivery-pipeline/references/i
 `skills/delivery-pipeline/references/test-decision-and-rebase.md`；测试选择不等于远程发布授权。
 
 **Concurrent Maps**
-Multiple Wayfinder maps running simultaneously, each with its own integration worktree and execution worktrees. Each orchestrator session owns one map and ignores others. No global resource coordination — each map independently creates worktrees and panes.
+多个 Wayfinder map 各自拥有 Integration Worktree 与 Execution Worktree，并行推进。Epic 调度只覆盖其已确认的 MMF。
 
 **Worktree Lifecycle**
 Creation → work → integration/merge → deletion. Execution worktrees: created at dispatch, deleted after cherry-pick in the default mode. Integration worktrees: created at map start, deleted after push to main. Empty setup-failed worktrees are deleted after the bounded retry; active, awaiting-human, or recoverable blocked lanes retain their worktrees.
@@ -138,7 +138,7 @@ The rule that arranges the entry skills. `skills/delivery-pipeline` is the Core 
 ## Non-goals
 
 **Not a global scheduler**
-Orchestrator does not coordinate across multiple concurrent maps. Each session manages only its own map's worktrees.
+Epic coordinator 只协调同一 Epic 下的 Map。独立 Map 和其他 Epic 分别调度。
 
 **Not branch-free**
 Git worktrees fundamentally require branches. "No branches" is impossible — the design uses disciplined branch management instead.

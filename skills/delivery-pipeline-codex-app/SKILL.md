@@ -13,6 +13,8 @@ disable-model-invocation: true
 委派、阻塞与恢复时执行 canonical「调度职责」；以 context pointers 组织外层 packet 与内部
 subagent prompt，后台任务回传与验收沿本壳合同。
 
+Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue 恢复各 MMF，使用本壳派发和等待终态。
+
 ## 覆盖
 
 1. 当前 Codex App 会话就是 coordinator，记录 `coordinator_runtime: codex-app`、

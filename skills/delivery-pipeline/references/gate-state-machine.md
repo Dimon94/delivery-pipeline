@@ -5,6 +5,10 @@ tracker relationships、Git、lane registry 和 PR/MR 是状态，聊天不是�
 
 ## 从任意 Issue 重建
 
+Epic Issue 先读 `epic-scheduling.md` 计算跨 MMF 批次，再按本节恢复各 Map 或 Spec。
+从 map、spec 或 ticket 进入时也回读所属 Epic，按 `epic-scheduling.md` 核对本 MMF 的跨 MMF 开工和上线依赖。
+单个 MMF 输入只调度该 MMF。
+
 先运行 `python3 scripts/lane_graph.py --registry-root <lanes 目录> --format text --map <map 编号>`
 取得该 map 全部 lane 的 issue/state/tracker 状态/依赖一览（每 lane 一行），只对其中未闭合或状态
 矛盾的 issue 做以下逐票读取。

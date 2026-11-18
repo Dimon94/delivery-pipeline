@@ -15,6 +15,8 @@ disable-model-invocation: true
 - 调度职责：委派、阻塞与恢复时读取 `../delivery-pipeline/SKILL.md` 的「调度职责」；
   仅复用该节的责任与证据原则，startup 仍走本入口的 native preflight。
 - 执行真相源：owner 三字段（name、绝对 SKILL.md path、runtime-specific invocation label）。
+- Epic 输入、恢复和 lane 唤醒按 `../delivery-pipeline/references/epic-scheduling.md` 计算跨 MMF 批次。
+  每条 Orca lane 仍在本入口完成 native preflight。
 - canonical gate 与实施前置证据：`../delivery-pipeline/references/gate-state-machine.md`。
 - owner 解析：`../delivery-pipeline/references/owner-skill-resolution.md`。
 - worker policy：`../delivery-pipeline/references/model-config-schema.md`；只读现有

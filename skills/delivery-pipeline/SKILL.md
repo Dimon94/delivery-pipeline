@@ -23,9 +23,9 @@ tickets 是带阻塞关系的任务图，始终有一个 ready **frontier**。
 
 ## Steps
 
-1. **识别 gate。** 读 repo instructions、tracker 与输入（想法、map、spec 或 ticket；裸编号须唯一解析），
-   按 `references/gate-state-machine.md` 从持久证据选最早未完成 gate；discovery 走
-   `references/wayfinder-frontier-loop.md`。
+1. **识别入口。** 读 repo instructions、tracker 与输入；裸编号须唯一解析。Epic 启动、恢复或 lane 唤醒走
+   `references/epic-scheduling.md`。想法、map、spec 或 ticket 按 `references/gate-state-machine.md` 选最早未完成 gate；
+   discovery 走 `references/wayfinder-frontier-loop.md`。
 2. **恢复坐标。** 新会话或压缩后按 `references/fresh-session-boundaries.md` §Coordinator Recovery，
    只读恢复记录的合同入口所指章节并枚举 active writers。恢复既有 lane 不依赖当前 worker 配置，按 registry
    runtime 续跑。按 `references/integration-worktree-management.md` 复用或创建 Map Integration Worktree；

@@ -12,6 +12,8 @@ Claude CLI 使用。先完整读取 canonical 主干；本文件覆盖 dispatch 
 委派、阻塞与恢复时执行 canonical「调度职责」；以 context pointers 填写本壳 packet，
 后台 pane 与终态唤醒沿本壳生命周期合同。
 
+Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue 恢复各 MMF，使用本壳派发和等待终态。
+
 ## 覆盖
 
 1. 当前调用会话就是 coordinator，记录 `coordinator_runtime: pi-cli | codex-cli | claude-cli`、
