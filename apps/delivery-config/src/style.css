@@ -104,6 +104,28 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 
 .effort-note{color:var(--muted)}
 
+.budget-section { margin-block: 18px; }
+.budget-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.budget-field {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 14px;
+}
+.budget-field + .budget-field { border-inline-start: 1px solid var(--line-soft); }
+.budget-field input {
+  width: 7ch; min-width: 76px; height: 32px; padding-inline: 8px;
+  font: inherit; font-variant-numeric: tabular-nums; text-align: center;
+  color: var(--ink); background: var(--pill); border: 1px solid transparent; border-radius: 6px;
+}
+.budget-field input:hover:enabled { background: var(--pill-hover); }
+.budget-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.budget-field input:invalid { border-color: var(--red); }
+.budget-field input:disabled { color: var(--faint); }
+@media (max-width: 560px) {
+  .budget-fields { grid-template-columns: minmax(0, 1fr); }
+  .budget-field + .budget-field { border-inline-start: 0; border-block-start: 1px solid var(--line-soft); }
+  .budget-section .section-label p { display: block; }
+}
+
 .fields>[data-field="agent"],.fields>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .review-preview{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;margin:0;padding:0 14px 8px;font-size:12px;line-height:1.5;color:var(--muted)}.review-preview small{font-size:11px;color:var(--faint)}
