@@ -436,7 +436,7 @@ def check_same_round():
         assert r.returncode!=0 and ledger.read_bytes()==before
         fix_ledger=root/'fix-budget.json'
         blocked={**axes['standards'],'verdict':'BLOCK','counts':{**clean,'P1':1},'findings':['原始阻断 finding']}
-        fix_data={**data,'axes':{**axes,'standards':blocked}}
+        fix_data={**data,'axes':{**axes,'standards':blocked},'repros':['node --test blocked.test.js']}
         r=subprocess.run([*gate[:-1],str(fix_ledger)],input=json.dumps(fix_data),text=True,capture_output=True)
         assert r.returncode==0 and r.stdout.strip()=='FIX',r.stderr
         r=subprocess.run([*cmd,'--review-ledger',str(fix_ledger)],text=True,capture_output=True)
@@ -518,82 +518,27 @@ def check_later_round():
         gate=[sys.executable,str(Path(__file__).with_name('review_execution.py')),'--ledger',str(ledger)]
         data=dict(round=1,axes=dict(standards=passing,spec=blocking),review_packet=dict(review_plan=frozen,owner_calls=registry.build_owner_calls(frozen)))
         r=subprocess.run(gate,input=json.dumps(data),text=True,capture_output=True)
+        assert r.returncode!=0 and not ledger.exists(), 'P1 without repro accepted'
+        data['repros']=['node --test spec.test.js']
+        r=subprocess.run(gate,input=json.dumps(data),text=True,capture_output=True)
         assert r.returncode==0 and r.stdout.strip()=='FIX',r.stderr
         row['state']='consumed'; registry.write(path,row)
+        budget=ledger.read_bytes()
+        # ADR-0027 一轮制：FIX 之后的新 head 不能开 R2，不触发 native，预算字节不变。
         fixer=root/'fixer.md'
-        registry.write(fixer,dict(lane_id='fixer',work_item='repair',map='map-demo',role='backend',output_mode='commit',integrated_commit='h2',agent='pi',model='provider/model',effort='high',implementation_execution=dict(source='native_readback',identity=dict(agent='codex',model='unknown-family',effort='high'))))
+        registry.write(fixer,dict(lane_id='fixer',work_item='repair',map='map-demo',role='backend',output_mode='commit',integrated_commit='h2',agent='pi',model='provider/model',effort='high'))
         later=(*flags,'--round','2','--request-id','r2','--review-head','h2','--previous-review-registry',str(path),'--implementation-registry',str(fixer))
-        r,path2,calls=run(root,'r2',base,packet=packet,map_text=map_text,extra=later)
-        assert r.returncode!=0 and not calls, 'extra standards axis accepted'
         spec_flags=list(later); spec_flags.remove('standards')
-        r,path2,calls=run(root,'r2',base,packet=packet,map_text=map_text,extra=spec_flags)
-        assert r.returncode==0,r.stdout+r.stderr
-        row2,_=registry.read(path2,'r2'); plan=row2['review_plan']
-        assert plan['required_axes']==['spec'] and [c['axis'] for c in registry.build_owner_calls(plan)]==['spec']
-        assert plan['implementations'][0]['lane_id']=='fixer'
-        assert plan['implementation_evidence'][0]['basis']=='executed'
-        starts=[c for c in calls if c[:2]==['agent','start']]
-        assert len(starts)==1 and starts[0][starts[0].index('--model')+1]==plan['lane']['selected']['model']
-        before=path2.read_bytes(); budget=ledger.read_bytes()
-        recovery=[sys.executable,str(Path(__file__).with_name('dispatch.py')),'--recover-review','--registry',str(path2),'--lane','r2','--request-id','r2','--review-ledger',str(ledger),'--previous-review-registry',str(path)]
-        r=subprocess.run(recovery,text=True,capture_output=True)
-        assert r.returncode==0 and json.loads(r.stdout)['review_packet']['review_plan']==plan
-        assert path2.read_bytes()==before and ledger.read_bytes()==budget
-        assert json.loads(r.stdout)['action']=='recover_original'
-        trace=(root/'calls.jsonl').read_bytes()
-        # 错误预算、旧 point、当前 packet mismatch、取消/失败不能伪装成合法 FIX。
-        import copy
-        original_rounds=read_ledger(ledger)
-        def reject_recovery(rounds, current=row2, previous=row):
-            ledger.write_text(json.dumps(dict(rounds=rounds)))
-            # 每个负例是独立错误现场，不绕过已有行的 immutable 写入约束。
-            path2.unlink(); path.unlink()
-            registry.write(path2,current); registry.write(path,previous)
-            result=subprocess.run(recovery,text=True,capture_output=True)
-            assert result.returncode!=0, '错误 ledger/point/原轮状态被接受'
-            assert (root/'calls.jsonl').read_bytes()==trace, '恢复触发 native'
-        reject_recovery([])
-        wrong=copy.deepcopy(original_rounds)
-        wrong[0]['review_packet']['review_plan']['round_context']['base']='other-base'
-        reject_recovery(wrong)
-        wrong=copy.deepcopy(original_rounds); wrong[0]['round']=2
-        reject_recovery(wrong)
-        for outcome in ('PASS','REVIEW_BLOCKED','REVIEW_EXHAUSTED'):
-            wrong=copy.deepcopy(original_rounds); wrong[0]['outcome']=outcome
-            reject_recovery(wrong)
-        wrong=copy.deepcopy(row2)
-        wrong['review_plan']['implementations']=[]
-        reject_recovery(original_rounds,wrong)
-        wrong=copy.deepcopy(row2)
-        wrong['review_plan']['round_context']['request_id']='other-request'
-        reject_recovery(original_rounds,wrong)
-        wrong=copy.deepcopy(row2)
-        wrong['review_plan']['round_context']['head']='h1'
-        reject_recovery(original_rounds,wrong)
-        wrong=copy.deepcopy(row2)
-        wrong['review_plan']['round_context']['required_axes']=['standards','spec']
-        reject_recovery(original_rounds,wrong)
-        wrong=copy.deepcopy(original_rounds)
-        wrong.append({**wrong[0], 'round':2})  # 当前轮已有不匹配 packet 不能视为尚未入账
-        reject_recovery(wrong)
-        wrong=copy.deepcopy(row); wrong['review_plan']['request_id']='unrelated'
-        reject_recovery(original_rounds,previous=wrong)
-        for state in ('cancelled','setup_blocked','failed'):
-            reject_recovery(original_rounds,previous={**row,'state':state})
-        wrong=copy.deepcopy(row); wrong['herdr']['startup_state']='failed'
-        reject_recovery(original_rounds,previous=wrong)
-        path2.unlink(); path.unlink()
-        ledger.write_bytes(budget); registry.write(path2,row2); registry.write(path,row)
+        for extra in (later, spec_flags):
+            r,path2,calls=run(root,'r2',base,packet=packet,map_text=map_text,extra=extra)
+            assert r.returncode!=0 and not calls and not path2.exists(), 'R2 accepted after FIX'
+            assert ledger.read_bytes()==budget
         # 原始完整结果复用；新 lane 无写入，无 native 调用，预算字节不变。
         reuse=list(later); reuse[reuse.index('h2')]='h1'
         r,reuse_path,calls=run(root,'reuse',base,packet=packet,map_text=map_text,extra=reuse)
         assert r.returncode==0 and json.loads(r.stdout)['result']==read_ledger(ledger)[0],r.stdout+r.stderr
         assert not calls and not reuse_path.exists() and ledger.read_bytes()==budget
-        # cancelled 不得借原 FIX 伪造新轮；PASS/blocked 由 setup 检查覆盖。
-        row['state']='cancelled'; registry.write(path,row)
-        r,_,calls=run(root,'cancelled-next',base,packet=packet,map_text=map_text,extra=spec_flags)
-        assert r.returncode!=0 and not calls and ledger.read_bytes()==budget
-    print('later-round: pass (文件/CLI/原receipt；native执行 Unknown)')
+    print('later-round: pass (一轮制：repro 必填、R2 拒绝、同 head 复用；native执行 Unknown)')
 
 
 if __name__ == '__main__':

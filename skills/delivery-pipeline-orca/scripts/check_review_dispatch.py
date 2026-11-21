@@ -142,16 +142,15 @@ def check():
         data=dict(round=1,axes=axes,review_packet=packet,native_readbacks={'spec':dict(source='native_readback',identity=dict(model='outside'),applied_effort=None)})
         assert d.finish(data,mismatch)=='REVIEW_BLOCKED'
         assert read_ledger(mismatch)[0]['axes']==axes
-        # R2 spec-only：lane 仍由 standards 选定，owner 仅收到 spec。
+        # 一轮制（ADR-0027）：FIX 需带反例，之后不再开 R2。
         fixing=Path(tmp)/'fix.json'
         axes['spec']=dict(verdict='BLOCK',counts=dict(P0=0,P1=1,P2=0,P3=0),findings=['fix'])
-        assert d.finish(dict(round=1,axes=axes,review_packet=packet),fixing)=='FIX'
-        registry.write(source,dict(lane_id='fixer',role='backend',work_item='fixer',map='map',output_mode='commit',integrated_commit='h2',**target))
+        assert d.finish(dict(round=1,axes=axes,review_packet=packet,repros=['node --test fix.test.js']),fixing)=='FIX'
         later=dict(request,round=2,request_id='r2',head='h2',required_axes=['spec'],rounds=read_ledger(fixing))
         later['evidence']={**evidence,'request_id':'r2'}
-        spec=d.prepare(later,collect=native)
-        assert [x['axis'] for x in spec['owner_calls']]==['spec']
-        assert spec['review_plan']['lane']['selected']==target
+        try: d.prepare(later,collect=native)
+        except ValueError: pass
+        else: raise AssertionError('R2 must be rejected')
     print('native-unknown: pass (native I/O substituted; no dispatch/model execution)')
 
 if __name__=='__main__':

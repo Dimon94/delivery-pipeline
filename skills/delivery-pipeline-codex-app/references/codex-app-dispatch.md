@@ -86,7 +86,7 @@ requested 字段保存创建请求；model/effort 保存宿主实际 readback，
 
 Testing 和 Review gate 不进入本节创建流程。coordinator 先持久化 gate fixed point 与不可变证据，
 再通过 `scripts/app_dispatch.py subagent` 取得显式模型参数；Testing 单独读取 work.testing，Review
-传 review_scope 取得 review_models，再把参数与 `implementation` 或 `whole-change` scope 交给 owner。两者都只读并在回传后由 coordinator
+传 review_scope 取得 review_models，再把参数与 `whole-change` scope 交给 owner。两者都只读并在回传后由 coordinator
 核验结果。逐票 Integration 也走 subagent 入口，但要求父任务可写、active_count 为 0，并只允许
 写指定 Integration Worktree；完成后 coordinator 重新读取 HEAD、commit、worktree 状态与 checks。
 
@@ -136,9 +136,9 @@ coordinator 验证候选 commit 后立即按独立 Review 放行流程接手，�
 ### 独立 Review 放行
 
 正式两轴由 coordinator 调用 resolved code-review owner 管理；App 壳只传 owner triple、
-`review_scope: implementation | whole-change` 与 Review Evidence Bundle；两轴模型从配置读取并作为 review_models 传给 owner。implementation worker 不拥有取消、改写 verdict 或豁免的权限，可保存候选 commit，但
-缺独立结论时按 blocked 回传“实现已保存、审查待完成”。修复回原 worker，完成后冻结新 head
-并复核；旧 head 的 PASS 不覆盖新代码。
+`review_scope: whole-change` 与 Review Evidence Bundle；两轴模型从配置读取并作为 review_models 传给 owner。
+逐票 implementation 不审查（ADR-0027）。worker 不拥有取消、改写 verdict 或豁免的权限。whole-change 只审一轮：
+FIX 的 findings 回原 worker 修复，每条 P0/P1 的反例变绿且完整测试通过即关闭，不开复审。
 
 cherry-pick、integrated、关闭实施票（独立票模式为记 `release_stage: candidate` 与申请合并）之前，coordinator 必须直接读取 reviewer 宿主记录，调用
 `scripts/app_dispatch.py review`。输入 worktree、worker_id、base_commit、head_commit、resolved owner
@@ -158,8 +158,7 @@ whole-change Review 同样执行本门禁；旧 lane 已有两轴结果可直接
 外层 task terminal 后 `read_thread` 一次；内部 Testing、Review、Integration 则读取 subagent
 回传与持久证据。随后按 output mode 验证：
 
-- `commit`：先回读 canonical gate-state-machine 的实施前置证据，缺失则保留现场并阻塞 Integration；要求候选 commit、`implementation` scope、resolved owner、Review fixed point 等于 lane base commit、
-  独立两轴 Review Evidence Bundle readback与 clean/declared dirty state，按 dependency order cherry-pick；
+- `commit`：先回读 canonical gate-state-machine 的实施前置证据，缺失则保留现场并阻塞 Integration；要求候选 commit 与 clean/declared dirty state，按 dependency order cherry-pick；
   focused checks通过后写 integrated。
 - `artifact`：验证 tracker/artifact坐标；无必要 repo 变更时 worktree必须 clean，写 consumed。
 - `checks`：验证 testing 命令/结果且 worktree clean，写 consumed；失败阻塞 review。

@@ -103,8 +103,8 @@ def model(data):
 def review(data):
     """校验 coordinator 从 resolved owner 取得的两轴结论。"""
     scope, owner = data.get("review_scope"), data.get("owner")
-    if scope not in ("implementation", "whole-change"):
-        raise ValueError("缺失或非法 review_scope")
+    if scope != "whole-change":
+        raise ValueError("缺失或非法 review_scope：App 只在 MMF 收口审 whole-change（ADR-0027）")
     if (
         not isinstance(owner, dict)
         or set(owner) != {"name", "skill_path", "invocation_label"}
@@ -208,7 +208,9 @@ def subagent(data):
         return {**result, "action": "wait"}
     if work == "review":
         loaded = models(data)
-        scope = data["review_scope"]
+        scope = data.get("review_scope")
+        if scope != "whole-change":
+            raise ValueError("缺失或非法 review_scope：App 只在 MMF 收口审 whole-change（ADR-0027）")
         axes = loaded["config"]["review"][scope]
         overrides = data.get("review_overrides", {})
         if not isinstance(overrides, dict) or not set(overrides) <= set(axes):

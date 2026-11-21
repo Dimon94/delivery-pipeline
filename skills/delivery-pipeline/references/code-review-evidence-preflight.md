@@ -28,8 +28,9 @@ fixed point 解析为唯一 commit 后记录 HEAD；ref 无效、diff 为空或�
 轮次与处置归 `gate-state-machine.md` §Review 预算；父 worker 拿到各轴 verdict 后运行
 `scripts/review_gate.py`，不自行判定通过。
 
-- prompt 传 bundle 绝对目录、当前轴、「第 N 轮，共 3 轮」和 spec source（spec、ticket、相关 ADR
-  的绝对路径或 tracker URL）；R2/R3 另传上轮 finding 与修复 diff 路径，只审修复及其影响。
+- prompt 传 bundle 绝对目录、当前轴、「只审一轮，修复不复审」和 spec source（spec、ticket、相关 ADR
+  的绝对路径或 tracker URL）；要求每条 P0/P1 附可跑反例（失败测试或命令、spec 原文加输入输出、
+  泄漏 file:line），没有反例的降为 P2。
 - 子任务标记 review-only/no-acceptance；交付物是 findings/verdict，Git 与测试命令留在父 worker。
 - bundle 缺项属于 preflight failure，fan-out 前补齐。
 

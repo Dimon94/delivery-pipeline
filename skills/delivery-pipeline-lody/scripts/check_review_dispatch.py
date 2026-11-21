@@ -93,26 +93,21 @@ def check():
         bad=deepcopy(request);bad.update(lane='candidate',request_id='candidate',registry=str(root/'candidate.md'),config=c)
         chosen=adapter.handle(bad,io)
         assert chosen['row']['review_plan']['lane']['selected']['model']=='second', '正面不支持 high 应跳过主项'
-        # R2 spec-only：lane 仍按 standards 选择，执行仅 spec，保留原实现者与新增修复者。
+        # ADR-0027 一轮制：FIX 需带反例；原轮取消或仍有效都不能开 R2。
         options.clear();options.update(deepcopy(old))
         fix_axes=deepcopy(axes);fix_axes['spec'].update(verdict='BLOCK',counts={'P0':0,'P1':1,'P2':0,'P3':0})
-        fix_data={'round':1,'axes':fix_axes,'review_packet':packet,'native_readbacks':{}}
+        fix_data={'round':1,'axes':fix_axes,'review_packet':packet,'native_readbacks':{},'repros':['node --test spec.test.js']}
         ledger=root/'fix.json'
         assert run(fix_data,str(ledger))=='FIX'
         adapter.registry.write(sources,{'lane_id':'repair','role':'backend','map':'map','output_mode':'commit',
               'integrated_commit':'repair-head','agent':'codex','model':'repair-model','effort':'high','work_item':'repair'})
         r2=deepcopy(request);r2.update(lane='r2',request_id='r2',registry=str(root/'r2.md'),round=2,
                     ledger=str(ledger),previous_review_registry=request['registry'],head='repair-head',required_axes=['spec'])
-        # 原 R1 取消时不能开后轮。
-        reject_r2=False
-        try: adapter.handle(r2,io)
-        except ValueError: reject_r2=True
-        assert reject_r2, '取消原轮后必须阻断后轮'
-        row['state']='created';adapter.registry.write(Path(request['registry']),row)
-        second=adapter.handle(r2,io)
-        assert [c['axis'] for c in second['review_packet']['owner_calls']]==['spec'], 'spec-only 不执行 standards'
-        assert second['row']['effort']=='high' and second['review_packet']['owner_calls'][0]['requested']['effort']=='low'
-        assert second['row']['review_plan']['implementations'][0]['lane_id']=='repair'
+        for state in (None,'created'):
+            if state: row['state']=state;adapter.registry.write(Path(request['registry']),row)
+            try: adapter.handle(r2,io)
+            except ValueError: continue
+            raise AssertionError('FIX 之后不能开 R2')
         before=len(calls)
         reuse=deepcopy(request);reuse.update(lane='reuse',request_id='reuse',registry=str(root/'reuse.md'),ledger=str(ledger))
         reused=adapter.handle(reuse,io)

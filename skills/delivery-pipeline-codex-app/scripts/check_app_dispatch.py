@@ -72,7 +72,8 @@ def check():
     assert call("subagent", {**sub, "work": "testing", "active_count": 0})["read_only"] is True
     assert call("subagent", {**sub, "work": "integration", "active_count": 0})["read_only"] is False
     call("subagent", {**sub, "work": "integration", "active_count": 1}, False)
-    rv = call("subagent", {**sub, "work": "review", "active_count": 0, "review_scope": "implementation"})
+    assert "whole-change" in call("subagent", {**sub, "work": "review", "active_count": 0, "review_scope": "implementation"}, False)
+    rv = call("subagent", {**sub, "work": "review", "active_count": 0, "review_scope": "whole-change"})
     assert rv["action"] == "invoke-owner" and rv["required_slots"] == 2
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -83,16 +84,17 @@ def check():
         Path(tmp, "a").write_text("2"); g("commit", "-qam", "b")
         head = g("rev-parse", "HEAD")
         review = {"worktree": tmp, "base_commit": base_commit, "head_commit": head,
-                  "review_scope": "implementation",
+                  "review_scope": "whole-change",
                   "owner": {"name": "code-review", "skill_path": "/resolved/code-review/SKILL.md",
                             "invocation_label": "$code-review"},
                   "reviews": {}}
         assert "缺少独立两轴结论" in call("review", review, False)
         axis = lambda r: {"reviewer_id": r, "source": "host", "verdict_text": "pass", "status": "completed",
-                          "verdict": "pass", "blocking_findings": 0, "review_scope": "implementation",
+                          "verdict": "pass", "blocking_findings": 0, "review_scope": "whole-change",
                           "base_commit": base_commit, "head_commit": head}
         review = {**review, "worker_id": "w", "reviews": {"standards": axis("r1"), "spec": axis("r2")}}
         assert call("review", review)["action"] == "review-passed"
+        assert "whole-change" in call("review", {**review, "review_scope": "implementation"}, False)
         assert "必须独立" in call("review", {**review, "worker_id": "r1"}, False)
         Path(tmp, "a").write_text("dirty")
         assert "待集成代码已变化" in call("review", review, False)

@@ -353,7 +353,7 @@ def check_capability_safety():
 
 
 def check_later_round():
-    """独立预期：DD516 / gate-state-machine R2/R3、R16，不执行 native。"""
+    """独立预期：ADR-0027 一轮制。FIX 带反例；同 head 复用；任何后续轮次都被拒绝。不执行 native。"""
     from review_gate import prepare_round, run, read_ledger
     clean = dict(P0=0, P1=0, P2=0, P3=0)
     impl = dict(lane_id='impl', requested=dict(agent='pi', model='provider/model', effort='high'), executed=None)
@@ -368,42 +368,26 @@ def check_later_round():
         packet = dict(review_plan=plan, owner_calls=registry.build_owner_calls(plan))
         passing = dict(verdict='PASS', counts=clean, findings=['original'])
         blocking = dict(verdict='BLOCK', counts={**clean, 'P1':1}, findings=['repair spec'])
-        assert run(dict(round=1, axes=dict(standards=passing, spec=blocking), review_packet=packet), ledger) == 'FIX'
-        rounds = read_ledger(ledger); before=ledger.read_bytes()
-        reuse = prepare_round(rounds, round_no=2, base='base', head='h1', request_id='r2', implementations=[impl])
-        assert reuse['action']=='reuse' and reuse['result']==rounds[0]
-        assert ledger.read_bytes()==before
-        try: run(dict(round=1, axes=dict(standards=passing,spec=blocking), review_packet=packet),ledger)
+        data = dict(round=1, axes=dict(standards=passing, spec=blocking), review_packet=packet)
+        try: run(data, ledger)
         except ValueError: pass
-        else: raise AssertionError('same head reran gate')
+        else: raise AssertionError('P1 without repro accepted')
+        assert not ledger.exists()
+        assert run({**data, 'repros': ['node --test spec.test.js']}, ledger) == 'FIX'
+        rounds = read_ledger(ledger); before=ledger.read_bytes()
+        reuse = prepare_round(rounds, round_no=1, base='base', head='h1', request_id='r2', implementations=[impl])
+        assert reuse['action']=='reuse' and reuse['result']==rounds[0]
+        for retry in (data, {**data, 'round': 2}):
+            try: run({**retry, 'repros': ['x']}, ledger)
+            except ValueError: pass
+            else: raise AssertionError('ledger accepted a second write')
         assert ledger.read_bytes()==before
-        context = prepare_round(rounds, round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer])
-        assert context['required_axes']==['spec'] and context['implementations']==[impl,fixer]
-        plan2 = m.resolve_review_plan(config, required_axes=['spec'], implementations=context['implementations'], evidence=ev, native_capabilities={}, request_id='r2', round_context=context)
-        assert [x['axis'] for x in registry.build_owner_calls(plan2)]==['spec']
-        assert plan2['lane']['selected']==plan['lane']['selected']
-        assert plan2['implementation_evidence'][1]['basis']=='executed'
-        assert plan2['implementation_evidence'][1]['declaration'] is None
-        for flag in ('interface_changed','dependencies_changed'):
-            assert prepare_round(rounds, round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer], **{flag:True})['required_axes']==['standards','spec']
-        def rejected(**changes):
-            args=dict(round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer]); args.update(changes)
-            try: prepare_round(rounds, **args)
-            except ValueError: return
-            raise AssertionError('invalid new round accepted: '+str(changes))
-        rejected(implementations=[impl]); rejected(request_id='r1'); rejected(round_no=4)
-        for outcome in ('PASS','REVIEW_BLOCKED','REVIEW_EXHAUSTED'):
-            previous=rounds; rounds=[{**previous[0], 'outcome':outcome}]
-            rejected()
-            rounds=previous
-        packet2=dict(review_plan=plan2, owner_calls=registry.build_owner_calls(plan2))
-        assert run(dict(round=2,axes=dict(spec=blocking),review_packet=packet2),ledger)=='FIX'
-        context3=prepare_round(read_ledger(ledger),round_no=3,base='base',head='h3',request_id='r3',implementations=[impl,fixer,{**impl,'lane_id':'fixer3'}])
-        assert context3['required_axes']==['spec']
-        plan3=m.resolve_review_plan(config,required_axes=['spec'],implementations=context3['implementations'],evidence=ev,native_capabilities={},request_id='r3',round_context=context3)
-        assert run(dict(round=3,axes=dict(spec=blocking),review_packet=dict(review_plan=plan3,owner_calls=registry.build_owner_calls(plan3))),ledger)=='REVIEW_EXHAUSTED'
-        assert len(read_ledger(ledger))==3
-    print('later-round-plan: pass (R2/R3, fixer, reuse; native Unknown)')
+        for outcome in ('FIX','PASS','REVIEW_BLOCKED'):
+            try: prepare_round([{**rounds[0], 'outcome': outcome}], round_no=2, base='base', head='h2', request_id='r2', implementations=[impl,fixer])
+            except ValueError: continue
+            raise AssertionError('R2 accepted after '+outcome)
+        assert len(read_ledger(ledger))==1
+    print('later-round-plan: pass (one round, repro required, reuse; native Unknown)')
 
 
 if __name__ == '__main__':

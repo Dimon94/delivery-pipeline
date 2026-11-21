@@ -1,6 +1,6 @@
 # ADR-0017: Review 预算
 
-**Status:** Accepted（逐票 review 部分对 CLI 由 ADR-0020 取代）
+**Status:** Accepted（轮次与修复处理由 ADR-0027 取代；预算与账本结构仍有效）
 **Date:** 2026-11-05
 **Decider:** User (Dimon)
 

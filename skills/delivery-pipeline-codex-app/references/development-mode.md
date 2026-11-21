@@ -9,10 +9,9 @@ schema（本仓的 `config/models.json` 是它的 App 实例，所有任务类�
 ## Review 职责
 
 正式 Review 的生命周期与放行由 coordinator 管理，优先于下文及旧 owner 的 worker 内嵌
-Review 步骤。implementation worker 可保存候选 commit，缺最终结论则 blocked 回传并注明待审；
-coordinator 接收后按 `codex-app-dispatch.md` 的“独立 Review 放行”启动两轴并验收。
-worker 内已有审查只作预审；可由 coordinator 回读现有有效结果复用，不必再做相同审查。
-coordinator 将 resolved owner triple 与 `review_scope: implementation | whole-change` 一并传递，
+Review 步骤。逐票 implementation 不审查，worker 交候选 commit 与 focused checks 即可；
+MMF 收口时 coordinator 按 `codex-app-dispatch.md` 的“独立 Review 放行”启动两轴，只审一轮（ADR-0027）。
+coordinator 将 resolved owner triple 与 `review_scope: whole-change` 一并传递，
 App 壳从配置解析两轴模型作为显式参数传给 owner，不选择或替换 owner。中断复核、自评或测试通过不能替代 verdict；
 模型覆盖不等于用户豁免审查。
 
@@ -33,14 +32,14 @@ App 壳从配置解析两轴模型作为显式参数传给 owner，不选择或�
 | implementation 直接实现 | `default_mode`、`modes` | `resolve` 冻结 direct 计划 |
 | 内部辅助、whole-change testing、逐票 Integration | 对应 `work.assistance/testing/integration` | `subagent` |
 | second opinion | 对应 `work.second-opinion` | `subagent` |
-| 正式 implementation / whole-change 双轴 | `review.<scope>.standards/spec` | `subagent` 返回 review_models，传给 resolved owner |
+| 正式 whole-change 双轴（MMF 收口一轮） | `review.whole-change.standards/spec` | `subagent` 返回 review_models，传给 resolved owner |
 
 `model` 输入 work，输出 target（model/effort/source/scope）与外层 task 的 model/thinking。
 内部入口把同一 target 翻译为 model/reasoning_effort。按工作内容选择 key，不从角色名猜模型。
 单次覆盖用 `model_override: {model 或 effort, source, scope}`，scope 等于 work；未指定字段继承配置。
 新 implementation 用 `model_overrides`，key 只有 direct，值为同结构，scope: direct。
 Review 入口必须给 review_scope，可传 `review_overrides` 的 standards/spec 单轴覆盖，scope 为
-`implementation.standards` 等 `<review_scope>.<axis>`。coordinator 把返回 review_models 与来源
+`whole-change.standards` 等 `<review_scope>.<axis>`；App 只接受 whole-change。coordinator 把返回 review_models 与来源
 作为用户选择的 App 配置参数传给 owner，优先于 owner 的模型默认；owner 仍负责两轴独立性与结论。
 
 配置修改只影响下一次新选择。新 lane 将 config_path、execution_kind: direct 与 target 同时冻结到
@@ -88,7 +87,7 @@ model、effort 与来源，调用 `scripts/app_dispatch.py coordinator` 记录�
 ### 正式 Review
 
 先完成内部委派核验，review 预留 owner 要求的两轴容量，invoke-owner 后完整读取 resolved code-review；把
-   implementation 或 whole-change scope 与 Review Evidence Bundle 传入，同时传入配置解析的 review_models、
+   whole-change scope 与 Review Evidence Bundle 传入，同时传入配置解析的 review_models、
    config_path 与 helper 绝对路径；每个 reviewer 的内部辅助也走该配置的 subagent 入口。
    owner 负责执行审查。owner 或 scope 不匹配时明确报告，不能使用安装目录里的旧副本。
    地图 artifact 的用户确认与 Terminal 回传沿下方

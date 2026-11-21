@@ -43,7 +43,7 @@ VERSION = 1
 HALT_CLASSES = {
     "plan_change": "1 计划的 T/R、范围或验收要改",
     "extra_ticket": "2 补票超出已批准波次或改动合同票",
-    "review_exhausted": "3 REVIEW_EXHAUSTED",
+    "review_exhausted": "3 Review 反例修不绿（旧账本 REVIEW_EXHAUSTED）",
     "resplit_failed": "4 重拆之后仍然失败",
     "authority": "5 需要远程权限、不可逆操作或授权外的决定",
     "ci_red": "CI 红",
@@ -140,7 +140,7 @@ def detect_halt(state):
     for row in sorted(lanes.values(), key=lambda r: r["lane_id"]):
         lid, reason = row["lane_id"], row.get("blocked_reason") or ""
         if row.get("state") == "blocked" and "REVIEW_EXHAUSTED" in reason:
-            candidates.append(halt("review_exhausted", lid, "三轮 review 后仍有阻断项", [row.get("_file", ""), lid],
+            candidates.append(halt("review_exhausted", lid, "Review 阻断项反例修不绿", [row.get("_file", ""), lid],
                                    ["接受剩余 findings 继续", "重拆该票", "放弃本 MMF"]))
         if row.get("state") == "blocked" and "needs-decision" in reason:
             candidates.append(halt("plan_change", lid, reason, [row.get("artifact") or lid],
@@ -298,7 +298,7 @@ def decide(state) -> dict:
         if role == "review" and latest.get("verdict") == "FIX":
             rnd = int(latest.get("round") or 1)
             return act("judge", f"judge:review_fix:{rnd}", weight="heavy", kind="review-fix",
-                       lane_id=latest["lane_id"], note="FIX findings 交同一 implementer lane 修复后开下一轮")
+                       lane_id=latest["lane_id"], note="FIX findings 交同一 implementer lane 修复；反例变绿加完整测试即关闭，不开下一轮（ADR-0027）")
         if latest.get("state") not in closeout.DONE:
             return act("wait", "wait", lanes=[latest["lane_id"]])
 

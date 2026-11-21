@@ -52,10 +52,11 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
    绝对路径：commit 使用 Execution Base commit，verdict 使用 map registry base commit，沿同一
    Review Evidence Bundle 合同运行只读子审查。内部 Testing、Review 与 Integration 每次先走
    `references/development-mode.md` 的 subagent 入口。
-   正式 Review 由 coordinator 按
-   `review_scope: implementation | whole-change` 调用 resolved code-review owner；App 壳从配置传递
-   两轴 model/effort，resolved owner 保持不变。实施 worker 的自评不能放行。候选 commit 在 Integration 前必须通过
-   `references/codex-app-dispatch.md` 的“独立 Review 放行”和 `scripts/app_dispatch.py review`。
+   正式 Review 只在 MMF 收口时由 coordinator 按 `review_scope: whole-change` 调用 resolved
+   code-review owner，只审一轮（ADR-0027）；逐票 commit 不审查，靠 focused checks 与完整测试进入
+   Integration。App 壳从配置传递两轴 model/effort，resolved owner 保持不变。实施 worker 的自评不能放行。
+   whole-change 合入前必须通过 `references/codex-app-dispatch.md` 的“独立 Review 放行”和
+   `scripts/app_dispatch.py review`。
 5. 当前 App 明确选择 Herdr 时退出本壳，改用 `delivery-pipeline-herdr`；同一 map 不静默
    混合新 lane transport。existing lane 始终按 registry runtime 恢复。
 

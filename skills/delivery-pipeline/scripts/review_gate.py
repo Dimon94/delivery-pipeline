@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Review 预算 gate：由 P0/P1 计数推导结论，并用账本强制每个 scope 最多三轮。
+"""Review 预算 gate：由 P0/P1 计数推导结论，并用账本强制每个 scope 只审一轮（ADR-0027）。
 
 输入（JSON stdin）：
   {"round": 1,
    "axes": {"standards": {"verdict": "PASS", "counts": {"P0": 0, "P1": 0, "P2": 1, "P3": 0}},
             "spec": {"verdict": "NO_SPEC"}},
-   "p2_issues": ["<Issue 坐标>"]}
+   "p2_issues": ["<Issue 坐标>"],
+   "repros": ["<每条 P0/P1 的可跑反例：失败测试或命令>"]}
 M3 另传 review_packet 和 native_readbacks，逐轴 schema 见 code-review-evidence-preflight.md。
-输出：PASS | FIX | REVIEW_EXHAUSTED | REVIEW_BLOCKED。输入非法或超预算时非零退出。
+输出：PASS | FIX | REVIEW_BLOCKED。输入非法或超预算时非零退出。
 账本只记录已产生有效 verdict 的轮次及其 P0-P3 合计；中断的审查不进账本，因此不占预算。
-只有 FIX 能续轮：PASS、REVIEW_BLOCKED 与 REVIEW_EXHAUSTED 是终态，之后再写入一律拒绝。
+每条 P0/P1 必须带一个反例；FIX 表示按反例修复，反例变绿加完整测试即关闭，不开复审。
+账本写入一轮后即终结，之后再写入一律拒绝。REVIEW_EXHAUSTED 只在旧账本里出现。
 """
 from copy import deepcopy
 import argparse
@@ -18,7 +20,7 @@ import os
 import sys
 import tempfile
 
-MAX_ROUNDS = 3
+MAX_ROUNDS = 1
 SEVERITIES = ("P0", "P1", "P2", "P3")
 
 
@@ -75,6 +77,10 @@ def axis_counts(name, axis):
     verdict = axis.get("verdict")
     if name == "spec" and verdict == "NO_SPEC":
         return {severity: 0 for severity in SEVERITIES}
+    if name == "standards" and verdict == "SKIPPED":
+        if not isinstance(axis.get("reason"), str) or not axis["reason"].strip():
+            raise ValueError("standards: SKIPPED 必须写明理由")
+        return {severity: 0 for severity in SEVERITIES}
     if verdict not in ("PASS", "BLOCK"):
         raise ValueError(f"{name}: verdict 只能是 PASS 或 BLOCK")
     counts = axis.get("counts")
@@ -101,13 +107,19 @@ def evaluate(data):
     axes = data.get("axes")
     if not isinstance(axes, dict) or not axes:
         raise ValueError("缺少 axes")
-    if round_no == 1 and not {"standards", "spec"} <= axes.keys():
-        raise ValueError("第 1 轮必须同时有 standards 与 spec；无 Spec 时写 NO_SPEC")
+    if not {"standards", "spec"} <= axes.keys():
+        raise ValueError("必须同时有 standards 与 spec；无 Spec 时写 NO_SPEC，Standards 未触发时写 SKIPPED")
     counts = [axis_counts(name, axis) for name, axis in axes.items()]
     if round_release_blockers(execution_evidence(data)):
         return 'REVIEW_BLOCKED'
-    if sum(item["P0"] + item["P1"] for item in counts):
-        return "FIX" if round_no < MAX_ROUNDS else "REVIEW_EXHAUSTED"
+    blocking = sum(item["P0"] + item["P1"] for item in counts)
+    repros = data.get("repros", [])
+    if not isinstance(repros, list) or not all(isinstance(r, str) and r.strip() for r in repros):
+        raise ValueError("repros 必须是反例命令列表")
+    if len(repros) != blocking:
+        raise ValueError(f"{blocking} 条 P0/P1 需要 {blocking} 个可跑反例，实际 {len(repros)}；没有反例的降为 P2")
+    if blocking:
+        return "FIX"
     issues = data.get("p2_issues", [])
     if not isinstance(issues, list) or not all(isinstance(i, str) and i.strip() for i in issues):
         raise ValueError("p2_issues 必须是 Issue 坐标列表")
@@ -144,27 +156,8 @@ def prepare_round(rounds, *, round_no, base, head, request_id, implementations,
         if point.get('base') == base and point.get('head') == head:
             return dict(action='reuse', result=deepcopy(entry))
     if type(round_no) is not int or not 1 <= round_no <= MAX_ROUNDS or round_no != len(rounds)+1:
-        raise ValueError('Review Budget requires consecutive rounds, at most 3')
-    if not rounds:
-        axes = ['standards', 'spec']
-    else:
-        previous = rounds[-1]
-        if previous['outcome'] != 'FIX':
-            raise ValueError('only FIX permits a new round')
-        old_plan = previous['review_packet']['review_plan']
-        if any(r['review_packet']['review_plan']['request_id'] == request_id for r in rounds):
-            raise ValueError('new round requires a new request; same round must recover original')
-        old = old_plan.get('implementations', [])
-        old_ids = {i['lane_id'] for i in old}
-        if not any(i['lane_id'] not in old_ids for i in implementations):
-            raise ValueError('new round requires integrated repair implementer')
-        # 保留旧身份（包括已知 executed 但家族 Unknown），再纳入修复者。
-        implementations = deepcopy(old) + [i for i in implementations if i['lane_id'] not in old_ids]
-        axes = ['standards', 'spec'] if interface_changed or dependencies_changed else [
-            axis for axis, result in previous['axes'].items()
-            if sum(axis_counts(axis, result)[p] for p in ('P0', 'P1'))]
-        if not axes:
-            raise ValueError('FIX requires P0/P1 axes')
+        raise ValueError(f'Review Budget allows {MAX_ROUNDS} round per scope')
+    axes = ['standards', 'spec']
     return dict(action='plan', round=round_no, base=base, head=head,
                 request_id=request_id, required_axes=axes, implementations=deepcopy(implementations),
                 interface_changed=interface_changed, dependencies_changed=dependencies_changed)
@@ -183,8 +176,8 @@ def run(data, ledger):
             raise ValueError('same base/head: reuse complete recorded result, do not rerun gate')
         if context != expected_plan or plan['required_axes'] != expected_plan['required_axes']:
             raise ValueError('round plan differs from Review Budget decision')
-    if rounds and rounds[-1]["outcome"] != "FIX":
-        raise ValueError(f"账本已终结于 {rounds[-1]['outcome']}，只有 FIX 之后才能开下一轮")
+    if len(rounds) >= MAX_ROUNDS:
+        raise ValueError(f"账本已终结于 {rounds[-1]['outcome']}；修复靠反例变绿关闭，不开下一轮")
     expected = len(rounds) + 1
     if data["round"] != expected:
         raise ValueError(f"账本要求下一轮为 {expected}，输入为 {data['round']}")
@@ -214,18 +207,21 @@ def self_test():
 
     passing = {"verdict": "PASS", "counts": clean}
     blocking = {"verdict": "BLOCK", "counts": p1}
+    repro = ["node --test tests/x.test.js"]
     assert evaluate(payload(1, passing)) == "PASS"
-    assert evaluate(payload(2, blocking)) == "FIX"
-    assert evaluate(payload(3, blocking)) == "REVIEW_EXHAUSTED"
+    assert evaluate({**payload(1, blocking), "repros": repro}) == "FIX"
     assert evaluate(payload(1, {"verdict": "PASS", "counts": p2}, issues=["DD-1"])) == "PASS"
     assert evaluate(payload(1, passing, spec={"verdict": "NO_SPEC"})) == "PASS"
+    assert evaluate(payload(1, {"verdict": "SKIPPED", "reason": "无权限或合同改动"})) == "PASS"
     rejected = (
         payload(1, {"verdict": "BLOCK", "counts": clean}),  # 零 finding 不得 BLOCK
         payload(1, {"verdict": "BLOCK", "counts": p2}, issues=["DD-1"]),  # P2 不阻断
         payload(1, {"verdict": "PASS", "counts": p1}),  # P1 不得 PASS
         payload(1, {"verdict": "PASS", "counts": p2}),  # P2 未登记
-        payload(4, passing),  # 超预算
-        {"round": 1, "axes": {"standards": passing}},  # 第 1 轮缺轴
+        payload(1, blocking),  # P1 无反例
+        payload(1, {"verdict": "SKIPPED"}),  # 跳过 Standards 无理由
+        payload(2, passing),  # 只有一轮
+        {"round": 1, "axes": {"standards": passing}},  # 缺轴
     )
     for item in rejected:
         try:
@@ -234,26 +230,16 @@ def self_test():
             continue
         raise AssertionError(f"应被拒绝: {item}")
     with tempfile.TemporaryDirectory() as root:
-        ledger = os.path.join(root, "nested", "ledger.json")
-        assert run(payload(1, blocking), ledger) == "FIX"
-        for stale in (payload(1, blocking), payload(3, blocking)):  # 重复或跳号都拒绝
-            try:
-                run(stale, ledger)
-            except ValueError:
-                continue
-            raise AssertionError("账本应拒绝非连续轮次")
-        assert run(payload(2, blocking), ledger) == "FIX"
-        assert run(payload(3, blocking), ledger) == "REVIEW_EXHAUSTED"
-        assert len(read_ledger(ledger)) == 3
-        closed = os.path.join(root, "closed.json")
-        assert run(payload(1, passing), closed) == "PASS"
-        try:  # PASS 后的改动不再开轮
-            run(payload(2, blocking), closed)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("PASS 后账本应拒绝新一轮")
-        assert read_ledger(closed)[0]["counts"]["P1"] == 0
+        for first in ({**payload(1, blocking), "repros": repro}, payload(1, passing)):
+            ledger = os.path.join(root, f"{len(os.listdir(root))}", "ledger.json")
+            run(first, ledger)
+            for later in (payload(1, passing), payload(2, passing)):  # FIX 与 PASS 之后都不再开轮
+                try:
+                    run(later, ledger)
+                except ValueError:
+                    continue
+                raise AssertionError("一轮之后账本应拒绝写入")
+            assert len(read_ledger(ledger)) == 1
     print("review gate self-test: pass")
 
 

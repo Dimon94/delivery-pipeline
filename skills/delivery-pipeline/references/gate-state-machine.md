@@ -167,17 +167,15 @@ dispatch circuit-break 只数派发失败，验收失败不占用其计数。诊
 4. 只有当前授权内无法解除的权限、外部依赖或用户决策阻塞，或重拆后仍走不通，才上浮用户，
    附失败证据与恢复条件。
 
-## Review 预算（ADR-0017）
+## Review 预算（ADR-0027）
 
 CLI 不做逐票 review：commit lane 交付即收口，Review 只在 Map Integration（或独立票 PR）上做一次
-whole-change，最多 3 轮，不能续。所属壳仍启用逐票 review 时，每票另有独立的 3 轮预算。
+whole-change，只审一轮，不能续。所属壳仍启用逐票 review 时，每票另有独立的一轮预算。
 一轮是一次审查派发，命中的专项 Review 与主审同轮，只在 R1 运行。
 
-| 轮次 | 触发条件 | 范围 |
-| --- | --- | --- |
-| R1 | 候选 head 已同步目标分支，本地检查与验收对账完成 | 完整 diff |
-| R2 | R1 有 P0/P1 且已修复 | 修复 diff 及其影响到的行为；只重跑报过 P0/P1 的轴，修复改了公开 Interface 或依赖时两轴都跑 |
-| R3 | R2 有 P0/P1 且已修复 | 同 R2 |
+| 轮次 | 触发条件 | 范围 | 修复处理 |
+| --- | --- | --- | --- |
+| R1 | 候选 head 已同步目标分支，本地检查与验收对账完成 | 完整 diff | 每条 P0/P1 带可跑反例，反例变绿加完整测试即关闭，不开下一轮 |
 
 每轮 fan-in 运行 `scripts/review_gate.py --ledger <artifacts_root>/review-budget/<scope>-<work_item>.json`。
 输入与账本合同见脚本头部。verdict 只由 P0/P1 计数决定；中断、超时或缺 verdict 的审查不进账本，由派发熔断兜底。
@@ -187,29 +185,22 @@ whole-change，最多 3 轮，不能续。所属壳仍启用逐票 review 时，
 - `REVIEW_BLOCKED`：M3 known executed mismatch 阻断本轮放行；保留完整 findings 与逐轴证据，不自动重跑、不换候选。
 - `PASS`：进入下一 gate。验证缺口写入报告，由 testing/closeout gate 判定，不改变 Review verdict。
 - `FIX`：写诊断 artifact，给出根因和归因类别；whole-change 的全部 finding 交给同一个 implementer
-  lane 修复并排查同类位置，merger 收口后再开下一轮。
-- `REVIEW_EXHAUSTED`：lane 写 `blocked`，不合并，不开第 4 轮。对实现链路运行 `retro`，输入三轮 finding、
-  诊断 artifact 与 packet，产出漏在哪一环及环境改法。用户随后决定重开新票（新预算）或放弃，原票不再加轮。
+  lane 修复并排查同类位置。每条 P0/P1 的反例加进测试或保留为命令，反例变绿且完整测试通过后该 finding 关闭，
+  由 merger 记录关闭证据，不再派发新的审查 lane。所有 P0/P1 关闭后 lane 写 `consumed verdict=PASS`。
 
 归因类别：合同未兑现、时序或身份代次、入口或调用方遗漏、持久或升级恢复、测试或夹具、越界或权限、环境。
 
 其他规则：
 
-- P2 查重后登记 Issue，P3 留在报告里。两者都不开修复 lane，也不触发新一轮。
-- whole-change 阶段的修复 lane 和同步主干不跑内嵌 Review，由下一轮 whole-change 复核。
-- 只有 `FIX` 能续轮；`PASS`、`REVIEW_BLOCKED` 与 `REVIEW_EXHAUSTED` 是账本终态，gate 拒绝之后的写入。终态后的冲突解决、
-  恢复修复等改动靠测试验证并在 PR 注明，沿用原账本路径。FIX 与下一轮之间的 merge 并入下一轮范围。
-- base 与 head 相同的 Review 结果直接复用，不重跑。
-- 后轮的派发前决定复用 `review_gate.prepare_round`，不增加预算 owner。输入原 scope 账本、
-  base/head、新 request、完整已集成实现者集合及接口/依赖变化；冻结 `round_context` 到本轮
-  Review Plan。只有原 FIX 可产生 R2/R3，必须纳入新的修复 lane；旧 executed 身份保留，
-  家族缺声明仍为 Unknown。相同 base/head 返回原完整记录，账本不写入。
-- 新轮的新 request 与同轮重试分开：同轮仍恢复原 immutable plan/intent/receipt，不能因
-  配置变化重选。取消或终态不能伪造 FIX 续轮；原生 readback mismatch 继续由同一个 gate 阻断。
-  旧计划没有 base/head 的冻结证据时，不能猜测其 fixed point 并声称自动复用成功。
+- P2 查重后登记 Issue，P3 留在报告里。两者都不开修复 lane，也不阻断。
+- whole-change 阶段的修复 lane 和同步主干不跑内嵌 Review，由测试与 CI 验证。
+- 写入一轮后账本终结，gate 拒绝之后的写入。修复靠反例变绿关闭，不开复审。
+- base 与 head 覆盖已有 Review（包括更大 MMF 的结果覆盖本 scope）时复用，不重跑。
+- Spec 轴每次都跑。Standards 轴只在 diff 触及权限、数据外泄、持久 schema 或外部合同，且没有检查或形式验证覆盖时运行；
+  跳过时在 axes 里写 `{"verdict": "SKIPPED", "reason": "..."}` 并说明理由。
 - packet 不得抬高阻断线或预算。用户明确破例时，packet 引用用户原话与来源坐标。
 
-完成标准：每轮都有账本记录，输出由 gate 给出；每条 P2 有 Issue 坐标；`REVIEW_EXHAUSTED` 有 retro 交付物。
+完成标准：账本记录一轮，输出由 gate 给出；每条 P2 有 Issue 坐标；反例修不绿时保留 findings 与诊断报告 `BLOCKED`。
 
 ## Supersede（ADR-0011）
 
