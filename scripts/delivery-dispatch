@@ -80,15 +80,25 @@ def without_bees(settings):
 
 
 @contextlib.contextmanager
-def hook_args(tree):
+def hook_args(tree, env, magpie):
     # Claude 没有按命令排除单个 hook 的开关。只有需要过滤时才提供用户设置副本。
     user = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude')) / 'settings.json'
     for project in [tree / '.claude/settings.json', tree / '.claude/settings.local.json']:
         if project.is_file() and without_bees(json.loads(project.read_text())):
             raise Failure('项目设置注册了 bees hook，请先移除该注册：' + str(project))
     settings = json.loads(user.read_text()) if user.is_file() else {}
-    if not without_bees(settings):
-        yield []
+    filtered_hooks = without_bees(settings)
+    if magpie:
+        # 配置目录和网关只属于本次派发。普通用户 hook 随进程加载。
+        with tempfile.TemporaryDirectory(prefix='delivery-claude-') as worker_home:
+            isolated = {key: settings[key] for key in ('hooks', 'permissions', 'sandbox') if key in settings}
+            isolated['env'] = {'ANTHROPIC_BASE_URL': env['ANTHROPIC_BASE_URL']}
+            overrides = Path(worker_home) / 'dispatch.json'
+            overrides.write_text(json.dumps(isolated))
+            yield ['--setting-sources', 'project,local', '--settings', str(overrides)], dict(env, CLAUDE_CONFIG_DIR=worker_home)
+        return
+    if not filtered_hooks:
+        yield [], env
         return
     # 显式 settings 的优先级高于项目层。遇到重叠的非 hook 设置时拒绝改变优先级。
     for project in [tree / '.claude/settings.json', tree / '.claude/settings.local.json']:
@@ -97,7 +107,7 @@ def hook_args(tree):
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as filtered:
         json.dump(settings, filtered)
         filtered.flush()
-        yield ['--setting-sources', 'project,local', '--settings', filtered.name]
+        yield ['--setting-sources', 'project,local', '--settings', filtered.name], env
 
 
 def worker_plan(args, config, turns):
@@ -187,13 +197,13 @@ def run_brief(repo, directory, target, base, job, plan, attempts, owner):
         save(directory, name, row)
         try:
             git(repo, 'worktree', 'add', '-b', branch, str(tree), base)
-            with hook_args(tree) as settings:
+            with hook_args(tree, plan[1], plan[2]['agent'] == 'pi') as (settings, worker_env):
                 for attempt in range(1, attempts + 1):
                     row['attempts'] = attempt
                     save(directory, name, row)
                     prompt = ('' if attempt == 1 else '上次未提交。先运行 git status，保留现场继续。\n') + json.dumps(brief, ensure_ascii=False)
                     rc = subprocess.run([*plan[0], *settings, '--append-system-prompt', INSTRUCTION], cwd=tree,
-                                        env=plan[1], input=prompt, text=True, stdout=subprocess.DEVNULL).returncode
+                                        env=worker_env, input=prompt, text=True, stdout=subprocess.DEVNULL).returncode
                     head = git(tree, 'rev-parse', 'HEAD')
                     if git(tree, 'symbolic-ref', '--short', 'HEAD') != branch:
                         raise Failure('执行者改变了当前分支')

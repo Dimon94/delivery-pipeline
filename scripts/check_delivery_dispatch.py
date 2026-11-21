@@ -1,6 +1,7 @@
 """临时 Git 仓的命令行验收；假 claude 只校验启动参数与输入，提交由真实 Git 产生。"""
 import json
 import os
+import runpy
 from pathlib import Path
 import subprocess
 import sys
@@ -18,16 +19,25 @@ def check(root):
     cfg.mkdir()
     normal = {'type': 'command', 'command': 'normal-hook'}
     settings = {'hooks': {'SessionStart': [{'hooks': [normal, {'type': 'command', 'command': '/tmp/bees hook --cli claude'}]}]}}
+    personal_gateway = 'http://127.0.0.1:18787'
+    settings['env'] = {'ANTHROPIC_BASE_URL': personal_gateway}
+    settings['permissions'] = {'deny': ['Read(private.txt)']}
     (cfg / 'settings.json').write_text(json.dumps(settings))
     cli = HERE / 'delivery-dispatch'
     worker = root / 'claude'
     worker.write_text('''#!/usr/bin/env python3
-import json, pathlib, subprocess, sys
+import json, os, pathlib, subprocess, sys
 argv=sys.argv[1:]
+worker_home=pathlib.Path(os.environ['CLAUDE_CONFIG_DIR'])
+assert worker_home != pathlib.Path(os.environ['ORIGINAL_CLAUDE_DIR'])
+assert worker_home.is_dir()
 assert '-p' in argv and '--bare' not in argv and '--safe-mode' not in argv
 assert argv[argv.index('--model')+1]=='auto/test-model' and argv[argv.index('--effort')+1]=='high'
 assert argv[argv.index('--max-turns')+1]=='7'
-hooks=json.loads(pathlib.Path(argv[argv.index('--settings')+1]).read_text())['hooks']['SessionStart'][0]['hooks']
+settings=json.loads(pathlib.Path(argv[argv.index('--settings')+1]).read_text())
+assert settings['env']['ANTHROPIC_BASE_URL']=='http://127.0.0.1:3425'
+assert settings['permissions']['deny']==['Read(private.txt)']
+hooks=settings['hooks']['SessionStart'][0]['hooks']
 assert [h['command'] for h in hooks]==['normal-hook']
 brief=sys.stdin.read()
 name=pathlib.Path.cwd().name
@@ -41,7 +51,7 @@ subprocess.run(['git','add','--',name],check=True)
 subprocess.run(['git','commit','-qm',name],check=True)
 ''')
     worker.chmod(0o755)
-    env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], CLAUDE_CONFIG_DIR=str(cfg), MAGPIE_API_KEY='test-only')
+    env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], CLAUDE_CONFIG_DIR=str(cfg), ORIGINAL_CLAUDE_DIR=str(cfg), MAGPIE_API_KEY='test-only')
 
     def run(*args):
         return subprocess.check_output(args, cwd=repo, env=env, text=True).strip()
@@ -107,6 +117,13 @@ subprocess.run(['git','commit','-qm',name],check=True)
     run(cli, 'drop', 'solo')
     assert run(cli, 'status') == '[]' and not (repo / 'solo').exists()
     assert json.loads((cfg / 'settings.json').read_text()) == settings
+    from unittest.mock import patch
+    with patch.dict(os.environ, CLAUDE_CONFIG_DIR=str(cfg)):
+        hook_args = runpy.run_path(str(cli))['hook_args']
+        with hook_args(repo, env, magpie=False) as (options, native_env):
+            native_settings = json.loads(Path(options[options.index('--settings') + 1]).read_text())
+            assert native_env is env and native_env['CLAUDE_CONFIG_DIR'] == str(cfg)
+            assert native_settings['env']['ANTHROPIC_BASE_URL'] == personal_gateway
     print('PASS run/batch/retry/status/merge/drop + model/effort/turns + selective hooks')
 
 
