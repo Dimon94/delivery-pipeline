@@ -21,8 +21,8 @@ for(const status of ['conflict','uncertain'] as const)test(`${status}保留完�
  expect(e.state.kind).toBe(status);e.preview();e.back();await e.save(async()=>{calls++;throw Error();});expect(calls).toBe(1);
  expect(e.recover({...e.state.base,file_state:'unreadable',config:null})).toBe(false);
  expect(e.state.kind).toBe(status);expect(e.state.draft.config).toEqual(candidate);
- expect(e.recover({...e.state.base,base_hash:'observed',config:structuredClone(candidate)})).toBe(true);
- expect(e.state.base.base_hash).toBe('observed');expect(e.state.draft.config).toEqual(candidate);expect(e.state.draft.changes()).toEqual([]);
+ expect(e.recover({...e.state.base,base_hash:'observed',config:e.state.draft.candidate()})).toBe(true);
+ expect(e.state.base.base_hash).toBe('observed');expect(e.state.draft.config).toEqual({...candidate, version:8, model_families:{}, dispatch:{parallel:4,max_turns:100}});expect(e.state.draft.changes()).toEqual([]);
  expect('retained' in e.state&&e.state.retained).toBeFalsy();
 });
 test('另一完整文档为新基线；旧完整列表只供参考；拒绝后仍保留参考',async()=>{

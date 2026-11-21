@@ -19,8 +19,11 @@ import lane_registry as registry
 
 def check_single_model(version):
     config = m.valid_fixture()
-    if version == 7:
-        config = m.migrate_document(config)[0]
+    config['version'] = version
+    if version >= 7:
+        config['model_families'] = {}
+    if version == 8:
+        config['dispatch'] = {'parallel': 2, 'max_turns': 7}
     config['review']['whole-change']['spec']['effort'] = 'low'
     evidence = {'pi': {'binary': True, 'models': {'provider/model': ['high', 'low']}}}
     rows = {'map': {'lane_id': 'map', 'role': 'map', 'base_commit': 'base'},
@@ -75,8 +78,9 @@ def check_single_model(version):
     assert [c['axis'] for c in registry.build_owner_calls(spec_only)] == ['spec']
     assert spec_only['lane']['selected']['effort'] == 'high'
     assert config['version'] == version
-    assert ('model_families' in config) == (version == 7)
-    print('single-model-plan: pass (fixture; no native execution)')
+    assert ('model_families' in config) == (version >= 7)
+    assert ('dispatch' in config) == (version == 8)
+    print(f'single-model-plan: pass (v{version} fixture; no native execution)')
 
 
 def check_candidate_family():
@@ -100,8 +104,8 @@ def check_candidate_family():
         raw=path.read_bytes()
         assert cli('show')[1]['file_state']=='ready' and path.read_bytes()==raw
         assert cli('migrate')[0]==0
-        expected={**old,'version':7,'model_families':{}}
-        assert json.loads(path.read_text())==expected, '显式 v6→v7 只能补空声明'
+        expected = {**old, 'version': 8, 'model_families': {}, 'dispatch': {'parallel': 4, 'max_turns': 100}}
+        assert json.loads(path.read_text()) == expected, '显式 v6→v8 应补空声明与默认派发预算'
         assert m.resolve_plan(old,'planning')==m.resolve_plan(expected,'planning')
         ev={'request_id':'save','observed_at':'now','sources':{'pi':{'status':'ok'}},'capabilities':{'pi':{'binary':True,'models':{'provider/model':['high','low']}}}}
         evpath.write_text(json.dumps(ev))
@@ -407,7 +411,7 @@ if __name__ == '__main__':
     elif args.case == 'capability-safety':
         check_capability_safety()
     elif args.case == 'single-model-plan':
-        for version in (6, 7):
+        for version in (6, 7, 8):
             check_single_model(version)
     elif args.case == 'different-family-plan':
         check_different_family()

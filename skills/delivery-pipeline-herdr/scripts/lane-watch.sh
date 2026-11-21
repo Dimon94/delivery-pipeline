@@ -20,7 +20,7 @@ driver_wake() {
   case "$RC" in
     0) return 0 ;;
     10) herdr agent prompt "$COORD" "WAKE: Driver Action（$LABEL 终态已记录）：$ACTION 。执行该 Action 后用 driver.py record 交回回执，再调 driver_run.py run。" >/dev/null 2>&1; return 0 ;;
-    *) return 1 ;;
+    *) herdr agent prompt "$COORD" "WAKE: Driver 未完成回收。检查 map $LANE_WATCH_MAP_DIR 与错误 $ACTION 后重跑 driver_run.py run。" >/dev/null 2>&1; return 0 ;;
   esac
 }
 # 可视通道 LANE_DONE 增量检测基线（空 = 首轮建档）：watcher 重挂时屏上可能残留

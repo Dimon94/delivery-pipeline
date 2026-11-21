@@ -2,7 +2,10 @@ import {pickerUnavailable} from './copy';
 export type ModelTriple = {agent: string; model: string; effort: string};
 export type Cell = ModelTriple & {fallbacks?:ModelTriple[]; candidates?:ModelTriple[]};
 export type FallbackEdit = {kind:"add";item:ModelTriple}|{kind:"set";index:number;item:ModelTriple}|{kind:"move";index:number;to:number}|{kind:"remove";index:number};
-export type Config = {model_families?:Record<string,Record<string,{family:string;source:"user_declared"}>>;work: Record<string, Cell>; review: Record<string, Record<string, Cell>>; modes: Record<string, unknown>; [key: string]: unknown};
+export const budgetKeys = ["parallel", "max_turns"] as const;
+export type BudgetKey = typeof budgetKeys[number];
+export const defaultBudget = {parallel:4, max_turns:100};
+export type Config = {dispatch?: Record<BudgetKey, number>;model_families?:Record<string,Record<string,{family:string;source:"user_declared"}>>;work: Record<string, Cell>; review: Record<string, Record<string, Cell>>; modes: Record<string, unknown>; [key: string]: unknown};
 export type SourceEvidence = {status:string;next_step:string;reason?:string;route?:'gateway'|'direct'|'official'|null};
 export type Evidence = {request_id:string; observed_at:string; gateway:{status:string}; capabilities:Record<string,{binary:boolean;models:Record<string,string[]>}>; sources:Record<string,SourceEvidence>};
 // 唯一的核对状态；网关是否可达只看证据里的 gateway.status，不从 sources 反推。
@@ -75,7 +78,19 @@ export class Draft {
  for(const p of changed)for(const field of ['agent','model','effort'] as const)this.select(p,field,source[field]);
  return {kind:'applied',changed};
  }
- changes() {return paths.filter(p=>JSON.stringify(cell(this.snapshot,p))!==JSON.stringify(cell(this.config,p)));}
+ setBudget(key:BudgetKey, value:number) {
+ this.config.dispatch={...(this.config.dispatch??defaultBudget),[key]:value};
+ }
+ changes() {
+ const cells=paths.filter(p=>JSON.stringify(cell(this.snapshot,p))!==JSON.stringify(cell(this.config,p)));
+ const budgets=budgetKeys.filter(key=>(this.snapshot.dispatch??defaultBudget)[key] !== (this.config.dispatch??defaultBudget)[key]);
+ return [...cells,...budgets.map(key=>'dispatch.'+key)];
+ }
+ candidate():Config {
+ const result=structuredClone(this.config);
+ if(result.version===6||result.version===7){result.version=8;result.model_families??={};result.dispatch??={...defaultBudget};}
+ return result;
+ }
  editCandidates(path:string,edit:FallbackEdit) {
  const items=cell(this.config,path).candidates!;
  if(edit.kind==='add')items.push(structuredClone(edit.item));
@@ -143,6 +158,7 @@ export class Draft {
  valid() {
  const key=(c:ModelTriple)=>JSON.stringify([c.agent,c.model,c.effort]);
  return this.changes().every(p=>{
+ if(p.startsWith("dispatch.")){const value=this.config.dispatch![p.slice(9) as BudgetKey];return Number.isSafeInteger(value)&&value>0;}
  const c=cell(this.config,p),old=cell(this.snapshot,p);
  if(key(c)!==key(old)&&!this.options(c).includes(c.effort))return false;
  const remaining=new Map<string,number>();

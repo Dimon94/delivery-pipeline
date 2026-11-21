@@ -15,10 +15,10 @@ The user's primary working directory, typically checked out to `main` branch. Th
 A dedicated Git worktree created for one Wayfinder map's entire lifecycle (discovery → spec → tickets → implementation → integration). Lives at `<source-parent>/worktrees/<repo-name>-map-<issue-number>/` on branch `feature/map-<issue-number>`. It carries that map's one **MMF** and is the single summary-MR branch. Tickets are execution units inside this branch; they integrate here by cherry-pick and do not merge to main alone. In the default mode, automatically created when a map is launched from source worktree. Deleted after successful merge to main.
 
 **Execution Worktree**
-A dedicated Git worktree created for one implementation ticket's work. In the default mode it is based on the Map Integration Worktree branch, not main, and contains one ticket's changes. Codex App native Dispatch lets Codex App own the worktree path and initial checkout; Herdr Dispatch uses `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/`; T3Code Dispatch uses `~/.t3/worktrees/<two-segments>/` via `delegate_task(isolation:"worktree")`; Lody Dispatch uses the Lody-managed worktree from `lody_session_create(workContext: {worktree: true})`. The worker creates or verifies `codex/issue-<ticket-number>` (Codex App/Codex CLI), `claude/issue-<ticket-number>` (Claude Code), or `pi/issue-<ticket-number>` (pi) before writing. In the default mode the terminal commit is cherry-picked to the Map Integration Worktree, then the worktree is deleted.
+A dedicated Git worktree created for one implementation ticket's work. In the default mode it is based on the Map Integration Worktree branch, not main, and contains one ticket's changes. Codex App native Dispatch lets Codex App own the worktree path and initial checkout; Herdr Dispatch uses `<source-parent>/worktrees/<repo-name>-map-<map-issue>-issue-<ticket-number>/`; T3Code Dispatch uses `~/.t3/worktrees/<two-segments>/` via `delegate_task(isolation:"worktree")`; Lody Dispatch uses the Lody-managed worktree from `lody_session_create(workContext: {worktree: true})`. The worker creates or verifies `codex/issue-<ticket-number>` (Codex App/Codex CLI), `claude/issue-<ticket-number>` (Claude Code), or `pi/issue-<ticket-number>` (pi) before writing. After Integration the Driver can close the worktree.
 
 **Integration**
-The default-mode process of collecting completed execution worktree commits into the map integration worktree via `git cherry-pick`. Happens incrementally as tickets complete. Distinct from merging to main and from **Ticket Release Mode**. See **Map Integration Worktree**.
+The default-mode process of collecting completed execution worktree commits into the map integration worktree. Legacy lanes use `git cherry-pick`. For frozen briefs, the Driver merges each verified branch in full and runs the ticket scenario on the integration HEAD. Happens incrementally as tickets complete. Distinct from merging to main and from **Ticket Release Mode**. See **Map Integration Worktree**.
 
 **Merge to Main**
 The final step that lands the one **MMF** from **Map Integration Worktree**: rebase that branch onto main and push. Only happens after that MMF's tickets complete, whole-change checks pass, and the user confirms the test strategy.
@@ -54,6 +54,9 @@ The durable authority created when the user starts or resumes one named map. It 
 
 **Tracker Transaction**
 One bounded tracker snapshot, the minimum dependency-ordered write layers, and one aggregate readback per layer. Independent writes share a layer. It preserves exact expected/actual verification without serial per-field reads or progress narration; unrelated document repair stays outside its critical path.
+
+**派发合同（brief）**
+技术负责人交给执行者的一份工作说明，写明本次要交付的结果、允许改动的范围和验收方式。一张 ticket 可以对应一份或多份派发合同。
 
 **Dispatch Handoff**
 Dispatch Handoff is batch-scoped. It is the control-plane terminal after every item in the selected maximal safe batch is accounted for: each successful user-visible lane has verified coordinates and isolation, accepted its packet, entered `working`, and persisted the runtime state; each failed setup is durably isolated as `setup_blocked`. The coordinator reports the batch coordinates and ends its turn only after the whole batch, then resumes on a user completion signal, a real terminal event, or an explicit monitor request; repository file overlap is an Integration risk handled by isolated Execution Worktrees and serial fan-in, not a dispatch blocker.

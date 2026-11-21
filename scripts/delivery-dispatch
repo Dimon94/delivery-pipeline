@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""从目标 Git 仓库运行。run/batch 接收 delegate-ticket 产出的 JSON 合同，merge/drop 由调用者显式执行。"""
+import argparse
+import concurrent.futures
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/delivery-pipeline-setup/scripts'))
+import model_config
+
+
+class Failure(ValueError):
+    pass
+
+
+def git(cwd, *args):
+    proc = subprocess.run(['git', *args], cwd=cwd, stdout=subprocess.PIPE, text=True)
+    if proc.returncode:
+        raise Failure('Git 操作失败：' + args[0])
+    return proc.stdout.rstrip('\n')
+
+
+def positive(raw):
+    n = int(raw)
+    if n < 1:
+        raise argparse.ArgumentTypeError('需要正整数')
+    return n
+
+
+def valid_name(name):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name) or '..' in name or name.endswith(('.', '.lock')):
+        raise Failure('无效任务名：' + name)
+    return name
+
+
+def save(directory, name, value):
+    dest = directory / (name + '.json')
+    with tempfile.NamedTemporaryFile(mode='w', dir=directory, delete=False) as f:
+        json.dump(value, f, ensure_ascii=False)
+    os.replace(f.name, dest)
+
+
+def load(directory, name):
+    return json.loads((directory / (valid_name(name) + '.json')).read_text())
+
+
+@contextlib.contextmanager
+def lock(directory, name):
+    with (directory / (name + '.lock')).open('a') as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Failure('操作进行中：' + name) from None
+        yield
+
+
+def bees_hook(command):
+    return isinstance(command, str) and re.search(r'(?:^|[/\s])bees[\s\"\']+hook(?:\s|$)', command) is not None
+
+
+def without_bees(settings):
+    """只过滤设置中显式注册的 CrommaCode 命令，保留同 matcher 的其他 hook。"""
+    changed = False
+    for event, entries in settings.get('hooks', {}).items():
+        for entry in entries:
+            hooks = entry.get('hooks', [])
+            keep = [h for h in hooks if not bees_hook(h.get('command'))]
+            if len(keep) != len(hooks):
+                entry['hooks'] = keep
+                changed = True
+    return changed
+
+
+@contextlib.contextmanager
+def hook_args(tree):
+    # Claude 没有按命令排除单个 hook 的开关。只有需要过滤时才提供用户设置副本。
+    user = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude')) / 'settings.json'
+    for project in [tree / '.claude/settings.json', tree / '.claude/settings.local.json']:
+        if project.is_file() and without_bees(json.loads(project.read_text())):
+            raise Failure('项目设置注册了 bees hook，请先移除该注册：' + str(project))
+    settings = json.loads(user.read_text()) if user.is_file() else {}
+    if not without_bees(settings):
+        yield []
+        return
+    # 显式 settings 的优先级高于项目层。遇到重叠的非 hook 设置时拒绝改变优先级。
+    for project in [tree / '.claude/settings.json', tree / '.claude/settings.local.json']:
+        if project.is_file() and (set(json.loads(project.read_text())) & set(settings)) - {'hooks', '$schema'}:
+            raise Failure('用户与项目设置有重叠。请单独移除用户配置中的 bees hook 后运行')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as filtered:
+        json.dump(settings, filtered)
+        filtered.flush()
+        yield ['--setting-sources', 'project,local', '--settings', filtered.name]
+
+
+def worker_plan(args, config, turns):
+    evidence = json.loads(args.evidence.read_text())
+    if not isinstance(evidence, dict) or not isinstance(evidence.get('capabilities'), dict):
+        raise Failure('缺少本次 probe capabilities')
+    plan = model_config.resolve_plan(config, args.task, ticket_mode=args.mode, output_mode='commit',
+                                     evidence=evidence['capabilities'])
+    if plan['capability'] != 'verified':
+        raise Failure('本次 probe 未核实执行能力')
+    model = plan['model']
+    env = os.environ.copy()
+    if plan['agent'] == 'pi' and model.startswith('magpie/'):
+        model = model.removeprefix('magpie/')
+        # 指定本机网关的密钥，不把已有 Anthropic 凭据转交给另一个服务。
+        if not env.get('MAGPIE_API_KEY'):
+            raise Failure('Magpie 路由需要 MAGPIE_API_KEY')
+        env.update(ANTHROPIC_BASE_URL='http://127.0.0.1:3425', ANTHROPIC_API_KEY=env['MAGPIE_API_KEY'])
+        env.pop('ANTHROPIC_AUTH_TOKEN', None)
+    elif plan['agent'] != 'claude':
+        raise Failure('claude -p 无此路由：' + plan['agent'] + ' / ' + model)
+    if plan['effort'] not in ('low', 'medium', 'high', 'xhigh', 'max'):
+        raise Failure('Claude 不支持所选 effort：' + plan['effort'])
+    argv = ['claude', '-p', '--model', model, '--effort', plan['effort'], '--max-turns', str(turns),
+            '--permission-mode', 'bypassPermissions', '--no-session-persistence']
+    return argv, env, {key: plan[key] for key in ('agent', 'model', 'effort', 'recovery_plan') if key in plan} | {'max_turns': turns}
+
+
+INSTRUCTION = ('先读 read_first，只改 writable 所列文件，按 check 的 argv 验收。'
+               '在当前分支 git add 明确路径并提交，以十行内说明变更、未完成项和风险。'
+               '不要推送、合并或另派代理。')
+
+
+def read_brief(brief, repo, base, label):
+    if not isinstance(brief, dict) or not re.fullmatch(r'(?:[a-f0-9]{40}|[a-f0-9]{64})', str(base)) or brief.get('base') != base:
+        raise Failure(f'{label} 缺少当前基线')
+    for key in ('ticket', 'slice_id', 'title', 'goal', 'expected'):
+        if not isinstance(brief.get(key), str) or not brief[key].strip():
+            raise Failure(f'{label} 缺少 {key}')
+    for key in ('owns', 'scenarios', 'exclusions', 'check', 'writable', 'read_first'):
+        values = brief.get(key)
+        if not isinstance(values, list) or not all(isinstance(v, str) and v.strip() and '\0' not in v for v in values):
+            raise Failure(f'{label} 无效字段 {key}')
+        if key in ('check', 'writable', 'read_first') and not values:
+            raise Failure(f'{label} 空字段 {key}')
+    for item in brief['writable'] + brief['read_first']:
+        if any(p in ('', '.', '..', '.git') for p in item.split('/')):
+            raise Failure(f'需要工作树内的精确相对路径：{item}')
+    for item in brief['read_first']:
+        git(repo, 'cat-file', '-e', base + ':' + item)
+    return brief
+
+
+def verify_delivery(tree, brief, head):
+    changed = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', brief['base'], head, '--'], cwd=tree)
+    paths = set(changed.split(b'\0')) - {b''}
+    outside = paths - {os.fsencode(p) for p in brief['writable']}
+    if not paths or outside:
+        raise Failure('净变更为空或超出可写范围：' + repr(sorted(outside)))
+    with tempfile.TemporaryFile() as output:
+        rc = subprocess.run(brief['check'], cwd=tree, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT).returncode
+        if rc:
+            raise Failure(f'合同命令退出 {rc}')
+        output.seek(0)
+        observed = output.read(4096).decode('utf-8', 'replace').strip()
+    if git(tree, 'rev-parse', 'HEAD') != head or git(tree, 'status', '--porcelain'):
+        raise Failure('验收后工作树或 HEAD 改变')
+    if not observed:
+        raise Failure('合同命令没有可读观察结果')
+    return dict(base=head, check=brief['check'], ok=True, observed=observed)
+
+
+def run_brief(repo, directory, target, base, job, plan, attempts, owner):
+    name, brief = job
+    with lock(directory, name):
+        tree = directory / 'trees' / name
+        branch = 'brief/' + name
+        if (directory / (name + '.json')).exists():
+            row = load(directory, name)
+            if (owner and row.get('owner') == owner and row.get('brief') == brief
+                    and row['state'] == 'ready' and row['target'] == target
+                    and git(tree, 'rev-parse', 'HEAD') == row['head']):
+                return row
+            raise Failure('已认领，请核对现场：' + name)
+        row = dict(name=name, target=target, base=base, branch=branch, worktree=str(tree),
+                   state='running', attempts=0, owner=owner, brief=brief, execution=plan[2])
+        save(directory, name, row)
+        try:
+            git(repo, 'worktree', 'add', '-b', branch, str(tree), base)
+            with hook_args(tree) as settings:
+                for attempt in range(1, attempts + 1):
+                    row['attempts'] = attempt
+                    save(directory, name, row)
+                    prompt = ('' if attempt == 1 else '上次未提交。先运行 git status，保留现场继续。\n') + json.dumps(brief, ensure_ascii=False)
+                    rc = subprocess.run([*plan[0], *settings, '--append-system-prompt', INSTRUCTION], cwd=tree,
+                                        env=plan[1], input=prompt, text=True, stdout=subprocess.DEVNULL).returncode
+                    head = git(tree, 'rev-parse', 'HEAD')
+                    if git(tree, 'symbolic-ref', '--short', 'HEAD') != branch:
+                        raise Failure('执行者改变了当前分支')
+                    if head != base:
+                        if rc or git(tree, 'status', '--porcelain'):
+                            raise Failure('已有提交但退出失败或存在未提交改动')
+                        git(tree, 'merge-base', '--is-ancestor', base, head)
+                        run = verify_delivery(tree, brief, head)
+                        row.update(state='ready', head=head, ticket=brief['ticket'], slice_id=brief['slice_id'], run=run)
+                        row['marker'] = f'LANE_DONE {name} {head}'
+                        return row
+                    if attempt == attempts:
+                        raise Failure(f'执行结束但没有提交（Claude 退出码 {rc}）')
+        except (ValueError, OSError) as error:
+            row['reason'] = str(error)
+            raise
+        finally:
+            if row['state'] == 'running':
+                row['state'] = 'failed'
+            save(directory, name, row)
+
+
+def close(repo, directory, name, merge):
+    row = load(directory, name)
+    if row.get('owner'):
+        raise Failure('map 任务由 Driver 收口：' + row['owner'])
+    tree = directory / 'trees' / name
+    branch = 'brief/' + name
+    if git(tree, 'symbolic-ref', '--short', 'HEAD') != branch or git(tree, 'status', '--porcelain'):
+        raise Failure('工作树分支改变或有未提交文件，已保留现场')
+    if merge:
+        if row['state'] != 'ready' or not row.get('run', {}).get('ok') or row['run']['base'] != row.get('head') or row.get('head') != git(tree, 'rev-parse', 'HEAD'):
+            raise Failure('只能合并已验证提交')
+        if git(repo, 'symbolic-ref', '--short', 'HEAD') != row['target'] or git(repo, 'status', '--porcelain', '-uno'):
+            raise Failure('请在原目标分支的干净工作树执行 merge')
+        git(repo, 'merge-base', '--is-ancestor', row['base'], 'HEAD')
+        git(repo, 'merge', '--no-ff', '--no-edit', row['head'])
+    git(repo, 'worktree', 'remove', str(tree))
+    git(repo, 'branch', '-d' if merge else '-D', branch)
+    (directory / (name + '.json')).unlink()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='cmd', required=True)
+    for cmd in ('run', 'batch'):
+        p = sub.add_parser(cmd)
+        if cmd == 'run':
+            p.add_argument('name', type=valid_name)
+        else:
+            p.add_argument('-p', '--parallel', type=positive)
+            p.add_argument('--managed', type=Path, metavar='MAP_DIR', help='Driver 的冻结合同数组')
+        p.add_argument('source', type=Path)
+        p.add_argument('--turns', type=positive)
+        p.add_argument('--task', required=True)
+        p.add_argument('--mode')
+        p.add_argument('--config', type=Path, default=Path.home() / '.config/delivery-pipeline/model-roles.json')
+        p.add_argument('--evidence', type=Path, required=True, help='本轮 setup probe 生成的 ProbeEvidence')
+    sub.add_parser('status')
+    for cmd in ('merge', 'drop'):
+        sub.add_parser(cmd).add_argument('names', nargs='+', type=valid_name)
+    args = parser.parse_args()
+    repo = Path(git('.', 'rev-parse', '--show-toplevel'))
+    directory = Path(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')) / 'delivery-brief'
+    directory.mkdir(mode=0o700, exist_ok=True)
+    if args.cmd == 'status':
+        print(json.dumps([load(directory, p.stem) for p in sorted(directory.glob('*.json'))], ensure_ascii=False))
+        return 0
+    if args.cmd in ('merge', 'drop'):
+        with lock(directory, '.integration'):
+            for name in args.names:
+                with lock(directory, name):
+                    close(repo, directory, name, args.cmd == 'merge')
+        return 0
+    target, base = git(repo, 'symbolic-ref', '--short', 'HEAD'), git(repo, 'rev-parse', 'HEAD')
+    owner = str(args.managed.resolve()) if getattr(args, 'managed', None) else None
+    if owner:
+        briefs = json.loads(args.source.read_text())
+        if not isinstance(briefs, list):
+            raise Failure('需要冻结的合同数组')
+        jobs = []
+        for brief in briefs:
+            frozen_base = brief.get('base') if isinstance(brief, dict) else None
+            read_brief(brief, repo, frozen_base, str(args.source))
+            git(repo, 'merge-base', '--is-ancestor', frozen_base, base)
+            # 同 map 其他片已经落地时只允许先例和施工面均未变化的原合同。
+            if git(repo, 'diff', '--name-only', frozen_base, base, '--', *brief['read_first'], *brief['writable']):
+                raise Failure('先例或写入面偏离冻结基线，请重新审核合同')
+            key = json.dumps([owner, brief['ticket'], brief['slice_id']], ensure_ascii=False)
+            jobs.append(('map-' + hashlib.sha256(key.encode()).hexdigest()[:32], brief))
+    else:
+        paths = [args.source] if args.cmd == 'run' else sorted(args.source.glob('*.json'))
+        jobs = [(args.name if args.cmd == 'run' else valid_name(p.stem),
+                 read_brief(json.loads(p.read_text()), repo, base, p.name)) for p in paths]
+    if not jobs:
+        raise Failure('需要至少一份 JSON 派发合同')
+    claimed = set()
+    for _, brief in jobs:
+        overlap = claimed.intersection(brief['writable'])
+        if overlap:
+            raise Failure('同波合同写入重叠：' + repr(sorted(overlap)))
+        claimed.update(brief['writable'])
+    config = model_config.load_document(args.config)
+    limits = model_config.read_limits(config)
+    turns = min(args.turns or limits['max_turns'], limits['max_turns'])
+    parallel = min(getattr(args, 'parallel', None) or limits['parallel'], limits['parallel'])
+    plan = worker_plan(args, config, turns)
+    success = True
+    guard = lock(directory, '.map-' + hashlib.sha256(owner.encode()).hexdigest()) if owner else contextlib.nullcontext()
+    with guard, concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
+        if owner:
+            for path in directory.glob('*.json'):
+                claimed_row = load(directory, path.stem)
+                if claimed_row.get('owner') == owner and claimed_row['state'] == 'running':
+                    raise Failure('上次执行可能仍在写入，请核对现场：' + claimed_row['worktree'])
+        tasks = {pool.submit(run_brief, repo, directory, target, j[1]['base'], j, plan, 2, owner): j[0] for j in jobs}
+        for task in concurrent.futures.as_completed(tasks):
+            try:
+                print(json.dumps(task.result()), flush=True)
+            except (ValueError, OSError) as err:
+                print(tasks[task] + ': ' + str(err), file=sys.stderr)
+                success = False
+    return 0 if success else 1
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (ValueError, OSError, KeyError) as error:
+        sys.exit(str(error))

@@ -1,4 +1,4 @@
-# 模型配置 Schema（CLI version 7（兼容 6）/ App version 5）
+# 模型配置 Schema（CLI version 8（兼容 6、7）/ App version 5）
 
 本文件是 worker 模型配置的唯一定义点，核心链路与各 transport 壳共用同一份格式。
 各 transport 的调度逻辑在其壳内实现，配置 schema 只有这一份。
@@ -15,7 +15,8 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 
 ```json
 {
-  "version": 7,
+  "version": 8,
+  "dispatch": {"parallel": 4, "max_turns": 100},
   "model_families": {},
   "work": {
     "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] },
@@ -46,8 +47,10 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 }
 ```
 
-CLI v7 实例顶层 key 精确为 `version`、`work`、`modes`、`review`、`model_families`。App 实例额外必需
-`default_mode`。CLI 接受 `version` 6 或 7，显式 migrate 输出 7；App 保持 5。
+CLI v8 实例顶层 key 精确为 `dispatch`、 `version`、`work`、`modes`、`review`、`model_families`。App 实例额外必需
+`default_mode`。CLI 只读 v6、v7 时使用并发 4 和每次 100 轮。显式迁移输出 v8。App 使用 v5。
+
+`dispatch` 仅含 `parallel` 与 `max_turns` 两个正整数。v8 缺键或非法值会阻止派发。降低并发后，已有执行继续，新任务等到空出名额。每次启动时固定轮限。
 
 ## work：任务类型
 

@@ -21,7 +21,9 @@ registry 只由 Driver 写；回执按 id 幂等。core 不引用任何壳文件
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
+import re
 import html
 import json
 import os
@@ -35,6 +37,7 @@ from types import MappingProxyType
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 import closeout  # noqa: E402
+import brief_delivery  # noqa: E402
 
 DRIVER_FILE = "driver.json"
 VERSION = 1
@@ -50,7 +53,7 @@ HALT_CLASSES = {
     "review_blocking": "评审意见阻塞",
 }
 # 程序在 core 内直接执行的 Action；壳可追加（Herdr: dispatch）。
-CORE_PROGRAM = frozenset({"fan_in", "closeout", "consume", "render_review"})
+CORE_PROGRAM = frozenset({"fan_in", "closeout", "consume", "render_review", "scenario"})
 # 不唤醒 LLM 的结果。
 QUIET = frozenset({"wait"})
 ACTIVE = {"created", "running", "awaiting_human"}
@@ -225,6 +228,28 @@ def decide(state) -> dict:
     if not mrow:
         return act("prepare_map", "prepare_map", note="建 Map Integration Worktree 并交回 map row")
 
+    tickets = sorted(d['plan']['tickets'], key=lambda t: (t.get('wave', 1), t['id']))
+    by_item = lanes_by_item(lanes)
+    receipts = d.get('receipts', {})
+    managed = {t['id']: t for t in tickets if 'briefs' in t or 'scenario_check' in t}
+
+    def scenario_id(item):
+        return f"scenario:{item}:{state.get('integration_head', '')}"
+
+    def done(item):
+        if item in managed:
+            return (brief_delivery.complete(managed[item], by_item.get(item, ()))
+                    and receipts.get(scenario_id(item), {}).get('ok') is True)
+        return item_done(by_item.get(item))
+
+    for item, ticket in managed.items():
+        rows = by_item.get(item, ())
+        if brief_delivery.complete(ticket, rows) and scenario_id(item) not in receipts:
+            return act('scenario', scenario_id(item), work_item=item, head=state.get('integration_head'))
+        if receipts.get(scenario_id(item), {}).get('ok') is False:
+            return act('halt', f'halt:plan_change:scenario:{item}', kind='plan_change', label=HALT_CLASSES['plan_change'],
+                       reason=f'{item} 整票场景未通过', evidence=[f'{DRIVER_FILE}#{scenario_id(item)}'], options=['修订计划后重审'])
+
     # 1. 程序收口：terminal → fan_in / consume；完成 → closeout
     for row in sorted(lanes.values(), key=lambda r: r["lane_id"]):
         lid, st = row["lane_id"], row.get("state")
@@ -236,6 +261,8 @@ def decide(state) -> dict:
                            integration=mrow.get("integration_worktree_path"))
             return act("consume", f"consume:{lid}", lane_id=lid, output_mode=row.get("output_mode"),
                        verdict=row.get("verdict"))
+        if row.get('work_item') in managed and not done(row['work_item']):
+            continue
         if st in ("integrated", "consumed") and row.get("role") != "review":
             return act("closeout", f"closeout:{lid}", lane_id=lid)
 
@@ -264,15 +291,22 @@ def decide(state) -> dict:
                            note="ADR-0013：两轮修复仍失败，波次内重拆")
 
     # 3. frontier
-    by_item = lanes_by_item(lanes)
+    task, jobs = brief_delivery.batch(tickets, by_item, done, d.get('answers', {}))
+    if jobs and any(row.get('role') != 'map' and row.get('state') in ACTIVE for row in lanes.values()):
+        return act('wait', 'wait', lanes=sorted(row['lane_id'] for row in lanes.values()
+                   if row.get('state') in ACTIVE and row.get('role') != 'map'))
+    if jobs:
+        return act('dispatch_briefs', 'briefs:' + plan_sha(jobs), task=task, briefs=thaw(jobs))
     pending_hitl = []
-    for ticket in sorted(d["plan"]["tickets"], key=lambda t: (t.get("wave", 1), t["id"])):
+    for ticket in tickets:
         if by_item.get(ticket["id"]):
             continue
-        if not all(item_done(by_item.get(dep)) for dep in ticket.get("deps", ())):
+        if not all(done(dep) for dep in ticket.get("deps", ())):
             continue
         if ticket.get("hitl") and ticket["id"] not in d.get("answers", {}):
             pending_hitl.append(ticket)
+            continue
+        if ticket['id'] in managed:
             continue
         return act("dispatch", f"dispatch:{ticket['id']}", task=ticket.get("task", "backend"),
                    output_mode=ticket.get("output_mode", "commit"), work_item=ticket["id"],
@@ -284,7 +318,7 @@ def decide(state) -> dict:
 
     active = [r["lane_id"] for r in lanes.values()
               if r.get("role") != "map" and (r.get("state") in ACTIVE or r.get("state") in FAILED)]
-    planned_done = all(item_done(by_item.get(t["id"])) for t in d["plan"]["tickets"])
+    planned_done = all(done(t['id']) for t in tickets)
     if active or not planned_done:
         return act("wait", "wait", lanes=sorted(active))
 
@@ -344,6 +378,8 @@ REQUIRED = {
     "ask_human": {"reply"},
     "judge": set(),
     "dispatch": {"lane"},
+    "dispatch_briefs": {"lanes"},
+    "scenario": {"base", "check", "observed", "ok"},
     "prepare_map": {"map_row"},
     "remote": {"result"},
     "fan_in": {"state"},
@@ -441,6 +477,8 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
                 lane_update(lid, state="superseded", superseded_by=receipt["lane_id"])
             elif args["kind"] == "review-fix":
                 lane_update(lid, state="superseded", fix_lane=receipt["lane_id"])
+    elif kind == 'dispatch_briefs':
+        updates.extend({**row, '_file': None} for row in receipt['lanes'])
     elif kind == "dispatch":
         row = receipt["lane"]
         if not isinstance(row, dict) or row.get("lane_id") != args["lane_id"]:
@@ -495,7 +533,11 @@ def render(state, kind: str) -> str:
         if kind == "merge":
             states = ", ".join(f"{r['lane_id']}={r.get('state')}" for r in by_item.get(t["id"], []))
             actual = f"<td>{esc(states or '未派发')}</td>"
-        rows.append(f"<tr><td>{esc(t['id'])}</td><td>{esc(t.get('wave', 1))}</td><td>{esc(t.get('task'))}</td>"
+        contract = ''
+        if 'briefs' in t:
+            details = json.dumps({'briefs': t['briefs'], 'scenario_check': t.get('scenario_check')}, ensure_ascii=False, indent=2)
+            contract = f'<details><summary>派发合同与整票场景</summary><pre>{esc(details)}</pre></details>'
+        rows.append(f"<tr><td>{esc(t['id'])}{contract}</td><td>{esc(t.get('wave', 1))}</td><td>{esc(t.get('task'))}</td>"
                     f"<td>{esc(', '.join(t.get('deps', [])) or '-')}</td><td>{'HITL' if t.get('hitl') else 'AFK'}</td>{actual}</tr>")
     head = "<tr><th>票</th><th>波次</th><th>类型</th><th>依赖</th><th>HITL/AFK</th>" + ("<th>实际</th>" if kind == "merge" else "") + "</tr>"
     parts = [
@@ -526,7 +568,11 @@ def load(map_dir: Path) -> dict:
     path = map_dir / DRIVER_FILE
     driver = json.loads(path.read_text()) if path.exists() else None
     lanes = closeout.latest_rows(map_dir) if map_dir.exists() else {}
-    return {"driver": driver, "lanes": lanes}
+    state = {'driver': driver, 'lanes': lanes}
+    mrow = map_row(lanes)
+    if driver and mrow and any('briefs' in t for t in driver.get('plan', {}).get('tickets', ())):
+        state['integration_head'] = brief_delivery.git(mrow['integration_worktree_path'], 'rev-parse', 'HEAD')
+    return state
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -544,10 +590,13 @@ def persist_lanes(map_dir: Path, updates: list[dict]) -> None:
         return
     import lane_registry  # 延迟导入：其依赖 replacement → model_config
     default = map_dir / "registry.md"
+    grouped = {}
     for row in updates:
-        target = Path(row.pop("_file") or default)
+        target = Path(row.pop('_file') or default)
+        grouped.setdefault(target, []).append(row)
+    for target, rows in grouped.items():
         with lane_registry.lock(target) as path:
-            lane_registry.persist(path, [row])
+            lane_registry.persist(path, rows)
 
 
 def record(map_dir: Path, ident: str, receipt, action: dict | None = None) -> dict:
@@ -558,7 +607,11 @@ def record(map_dir: Path, ident: str, receipt, action: dict | None = None) -> di
     d = state["driver"]
     if d is not None and ident in d.get("receipts", {}):
         return {"recorded": ident, "duplicate": True}
+    internal = action is not None
     action = action or decide(state)
+    row = state['lanes'].get(action['args'].get('lane_id'), {})
+    if not internal and (action['action'] in ('dispatch_briefs', 'scenario') or row.get('slice_id')):
+        raise ValueError('冻结合同只接受 Driver 执行回执')
     if ident == "halt" and action["action"] == "halt":
         ident = action["id"]
     if action["id"] != ident:
@@ -579,6 +632,10 @@ def run_git(cwd: str, *args: str) -> subprocess.CompletedProcess:
 def exec_fan_in(map_dir: Path, state, action) -> dict:
     a = action["args"]
     wt, commit = a.get("integration"), a.get("commit")
+    row = state['lanes'][a['lane_id']]
+    if row.get('slice_id'):
+        target = map_row(state['lanes']).get('integration_branch')
+        return brief_delivery.integrate(wt, row, target)
     if not wt or not commit:
         return {"state": "integration_checks_failed", "blocked_reason": "缺 integration worktree 或 head_commit"}
     if run_git(wt, "cherry-pick", commit).returncode != 0:
@@ -638,7 +695,9 @@ def parse_marker(row, line: str) -> dict | None:
     mode = row.get("output_mode")
     fields = {"state": "terminal"}
     if mode in ("commit", "integration"):
-        fields["head_commit"] = coord or "Unknown"
+        if not re.fullmatch(r'[a-f0-9]{4,64}', coord):
+            return None
+        fields['head_commit'] = coord
     elif mode == "verdict":
         fields["verdict_path"] = coord
         text = Path(coord).read_text() if coord and Path(coord).is_file() else ""
@@ -653,6 +712,8 @@ def signal(map_dir: Path, line: str) -> dict:
     lanes = closeout.latest_rows(map_dir)
     parts = line.split()
     row = lanes.get(parts[1]) if len(parts) > 1 else None
+    if row and row.get('slice_id'):
+        return {'signal': 'ignored'}  # 已由 CLI 的真实提交与局部验收产生终态。
     fields = parse_marker(row, line)
     if fields is None:
         return {"signal": "ignored"}
@@ -681,7 +742,18 @@ def render_packet(state, action, transport_lines=()) -> str:
     return "\n".join(lines) + "\n"
 
 
-CORE_EXECUTORS = {"fan_in": exec_fan_in, "consume": exec_consume, "closeout": exec_closeout, "render_review": exec_render}
+def exec_scenario(map_dir, state, action):
+    item = action['args']['work_item']
+    ticket = next(t for t in state['driver']['plan']['tickets'] if t['id'] == item)
+    mrow = map_row(state['lanes'])
+    proof = brief_delivery.scenario(mrow['integration_worktree_path'], ticket,
+                                    lanes_by_item(state['lanes'])[item], mrow.get('integration_branch'))
+    if proof['base'] != action['args']['head']:
+        raise ValueError('集成 HEAD 已变化，请重读当前场景')
+    return proof
+
+
+CORE_EXECUTORS = {'scenario': exec_scenario, "fan_in": exec_fan_in, "consume": exec_consume, "closeout": exec_closeout, "render_review": exec_render}
 
 
 def run(map_dir: Path, executors: dict | None = None, limit: int = 200) -> dict:
@@ -877,6 +949,8 @@ def _io_self_test() -> list[str]:
         record(md, "dispatch:T1", {"lane": _lane("T1", "running")})
         if decide(load(md))["action"] != "wait":
             failures.append("T1 运行中应 wait")
+        if signal(md, "LANE_DONE T1")["signal"] != "ignored":
+            failures.append("缺少提交的 marker 不得写入 terminal")
         if signal(md, "LANE_DONE T1 abc123")["signal"] != "recorded" or load(md)["lanes"]["T1"].get("head_commit") != "abc123":
             failures.append("终态行应写 terminal 与 head_commit")
         if signal(md, "LANE_DONE T1 abc123")["signal"] != "ignored":
@@ -909,6 +983,14 @@ def main(argv: list[str]) -> int:
         print(json.dumps(decide_epic(json.loads(Path(argv[1]).read_text())), ensure_ascii=False))
         return 0
     map_dir = Path(argv[1]).resolve()
+    if cmd == 'init':
+        map_dir.mkdir(parents=True, exist_ok=True)
+    with (map_dir / '.driver.lock').open('a') as guard:
+        fcntl.flock(guard, fcntl.LOCK_EX)
+        return execute(cmd, map_dir, argv)
+
+
+def execute(cmd, map_dir, argv):
     if cmd == "decide":
         print(json.dumps(decide(load(map_dir)), ensure_ascii=False))
     elif cmd == "run":

@@ -182,6 +182,32 @@ def preview_review_choice(document: dict, evidence: dict) -> dict:
     return result
 
 
+DEFAULT_LIMITS = {"parallel": 4, "max_turns": 100}
+
+
+def read_limits(config: dict) -> dict:
+    if config.get("version") in (6, 7):
+        return DEFAULT_LIMITS.copy()
+    if config.get("version") != 8:
+        raise ValueError("dispatch requires CLI config v6, v7 or v8")
+    limits = config.get("dispatch")
+    if not isinstance(limits, dict) or set(limits) != set(DEFAULT_LIMITS):
+        raise ValueError("dispatch must define exactly parallel and max_turns")
+    for key, value in limits.items():
+        if type(value) is not int or value < 1:
+            raise ValueError(f"dispatch.{key} must be a positive integer")
+    return limits.copy()
+
+
+def apply_limits(config: dict, limits: dict) -> dict:
+    migrated, transport = migrate_document(config)
+    if transport != "cli":
+        raise ValueError("dispatch requires CLI config")
+    migrated["dispatch"] = limits
+    migrated["dispatch"] = read_limits(migrated)
+    return migrated
+
+
 def validate_document(document: object, transport: str = "cli") -> list[str]:
     """只检查 CLI v6/v7 / App v5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
     if transport not in ("cli", "app"):
@@ -191,7 +217,13 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
     if not isinstance(document, dict):
         return ["top-level value must be an object"]
     top_level = {"version", "work", "modes", "review"}
-    if transport == "cli" and document.get("version") == 7:
+    if transport == "cli" and document.get("version") == 8:
+        top_level.add("dispatch")
+        try:
+            read_limits(document)
+        except ValueError as error:
+            errors.append(str(error))
+    if transport == "cli" and document.get("version") in (7, 8):
         top_level.add("model_families")
     if transport == "app":
         top_level = top_level | {"default_mode"}
@@ -199,11 +231,11 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
         errors.append(f"top-level keys must be exactly {sorted(top_level)}")
     if transport == "cli" and "default_mode" in document:
         errors.append("default_mode is App-only; CLI 默认计划来自 work 项")
-    if document.get("version") not in ((6, 7) if transport == "cli" else (5,)):
+    if document.get("version") not in ((6, 7, 8) if transport == "cli" else (5,)):
         errors.append(
             "unsupported version; older configs need model_config.py migrate"
         )
-    if transport == "cli" and document.get("version") == 7:
+    if transport == "cli" and document.get("version") in (7, 8):
         errors.extend(_family_errors(document.get("model_families")))
     work = document.get("work")
     if not isinstance(work, dict):
@@ -313,7 +345,7 @@ def show(path: Path) -> dict:
     result["config"] = document
     errors = validate_document(document)
     result["validation"] = {"valid": not errors, "errors": errors}
-    if isinstance(document, dict) and document.get("version") not in (6, 7):
+    if isinstance(document, dict) and document.get("version") not in (6, 7, 8):
         result["file_state"] = "unsupported_version"
     elif errors:
         result["file_state"] = "invalid_schema"
@@ -489,13 +521,15 @@ def migrate_document(document: dict) -> tuple[dict, str]:
     is_app = "default_mode" in document and any(
         isinstance(c, dict) and c.get("agent") == "codex-app"
         for c in document.get("work", {}).values())
-    if document.get("version") in (6, 7) or (document.get("version") == 5 and is_app):
+    if document.get("version") in (6, 7, 8) or (document.get("version") == 5 and is_app):
         transport = "app" if is_app else "cli"
         errors = validate_document(document, transport)
         if errors: raise ValueError("; ".join(errors))
         migrated = copy.deepcopy(document)
         if transport == "cli" and migrated["version"] == 6:
             migrated.update(version=7, model_families={})
+        if transport == "cli" and migrated["version"] == 7:
+            migrated.update(version=8, dispatch=DEFAULT_LIMITS.copy())
         return migrated, transport
     if document.get("version") == 5:
         for c in [*document.get("work", {}).values(), *(c for axes in document.get("review", {}).values() for c in axes.values())]:
@@ -511,7 +545,7 @@ def migrate_document(document: dict) -> tuple[dict, str]:
         for axes in migrated["review"].values():
             for c in axes.values(): c["candidates"] = []
     if transport == "cli":
-        migrated.update(version=7, model_families={})
+        migrated.update(version=8, model_families={}, dispatch=DEFAULT_LIMITS.copy())
     errors = validate_document(migrated, transport)
     if errors: raise ValueError("; ".join(errors))
     return migrated, transport
@@ -852,8 +886,10 @@ def apply(path: Path, candidate: dict, base_hash: str,
                 old["fallbacks"] = copy.deepcopy(new["fallbacks"])
             else:
                 old["candidates"] = copy.deepcopy(new["candidates"])
-        if previous["version"] == 7:
+        if previous["version"] in (7, 8):
             permitted["model_families"] = copy.deepcopy(candidate["model_families"])
+        if candidate["version"] == 8:
+            permitted = apply_limits(permitted, candidate["dispatch"])
         if permitted != candidate:
             raise ConfigRejected("invalid_candidate", "桌面不能修改只读设置")
         validate_selection(candidate, previous, evidence, request_id)
@@ -1162,7 +1198,7 @@ def resolve_plan(
         raise ValueError(f"task type not defined in config: {task}")
     entry = document["work"][task]
     recovery = {}
-    if document.get("version") in (6, 7) and task in CLI_REQUIRED_WORK:
+    if document.get("version") in (6, 7, 8) and task in CLI_REQUIRED_WORK:
         explicit = task in IMPLEMENTATION_TASKS and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
         recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
                     "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
@@ -1818,7 +1854,7 @@ def self_test() -> list[str]:
     if (
         transport != "cli"
         or validate_document(migrated)
-        or migrated["version"] != 7
+        or migrated["version"] != 8
         or "default_mode" in migrated
         or migrated["modes"] != {}
     ):
@@ -1838,7 +1874,7 @@ def self_test() -> list[str]:
     }
     migrated, _ = migrate_document(json.loads(json.dumps(legacy_v3)))
     if (
-        migrated["version"] != 7
+        migrated["version"] != 8
         or "default_mode" in migrated
         or validate_document(migrated)
         or "execution" in migrated["work"]["backend"]
@@ -1890,7 +1926,7 @@ def self_test() -> list[str]:
     migrated, transport = migrate_document(json.loads(json.dumps(legacy_v4)))
     if (
         transport != "cli"
-        or migrated["version"] != 7
+        or migrated["version"] != 8
         or "default_mode" in migrated
         or validate_document(migrated)
         or "execution" in migrated["work"]["backend"]
@@ -1957,7 +1993,8 @@ def self_test() -> list[str]:
     if transport != "app" or migrated["version"] != 5:
         failures.append("App v4 migration did not bump the version")
     v7 = {**valid_fixture(), "version": 7, "model_families": {}}
-    if migrate_document(v7)[0] != v7:
+    v8 = migrate_document(v7)[0]
+    if v8["dispatch"] != DEFAULT_LIMITS or migrate_document(v8)[0] != v8:
         failures.append("v7 repeated migration changed configuration")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "model-roles.json"

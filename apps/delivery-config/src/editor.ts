@@ -10,7 +10,7 @@ export class Editor {
  async save(apply:(candidate:Config,hash:string)=>Promise<Outcome>){
   if(this.state.kind!=='preview'||!this.state.draft.valid())return;
   const {draft,base,retained}=this.state;
-  const candidate=structuredClone(draft.config);
+  const candidate=draft.candidate();
   this.state={kind:'saving',draft,base,retained};
   let result:Outcome;
   try{result=await apply(candidate,base.base_hash!);}catch{result={status:'commit_unverified'};}
@@ -22,7 +22,7 @@ export class Editor {
   const old=this.state;
   if(!['conflict','uncertain'].includes(old.kind)||latest.file_state!=='ready'||!latest.config)return false;
   // 比较整个文档；当前一致也只说明本次观察。
-  if(equal(latest.config,old.draft.config))this.state={kind:'draft',base:latest,draft:new Draft(latest.config)};
+  if(equal(latest.config,old.draft.candidate()))this.state={kind:'draft',base:latest,draft:new Draft(latest.config)};
   else this.state={kind:'draft',base:latest,draft:new Draft(latest.config),retained:old.draft};
   return true;
  }

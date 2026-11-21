@@ -138,7 +138,7 @@ def case_jsonl_sibling_lane_silent(root: Path):
 
 def case_driver_quiet_and_wake(root: Path):
     """ADR-0026：有 driver.json 时终态行先交 Driver；退出 0 不唤醒，退出 10 带 Action 唤醒。"""
-    for rc, expect in ((0, 0), (10, 1)):
+    for rc, expect in ((0, 0), (10, 1), (1, 1)):
         case = root / f'rc{rc}'
         case.mkdir()
         setup_case(case, ['worker idle'] * 6, jsonl_after=3)
@@ -158,8 +158,10 @@ def case_driver_quiet_and_wake(root: Path):
         assert args == f'watch {case} LANE_DONE lane abc1234', args
         prompts = prompts_of(case)
         assert len(prompts) == expect, prompts
-        if expect:
+        if rc == 10:
             assert 'Driver Action' in prompts[0][1] and '"judge"' in prompts[0][1], prompts
+        if rc == 1:
+            assert 'Driver 未完成回收' in prompts[0][1] and 'merger' not in prompts[0][1], prompts
     print('lane watcher: pass (driver wait silent, driver action wakes once)')
 
 

@@ -137,7 +137,7 @@ def check():
         assert process.returncode == 0, process.stdout
         assert json.loads(process.stdout) == {'migrated': str(path), 'transport': 'cli', 'default_mode': None}
         actual = json.loads(path.read_bytes())
-        assert actual['version'] == 7 and actual['modes'] == {}
+        assert actual['version'] == 8 and actual['modes'] == {}
         assert actual['work']['planning'] == {**legacy['roles']['planning'], 'fallbacks': []}
         assert actual['review']['whole-change']['spec'] == {**legacy['roles']['review'], 'candidates': []}
         # 并发及两种锁内顺序；迁移后读到新版允许零写入成功。
@@ -168,7 +168,7 @@ def check():
             assert configure.returncode in (0, 1), configure_out
             if configure.returncode == 0:
                 assert result['status'] == 'applied' and result['changed'] is True
-                assert json.loads(path.read_bytes()) == {**candidate, 'version': 7, 'model_families': {}}
+                assert json.loads(path.read_bytes()) == {**candidate, 'version': 8, 'model_families': {}, 'dispatch': {'parallel': 4, 'max_turns': 100}}
                 expected_writes = (1, 1)
             else:
                 assert result['status'] == 'rejected' and result['error']['code'] == 'base_conflict'

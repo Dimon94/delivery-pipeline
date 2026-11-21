@@ -304,8 +304,8 @@ def extract_schema_example(path: Path) -> dict:
 def check_model_contract() -> None:
     schema_doc = CORE / "references" / "model-config-schema.md"
     schema = extract_schema_example(schema_doc)
-    if schema.get("version") != 7:
-        record("model config schema version must be 7")
+    if schema.get("version") != 8 or schema.get("dispatch") != {"parallel": 4, "max_turns": 100}:
+        record("model config schema must show v8 dispatch defaults")
     if not {"work", "modes", "review"} <= set(schema):
         record("model config schema example must define work/modes/review")
     routing = CORE / "references" / "model-role-routing.md"
@@ -951,7 +951,8 @@ def check_driver() -> None:
     if re.search(r"delivery-pipeline-(?:herdr|codex-app|orca|t3code|lody)", core.read_text()):
         record("Driver core must not reference transport shell files")
     for cmd in ([sys.executable, str(core), "self-test"],
-                [sys.executable, str(HERDR / "scripts" / "driver_run_check.py")]):
+                [sys.executable, str(HERDR / "scripts" / "driver_run_check.py")],
+                [sys.executable, str(ROOT / 'scripts/check_delivery_dispatch.py')]):
         result = subprocess.run(cmd, text=True, capture_output=True)
         if result.returncode != 0:
             record(f"Driver check failed: {' '.join(cmd[1:])}: {(result.stdout + result.stderr).strip()[-400:]}")
