@@ -110,22 +110,32 @@ def hook_args(tree, env, magpie):
         yield ['--setting-sources', 'project,local', '--settings', filtered.name], env
 
 
-def worker_plan(args, config, turns):
-    evidence = json.loads(args.evidence.read_text())
-    if not isinstance(evidence, dict) or not isinstance(evidence.get('capabilities'), dict):
-        raise Failure('缺少本次 probe capabilities')
-    plan = model_config.resolve_plan(config, args.task, ticket_mode=args.mode, output_mode='commit',
-                                     evidence=evidence['capabilities'])
-    if plan['capability'] != 'verified':
-        raise Failure('本次 probe 未核实执行能力')
+GATEWAY = 'http://127.0.0.1:3425'
+
+
+def magpie_key(env):
+    """环境变量优先；否则用 pi 自己访问同一网关的 provider 密钥（~/.pi/agent/models.json）。"""
+    if env.get('MAGPIE_API_KEY'):
+        return env['MAGPIE_API_KEY']
+    try:
+        models = json.loads((Path.home() / '.pi/agent/models.json').read_text())
+        provider = models['providers']['magpie']
+    except (OSError, ValueError, KeyError, TypeError):
+        provider = {}
+    if isinstance(provider, dict) and str(provider.get('baseUrl', '')).startswith(GATEWAY) and provider.get('apiKey'):
+        return provider['apiKey']
+    raise Failure('Magpie 路由缺密钥：设置 MAGPIE_API_KEY，或在 ~/.pi/agent/models.json 配置 magpie provider')
+
+
+def worker_plan(task, mode, config, turns):
+    """只按已校验的 model-roles 配置解析路由；模型可用性由 setup 写入时核过，执行失败由 claude -p 退出码暴露。"""
+    plan = model_config.resolve_plan(config, task, ticket_mode=mode, output_mode='commit')
     model = plan['model']
     env = os.environ.copy()
     if plan['agent'] == 'pi' and model.startswith('magpie/'):
         model = model.removeprefix('magpie/')
         # 指定本机网关的密钥，不把已有 Anthropic 凭据转交给另一个服务。
-        if not env.get('MAGPIE_API_KEY'):
-            raise Failure('Magpie 路由需要 MAGPIE_API_KEY')
-        env.update(ANTHROPIC_BASE_URL='http://127.0.0.1:3425', ANTHROPIC_API_KEY=env['MAGPIE_API_KEY'])
+        env.update(ANTHROPIC_BASE_URL=GATEWAY, ANTHROPIC_API_KEY=magpie_key(env))
         env.pop('ANTHROPIC_AUTH_TOKEN', None)
     elif plan['agent'] != 'claude':
         raise Failure('claude -p 无此路由：' + plan['agent'] + ' / ' + model)
@@ -246,6 +256,20 @@ def close(repo, directory, name, merge):
     (directory / (name + '.json')).unlink()
 
 
+def preflight(args):
+    """每个 task 一行 JSON：ok 时给实际 argv 要用的模型与上限，否则给原因；任一失败退出 1。"""
+    config = model_config.load_document(args.config)
+    limits, ok = model_config.read_limits(config), True
+    for task in args.tasks:
+        try:
+            _, _, picked = worker_plan(task, args.mode, config, limits['max_turns'])
+            row = {'task': task, 'ok': True, **{k: v for k, v in picked.items() if k != 'recovery_plan'}, 'parallel': limits['parallel']}
+        except (Failure, ValueError, KeyError) as err:
+            row, ok = {'task': task, 'ok': False, 'error': str(err)}, False
+        print(json.dumps(row, ensure_ascii=False))
+    return 0 if ok else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='cmd', required=True)
@@ -261,11 +285,16 @@ def main():
         p.add_argument('--task', required=True)
         p.add_argument('--mode')
         p.add_argument('--config', type=Path, default=Path.home() / '.config/delivery-pipeline/model-roles.json')
-        p.add_argument('--evidence', type=Path, required=True, help='本轮 setup probe 生成的 ProbeEvidence')
+    p = sub.add_parser('preflight', help='派发前核对每个 task 的模型、档位、轮数、并发与密钥')
+    p.add_argument('tasks', nargs='+')
+    p.add_argument('--mode')
+    p.add_argument('--config', type=Path, default=Path.home() / '.config/delivery-pipeline/model-roles.json')
     sub.add_parser('status')
     for cmd in ('merge', 'drop'):
         sub.add_parser(cmd).add_argument('names', nargs='+', type=valid_name)
     args = parser.parse_args()
+    if args.cmd == 'preflight':
+        return preflight(args)
     repo = Path(git('.', 'rev-parse', '--show-toplevel'))
     directory = Path(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')) / 'delivery-brief'
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -310,7 +339,7 @@ def main():
     limits = model_config.read_limits(config)
     turns = min(args.turns or limits['max_turns'], limits['max_turns'])
     parallel = min(getattr(args, 'parallel', None) or limits['parallel'], limits['parallel'])
-    plan = worker_plan(args, config, turns)
+    plan = worker_plan(args.task, args.mode, config, turns)
     success = True
     guard = lock(directory, '.map-' + hashlib.sha256(owner.encode()).hexdigest()) if owner else contextlib.nullcontext()
     with guard, concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:

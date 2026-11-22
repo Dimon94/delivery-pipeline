@@ -8,11 +8,7 @@ pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude
 
 ## Driver 收取派发合同
 
-Coordinator 将 `delegate-ticket` 返回的完整 JSON 数组写入对应的 `plan.tickets[].briefs`，并将父票整体验收命令的 argv 写入同一票的 `scenario_check`。例如 TURN-1 使用 `["node", "check.cjs", "all"]`。Plan Review 固定并展示两者。map row 提供 `integration_worktree_path` 与 `integration_branch`。`transport.herdr.config` 和 `transport.herdr.evidence` 分别指向配置与当前 probe。
-
-调用 `driver_run.py run <map_dir>`。Driver 按就绪依赖选出写入范围互斥的合同。`delivery-dispatch batch` 按配置限制并发与每次轮数，在各自工作树运行 `claude -p`。`delivery-dispatch status` 在目标仓库列出现场、attempt、模型和失败原因。执行进程中断且写者状态未知时先核对该现场。
-
-Driver 核对父票、片标识、基线、局部检查与真实提交，串行 merge 完整提交链。所有片到齐后，在集成 HEAD 运行 `scenario_check` 并记录观察。后续 HEAD 改变会重新验收。`driver_run.py watch <map_dir> "LANE_DONE <lane_id> <sha>"` 与 run 共用同一把 map 锁。
+票带 `briefs` 时按 `../../delivery-pipeline/references/brief-dispatch.md` 执行；本壳只多出 `driver_run.py watch` 交回终态行。
 
 ## 新 lane
 

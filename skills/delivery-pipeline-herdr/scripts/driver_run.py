@@ -2,7 +2,7 @@
 """Herdr 壳的 Driver run 循环（ADR-0026 决策 1、4）。
 
 在 core `driver.run` 上追加 Herdr dispatch 执行器：建 Execution Worktree、按派发模板渲染
-packet、调 `dispatch.py`。缺 driver.json `transport.herdr` 配置或执行失败时交回 coordinator。
+packet、调 `dispatch.py`。缺 driver.json `dispatch`（config、evidence）或 `transport.herdr.worktrees_root`或执行失败时交回 coordinator。
 
 命令：
   driver_run.py run <map_dir>                 coordinator 每次唤醒调一次
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import fcntl
 import json
-import tempfile
 import os
 import subprocess
 import sys
@@ -29,14 +28,15 @@ PACKET = HERE.parent / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
 
 
 def exec_dispatch(map_dir: Path, state, action):
-    cfg = ((state["driver"].get("transport") or {}).get("herdr")) or {}
+    cfg = state["driver"].get("dispatch") or {}
+    root = ((state["driver"].get("transport") or {}).get("herdr") or {}).get("worktrees_root")
     mrow = driver.map_row(state["lanes"]) or {}
     integration = mrow.get("integration_worktree_path")
-    if not (cfg.get("config") and cfg.get("evidence") and cfg.get("worktrees_root") and integration):
+    if not (cfg.get("config") and cfg.get("evidence") and root and integration):
         return None  # 缺配置：交回 coordinator 按壳合同派发
     a = dict(action["args"])
     lane = a["lane_id"]
-    worktree = Path(cfg["worktrees_root"]) / lane
+    worktree = Path(root) / lane
     branch = f"{mrow.get('integration_branch') or 'map'}--{lane}"
     base = driver.run_git(integration, "rev-parse", "HEAD").stdout.strip()
     if not worktree.exists():
@@ -64,29 +64,6 @@ def exec_dispatch(map_dir: Path, state, action):
     return {"lane": {"lane_id": lane, "work_item": a["work_item"]}, "persisted": True}
 
 
-def exec_briefs(map_dir, state, action):
-    cfg = ((state['driver'].get('transport') or {}).get('herdr')) or {}
-    if not cfg.get('config') or not cfg.get('evidence'):
-        raise ValueError('合同执行需要 transport.herdr.config 和 evidence')
-    mrow = driver.map_row(state['lanes'])
-    tree = mrow['integration_worktree_path']
-    if driver.brief_delivery.git(tree, 'symbolic-ref', '--short', 'HEAD') != mrow.get('integration_branch'):
-        raise ValueError('当前工作树不在 map 集成分支')
-    cli = HERE.parents[2] / 'scripts' / 'delivery-dispatch'
-    jobs, role = action['args']['briefs'], action['args']['task']
-    with tempfile.NamedTemporaryFile(mode='w', dir=map_dir) as source:
-        json.dump(jobs, source)
-        source.flush()
-        cmd = [str(cli), 'batch', source.name, '--managed', str(map_dir), '--task', role,
-               '--config', cfg['config'], '--evidence', cfg['evidence']]
-        p = subprocess.run(cmd, cwd=tree, capture_output=True, text=True)
-    if p.returncode:
-        raise ValueError(p.stderr.strip() or '执行片未全部通过')
-    records = [json.loads(line) for line in p.stdout.splitlines()]
-    lanes = driver.brief_delivery.verify_rows(jobs, records, map_dir, tree, role, mrow['lane_id'])
-    return {'lanes': lanes}
-
-
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[0] not in ("run", "watch"):
         print(__doc__)
@@ -99,7 +76,7 @@ def main(argv: list[str]) -> int:
                 if len(argv) != 3:
                     raise ValueError('watch 需要一行终态信号')
                 driver.signal(map_dir, argv[2])
-            action = driver.run(map_dir, {'dispatch': exec_dispatch, 'dispatch_briefs': exec_briefs})
+            action = driver.run(map_dir, {'dispatch': exec_dispatch})
     except (ValueError, RuntimeError, OSError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False))
         return 1

@@ -19,6 +19,8 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
 0. **Driver run（ADR-0026）。** map 有 driver.json 时，每次唤醒先调一次
    `../delivery-pipeline/scripts/driver.py run <map 目录>`；fan-in、consume、closeout 与审核页渲染已由程序完成。
    交回的 `dispatch` / `prepare_map` 由 coordinator 用T3 task 工具按下列合同执行，回执经 `driver.py record` 交回；
+   票带 `briefs` 时 run 自己执行蜂巢执行片（`../delivery-pipeline/references/brief-dispatch.md`），执行片是本机
+   `claude -p` 进程，不是 T3 task；run 可能运行很久，用后台命令执行并等待退出；
    worker 终态先用 `driver.py signal` 交回再 run，输出 `wait` 即结束本轮。无 driver.json 的旧 map
    按下列旧合同推进，直到下一次 Plan Review。
 1. 当前 T3 线程就是 coordinator，记录 `coordinator_runtime: t3code`、`dispatch_runtime: t3code`，

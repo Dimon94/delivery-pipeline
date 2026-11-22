@@ -5,7 +5,7 @@ core 只有三件事：
 - `decide(state) -> Action`：纯函数，冻结输入、无副作用；Action 是一行 JSON {"action","id","args"}。
 - `apply(state, action, receipt)`：纯函数，把回执变成 driver.json 新值与待写 lane 行。
 - IO 层（load / record / run）：读 map 目录、写 driver.json 与 lane registry，执行 core 执行器
-  （fan_in、closeout、consume、render_review）。壳的 run 循环传入额外执行器（如 Herdr dispatch）。
+  （fan_in、closeout、consume、render_review、scenario、dispatch_briefs）。壳的 run 循环传入额外执行器（如 Herdr dispatch）。
 
 registry 只由 Driver 写；回执按 id 幂等。core 不引用任何壳文件。
 
@@ -521,7 +521,7 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
 
 # ---------- HTML 审核页（同一模板，确定性） ----------
 
-def render(state, kind: str) -> str:
+def render(state, kind: str, preflight: str = '') -> str:
     d = state["driver"]
     plan = d["plan"]
     esc = lambda v: html.escape(str(v if v is not None else "Unknown"))  # noqa: E731
@@ -558,6 +558,7 @@ def render(state, kind: str) -> str:
                      else "<h2>自动处理的偏差</h2><p>无</p>")
         parts.append("<p>回复“通过”授权 push、建 PR、等 CI 并按分支合同合入收尾。</p>")
     else:
+        parts.append(preflight)
         parts.append("<p>回复“通过”授予 Autonomy Grant；之后只在 Halt 清单命中时停下。</p>")
     return "\n".join(parts) + "\n</html>\n"
 
@@ -673,7 +674,7 @@ def exec_closeout(map_dir: Path, state, action) -> dict:
 
 def exec_render(map_dir: Path, state, action) -> dict:
     kind = action["args"]["kind"]
-    page = render(state, kind)
+    page = render(state, kind, preflight_html(state) if kind == 'plan' else '')
     path = map_dir / f"{kind}-review.html"
     path.write_text(page)
     return {"html": str(path), "sha": action["id"].rsplit(":", 1)[1]}
@@ -753,7 +754,50 @@ def exec_scenario(map_dir, state, action):
     return proof
 
 
-CORE_EXECUTORS = {'scenario': exec_scenario, "fan_in": exec_fan_in, "consume": exec_consume, "closeout": exec_closeout, "render_review": exec_render}
+def exec_briefs(map_dir, state, action):
+    """蜂巢执行片与 transport 无关：本机 delivery-dispatch 按 model-roles 配置跑完整批。"""
+    mrow = map_row(state['lanes'])
+    tree = mrow['integration_worktree_path']
+    if brief_delivery.git(tree, 'symbolic-ref', '--short', 'HEAD') != mrow.get('integration_branch'):
+        raise ValueError('当前工作树不在 map 集成分支')
+    jobs, role = action['args']['briefs'], action['args']['task']
+    with tempfile.NamedTemporaryFile(mode='w', dir=map_dir) as source:
+        json.dump(jobs, source)
+        source.flush()
+        cmd = [str(DISPATCH_CLI), 'batch', source.name, '--managed', str(map_dir), '--task', role,
+               *dispatch_overrides(state)]
+        p = subprocess.run(cmd, cwd=tree, capture_output=True, text=True)
+    if p.returncode:
+        raise ValueError(p.stderr.strip() or '执行片未全部通过')
+    records = [json.loads(line) for line in p.stdout.splitlines()]
+    return {'lanes': brief_delivery.verify_rows(jobs, records, map_dir, tree, role, mrow['lane_id'])}
+
+
+def dispatch_overrides(state):
+    """driver.json `dispatch.config` 可选：换 model-roles 配置文件。"""
+    config = (state['driver'].get('dispatch') or {}).get('config')
+    return ['--config', config] if config else []
+
+
+def preflight_html(state):
+    """Plan Review 展示蜂巢票实际会用的模型、档位与上限；解析失败的原因直接写在页面上。"""
+    esc = lambda v: html.escape(str(v))  # noqa: E731
+    tickets = state['driver']['plan']['tickets']
+    tasks = sorted({t.get('task', 'backend') for t in tickets if t.get('briefs')})
+    if not tasks:
+        return ''
+    p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks, *dispatch_overrides(state)], capture_output=True, text=True)
+    rows = [json.loads(line) for line in p.stdout.splitlines() if line.startswith('{')]
+    if not rows:
+        rows = [{'task': ', '.join(tasks), 'ok': False, 'error': p.stderr.strip() or '预检无输出'}]
+    items = ''.join(f"<li>{esc(r['task'])}：" + (f"{esc(r['agent'])} / {esc(r['model'])} / {esc(r['effort'])}，"
+                    f"每片 ≤{esc(r['max_turns'])} 轮，并发 ≤{esc(r['parallel'])}" if r['ok'] else
+                    f"<strong>无法执行</strong>：{esc(r['error'])}") + '</li>' for r in rows)
+    return f"<h2>蜂巢执行预检</h2><ul>{items}</ul>"
+
+
+DISPATCH_CLI = SCRIPTS.parents[2] / 'scripts' / 'delivery-dispatch'
+CORE_EXECUTORS = {'scenario': exec_scenario, 'dispatch_briefs': exec_briefs, "fan_in": exec_fan_in, "consume": exec_consume, "closeout": exec_closeout, "render_review": exec_render}
 
 
 def run(map_dir: Path, executors: dict | None = None, limit: int = 200) -> dict:

@@ -13,8 +13,8 @@ disable-model-invocation: true
 ## Run 循环
 
 1. **run。** 每次唤醒调所属壳的 run 入口（壳未提供时 `scripts/driver.py run <map 目录>`）。程序能执行的
-   Action（fan-in、consume、closeout、审核页渲染、壳的派发 helper）已在 run 内完成；只交回一行 JSON
-   `{"action","id","args"}`。
+   Action（fan-in、consume、closeout、审核页渲染、蜂巢执行片 `references/brief-dispatch.md`、壳的派发
+   helper）已在 run 内完成；只交回一行 JSON `{"action","id","args"}`。
 2. **执行 Action。** 按 `action` 分支：
    - `invoke_owner`：按 `references/owner-skill-resolution.md` 调用 owner（name + 绝对 SKILL.md path + invocation label），
      回执带 owner 返回的 `NEXT` 与工件坐标；to-tickets 回执附 `plan`（票、波次、依赖、owner、HITL）与脚本检查结果。

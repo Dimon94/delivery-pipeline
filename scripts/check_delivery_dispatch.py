@@ -66,9 +66,7 @@ subprocess.run(['git','commit','-qm',name],check=True)
     config = valid_fixture()
     config['work']['backend'].update(agent='pi', model='magpie/auto/test-model', effort='high')
     (root / 'config.json').write_text(json.dumps(config))
-    ev = {'capabilities': {'pi': {'binary': True, 'models': {'magpie/auto/test-model': ['high']}}}}
-    (root / 'probe.json').write_text(json.dumps(ev))
-    args = ['--turns', '7', '--task', 'backend', '--config', root / 'config.json', '--evidence', root / 'probe.json']
+    args = ['--turns', '7', '--task', 'backend', '--config', root / 'config.json']
     wave = root / 'wave'
     wave.mkdir()
     def contract(name, writable=None, check=None):
@@ -83,14 +81,6 @@ subprocess.run(['git','commit','-qm',name],check=True)
         path.write_text(json.dumps(data))
         return path
 
-    probe = root / 'probe.json'
-    no_probe = write_contract(root, contract('no-probe'))
-    for invalid in ({}, {'capabilities': None}):
-        probe.write_text(json.dumps(invalid))
-        rejected = subprocess.run([cli, 'run', 'no-probe', no_probe, *args], cwd=repo, env=env, capture_output=True)
-        assert rejected.returncode and b'capabilities' in rejected.stderr
-        assert run(cli, 'status') == '[]' and 'brief/no-probe' not in run('git', 'worktree', 'list')
-    probe.write_text(json.dumps(ev))
     for n in ['one', 'retry']:
         write_contract(wave, contract(n))
     run(cli, 'batch', wave, '-p', '2', *args)
@@ -124,7 +114,25 @@ subprocess.run(['git','commit','-qm',name],check=True)
             native_settings = json.loads(Path(options[options.index('--settings') + 1]).read_text())
             assert native_env is env and native_env['CLAUDE_CONFIG_DIR'] == str(cfg)
             assert native_settings['env']['ANTHROPIC_BASE_URL'] == personal_gateway
-    print('PASS run/batch/retry/status/merge/drop + model/effort/turns + selective hooks')
+    # 预检：可执行 task 给出实际模型与上限；claude -p 跑不了的路由写明原因并退出 1。
+    flight = subprocess.run([cli, 'preflight', 'backend', 'testing', '--config', root / 'config.json'],
+                            cwd=repo, env=env, capture_output=True, text=True)
+    rows = {r['task']: r for r in map(json.loads, flight.stdout.splitlines())}
+    assert flight.returncode == 1 and rows['backend']['ok'] and rows['backend']['model'] == 'magpie/auto/test-model'
+    assert not rows['testing']['ok'] and '无此路由' in rows['testing']['error'], rows
+    # 密钥：环境变量优先；缺省时读 pi 指向同一网关的 magpie provider；指向别处则失败。
+    magpie_key = runpy.run_path(str(cli))['magpie_key']
+    pi = root / 'home/.pi/agent'
+    pi.mkdir(parents=True)
+    with patch.dict(os.environ, HOME=str(root / 'home')):
+        assert magpie_key({'MAGPIE_API_KEY': 'env-key'}) == 'env-key'
+        for base, expected in (('http://127.0.0.1:3425/v1', 'pi-key'), ('https://elsewhere/v1', None)):
+            (pi / 'models.json').write_text(json.dumps({'providers': {'magpie': {'baseUrl': base, 'apiKey': 'pi-key'}}}))
+            try:
+                assert magpie_key({}) == expected
+            except ValueError:
+                assert expected is None
+    print('PASS run/batch/retry/status/merge/drop + model/effort/turns + selective hooks + preflight + key source')
 
 
 if __name__ == '__main__':
