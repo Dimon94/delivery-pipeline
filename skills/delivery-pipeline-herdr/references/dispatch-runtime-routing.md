@@ -18,7 +18,7 @@ implementation lane 先按 `gate-state-machine.md` 实施前置检查运行 `scr
 1. 从当前 Integration HEAD 建 Execution Worktree；packet 按 `assets/HERDR_ROLE_DISPATCH_PACKET.md`
    写到 repo 外 `~/.config/delivery-pipeline/packets/<lane_id>.md`。
 2. 运行本壳 `scripts/dispatch.py`（参数见 `--help`），capability evidence 按 `model-role-routing.md`
-   探测。它一次完成：Coordinator Pane 坐标 readback（`herdr pane current --current` 与
+   探测。新 work lane 读取 setup 的 `~/.config/delivery-pipeline/model-roles.json`。它一次完成：Coordinator Pane 坐标 readback（`herdr pane current --current` 与
    `HERDR_WORKSPACE_ID`/`HERDR_TAB_ID`/`HERDR_PANE_ID` 一致）、计划解析与冻结、registry
    先于 worker 写入、worker tab 落位与 readback、agent start、packet 单行投递、working 确认
    （重投一次）、lane watcher、registry `running`。成功只回一行 JSON 坐标；失败写 `setup_blocked`

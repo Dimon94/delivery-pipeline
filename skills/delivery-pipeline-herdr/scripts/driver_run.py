@@ -2,7 +2,7 @@
 """Herdr 壳的 Driver run 循环（ADR-0026 决策 1、4）。
 
 在 core `driver.run` 上追加 Herdr dispatch 执行器：建 Execution Worktree、按派发模板渲染
-packet、调 `dispatch.py`。缺 driver.json `dispatch`（config、evidence）或 `transport.herdr.worktrees_root`或执行失败时交回 coordinator。
+packet、调 `dispatch.py`。缺 `dispatch.evidence`、`transport.herdr.worktrees_root` 或执行失败时交回 coordinator。
 
 命令：
   driver_run.py run <map_dir>                 coordinator 每次唤醒调一次
@@ -32,7 +32,7 @@ def exec_dispatch(map_dir: Path, state, action):
     root = ((state["driver"].get("transport") or {}).get("herdr") or {}).get("worktrees_root")
     mrow = driver.map_row(state["lanes"]) or {}
     integration = mrow.get("integration_worktree_path")
-    if not (cfg.get("config") and cfg.get("evidence") and root and integration):
+    if not (cfg.get("evidence") and root and integration):
         return None  # 缺配置：交回 coordinator 按壳合同派发
     a = dict(action["args"])
     lane = a["lane_id"]
@@ -49,7 +49,7 @@ def exec_dispatch(map_dir: Path, state, action):
     packet.parent.mkdir(parents=True, exist_ok=True)
     packet.write_text(driver.render_packet(state, {**action, "args": a},
                                            [f"Worker 合同：{PACKET}，读取 Worker 执行节"]))
-    out = subprocess.run([sys.executable, str(DISPATCH), "--config", cfg["config"], "--evidence", cfg["evidence"],
+    out = subprocess.run([sys.executable, str(DISPATCH), "--evidence", cfg["evidence"],
                           "--task", a["task"], "--output-mode", a["output_mode"], "--lane", lane,
                           "--work-item", a["work_item"], "--title", lane, "--worktree", str(worktree),
                           "--branch", branch, "--base", base, "--packet", str(packet),

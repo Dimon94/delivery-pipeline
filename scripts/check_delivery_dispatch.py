@@ -51,7 +51,8 @@ subprocess.run(['git','add','--',name],check=True)
 subprocess.run(['git','commit','-qm',name],check=True)
 ''')
     worker.chmod(0o755)
-    env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], CLAUDE_CONFIG_DIR=str(cfg), ORIGINAL_CLAUDE_DIR=str(cfg), MAGPIE_API_KEY='test-only')
+    env = dict(os.environ, HOME=str(root / 'home'), PATH=str(root) + os.pathsep + os.environ['PATH'],
+               CLAUDE_CONFIG_DIR=str(cfg), ORIGINAL_CLAUDE_DIR=str(cfg), MAGPIE_API_KEY='test-only')
 
     def run(*args):
         return subprocess.check_output(args, cwd=repo, env=env, text=True).strip()
@@ -65,8 +66,15 @@ subprocess.run(['git','commit','-qm',name],check=True)
     base = run('git', 'rev-parse', 'HEAD')
     config = valid_fixture()
     config['work']['backend'].update(agent='pi', model='magpie/auto/test-model', effort='high')
-    (root / 'config.json').write_text(json.dumps(config))
-    args = ['--turns', '7', '--task', 'backend', '--config', root / 'config.json']
+    config_path = root / 'home/.config/delivery-pipeline/model-roles.json'
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps(config))
+    shadow = root / 'map-model-roles.json'
+    shadow.write_text(json.dumps(valid_fixture()))
+    rejected = subprocess.run([cli, 'preflight', 'backend', '--config', shadow],
+                              cwd=repo, env=env, capture_output=True, text=True)
+    assert rejected.returncode == 2 and 'unrecognized arguments: --config' in rejected.stderr, rejected
+    args = ['--turns', '7', '--task', 'backend']
     wave = root / 'wave'
     wave.mkdir()
     def contract(name, writable=None, check=None):
@@ -115,7 +123,7 @@ subprocess.run(['git','commit','-qm',name],check=True)
             assert native_env is env and native_env['CLAUDE_CONFIG_DIR'] == str(cfg)
             assert native_settings['env']['ANTHROPIC_BASE_URL'] == personal_gateway
     # 预检：可执行 task 给出实际模型与上限；claude -p 跑不了的路由写明原因并退出 1。
-    flight = subprocess.run([cli, 'preflight', 'backend', 'testing', '--config', root / 'config.json'],
+    flight = subprocess.run([cli, 'preflight', 'backend', 'testing'],
                             cwd=repo, env=env, capture_output=True, text=True)
     rows = {r['task']: r for r in map(json.loads, flight.stdout.splitlines())}
     assert flight.returncode == 1 and rows['backend']['ok'] and rows['backend']['model'] == 'magpie/auto/test-model'

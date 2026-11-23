@@ -39,80 +39,55 @@ T3 只从 coordinator 线程所属项目的根目录建子 worktree。目标仓�
    `base_sha`：普通 map 为当前 Integration HEAD；`delivery_mode: ticket_release` 为刚 fetch 的
    远端默认分支 SHA。
 
-## Target 映射与配置 gate
-
-本节替代 `model-role-routing.md` §Dispatch 验证第 2、3 步；第 1、4 步不变。配置实例是 CLI 实例
-`~/.config/delivery-pipeline/model-roles.json`，先按 `model-config-schema.md` 用 setup 的
-`model_config.py validate` 校验，阶段计划按 `model-role-routing.md` 冻结。
-
-| work `agent` | `target.providerInstanceId` | effort option id | branch prefix |
-| --- | --- | --- | --- |
-| `pi` | `pi` | `thinking` | `pi/` |
-| `codex` | `codex` | `reasoningEffort` | `codex/` |
-| `claude` | `claudeAgent` | `effort` | `claude/` |
-
-每个不同的 `(agent, model)` 调一次 `orchestrator_capabilities(search: <model>)`：model id 与目录项
-完全一致，effort 属于该 option 的 `values`。不一致时该
-lane 写 `setup_blocked`，附目录候选 id，交 `delivery-pipeline-setup` 改配置；配置值原样使用。
-
-## Registry Overlay
-
-`t3code` overlay 归本壳所有。写入顺序：intent → `delegate_task` receipt → startup readback；每层
-写入后精确 readback。
-
-```yaml
-t3code:
-  coordinator_thread_id: <parentThreadId>
-  coordinator_provider: pi | codex | claudeAgent
-  provider_instance_id: pi | codex | claudeAgent
-  effort_option: thinking | reasoningEffort | effort
-  client_request_id: <lane_id>
-  task_id: <taskId-or-none>
-  child_thread_id: <childThreadId-or-none>
-  link: <link-or-none>
-  t3_branch: <T3 临时分支-or-none>
-  executed_model: <executedModel-or-Unknown>
-```
-
-base 字段：`runtime: t3-task`；`worktree` 取子线程 `worktreePath`；`branch` 在 commit mode 为
-`<prefix>issue-<coordinate>`，其他 mode 为 `none`；`base_commit` 为 `base_sha`。
-
-## 派发关键路径
+## 新 work lane 的入口
 
 implementation 新建或 replacement 前，按 `gate-state-machine.md` 实施前置检查运行
-`implementation_gate.py`，通过后执行：
+`implementation_gate.py`。新派发统一调用本壳 [work_dispatch.py](../scripts/work_dispatch.py)，由
+[native_host.js](../scripts/native_host.js) 转发。正式 review 走下文 Whole-change ReviewPlan，
+已认领 replacement 走原 Registry intent。
 
-1. registry 写 Base Schema 字段与 overlay intent，精确 readback。
-2. 填写 `../assets/T3CODE_ROLE_DISPATCH_PACKET.md`，写入 `~/.config/delivery-pipeline/packets/<lane_id>.md`。
-3. 调用 `delegate_task`：`task` 为 packet 全文；`title` 为 `map-<map> <role> #<coordinate>`；
-   `target` 按上表映射，`options` 只含 effort option，不带 `environmentId`（linked environment
-   不在本壳范围）；`isolation: "worktree"`；`mode: "async"`；
-   `clientRequestId: <lane_id>`；`role` 取 commit→`implementation`、checks→`test`、
-   verdict→`review`、artifact→`research`（design HITL 用 `design`）。`runtimeMode` 与
-   `interactionMode` 继承 coordinator。
-4. receipt 写 `task_id`、`child_thread_id`、`link`；HITL lane 写 `awaiting_human`，其余写 `running`。
-   调用报错或回复丢失时保留原请求；原生请求键还受 provider session namespace 约束，
-   不以 `clientRequestId` 相同推断跨 session 可安全重试。先沿原 receipt 读回；没有原坐标则
-   保持 Unknown/blocked，不重发。同批其余 lane 继续。
+- `action: dispatch`，`path` 为 map 目录下本 lane Registry 的绝对路径，`source` 为 Source repo 绝对路径。
+  `row` 给 `lane_id`、`work_item`、`map`、`role`（Task Binding）、`output_mode`、`base_commit`；
+  有票时可加 `ticket_url`、`wave`，merger 加 `merges`。
+  `task` 给派发模板的工作合同（owner、范围、验收、输入）。`target_override` 仅填 map Registry 的目标仓覆盖章节坐标。
+  `ticket_mode`、`map_mode` 仅传票面或 map 显式点名的配置预设。
+- Adapter 从 `~/.config/delivery-pipeline/model-roles.json` 取计划，用实时能力证据核验精确 provider、
+  model 和 effort，并复核同仓。用原样冻结计划生成 packet 和原生请求。安装配置或能力不足时返回 `setup_blocked`，
+  拒绝在 Registry 预留前发生时无 lane 行。目标仓说明只影响工作合同，人工传入模型/配置路径会被拒绝。
+- Adapter 在 Registry 预留本 lane 并读回后，转发持久化的唯一原生请求。收到 async `next` 先保存原回执，
+  用返回的 lane/link 结束本轮。Driver 后续直接读取该 Registry，普通 work lane 不再手写派发回执。
+- `action: recover` 接原 `path` 和 `lane`；沿原任务及子线程读回父线程、provider、model 与 worktree，
+  独立 `executedModel` 缺失记 Unknown，明确不符则保留现场并阻塞。成功写 `running` 或 `awaiting_human`。
+  缺原回执坐标时保留 Unknown/blocked，同一 lane 的派发入口拒绝再次启动。
 
-## Startup Readback
+### 宿主调用
 
-receipt 的 `childThreadId` 为 null 时，任务落在 linked environment：`task_cancel(task_id)` 后写
-`setup_blocked`。其余对每个 `child_thread_id` 调 `t3_thread_read`，要求 `relationshipToParent: subagent`、`worktreePath`
-非空、`status` 属于 `preparing | queued | starting | running | waiting`，且 worktree 的
-common dir 等于 Source repo。写 `worktree` 与 `t3_branch` 并 readback。不一致写 `setup_blocked`
-并保留现场。
+Pi 的 codemode 转发示例。`adapter` 是本壳已解析的绝对 `scripts` 路径，`invocation` 按上文填写。
 
-整批每项都已 `running`/`awaiting_human` 或 `setup_blocked` 后到达 Dispatch Handoff：逐条报告
-lane 的 `link`，结束本轮。T3 完成唤醒接管后续，coordinator 不轮询。
+```js
+const module = {exports: {}};
+eval(await tools.read({path: adapter + '/native_host.js'}));
+const native = {
+  orchestrator_capabilities: tools.mcp__t3_code__orchestrator_capabilities,
+  t3_worktree_status: tools.mcp__t3_code__t3_worktree_status,
+  t3_thread_read: tools.mcp__t3_code__t3_thread_read,
+  delegate_task: tools.mcp__t3_code__delegate_task,
+  task_cancel: tools.mcp__t3_code__task_cancel,
+};
+const response = await module.exports.runWorkDispatchWithBash(
+  ['python3', adapter + '/work_dispatch.py'], invocation, tools.bash, native);
+text({state: response.result.state, lane: response.result.lane_id,
+      link: response.result.t3code?.link,
+      gap: response.result.reason ?? response.result.t3code?.startup_gap,
+      next: response.result.t3code?.receipt?.next});
+```
 
-## CLI 冻结计划
+有持续标准输入接口的宿主使用 `runWorkDispatch(command, invocation, processIO, native)`，
+`processIO.exec/write` 绑定宿主终端 I/O。两种宿主均直接转发 Adapter 的工具参数。
+缺少可用转发时报告 `dispatch unavailable`，保留原工作合同。
 
-创建新五 work lane 前使用 canonical `model_config.py resolve` / `freeze_overlay`；packet 与
-Registry base row 原样持久化 recovery_plan、recovery_progress（单行 JSON flow value），
-写入 intent、真实 receipt、startup readback 后均用 `verify_overlay` 对账，不另造计划形状。
-恢复先运行 `model_config.py recover <registry.md> [lane_id]`；错误/legacy 识别与字段语义
-统一见 `../../delivery-pipeline/references/lane-registry.md`，不从当前配置补读。
+`t3code` overlay 保存 `native_request`、`receipt`、`startup_state` 和原生任务坐标；核验后补
+`worktree`、`t3_branch`、`executed_model`。完成或提问唤醒后走 [生命周期](t3code-lifecycle.md)。
 
 ## 已认领 replacement 的生产调用
 

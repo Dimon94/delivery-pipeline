@@ -258,7 +258,7 @@ def close(repo, directory, name, merge):
 
 def preflight(args):
     """每个 task 一行 JSON：ok 时给实际 argv 要用的模型与上限，否则给原因；任一失败退出 1。"""
-    config = model_config.load_document(args.config)
+    config = model_config.load_document(model_config.cli_config_path())
     limits, ok = model_config.read_limits(config), True
     for task in args.tasks:
         try:
@@ -284,11 +284,9 @@ def main():
         p.add_argument('--turns', type=positive)
         p.add_argument('--task', required=True)
         p.add_argument('--mode')
-        p.add_argument('--config', type=Path, default=Path.home() / '.config/delivery-pipeline/model-roles.json')
     p = sub.add_parser('preflight', help='派发前核对每个 task 的模型、档位、轮数、并发与密钥')
     p.add_argument('tasks', nargs='+')
     p.add_argument('--mode')
-    p.add_argument('--config', type=Path, default=Path.home() / '.config/delivery-pipeline/model-roles.json')
     sub.add_parser('status')
     for cmd in ('merge', 'drop'):
         sub.add_parser(cmd).add_argument('names', nargs='+', type=valid_name)
@@ -335,7 +333,7 @@ def main():
         if overlap:
             raise Failure('同波合同写入重叠：' + repr(sorted(overlap)))
         claimed.update(brief['writable'])
-    config = model_config.load_document(args.config)
+    config = model_config.load_document(model_config.cli_config_path())
     limits = model_config.read_limits(config)
     turns = min(args.turns or limits['max_turns'], limits['max_turns'])
     parallel = min(getattr(args, 'parallel', None) or limits['parallel'], limits['parallel'])

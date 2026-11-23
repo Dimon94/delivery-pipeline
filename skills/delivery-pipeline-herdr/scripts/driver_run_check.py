@@ -15,6 +15,7 @@ import driver  # noqa: E402
 FAKE = '''import json, sys
 args = sys.argv[1:]
 v = lambda k: args[args.index(k) + 1]
+assert "--config" not in args, f"map-local config reached dispatch: {args}"
 open(v("--registry"), "w").write("""<!-- wayfinder-lane-registry:v2 -->
 ```yaml
 lane_id: %s
@@ -57,8 +58,8 @@ def main():
         out = subprocess.run([sys.executable, str(RUN), "run", str(md)], capture_output=True, text=True, env=env)
         action = json.loads(out.stdout)
         assert out.returncode == 10 and action["id"] == "dispatch:T1", (out.returncode, out.stdout, out.stderr)
-        # 有配置：程序派发，结果 wait，退出 0 不唤醒
-        driver.write_json(md / "driver.json", {**base, "dispatch": {"config": "/c.json", "evidence": "/e.json"},
+        # 旧 map 带自选配置路径时，程序只传 evidence，结果 wait。
+        driver.write_json(md / "driver.json", {**base, "dispatch": {"config": "/map-local.json", "evidence": "/e.json"},
             "transport": {"herdr": {"worktrees_root": str(root / "wt")}}})
         out = subprocess.run([sys.executable, str(RUN), "run", str(md)], capture_output=True, text=True, env=env)
         assert out.returncode == 0 and json.loads(out.stdout)["action"] == "wait", (out.returncode, out.stdout, out.stderr)

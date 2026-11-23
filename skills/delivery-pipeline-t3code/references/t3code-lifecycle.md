@@ -9,7 +9,9 @@
 T3 在子任务终态或子任务提问时唤醒 `coordinator_thread_id` 对应线程。被唤醒后对每个相关 lane：
 
 0. 存在 review_plan 的正式审查，先沿 `t3code-dispatch.md` §Whole-change ReviewPlan 原生入口恢复原 packet/receipt；本节的 lane 启动身份仅供定位。逐轴执行及放行统一走 ReviewDispatch.fan_in 与 canonical review_gate，保留完整 findings。
-1. 原 coordinator 线程用 `task_status(task_id)`；其他线程用 `t3_thread_read(child_thread_id)`。
+1. `t3code.work_dispatch` 为 true 且 `startup_state` 未验证时，先调 `work_dispatch.py` 的
+   `action: recover` 读回原启动。仍为 `setup_blocked` 时保留现场，终态不交 Driver。
+   原 coordinator 线程用 `task_status(task_id)`；其他线程用 `t3_thread_read(child_thread_id)`。
    `task_status` 只读本线程派发的任务；`t3_thread_read` 不含 `workState`，记 Unknown；独立 `executedModel` 取 recentRuns，缺失记 Unknown。
 2. `hasPendingQuestion: true` 或 `pendingApproval` 非空 → 进入 §HITL。
 3. `status: completed` 且 `workState` 为 `result_available` 或 Unknown → 取 `summary`，首个独立行须为
@@ -47,7 +49,7 @@ lane 写 `awaiting_human`，在对话里给出 `link`，由用户进入子线程
 ## 恢复
 
 按 `fresh-session-boundaries.md` §Coordinator Recovery 读取六项短记录，再逐个 `runtime: t3-task`
-lane 调 `t3_thread_read(child_thread_id)`：
+lane 调 `t3_thread_read(child_thread_id)`。新 work lane 未完成启动读回时，先走 §唤醒 第 1 步：
 
 - 终态 → 走 §唤醒 第 2–4 步。
 - `preparing | queued | starting | running | waiting` → 保持 active writer，状态沿 registry。

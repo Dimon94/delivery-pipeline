@@ -3,7 +3,7 @@
 确认 working → 挂 watcher → 回写 running。成功只打印一行 JSON 坐标；失败写 setup_blocked。
 
 用法：
-  dispatch.py --config <model-roles.json> --evidence <capability.json> --task <task type>
+  dispatch.py --evidence <capability.json> --task <task type>
               --output-mode <mode> --lane <lane_id> --work-item <url> --title <pane label>
               --worktree <abs> --branch <branch> --base <sha> --packet <abs> --registry <abs .md>
               --map-registry <abs map registry .md | none>
@@ -173,9 +173,10 @@ def wait_working(name: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    for flag in ("config", "evidence", "task", "output-mode", "lane", "work-item", "title",
+    for flag in ("evidence", "task", "output-mode", "lane", "work-item", "title",
                  "worktree", "branch", "base", "packet", "registry", "map-registry"):
         parser.add_argument(f"--{flag}", required="--recover-review" not in sys.argv)
+    parser.add_argument("--config", help="可选配置路径，仅正式 review 接受替代路径")
     parser.add_argument("--off-chain-reason")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
@@ -247,6 +248,12 @@ def main() -> int:
             raise DispatchError(f"registry already has an active writer: {registry}")
         map_lane = preflight(args)
         mc = load_model_config()
+        config = mc.cli_config_path()
+        if args.config:
+            requested = Path(args.config).expanduser().resolve()
+            if args.task != "review" and requested != config.resolve():
+                raise DispatchError("work dispatch requires the setup model-roles.json")
+            config = requested
         evidence = json.loads(Path(args.evidence).expanduser().read_text())
         review = None
         if args.task == "review":
@@ -272,7 +279,7 @@ def main() -> int:
             implementations = lane_registry.collect_implementation_identities(contribution_rows, fixed_point)
             if round_context is not None:
                 implementations = round_context['implementations']
-            document = mc.load_document(Path(args.config).expanduser())
+            document = mc.load_document(config)
             participating = dict.fromkeys(["standards", *args.required_axes])
             pools = {axis: [mc.triple(cell), *cell["candidates"]]
                      for axis in participating
@@ -326,7 +333,7 @@ def main() -> int:
         else:
             if args.preflight_only:
                 raise DispatchError("preflight-only requires whole-change review")
-            plan = mc.resolve_plan(mc.load_document(Path(args.config).expanduser()), args.task,
+            plan = mc.resolve_plan(mc.load_document(config), args.task,
                                    ticket_mode=args.ticket_mode, map_mode=args.map_mode,
                                    evidence=evidence, output_mode=args.output_mode)
         frozen = mc.freeze_overlay(plan)

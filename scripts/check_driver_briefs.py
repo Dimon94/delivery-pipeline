@@ -1,6 +1,6 @@
 """跨仓 TURN-1：从上游 prepare CLI 到 Driver 的真实工作树、提交与场景回读。"""
 import json
-from copy import deepcopy
+from unittest.mock import patch
 import os
 from pathlib import Path
 import shutil
@@ -69,31 +69,30 @@ def journey(tmp, upstream, payload, bad, entry):
     plan = {'tickets': [ticket, {'id': 'NEXT', 'deps': ['TURN-1'], 'hitl': True}]}
     config = model_config.apply_limits(model_config.valid_fixture(), {'parallel': 1, 'max_turns': 2})
     config['work']['backend'].update(agent='claude', model='fixture', effort='high')
-    cfg = tmp / 'config.json'
-    cfg.write_text(json.dumps(config))
-    doc = dict(version=1, map='map', plan=plan, grant={'plan_sha': driver.plan_sha(plan)}, published=True,
-               dispatch={'config': str(cfg)})
-    driver.write_json(md / 'driver.json', doc)
-    # Plan Review 预检：展示实际模型与上限；配置解析失败时写明无法执行。
-    page = driver.preflight_html(driver.load(md))
-    assert 'claude / fixture / high' in page and '每片 ≤2 轮，并发 ≤1' in page, page
-    blind = deepcopy(doc)
-    blind['dispatch']['config'] = str(tmp / 'missing.json')
-    assert '无法执行' in driver.preflight_html({'driver': blind}), blind
+    with patch.dict(os.environ, {'HOME': str(tmp)}):
+        cfg = model_config.cli_config_path()
+        cfg.parent.mkdir(parents=True)
+        doc = dict(version=1, map='map', plan=plan, grant={'plan_sha': driver.plan_sha(plan)}, published=True,
+                   dispatch={'config': str(tmp / 'map-local.json')})
+        driver.write_json(md / 'driver.json', doc)
+        assert '无法执行' in driver.preflight_html(driver.load(md))
+        cfg.write_text(json.dumps(config))
+        page = driver.preflight_html(driver.load(md))
+        assert 'claude / fixture / high' in page and '每片 ≤2 轮，并发 ≤1' in page, page
     driver.persist_lanes(md, [dict(lane_id='map', role='map', state='running', work_item='map',
                                    integration_worktree_path=str(repo), integration_branch='integration', base_commit=base, _file=None)])
     fake = tmp / 'claude'
     fake.write_text(WORKER)
     fake.chmod(0o755)
-    env = dict(os.environ, PATH=str(tmp) + os.pathsep + os.environ['PATH'], BAD='bad' if bad else '',
+    env = dict(os.environ, HOME=str(tmp), PATH=str(tmp) + os.pathsep + os.environ['PATH'], BAD='bad' if bad else '',
                STARTS=str(tmp / 'starts'), CLAUDE_CONFIG_DIR=str(tmp / 'claude-config'))
     # 模拟批次已经执行完成、Driver 尚未写 dispatch 回执时重启。
     batch = tmp / 'batch.json'
     batch.write_text(json.dumps(prepared))
     marker = 'LANE_DONE TURN-1'
     if bad:
-        rows = subprocess.check_output([CLI, 'batch', batch, '--managed', md, '--task', 'backend',
-                                       '--config', cfg], cwd=repo, env=env, text=True)
+        rows = subprocess.check_output([CLI, 'batch', batch, '--managed', md, '--task', 'backend'],
+                                       cwd=repo, env=env, text=True)
         records = [json.loads(line) for line in rows.splitlines()]
         assert len(records) == 2
         try:

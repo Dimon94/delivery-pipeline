@@ -31,6 +31,12 @@ Issue、代码和 CI 归 GitHub,项目坐标 `Dimon94/delivery-pipeline`,操作�
 修复缺陷时,同一最小检查必须先失败后通过。
 </done_definition>
 
+## 强制规则
+
+| 规则 | 强制入口 |
+| --- | --- |
+| 新 work lane 的模型、档位与有序备用来自 setup 和显式命名预设。 | T3 `work_dispatch.py`、Herdr `dispatch.py`、Driver 调用的 `scripts/delivery-dispatch`；`python3 scripts/validate.py` 回放错误配置覆盖。 |
+
 ## Agent skills
 
 ### Issue tracker

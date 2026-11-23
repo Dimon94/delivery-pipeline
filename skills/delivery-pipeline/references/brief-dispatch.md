@@ -9,10 +9,9 @@
 - `plan.tickets[].scenario_check`：父票整体验收命令的 argv，例如 `["node", "check.cjs", "all"]`。
 - map row：`integration_worktree_path` 与 `integration_branch`。
 
-模型、档位、轮数与并发只来自 model-roles 配置（默认 `~/.config/delivery-pipeline/model-roles.json`），不用手写。
+Driver 的模型、档位、轮数与并发只来自 setup 的 `~/.config/delivery-pipeline/model-roles.json`。
 执行时不重新探测模型清单：配置写入时 setup 已核过模型与档位，执行失败由 `claude -p` 退出码暴露。
 Magpie 密钥先取 `MAGPIE_API_KEY`，缺省时取 `~/.pi/agent/models.json` 中指向本机网关的 `magpie` provider。
-driver.json `dispatch.config` 只在换配置文件时写。
 
 Plan Review 页的「蜂巢执行预检」逐个 task 列出实际模型、档位与上限；任一行「无法执行」时先修配置再通过。
 `delivery-dispatch preflight <task…>` 可单独复查。Plan Review 固定并展示 briefs 与 scenario_check。

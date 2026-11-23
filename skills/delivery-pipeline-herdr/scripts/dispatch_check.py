@@ -57,7 +57,8 @@ def fixture_config(root: Path) -> tuple[Path, Path]:
         "model_config", HERE.parents[1] / "delivery-pipeline-setup" / "scripts" / "model_config.py")
     mc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mc)
-    config = root / "model-roles.json"
+    config = root / ".config/delivery-pipeline/model-roles.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(json.dumps(mc.valid_fixture()))
     evidence = root / "evidence.json"
     evidence.write_text(json.dumps({"pi": {"binary": True, "models": {"provider/model": ["high", "low"]}}}))
@@ -82,11 +83,11 @@ def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", 
     registry = root / f"registry-{lane}.md"
     map_registry = root / "registry-map-demo.md"
     map_registry.write_text(map_text)
-    env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
+    env = {**os.environ, "HOME": str(root), "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
            "HERDR_WORKSPACE_ID": "w1", "HERDR_TAB_ID": "w1:t1", "HERDR_PANE_ID": "w1:p1",
            "DP_LANE_WATCH": str(root / "watch"), **(env_extra or {})}
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--config", str(config), "--evidence", str(evidence),
+        [sys.executable, str(SCRIPT), "--evidence", str(evidence),
          "--task", "backend", "--output-mode", "commit", "--lane", lane, "--work-item", "https://x/1",
          "--title", "#1 demo", "--worktree", str(root), "--branch", "b", "--base", "abc",
          "--packet", str(root / "packet.md"), "--registry", str(registry),
@@ -137,6 +138,10 @@ def main() -> int:
             time.sleep(0.05)
         if not (root / "watch.args").exists() or "w1:p2 w1:p1 lane-a" not in (root / "watch.args").read_text():
             failures.append("watcher not spawned with worker/coordinator pane")
+
+        result, registry, calls = run(root, "lane-shadow", base, extra=("--config", str(root / "overlay.json")))
+        if result.returncode == 0 or calls or registry.exists() or "requires the setup model-roles.json" not in result.stdout:
+            failures.append("map-local work config was not rejected before herdr")
 
         # 2. 已有 active writer → 拒绝且不调用 herdr。
         result, _, calls = run(root, "lane-a", json.loads(json.dumps(base)))

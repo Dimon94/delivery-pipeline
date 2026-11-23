@@ -69,10 +69,12 @@ def persist(path, updates):
             os.unlink(name)
 
 
-def write(path, row):
+def write(path, row, *, create=False):
     with lock(path) as path:
         all_rows = rows(path)
         current = all_rows.get(row['lane_id'])
+        if create and current is not None:
+            raise ValueError('lane already exists; inspect original request')
         if any(r['lane_id']!=row['lane_id'] and r.get('work_item')==row.get('work_item') and
                (r.get('state') in {'created','running','awaiting_human'} or
                 r.get('replacement_intent',{}).get('status') in {'accepted','launching'})

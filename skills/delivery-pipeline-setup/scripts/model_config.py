@@ -358,6 +358,10 @@ def show(path: Path) -> dict:
     return result
 
 
+def cli_config_path() -> Path:
+    return Path.home() / '.config/delivery-pipeline/model-roles.json'
+
+
 def load_document(path: Path) -> dict:
     document = json.loads(path.expanduser().read_text())
     errors = validate_document(document)
@@ -2028,7 +2032,7 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "path", nargs="?", default="~/.config/delivery-pipeline/model-roles.json"
+        "path", nargs="?", default=str(cli_config_path())
     )
     parser.add_argument("task", nargs="?")
     parser.add_argument("--candidate", help="待预览配置 JSON 文件")

@@ -688,7 +688,7 @@ def parse_marker(row, line: str) -> dict | None:
     parts = line.strip().split(None, 3)
     if len(parts) < 2 or parts[0] != "LANE_DONE" or row is None or parts[1] != row["lane_id"]:
         return None
-    if row.get("state") not in ACTIVE:
+    if row.get("state") not in ACTIVE or (row["state"] == "created" and not row.get("worktree")):
         return None
     if len(parts) >= 3 and parts[2] == "BLOCKED":
         return {"state": "blocked", "blocked_reason": " ".join(parts[3:]) or "Unknown"}
@@ -764,19 +764,12 @@ def exec_briefs(map_dir, state, action):
     with tempfile.NamedTemporaryFile(mode='w', dir=map_dir) as source:
         json.dump(jobs, source)
         source.flush()
-        cmd = [str(DISPATCH_CLI), 'batch', source.name, '--managed', str(map_dir), '--task', role,
-               *dispatch_overrides(state)]
+        cmd = [str(DISPATCH_CLI), 'batch', source.name, '--managed', str(map_dir), '--task', role]
         p = subprocess.run(cmd, cwd=tree, capture_output=True, text=True)
     if p.returncode:
         raise ValueError(p.stderr.strip() or '执行片未全部通过')
     records = [json.loads(line) for line in p.stdout.splitlines()]
     return {'lanes': brief_delivery.verify_rows(jobs, records, map_dir, tree, role, mrow['lane_id'])}
-
-
-def dispatch_overrides(state):
-    """driver.json `dispatch.config` 可选：换 model-roles 配置文件。"""
-    config = (state['driver'].get('dispatch') or {}).get('config')
-    return ['--config', config] if config else []
 
 
 def preflight_html(state):
@@ -786,7 +779,7 @@ def preflight_html(state):
     tasks = sorted({t.get('task', 'backend') for t in tickets if t.get('briefs')})
     if not tasks:
         return ''
-    p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks, *dispatch_overrides(state)], capture_output=True, text=True)
+    p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
     rows = [json.loads(line) for line in p.stdout.splitlines() if line.startswith('{')]
     if not rows:
         rows = [{'task': ', '.join(tasks), 'ok': False, 'error': p.stderr.strip() or '预检无输出'}]

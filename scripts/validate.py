@@ -692,6 +692,10 @@ def check_orca_contract() -> None:
 
 
 def check_t3code_contract() -> None:
+    result = subprocess.run([sys.executable, str(T3CODE / "scripts/check_work_dispatch.py")],
+                            text=True, capture_output=True)
+    if result.returncode != 0:
+        record(f"Configured work dispatch failed: {result.stdout}{result.stderr}")
     for path in (
         T3CODE / "SKILL.md",
         T3CODE / "references" / "t3code-dispatch.md",
