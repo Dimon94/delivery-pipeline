@@ -20,7 +20,7 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
    `worktrees_root` 时，`driver_run.py` 建 Execution Worktree、渲染 packet 并调 `scripts/dispatch.py`
    一次完成落位、启动、投递、watcher 与 registry。缺配置或 dispatch 失败时 Action 交回，coordinator 按
    `references/dispatch-runtime-routing.md` 验证 Herdr session/workspace/tab/pane 后派发；只有用户显式要求新
-   Workspace 才创建。worker kind 由 version 5 work config 的 `agent` 决定（pi/codex/claude → `herdr-<agent>-pane`），
+   Workspace 才创建。worker kind 由 version 5 work config 的 `agent` 决定（pi → `herdr-pi-pane`、codex → `herdr-codex-pane`、claude → `herdr-claude-pane`、antigravity → `herdr-agy-pane`），
    packet 使用 `assets/HERDR_ROLE_DISPATCH_PACKET.md`。
 3. 唤醒由 `scripts/lane-watch.sh` 负责：map 有 driver.json 时，watcher 见到终态行先调
    `driver_run.py watch`，wait 或程序已执行完时不唤醒 coordinator，需要宿主时带 Action 唤醒一次。

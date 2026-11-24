@@ -69,7 +69,7 @@ CLI v8 实例顶层 key 精确为 `dispatch`、 `version`、`work`、`modes`、`
 | `second-opinion` | 咨询子代理 |
 
 每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
-`pi|codex|claude|antigravity|codex-app`：agent 值决定 worker kind，前四个由所选 CLI transport 壳承载（其中 `antigravity` 仅 T3Code 壳支持，Herdr pane 拒绝），
+`pi|codex|claude|antigravity|codex-app`：agent 值决定 worker kind，前四个由所选 CLI transport 壳（Herdr pane、T3Code task 或 Lody session）承载，
 `codex-app` 经 App task。App 与非编辑 work 项精确为这三个字段；CLI 五 work 另必需 `fallbacks`，见 v6 条款。其他字段（含旧 `execution`）拒绝。
 配置文件可以只定义已知 key 的子集；每个 transport 声明自己的必需集（见下文），缺必需项
 阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。

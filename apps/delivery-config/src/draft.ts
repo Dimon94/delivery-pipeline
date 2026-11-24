@@ -6,7 +6,7 @@ export const budgetKeys = ["parallel", "max_turns"] as const;
 export type BudgetKey = typeof budgetKeys[number];
 export const defaultBudget = {parallel:4, max_turns:100};
 export type Config = {dispatch?: Record<BudgetKey, number>;model_families?:Record<string,Record<string,{family:string;source:"user_declared"}>>;work: Record<string, Cell>; review: Record<string, Record<string, Cell>>; modes: Record<string, unknown>; [key: string]: unknown};
-export type SourceEvidence = {status:string;next_step:string;reason?:string;route?:'gateway'|'direct'|'official'|'t3code'|null};
+export type SourceEvidence = {status:string;next_step:string;reason?:string;route?:'gateway'|'direct'|'official'|'cli'|'cache'|null};
 export type Evidence = {request_id:string; observed_at:string; gateway:{status:string}; capabilities:Record<string,{binary:boolean;models:Record<string,string[]>}>; sources:Record<string,SourceEvidence>};
 // 唯一的核对状态；网关是否可达只看证据里的 gateway.status，不从 sources 反推。
 export type Check =

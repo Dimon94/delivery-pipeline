@@ -211,8 +211,32 @@ with tempfile.TemporaryDirectory() as directory:
             assert not requests
 print('Claude collection request and credential isolation: pass')
 
-assert callable(getattr(mc, 'antigravity_models', None)), '缺少 Antigravity 模型清单归一化'
+assert callable(getattr(mc, 'antigravity_cli_models', None)), '缺少 Antigravity CLI 模型清单归一化'
+assert callable(getattr(mc, 'antigravity_models', None)), '缺少 Antigravity 本地缓存模型清单归一化'
 assert callable(getattr(mc, 'antigravity_source', None)), '缺少 Antigravity 提供方来源解析'
+ag_cli_output = '\n'.join([
+    'gemini-4-neon-high\tGemini 4 Neon (High)',
+    'gemini-4-neon-xhigh\tGemini 4 Neon (XHigh)',
+    'gemini-4-neon-medium\tGemini 4 Neon (Medium)',
+    'gemini-4-neon-low\tGemini 4 Neon (Low)',
+    'gemini-4-carbon-high\tGemini 4 Carbon (High)',
+    'gemini-4-carbon-low\tGemini 4 Carbon (Low)',
+    'gemini-4-carbon-medium\tGemini 4 Carbon (Medium)',
+    'gemini-pro-orchestrator-neon\tOrchestrator (Neon)',
+    'claude-opus-5-5-low\tClaude Opus 5.5 (Low)',
+    'claude-opus-5-5-medium\tClaude Opus 5.5 (Medium)',
+    'claude-opus-5-5-high\tClaude Opus 5.5 (High)',
+    'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)',
+])
+expected_ag_cli = {
+    'gemini-4-neon': ['low', 'medium', 'high', 'xhigh'],
+    'gemini-4-carbon': ['low', 'medium', 'high'],
+    'claude-opus-5-5': ['low', 'medium', 'high'],
+    'gpt-oss-120b': ['medium'],
+}
+assert mc.antigravity_cli_models(ag_cli_output) == [
+    {'native_id': native, 'gateway_id': native, 'efforts': efforts}
+    for native, efforts in expected_ag_cli.items()]
 ag_cache = json.loads((root/'scripts/fixtures/antigravity-cache.json').read_text())
 expected_ag = {
     'gemini-4-neon': ['low', 'medium', 'high', 'xhigh'],
@@ -231,26 +255,29 @@ for malformed in ({}, {'models': 'bad'}, {'models': [{}]}, {'models': [{'slug': 
         pass
     else:
         raise AssertionError('Antigravity 非法结构必须拒绝')
-ag_probe = copy.deepcopy(raw)
-ag_probe['harnesses']['antigravity'] = mc.antigravity_source(ag_cache)
-for gateway in ({'status': 'ok', 'data': []}, {'status': 'unknown'}):
-    ag_probe['gateway'] = gateway
-    p = probe(ag_probe)
-    assert p['capabilities']['antigravity']['models'] == expected_ag
-    assert p['sources']['antigravity']['status'] == 'ok' and p['sources']['antigravity']['route'] == 't3code'
-    assert p['gateway']['status'] == ('ok' if gateway['status'] == 'ok' else 'unreachable')
+for ag_route, harness_data, expected_map in (
+    ('cli', {'binary': True, 'route': 'cli', 'models': mc.antigravity_cli_models(ag_cli_output)}, expected_ag_cli),
+    ('cache', mc.antigravity_source(ag_cache), expected_ag),
+):
+    ag_probe = copy.deepcopy(raw)
+    ag_probe['harnesses']['antigravity'] = harness_data
+    for gateway in ({'status': 'ok', 'data': []}, {'status': 'unknown'}):
+        ag_probe['gateway'] = gateway
+        p = probe(ag_probe)
+        assert p['capabilities']['antigravity']['models'] == expected_map
+        assert p['sources']['antigravity']['status'] == 'ok' and p['sources']['antigravity']['route'] == ag_route
+        assert p['gateway']['status'] == ('ok' if gateway['status'] == 'ok' else 'unreachable')
 assert mc.capability_errors('antigravity', 'gemini-4-neon', 'xhigh', p['capabilities']) == []
 assert mc.capability_errors('antigravity', 'gemini-4-carbon', 'xhigh', p['capabilities'])
 ag_config = mc.valid_fixture()
 ag_config['work']['backend'] = {'agent': 'antigravity', 'model': 'gemini-4-neon', 'effort': 'xhigh', 'fallbacks': []}
 ag_plan = mc.resolve_plan(ag_config, 'backend', evidence=p['capabilities'], output_mode='commit')
 assert (ag_plan['agent'], ag_plan['model'], ag_plan['effort']) == ('antigravity', 'gemini-4-neon', 'xhigh')
-try:
-    mc.startup_request(ag_plan, worker_name='worker', pane_id='pane')
-except ValueError:
-    pass
-else:
-    raise AssertionError('Herdr startup_request 不应接受 antigravity')
+ag_argv = mc.startup_request(ag_plan, worker_name='worker', pane_id='pane')
+assert ag_argv == [
+    'herdr', 'agent', 'start', 'worker', '--kind', 'agy', '--pane', 'pane', '--',
+    '--model', 'gemini-4-neon', '--effort', 'xhigh', '--dangerously-skip-permissions',
+], ag_argv
 assert mc.antigravity_source(ag_cache, {'providerInstances': {'antigravity': {'enabled': False}}})['route'] is None
 for mutate in (
     lambda c: c.update(enabled=False),
@@ -270,9 +297,17 @@ with tempfile.TemporaryDirectory() as directory:
     cache_with_secret = {**ag_cache, 'usageLimits': {'credentialFingerprint': secret}}
     (home/'.t3/caches/antigravity.json').write_text(json.dumps(cache_with_secret))
     (home/'.t3/userdata/settings.json').write_text(json.dumps({'providerInstances': {'antigravity': {'enabled': True}}}))
+    def fake_agy(args, **kwargs):
+        if Path(args[0]).name in ('agy', 'antigravity') and args[1:] == ['models']:
+            return SimpleNamespace(returncode=0, stdout=ag_cli_output)
+        return SimpleNamespace(returncode=1, stdout='')
+    with patch.object(Path, 'home', return_value=home), patch.dict(os.environ, {}, clear=True), patch('shutil.which', side_effect=lambda name: '/fake/agy' if name == 'agy' else None), patch('subprocess.run', side_effect=fake_agy):
+        cli_collected = mc.collect_harnesses()['antigravity']
+        assert cli_collected['route'] == 'cli' and cli_collected['binary'] is True
+        assert cli_collected['models'] == mc.antigravity_cli_models(ag_cli_output)
     with patch.object(Path, 'home', return_value=home), patch.dict(os.environ, {}, clear=True), patch('shutil.which', return_value=None):
         collected = mc.collect_harnesses()['antigravity']
-        assert collected['route'] == 't3code' and collected['binary'] is True
+        assert collected['route'] == 'cache' and collected['binary'] is True
         assert collected['models'] == mc.antigravity_models(ag_cache)
         assert secret not in json.dumps(mc.probe({'harnesses': {'antigravity': collected}}, 'ag-safe'))
         (home/'.t3/userdata/settings.json').write_text(json.dumps({'providerInstances': {'antigravity': {'enabled': False}}}))

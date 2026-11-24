@@ -35,7 +35,7 @@ OFF_CHAIN_OWNERS = {"ticket-sizing"}
 OWNER_RE = re.compile(r"^Owner[：:]\s*([^；;\s]+)", re.M)
 WATCHER = Path(os.environ.get("DP_LANE_WATCH", HERE / "lane-watch.sh"))
 TAB_CAPACITY = 4
-RUNTIME = {"pi": "herdr-pi-pane", "codex": "herdr-codex-pane", "claude": "herdr-claude-pane"}
+RUNTIME = {"pi": "herdr-pi-pane", "codex": "herdr-codex-pane", "claude": "herdr-claude-pane", "antigravity": "herdr-agy-pane"}
 
 
 class DispatchError(Exception):

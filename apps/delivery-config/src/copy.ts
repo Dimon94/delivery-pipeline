@@ -155,7 +155,6 @@ export function modelLabel(raw:string):string {
 export function agentLabel(agent:string,route?:SourceEvidence['route']):string {
  if(agent==='claude'&&route==='official')return 'Claude Code · 官方清单';
  if(agent==='codex'&&route==='direct')return 'Codex CLI · 直连 OpenAI';
- if(agent==='antigravity'&&route==='t3code')return 'Antigravity · T3 Code';
  return ({pi:'Pi',codex:'Codex CLI',claude:'Claude Code',antigravity:'Antigravity'} as Record<string,string>)[agent]||copy.已配置工具;
 }
 // unknown + 已安装 + 空模型清单表示尚无完整能力；不匹配来源原因文字。

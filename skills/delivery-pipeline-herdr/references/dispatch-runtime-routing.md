@@ -2,7 +2,7 @@
 
 创建、恢复或替换 worker lane 前读取。Coordinator 是当前 pi/Codex CLI/Claude CLI 会话；
 带冻结派发合同的票经 Driver 批量执行。其余新 worker 经 Herdr，pane kind 由 work config 的 `agent` 决定：
-pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`。
+pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude-pane`，antigravity → `herdr-agy-pane`（`--kind agy`）。
 
 恢复既有 lane 直接进入“恢复与切换”，不运行新 lane 的配置 gate。
 

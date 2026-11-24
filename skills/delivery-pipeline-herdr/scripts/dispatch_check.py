@@ -201,6 +201,23 @@ def main() -> int:
         if result.returncode == 0 or calls or registry.exists() or "recovery_record.py" not in result.stdout:
             failures.append("non-conforming map registry did not block dispatch")
 
+        # 10. Antigravity 经 Herdr --kind agy 派发并写入 herdr-agy-pane。
+        spec = importlib.util.spec_from_file_location(
+            "model_config", HERE.parents[1] / "delivery-pipeline-setup" / "scripts" / "model_config.py")
+        mc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mc)
+        ag_doc = mc.valid_fixture()
+        ag_doc["work"]["backend"] = {"agent": "antigravity", "model": "gemini-4-neon", "effort": "xhigh", "fallbacks": []}
+        ag_ev = {"antigravity": {"binary": True, "models": {"gemini-4-neon": ["low", "medium", "high", "xhigh"]}}}
+        result, registry, calls = run(root, "lane-agy", json.loads(json.dumps(base)),
+                                      config_document=ag_doc, probe_evidence=ag_ev)
+        ag_start = next((c for c in calls if c[:2] == ["agent", "start"]), [])
+        ag_row, _ = lane_registry.read(registry, "lane-agy") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or ag_row.get("runtime") != "herdr-agy-pane" or ag_row.get("agent") != "antigravity"
+                or ag_start != ["agent", "start", "lane-agy", "--kind", "agy", "--pane", "w1:p2", "--",
+                                "--model", "gemini-4-neon", "--effort", "xhigh", "--dangerously-skip-permissions"]):
+            failures.append(f"antigravity herdr dispatch failed: rc={result.returncode} row={ag_row} start={ag_start}")
+
     for failure in failures:
         print(f"FAIL {failure}")
     print("dispatch_check: " + ("fail" if failures else "pass"))

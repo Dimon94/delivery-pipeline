@@ -7,8 +7,8 @@ const config={version:7,work:Object.fromEntries(['planning','design','frontend',
 config.work.coordinator={agent:'claude',model:'claude-opus-5-5',effort:'high',fallbacks:[]};
 let claudeRoute:'official'|null='official';
 const claudeReason='请先打开 Claude Code 完成登录后重新核对';
-let agRoute:'t3code'|null='t3code';
-const agReason='请先在 T3 Code 启用 Antigravity 提供方后重新核对';
+let agRoute:'cli'|'cache'|null='cli';
+const agReason='请先完成 Antigravity 登录后重新核对';
 let route:'direct'|'gateway'|null='direct',gateway='ok';
 const reason='Codex 当前指向的地址既不是本机网关也不是 OpenAI 官方，无法确认可用模型';
 const win=new Window(),doc=win.document;
@@ -70,10 +70,10 @@ test('DD-618 无清单时禁用并悬停登录原因；网关异常沿用整页�
 });
 
 const agOption=()=>doc.querySelector<HTMLOptionElement>('select[data-path="work.design"][data-field="agent"] option[value="antigravity"]')!;
-test('Antigravity T3 Code 清单可选、切模型就近降档，停用时禁用并悬停原因',async()=>{
- gateway='ok';agRoute='t3code';click('#refresh');await settle();
+test('Antigravity 清单可选、切模型就近降档，停用时禁用并悬停原因',async()=>{
+ gateway='ok';agRoute='cli';click('#refresh');await settle();
  expect(agOption().disabled).toBe(false);
- expect(agOption().textContent).toBe('Antigravity · T3 Code');
+ expect(agOption().textContent).toBe('Antigravity');
  for(const word of FORBIDDEN)expect(agOption().textContent).not.toContain(word);
  const select=agOption().parentElement as HTMLSelectElement;select.value='antigravity';select.dispatchEvent(new win.Event('change',{bubbles:true}));
  click('[data-path="work.design"][data-field="model"]');

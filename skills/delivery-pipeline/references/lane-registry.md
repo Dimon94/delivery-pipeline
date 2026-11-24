@@ -92,9 +92,9 @@ lane_id: <stable-id>
 work_item: <url-or-gate-coordinate>
 role: planning | design | frontend | backend | testing | review | integration | map   # 持久化字段名保留；新 lane 写入任务类型
 output_mode: commit | artifact | checks | verdict | integration | none
-runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | t3-task | lody-session | orchestrator | orca
+runtime: herdr-pi-pane | herdr-codex-pane | herdr-claude-pane | herdr-agy-pane | t3-task | lody-session | orchestrator | orca
 state: created | running | awaiting_human | terminal | consumed | integrated | blocked | setup_blocked | integration_conflict | integration_checks_failed | path_conflict | stale | close_pending | test_decision_paused | rebase_in_progress | push_failed | cleanup_in_progress | closed | superseded
-agent: pi | codex | claude | none
+agent: pi | codex | claude | antigravity | none
 model: <configured-model-or-none>
 effort: <configured-effort-or-none>
 mode: <modes 中的命名预设-or-none>

@@ -52,11 +52,10 @@ pi coordinator 的上下文上限由 `pi/coordinator-context-cap.ts` 提供（�
    清单读取失败时给出原因、不提供候选。仅保留官方清单明确支持的 low/medium/high/xhigh/max，
    无档位模型不提供。凭据不进入输出或异常文本；首次钥匙串读取可能弹授权框，未确认时记 Unknown。
    官方清单不能证明额度或实际调用成功，这两项为 Unknown。
-   Antigravity 只读 T3 Code 提供方缓存（`~/.t3/caches/antigravity.json`）与 `~/.t3/userdata/settings.json`
-   启用态（route=t3code，只读不推理、不触碰凭据），核对 `enabled`/`installed`/`status=ready`/
-   `auth.status=authenticated` 后提取带 `thought_level` 档位的模型；未启用、未安装或未登录时给出原因、
-   不提供候选。该 agent 仅 T3Code transport 可执行，Herdr 启动会显式拒绝。
-   网关不可达时，直连 Codex、official Claude 与 t3code Antigravity 的模型仍保留，gateway 状态仍为 unreachable。
+   Antigravity 优先通过 `agy models` / `antigravity models`（route=cli，只读不推理、不触碰凭据）
+   获取实时模型与受支持档位；未检测到 CLI 或执行失败时回退只读本地提供方缓存（`~/.t3/caches/antigravity.json`
+   与 `~/.t3/userdata/settings.json` 启用态，route=cache）。未安装、未启用或未登录时给出原因、不提供候选。
+   网关不可达时，直连 Codex、official Claude 与 Antigravity（cli/cache）的模型仍保留，gateway 状态仍为 unreachable。
    只使用状态为 ok 的候选；
    Unknown 保留已有值，请用户或 AI 助手补齐来源后刷新。
 3. **逐项选择。** 按 `planning`、`design`、`frontend`、`backend`、`testing` 顺序，每个任务
