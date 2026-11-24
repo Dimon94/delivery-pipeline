@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/delivery-pipeline-setup/scripts'))
 import model_config
@@ -142,7 +143,7 @@ def worker_plan(task, mode, config, turns):
     if plan['effort'] not in ('low', 'medium', 'high', 'xhigh', 'max'):
         raise Failure('Claude 不支持所选 effort：' + plan['effort'])
     argv = ['claude', '-p', '--model', model, '--effort', plan['effort'], '--max-turns', str(turns),
-            '--permission-mode', 'bypassPermissions', '--no-session-persistence']
+            '--permission-mode', 'bypassPermissions', '--no-session-persistence', '--output-format', 'json']
     return argv, env, {key: plan[key] for key in ('agent', 'model', 'effort', 'recovery_plan') if key in plan} | {'max_turns': turns}
 
 
@@ -190,6 +191,17 @@ def verify_delivery(tree, brief, head):
     return dict(base=head, check=brief['check'], ok=True, observed=observed)
 
 
+def worker_report(process, elapsed_ms):
+    try:
+        result = json.loads(process.stdout)
+    except json.JSONDecodeError:
+        result = {}
+    usage = result.get('usage') or {}
+    counters = ('input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens')
+    return dict(elapsed_ms=elapsed_ms, exit_code=process.returncode, models=sorted(result.get('modelUsage') or {}),
+                result_type=result.get('subtype'), usage={key: usage[key] for key in counters if key in usage})
+
+
 def run_brief(repo, directory, target, base, job, plan, attempts, owner):
     name, brief = job
     with lock(directory, name):
@@ -203,7 +215,7 @@ def run_brief(repo, directory, target, base, job, plan, attempts, owner):
                 return row
             raise Failure('已认领，请核对现场：' + name)
         row = dict(name=name, target=target, base=base, branch=branch, worktree=str(tree),
-                   state='running', attempts=0, owner=owner, brief=brief, execution=plan[2])
+                   state='running', attempts=0, owner=owner, brief=brief, execution=plan[2], worker_reports=[])
         save(directory, name, row)
         try:
             git(repo, 'worktree', 'add', '-b', branch, str(tree), base)
@@ -212,14 +224,19 @@ def run_brief(repo, directory, target, base, job, plan, attempts, owner):
                     row['attempts'] = attempt
                     save(directory, name, row)
                     prompt = ('' if attempt == 1 else '上次未提交。先运行 git status，保留现场继续。\n') + json.dumps(brief, ensure_ascii=False)
-                    rc = subprocess.run([*plan[0], *settings, '--append-system-prompt', INSTRUCTION], cwd=tree,
-                                        env=worker_env, input=prompt, text=True, stdout=subprocess.DEVNULL).returncode
+                    started = time.monotonic()
+                    process = subprocess.run([*plan[0], *settings, '--append-system-prompt', INSTRUCTION], cwd=tree,
+                                             env=worker_env, input=prompt, text=True, stdout=subprocess.PIPE)
+                    row['worker_reports'].append(worker_report(process, round((time.monotonic() - started) * 1000)))
+                    rc = process.returncode
                     head = git(tree, 'rev-parse', 'HEAD')
                     if git(tree, 'symbolic-ref', '--short', 'HEAD') != branch:
                         raise Failure('执行者改变了当前分支')
                     if head != base:
-                        if rc or git(tree, 'status', '--porcelain'):
-                            raise Failure('已有提交但退出失败或存在未提交改动')
+                        if rc:
+                            raise Failure(f'已有提交但 Claude 退出码 {rc}')
+                        if git(tree, 'status', '--porcelain'):
+                            raise Failure('已有提交且存在未提交改动')
                         git(tree, 'merge-base', '--is-ancestor', base, head)
                         run = verify_delivery(tree, brief, head)
                         row.update(state='ready', head=head, ticket=brief['ticket'], slice_id=brief['slice_id'], run=run)

@@ -13,8 +13,9 @@ Driver 的模型、档位、轮数与并发只来自 setup 的 `~/.config/delive
 执行时不重新探测模型清单：配置写入时 setup 已核过模型与档位，执行失败由 `claude -p` 退出码暴露。
 Magpie 密钥先取 `MAGPIE_API_KEY`，缺省时取 `~/.pi/agent/models.json` 中指向本机网关的 `magpie` provider。
 
-Plan Review 页的「蜂巢执行预检」逐个 task 列出实际模型、档位与上限；任一行「无法执行」时先修配置再通过。
-`delivery-dispatch preflight <task…>` 可单独复查。Plan Review 固定并展示 briefs 与 scenario_check。
+计划页逐个 task 列出 Setup 解析的模型、档位与上限。Driver 校验全部任务的预检结果后才授予 Autonomy Grant；
+预检失败时修正配置后重新 run。沿人工审核的旧 map 若配置已变化，Driver 更新计划页并等待对新页面的答复。
+`delivery-dispatch preflight <task…>` 可单独复查。
 
 ## 执行
 
@@ -24,3 +25,5 @@ Driver 按就绪依赖选出写入范围互斥的合同。`delivery-dispatch bat
 
 Driver 核对父票、片标识、基线、局部检查与真实提交，串行 merge 完整提交链。所有片到齐后，在集成 HEAD 运行
 `scenario_check` 并记录观察。后续 HEAD 改变会重新验收。终态信号与 run 共用同一把 map 锁。
+Merge Review 展示计划路由、执行片启动路由、Worker 回报模型和提交，以及当前集成 HEAD 的整票观察。
+回执记录每次执行耗时与 Worker 提供的 token 用量，缺失字段为 Unknown。

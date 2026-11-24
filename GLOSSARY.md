@@ -142,10 +142,10 @@ Driver 每一步输出的单条指令：执行一次派发、fan-in 或清理，
 
 **Plan Review**
 每个 MMF 的 to-tickets 草稿通过脚本核对后、发布前，用户审阅一份 show-me HTML 页面，页面包含 Spec、切片表、波次、关键路径和测试选择默认值。
-通过即授予该 map 的 **Autonomy Grant**。
+新 map 的同一阶段由 Driver 自动检查和冻结计划，并生成计划快照；旧人工审核 map 回复通过后授予 **Autonomy Grant**。
 
 **Autonomy Grant**
-Plan Review 通过后写入 map registry 的授权：在已批准计划内自动推进到 Merge Review，
+计划冻结后写入 map registry 的授权：在已确定计划内自动推进到 Merge Review，
 只在 Halt 时停下。不含远程发布授权。
 
 **Halt**

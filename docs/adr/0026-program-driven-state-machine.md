@@ -63,3 +63,12 @@ coordinator 亲手改业务仓文件、cherry-pick 或自己 fan-in，共 777 �
   output_mode 保留。
 - 壳只声明 Action 由程序还是 coordinator 执行，不再写推进逻辑；未接入 Driver 的壳在接入前
   沿旧合同运行。
+
+## 修订：自动规划与最终验收
+
+新 map 由 `driver.py init` 选择自动规划。to-spec 与 to-tickets 在已有业务预期内自行选择测试入口与重拆票，
+发现多个可独立交付 MMF 时转 Epic owner，与现有 Epic 认领及调度合流。自动调整记录前后变化、理由和证据。
+
+to-tickets 脚本和蜂巢预检通过后，Driver 用计划快照替代决策 6 的人工 Plan Review，记录 Autonomy Grant。
+已有 map 保留其授权和人工审核合同。Merge Review 按计划与实际交付出具验收页，用户授权后才进入远程发布。
+业务预期、验收或授权需要变更时仍按原 Halt 与 HITL 合同处理。

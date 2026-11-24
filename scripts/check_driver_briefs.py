@@ -40,6 +40,8 @@ with open(os.environ['STARTS'], 'a') as log:
         # 局部基线仍 running，所以两片都会绿；合在一起才丢结果。
         expr = "require('./status')(turn) === 'stopped' ? [] : turn.results" if os.environ['BAD'] else 'turn.results'
         commit('module.exports = turn => ' + expr + ';')
+    print(json.dumps({'usage': {'input_tokens': 10, 'output_tokens': 5},
+                      'modelUsage': {'fixture-runtime': {}}, 'result': 'worker output'}))
 '''
 
 
@@ -75,9 +77,9 @@ def journey(tmp, upstream, payload, bad, entry):
         doc = dict(version=1, map='map', plan=plan, grant={'plan_sha': driver.plan_sha(plan)}, published=True,
                    dispatch={'config': str(tmp / 'map-local.json')})
         driver.write_json(md / 'driver.json', doc)
-        assert '无法执行' in driver.preflight_html(driver.load(md))
+        assert '无法执行' in driver.preflight_html(driver.brief_preflight(driver.load(md)))
         cfg.write_text(json.dumps(config))
-        page = driver.preflight_html(driver.load(md))
+        page = driver.preflight_html(driver.brief_preflight(driver.load(md)))
         assert 'claude / fixture / high' in page and '每片 ≤2 轮，并发 ≤1' in page, page
     driver.persist_lanes(md, [dict(lane_id='map', role='map', state='running', work_item='map',
                                    integration_worktree_path=str(repo), integration_branch='integration', base_commit=base, _file=None)])
@@ -123,6 +125,10 @@ def journey(tmp, upstream, payload, bad, entry):
         ids = lane_registry.collect_implementation_identities(state['lanes'], base)
         assert len(ids) == 2 and all(i['requested']['model'] == 'fixture' for i in ids)
         assert json.loads(proof['observed']) == {'status': 'stopped', 'results': ['第一段']}
+        page = driver.render(state, 'merge')
+        assert head in page and '整票场景 · 通过' in page and '第一段' in page and 'fixture-runtime' in page
+        assert all(row['worker_reports'][0]['usage']['input_tokens'] == 10
+                   for row in driver.merge_brief_evidence(state)['TURN-1']['slices'])
         lanes = dict(state['lanes'])
         del lanes[next(k for k, r in lanes.items() if r.get('slice_id') == 'state')]
         assert driver.decide({**state, 'lanes': lanes})['action'] == 'dispatch_briefs'

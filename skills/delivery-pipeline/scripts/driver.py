@@ -14,7 +14,7 @@ registry 只由 Driver 写；回执按 id 幂等。core 不引用任何壳文件
   driver.py run <map_dir>                         执行程序能执行的 Action，交回第一条需宿主/判断/等待/停下的 Action
   driver.py record <map_dir> <id> <receipt_json>  交回回执；id 为 halt 时 receipt 是用户决定原文
   driver.py signal <map_dir> "<LANE_DONE 行>"      交回 worker 终态行（watcher 或 coordinator 调用）
-  driver.py init <map_dir> <map_id>               为新 map 写空 driver.json（进入 Plan Review 流程）
+  driver.py init <map_dir> <map_id>               为新 map 初始化自动规划
   driver.py epic <epic_json>                      Epic 级：输出下一条 open_map / wait / done
   driver.py self-test
 """
@@ -53,7 +53,7 @@ HALT_CLASSES = {
     "review_blocking": "评审意见阻塞",
 }
 # 程序在 core 内直接执行的 Action；壳可追加（Herdr: dispatch）。
-CORE_PROGRAM = frozenset({"fan_in", "closeout", "consume", "render_review", "scenario"})
+CORE_PROGRAM = frozenset({"fan_in", "closeout", "consume", "render_review", "freeze_plan", "scenario"})
 # 不唤醒 LLM 的结果。
 QUIET = frozenset({"wait"})
 ACTIVE = {"created", "running", "awaiting_human"}
@@ -85,6 +85,37 @@ def thaw(value):
 
 def plan_sha(plan) -> str:
     return hashlib.sha256(json.dumps(thaw(plan), sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def brief_tasks(state):
+    return sorted({t.get("task", "backend") for t in state["driver"]["plan"]["tickets"]
+                   if brief_delivery.has_briefs(t)})
+
+
+def scenario_id(item, head):
+    return f"scenario:{item}:{head}"
+
+
+def merge_brief_evidence(state):
+    """当前 Integration HEAD 的场景证据和该票实际执行片。"""
+    d = state["driver"]
+    lanes = lanes_by_item(state["lanes"])
+    head = state.get("integration_head")
+    receipts = d.get("receipts", {})
+    reports = {(row["lane_id"], row["head_commit"]): row.get("worker_reports", [])
+               for key, receipt in receipts.items() if key.startswith("briefs:")
+               for row in receipt["lanes"]}
+    fields = ("slice_id", "model", "effort", "head_commit")
+    return {
+        ticket["id"]: {
+            "slices": [{**{k: row.get(k) for k in fields},
+                        "worker_reports": reports.get((row["lane_id"], row.get("head_commit")), [])}
+                       for row in sorted(lanes.get(ticket["id"], ()), key=lambda r: r.get("slice_id") or "")
+                       if row.get("slice_id")],
+            "scenario": receipts.get(scenario_id(ticket["id"], head)),
+        }
+        for ticket in d["plan"]["tickets"] if brief_delivery.has_briefs(ticket)
+    }
 
 
 # ---------- 纯决定面 ----------
@@ -174,28 +205,38 @@ def detect_halt(state):
     return next((c for c in candidates if c), None)
 
 
+def owner_action_id(d, gate, prefix):
+    attempt = d.get("owner_attempts", {}).get(gate, 0)
+    return f"{prefix}:{attempt}" if attempt else prefix
+
+
 def decide_planning(state):
-    """无 Autonomy Grant：走 owner 链到 Plan Review。"""
-    d, lanes = state["driver"], state["lanes"]
+    """无 Autonomy Grant：沿 owner 链完成计划检查或转 Epic。"""
+    d = state["driver"]
     gates = d.get("gates", {})
+    if d.get("epic"):
+        return act("handoff_epic", "epic:handoff", epic=d["epic"])
+    if split := d.get("epic_split"):
+        return act("invoke_owner", owner_action_id(d, "epic", "owner:epic"), owner="to-epic", gate="epic", input=split["artifact"],
+                   decision=thaw(split["decision"]), feedback=d.get("plan_feedback"), planning_mode=d.get("planning_mode"))
     for gate, owner in PLANNING_OWNERS:
         if not gates.get(gate):
             if gate == "discovery" and d.get("skip_discovery"):
                 continue
-            nxt = d.get("owner_next") or {}
-            if nxt.get("next") == "blocked-human":
-                return act("ask_human", f"owner:{gate}:human", kind="owner-blocked", owner=owner,
-                           reason=nxt.get("reason"))
-            return act("invoke_owner", f"owner:{gate}", owner=owner, gate=gate,
-                       feedback=d.get("plan_feedback"))
+            return act("invoke_owner", owner_action_id(d, gate, f"owner:{gate}"), owner=owner, gate=gate,
+                       feedback=d.get("plan_feedback"), planning_mode=d.get("planning_mode"))
     if d.get("plan_check") != "pass":
-        return act("invoke_owner", "owner:tickets:recheck", owner="to-tickets", gate="tickets",
-                   feedback=d.get("plan_check"))
+        revision = d.get("ticket_revision", 0)
+        return act("invoke_owner", owner_action_id(d, "tickets", f"owner:tickets:recheck:{revision}"), owner="to-tickets", gate="tickets",
+                   feedback=d.get("plan_feedback") or d.get("plan_check"), planning_mode=d.get("planning_mode"))
     review = (d.get("reviews") or {}).get("plan") or {}
     sha = plan_sha(d["plan"])
+    if d.get("planning_mode") == "auto":
+        return act("freeze_plan", f"freeze:plan:{sha}", kind="plan")
     if review.get("sha") != sha:
         return act("render_review", f"render:plan:{sha}", kind="plan")
-    return act("ask_human", f"review:plan:{sha}", kind="plan-review", html=review.get("html"),
+    review_key = plan_sha([sha, review["preflight"]]) if review.get("preflight") else sha
+    return act("ask_human", f"review:plan:{review_key}", kind="plan-review", html=review.get("html"),
                reply="回复\"通过\"授予 Autonomy Grant；其他内容作为修改意见退回 to-tickets")
 
 
@@ -208,10 +249,15 @@ def decide(state) -> dict:
             return act("legacy", "legacy", reason="无 driver.json 与 Autonomy Grant：沿旧流程逐 gate 推进，直到下一次 Plan Review")
         return act("halt", "halt:authority:no-map", kind="authority", label=HALT_CLASSES["authority"],
                    reason="map 目录没有 driver.json，也没有 map row", evidence=[], options=["driver.py init"])
-    if d.get("status") in ("done", "aborted"):
+    if d.get("status") in ("done", "aborted", "handed_off"):
         return act("done", f"done:{d['status']}")
     if d.get("halt"):
         return thaw(d["halt"])
+    nxt = d.get("owner_next") or {}
+    if nxt.get("next") == "blocked-human":
+        gate = nxt.get("gate") or next((g for g, _ in PLANNING_OWNERS if not d.get("gates", {}).get(g)), "tickets")
+        return act("ask_human", owner_action_id(d, gate, f"owner:{gate}:human"), kind="owner-blocked",
+                   gate=gate, reason=nxt.get("reason"))
     if not d.get("grant"):
         return thaw(decide_planning(state))
     if d["grant"].get("plan_sha") != plan_sha(d["plan"]):
@@ -222,7 +268,8 @@ def decide(state) -> dict:
     if halt:
         return thaw(halt)
     if not d.get("published"):
-        return act("invoke_owner", "owner:publish", owner="to-tickets", gate="publish",
+        return act("invoke_owner", owner_action_id(d, "publish", "owner:publish"), owner="to-tickets", gate="publish",
+                   planning_mode=d.get("planning_mode"), feedback=d.get("plan_feedback"),
                    note="Autonomy Grant 已授予；按已批准草稿发布")
     mrow = map_row(lanes)
     if not mrow:
@@ -233,22 +280,22 @@ def decide(state) -> dict:
     receipts = d.get('receipts', {})
     managed = {t['id']: t for t in tickets if brief_delivery.has_briefs(t) or 'scenario_check' in t}
 
-    def scenario_id(item):
-        return f"scenario:{item}:{state.get('integration_head', '')}"
+    def current_scenario(item):
+        return scenario_id(item, state.get('integration_head', ''))
 
     def done(item):
         if item in managed:
             return (brief_delivery.complete(managed[item], by_item.get(item, ()))
-                    and receipts.get(scenario_id(item), {}).get('ok') is True)
+                    and receipts.get(current_scenario(item), {}).get('ok') is True)
         return item_done(by_item.get(item))
 
     for item, ticket in managed.items():
         rows = by_item.get(item, ())
-        if brief_delivery.complete(ticket, rows) and scenario_id(item) not in receipts:
-            return act('scenario', scenario_id(item), work_item=item, head=state.get('integration_head'))
-        if receipts.get(scenario_id(item), {}).get('ok') is False:
+        if brief_delivery.complete(ticket, rows) and current_scenario(item) not in receipts:
+            return act('scenario', current_scenario(item), work_item=item, head=state.get('integration_head'))
+        if receipts.get(current_scenario(item), {}).get('ok') is False:
             return act('halt', f'halt:plan_change:scenario:{item}', kind='plan_change', label=HALT_CLASSES['plan_change'],
-                       reason=f'{item} 整票场景未通过', evidence=[f'{DRIVER_FILE}#{scenario_id(item)}'], options=['修订计划后重审'])
+                       reason=f'{item} 整票场景未通过', evidence=[f'{DRIVER_FILE}#{current_scenario(item)}'], options=['修订计划后重审'])
 
     # 1. 程序收口：terminal → fan_in / consume；完成 → closeout
     for row in sorted(lanes.values(), key=lambda r: r["lane_id"]):
@@ -339,8 +386,10 @@ def decide(state) -> dict:
     # 5. Merge Review → remote
     review = (d.get("reviews") or {}).get("merge") or {}
     if not review.get("approved"):
-        devs = deviations(state)
-        sha = hashlib.sha256(json.dumps(devs, ensure_ascii=False).encode()).hexdigest()[:16]
+        observations = [{k: row.get(k) for k in ("lane_id", "state", "verdict", "checks", "verdict_path", "delivery")}
+                        for row in sorted(lanes.values(), key=lambda r: r["lane_id"])]
+        sha = plan_sha([d["plan"], d.get("planning_decisions", []), observations, deviations(state),
+                        merge_brief_evidence(state), state.get("integration_head")])
         if review.get("sha") != sha:
             return act("render_review", f"render:merge:{sha}", kind="merge")
         return act("ask_human", f"review:merge:{sha}", kind="merge-review", html=review.get("html"),
@@ -386,8 +435,27 @@ REQUIRED = {
     "consume": {"state"},
     "closeout": {"result"},
     "render_review": {"html", "sha"},
+    "freeze_plan": {"html", "sha", "preflight"},
+    "handoff_epic": {"artifact"},
     "open_map": {"map"},
 }
+
+
+def grant_plan(d, ident):
+    sha = plan_sha(d["plan"])
+    d["grant"] = {"plan_sha": sha, "review": ident}
+    d["test_strategy"] = {**(d["plan"].get("test_strategy") or {}), "scope_sha": sha, "risk": d["plan"].get("risk")}
+    d["scope"] = {"sha": sha, "risk": d["plan"].get("risk")}
+
+
+def record_decision(d, receipt, phase, artifact, required=False):
+    decision = receipt.get("decision")
+    if decision is None and not required:
+        return
+    if (not isinstance(decision, dict) or not decision.get("reason") or not decision.get("change")
+            or not isinstance(decision.get("evidence"), list) or not decision["evidence"]):
+        raise ValueError("自动调整需要 decision.reason、decision.change 与 decision.evidence 坐标")
+    d.setdefault("planning_decisions", []).append({"phase": phase, "artifact": artifact, **decision})
 
 
 def apply(state, action, receipt) -> tuple[dict, list[dict]]:
@@ -424,9 +492,20 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
     if kind == "invoke_owner":
         gate = args["gate"]
         if receipt["next"] == "blocked-human":
-            d["owner_next"] = {"next": "blocked-human", "reason": receipt.get("reason")}
+            d["owner_next"] = {"next": "blocked-human", "gate": gate, "reason": receipt.get("reason")}
             return d, []
         d["owner_next"] = None
+        split = receipt["next"] == "to-epic" and gate in ("spec", "tickets")
+        record_decision(d, receipt, gate, receipt["artifact"], required=split or
+                        (d.get("planning_mode") == "auto" and gate == "tickets" and receipt.get("check") != "pass"))
+        if split:
+            d["epic_split"] = {"artifact": receipt["artifact"], "decision": receipt["decision"]}
+            return d, []
+        if gate == "epic":
+            if receipt["next"] != "to-spec" or not receipt["artifact"]:
+                raise ValueError("Epic owner 必须返回已发布 Epic 坐标与 NEXT: to-spec")
+            d["epic"] = receipt["artifact"]
+            return d, []
         if gate == "publish":
             d["published"] = receipt["artifact"]
             return d, []
@@ -436,16 +515,16 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
                 raise ValueError("to-tickets 回执必须带 plan.tickets")
             d["plan"] = receipt["plan"]
             d["plan_check"] = receipt.get("check")
-            d["plan_feedback"] = None
+            d["ticket_revision"] = d.get("ticket_revision", 0) + 1
+            d["plan_feedback"] = receipt.get("decision") if d["plan_check"] != "pass" else None
     elif kind == "ask_human":
         reply = receipt["reply"]
         if args["kind"] == "plan-review":
             if str(reply).strip() == "通过":
-                sha = plan_sha(d["plan"])
-                d["grant"] = {"plan_sha": sha, "review": ident}
-                d["test_strategy"] = {**(d["plan"].get("test_strategy") or {}),
-                                      "scope_sha": sha, "risk": d["plan"].get("risk")}
-                d["scope"] = {"sha": sha, "risk": d["plan"].get("risk")}
+                preflight = d["reviews"]["plan"].get("preflight", [])
+                if [r["task"] for r in preflight if r["ok"] is True] != brief_tasks(state):
+                    raise ValueError("蜂巢执行预检未通过，请先修正配置")
+                grant_plan(d, ident)
             else:
                 d["plan_feedback"] = reply
                 d["plan_check"] = None
@@ -463,6 +542,9 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
         elif args["kind"] == "owner-blocked":
             d["owner_next"] = None
             d["plan_feedback"] = reply
+            gate = args["gate"]
+            attempts = d.setdefault("owner_attempts", {})
+            attempts[gate] = attempts.get(gate, 0) + 1
     elif kind == "judge":
         if args["weight"] == "light":
             if receipt["answer"] not in args["options"] or not receipt["evidence"]:
@@ -474,11 +556,12 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
                 lane_update(lid, state="running", repairs=int(lanes[lid].get("repairs") or 0) + 1,
                             repair_lane=receipt["lane_id"])
             elif args["kind"] == "resplit":
+                record_decision(d, receipt, "resplit", receipt["lane_id"], required=d.get("planning_mode") == "auto")
                 lane_update(lid, state="superseded", superseded_by=receipt["lane_id"])
             elif args["kind"] == "review-fix":
                 lane_update(lid, state="superseded", fix_lane=receipt["lane_id"])
     elif kind == 'dispatch_briefs':
-        updates.extend({**row, '_file': None} for row in receipt['lanes'])
+        updates.extend({**{k: v for k, v in row.items() if k != 'worker_reports'}, '_file': None} for row in receipt['lanes'])
     elif kind == "dispatch":
         row = receipt["lane"]
         if not isinstance(row, dict) or row.get("lane_id") != args["lane_id"]:
@@ -504,9 +587,19 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
         if receipt["result"] not in ("closed", "close_pending"):
             raise ValueError("closeout 回执 result 非法")
         lane_update(args["lane_id"], state=receipt["result"], close_reason=receipt.get("reason"))
-    elif kind == "render_review":
+    elif kind in ("render_review", "freeze_plan"):
         d.setdefault("reviews", {})[args["kind"]] = {**(d.get("reviews", {}).get(args["kind"]) or {}),
                                                     "html": receipt["html"], "sha": receipt["sha"]}
+        if args["kind"] == "plan":
+            d["reviews"]["plan"]["preflight"] = receipt["preflight"]
+        if kind == "freeze_plan":
+            if [r["task"] for r in receipt["preflight"] if r["ok"] is True] != brief_tasks(state):
+                raise ValueError(f"蜂巢执行预检未通过，修正配置后重新 run。{receipt['html']}")
+            grant_plan(d, ident)
+    elif kind == "handoff_epic":
+        if not receipt["artifact"]:
+            raise ValueError("Epic 交接需要恢复坐标")
+        d["status"] = "handed_off"
     elif kind == "remote":
         step, result = args["step"], receipt["result"]
         remote = d.setdefault("remote", {})
@@ -528,30 +621,84 @@ def render(state, kind: str, preflight: str = '') -> str:
     title = "Plan Review" if kind == "plan" else "Merge Review"
     rows = []
     by_item = lanes_by_item(state["lanes"]) if kind == "merge" else {}
+    evidence = merge_brief_evidence(state) if kind == "merge" else {}
+    reviewed_routes = {r["task"]: r for r in d.get("reviews", {}).get("plan", {}).get("preflight", [])}
+
+    def coordinate(value):
+        label = esc(value)
+        if isinstance(value, str) and value.startswith(("https://", "http://")):
+            return f'<a href="{label}">{label}</a>'
+        return f'<code>{label}</code>'
+
     for t in sorted(plan["tickets"], key=lambda t: (t.get("wave", 1), t["id"])):
         actual = ""
         if kind == "merge":
             states = ", ".join(f"{r['lane_id']}={r.get('state')}" for r in by_item.get(t["id"], []))
-            actual = f"<td>{esc(states or '未派发')}</td>"
+            actual = esc(states or '未派发')
+            if t["id"] in evidence:
+                route = reviewed_routes.get(t.get("task", "backend"), {})
+                actual += f"<p>审核时的路由：{esc(route.get('model'))} / {esc(route.get('effort'))}</p>"
+                for row in evidence[t["id"]]["slices"]:
+                    runs = row["worker_reports"]
+                    reported = sorted({model for run in runs for model in run.get("models", [])})
+                    actual += (f"<p>执行片 {esc(row['slice_id'])} · 提交 <code>{esc(row['head_commit'])}</code><br>"
+                               f"启动路由：{esc(row['model'])} / {esc(row['effort'])}<br>"
+                               f"Worker 回报模型：{esc(', '.join(reported) or 'Unknown')}")
+                    if runs:
+                        elapsed = sum(r["elapsed_ms"] for r in runs) / 1000
+                        outputs = [r["usage"].get("output_tokens") for r in runs]
+                        tokens = sum(outputs) if all(n is not None for n in outputs) else "Unknown"
+                        actual += f"<br><small>{len(runs)} 次执行 · {elapsed:.1f} 秒 · 输出 {tokens} token</small>"
+                    actual += "</p>"
+                proof = evidence[t["id"]]["scenario"] or {}
+                status = {True: "通过", False: "失败"}.get(proof.get("ok"), "Unknown")
+                actual += (f"<details><summary>整票场景 · {status}</summary>"
+                           f"<p>集成 HEAD <code>{esc(state.get('integration_head'))}</code></p>"
+                           f"<pre>{esc(proof.get('observed'))}</pre></details>")
+            actual = f"<td>{actual}</td>"
         contract = ''
         if brief_delivery.has_briefs(t):
             details = json.dumps({'briefs': t['briefs'], 'scenario_check': t.get('scenario_check')}, ensure_ascii=False, indent=2)
             contract = f'<details><summary>派发合同与整票场景</summary><pre>{esc(details)}</pre></details>'
-        rows.append(f"<tr><td>{esc(t['id'])}{contract}</td><td>{esc(t.get('wave', 1))}</td><td>{esc(t.get('task'))}</td>"
-                    f"<td>{esc(', '.join(t.get('deps', [])) or '-')}</td><td>{'HITL' if t.get('hitl') else 'AFK'}</td>{actual}</tr>")
-    head = "<tr><th>票</th><th>波次</th><th>类型</th><th>依赖</th><th>HITL/AFK</th>" + ("<th>实际</th>" if kind == "merge" else "") + "</tr>"
+        rows.append(f"<tr><td><strong>{esc(t['id'])}</strong> {esc(t.get('title', ''))}"
+                    f"<br>{esc(t.get('task', 'backend'))} · {'HITL' if t.get('hitl') else 'AFK'}{contract}</td><td>{esc(t.get('wave', 1))}</td>"
+                    f"<td>{esc(', '.join(t.get('deps', [])) or '—')}</td>"
+                    f"<td>{esc(t.get('acceptance') or 'Unknown')}</td>{actual}</tr>")
+    head = "<tr><th>票</th><th>波次</th><th>依赖</th><th>计划验收</th>" + ("<th>实际交付</th>" if kind == "merge" else "") + "</tr>"
     parts = [
         "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\">",
         f"<title>{title} · {esc(d.get('map'))}</title>",
-        "<style>body{font:15px/1.6 system-ui;max-width:960px;margin:2rem auto;padding:0 1rem}"
-        "table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3rem .5rem;text-align:left}</style>",
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<style>:root{color-scheme:light dark;--line:color-mix(in srgb,CanvasText 20%,Canvas)}"
+        "body{font:15px/1.55 system-ui;width:min(calc(100% - 1rem),1080px);margin:1rem auto}"
+        "section{margin:1.5rem 0}h1,h2,p{margin:.55rem 0}.summary{border:1px solid var(--line);padding:1rem;border-radius:.6rem}"
+        ".scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}"
+        "td,th{border-bottom:1px solid var(--line);padding:.7rem;vertical-align:top;text-align:left}"
+        "code,pre{overflow-wrap:anywhere}pre{white-space:pre-wrap}details{margin:.4rem 0}summary{cursor:pointer}"
+        "</style>",
         f"<h1>{title} · {esc(d.get('map'))}</h1>",
-        f"<p>计划指纹 <code>{esc(plan_sha(plan))}</code></p>",
-        f"<h2>Spec</h2><p>{esc(d.get('gates', {}).get('spec'))}</p>",
-        f"<h2>切片</h2><table>{head}{''.join(rows)}</table>",
-        f"<h2>关键路径</h2><p>{esc(' → '.join(plan.get('critical_path', [])) or 'Unknown')}</p>",
-        f"<h2>测试策略</h2><p>{esc(json.dumps(plan.get('test_strategy'), ensure_ascii=False))}</p>",
+        f"<div class='summary'><p>{len(plan['tickets'])} 张票 · 计划指纹 {coordinate(plan_sha(plan))}</p>"
+        f"<p>Spec {coordinate(d.get('gates', {}).get('spec'))}</p>"
+        f"<p>关键路径 {esc(' → '.join(plan.get('critical_path', [])) or 'Unknown')}</p></div>",
     ]
+    if kind == "merge" and state.get("integration_head"):
+        parts.append(f"<p>集成 HEAD {coordinate(state['integration_head'])}</p>")
+    if kind == "merge":
+        checks = []
+        for row in sorted(state["lanes"].values(), key=lambda r: r["lane_id"]):
+            if row.get("role") in ("testing", "review"):
+                label = "整体检查" if row["role"] == "testing" else "整体审查"
+                outcome = row.get("verdict") or row.get("checks") or row.get("state")
+                artifact = row.get("verdict_path") or row.get("delivery")
+                checks.append(f"<li>{label} · {esc(outcome)} · {coordinate(artifact)}</li>")
+        parts.append("<section><h2>验收证据</h2><ul>" + ("".join(checks) or "<li>Unknown</li>") + "</ul></section>")
+    decisions = [*plan.get("decisions", []), *d.get("planning_decisions", [])]
+    if decisions:
+        items = [f"<li><strong>{esc(item['change'])}</strong><p>{esc(item['reason'])}</p>"
+                 f"<p>{' · '.join(coordinate(ref) for ref in item['evidence'])}</p></li>" for item in decisions]
+        parts.append("<section><h2>计划调整记录</h2><ol>" + "".join(items) + "</ol></section>")
+    parts.append(f"<section><h2>计划与交付</h2><div class='scroll'><table>{head}{''.join(rows)}</table></div></section>")
+    parts.append(f"<details><summary>测试策略</summary><pre>{esc(json.dumps(plan.get('test_strategy'), ensure_ascii=False))}</pre></details>")
     if kind == "merge":
         devs = deviations(state)
         parts.append("<h2>自动处理的偏差</h2><ul>" + "".join(f"<li>{esc(x)}</li>" for x in devs) + "</ul>" if devs
@@ -559,7 +706,10 @@ def render(state, kind: str, preflight: str = '') -> str:
         parts.append("<p>回复“通过”授权 push、建 PR、等 CI 并按分支合同合入收尾。</p>")
     else:
         parts.append(preflight)
-        parts.append("<p>回复“通过”授予 Autonomy Grant；之后只在 Halt 清单命中时停下。</p>")
+        if d.get("planning_mode") == "auto":
+            parts.append("<p>计划检查与蜂巢预检通过后自动冻结。合入授权在最终验收时确认。</p>")
+        else:
+            parts.append("<p>回复“通过”授予 Autonomy Grant。</p>")
     return "\n".join(parts) + "\n</html>\n"
 
 
@@ -611,12 +761,22 @@ def record(map_dir: Path, ident: str, receipt, action: dict | None = None) -> di
     internal = action is not None
     action = action or decide(state)
     row = state['lanes'].get(action['args'].get('lane_id'), {})
-    if not internal and (action['action'] in ('dispatch_briefs', 'scenario') or row.get('slice_id')):
-        raise ValueError('冻结合同只接受 Driver 执行回执')
+    if not internal and (action['action'] in ('dispatch_briefs', 'scenario', 'render_review', 'freeze_plan') or row.get('slice_id')):
+        raise ValueError('此 Action 只接受 Driver 执行回执')
     if ident == "halt" and action["action"] == "halt":
         ident = action["id"]
     if action["id"] != ident:
         raise ValueError(f"回执 id {ident} 不是当前待办 {action['id']}")
+    if (action['args'].get('kind') == 'plan-review' and isinstance(receipt, dict)
+            and str(receipt.get('reply')).strip() == '通过' and brief_tasks(state)):
+        preflight = brief_preflight(state)
+        if preflight != d['reviews']['plan'].get('preflight'):
+            render_action = act("render_review", f"render:plan:{plan_sha(d['plan'])}", kind="plan")
+            updated = exec_render(map_dir, state, render_action, preflight)
+            new, _ = apply(state, render_action, updated)
+            new.setdefault("receipts", {})[render_action["id"]] = updated
+            write_json(map_dir / DRIVER_FILE, new)
+            raise ValueError(f"蜂巢执行预检已变化，请重新查看 {updated['html']}")
     new, updates = apply(state, action, receipt)
     persist_lanes(map_dir, updates)
     if new is not None:
@@ -672,12 +832,15 @@ def exec_closeout(map_dir: Path, state, action) -> dict:
     return {"result": "close_pending", "reason": first.partition(":")[2].strip() or out.stderr.strip()}
 
 
-def exec_render(map_dir: Path, state, action) -> dict:
+def exec_render(map_dir: Path, state, action, preflight=None) -> dict:
     kind = action["args"]["kind"]
-    page = render(state, kind, preflight_html(state) if kind == 'plan' else '')
+    result = {"sha": action["id"].rsplit(":", 1)[1]}
+    if kind == 'plan':
+        result["preflight"] = brief_preflight(state) if preflight is None else preflight
+    page = render(state, kind, preflight_html(result.get("preflight", [])))
     path = map_dir / f"{kind}-review.html"
     path.write_text(page)
-    return {"html": str(path), "sha": action["id"].rsplit(":", 1)[1]}
+    return {"html": str(path), **result}
 
 
 VERDICTS = ("REVIEW_EXHAUSTED", "REVIEW_BLOCKED", "PASS", "FIX")
@@ -772,17 +935,22 @@ def exec_briefs(map_dir, state, action):
     return {'lanes': brief_delivery.verify_rows(jobs, records, map_dir, tree, role, mrow['lane_id'])}
 
 
-def preflight_html(state):
-    """Plan Review 展示蜂巢票实际会用的模型、档位与上限；解析失败的原因直接写在页面上。"""
-    esc = lambda v: html.escape(str(v))  # noqa: E731
-    tickets = state['driver']['plan']['tickets']
-    tasks = sorted({t.get('task', 'backend') for t in tickets if brief_delivery.has_briefs(t)})
+def brief_preflight(state):
+    """Plan Review 与授权共用 Setup 解析结果。缺少任务回执行视作预检失败。"""
+    tasks = brief_tasks(state)
     if not tasks:
-        return ''
+        return []
     p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
-    rows = [json.loads(line) for line in p.stdout.splitlines() if line.startswith('{')]
+    rows = {row["task"]: row for row in
+            (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
+    return [rows.get(task, {'task': task, 'ok': False,
+                            'error': p.stderr.strip() or '预检无输出'}) for task in tasks]
+
+
+def preflight_html(rows):
+    esc = lambda v: html.escape(str(v))  # noqa: E731
     if not rows:
-        rows = [{'task': ', '.join(tasks), 'ok': False, 'error': p.stderr.strip() or '预检无输出'}]
+        return ''
     items = ''.join(f"<li>{esc(r['task'])}：" + (f"{esc(r['agent'])} / {esc(r['model'])} / {esc(r['effort'])}，"
                     f"每片 ≤{esc(r['max_turns'])} 轮，并发 ≤{esc(r['parallel'])}" if r['ok'] else
                     f"<strong>无法执行</strong>：{esc(r['error'])}") + '</li>' for r in rows)
@@ -790,7 +958,10 @@ def preflight_html(state):
 
 
 DISPATCH_CLI = SCRIPTS.parents[2] / 'scripts' / 'delivery-dispatch'
-CORE_EXECUTORS = {'scenario': exec_scenario, 'dispatch_briefs': exec_briefs, "fan_in": exec_fan_in, "consume": exec_consume, "closeout": exec_closeout, "render_review": exec_render}
+CORE_EXECUTORS = {
+    "scenario": exec_scenario, "dispatch_briefs": exec_briefs, "fan_in": exec_fan_in,
+    "consume": exec_consume, "closeout": exec_closeout, "render_review": exec_render, "freeze_plan": exec_render,
+}
 
 
 def run(map_dir: Path, executors: dict | None = None, limit: int = 200) -> dict:
@@ -944,6 +1115,7 @@ def self_test() -> int:
     if decide_epic({"candidates": [{"mmf": "A", "map": "mA"}], "maps": {"mA": "closed"}})["action"] != "done":
         failures.append("epic: 全部 closed 应 done")
     failures += _io_self_test()
+    failures += _planning_self_test()
     for f in failures:
         print("FAIL", f)
     print("driver self-test:", "fail" if failures else "pass", f"({len(_cases())} cases)")
@@ -1014,6 +1186,48 @@ def _io_self_test() -> list[str]:
     return failures
 
 
+def _planning_self_test():
+    failures = []
+    decision = {"reason": "两条用户结果可以分别验收", "change": "按用户结果拆分", "evidence": ["spec.md#scenarios"]}
+    with tempfile.TemporaryDirectory() as tmp:
+        md = Path(tmp)
+        write_json(md / DRIVER_FILE, {"map": "m1", "planning_mode": "auto", "gates": {"discovery": "d", "spec": "s"}})
+        for check in ("fail", "fail", "pass"):
+            action = run(md)
+            record(md, action["id"], {"next": "to-tickets", "artifact": "draft", "plan": _plan(),
+                                      "check": check, "decision": decision})
+        action = run(md)
+        d = load(md)["driver"]
+        if action["id"] != "owner:publish" or d["grant"]["plan_sha"] != plan_sha(d["plan"]):
+            failures.append("新普通 map 的计划过检后应自动冻结并交回发布 Action")
+        if len(d["planning_decisions"]) != 3 or d.get("remote"):
+            failures.append("自动重拆应保留每次决定且不授予合入权限")
+        record(md, action["id"], {"next": "blocked-human", "artifact": "draft", "reason": "缺发布授权"})
+        action = run(md)
+        record(md, action["id"], {"reply": "授权发布计划票"})
+        action = run(md)
+        if action["id"] != "owner:publish:1":
+            failures.append("授权答复应恢复等待中的发布 Action")
+        record(md, action["id"], {"next": "to-tickets", "artifact": "published"})
+        if run(md)["id"] != "prepare_map":
+            failures.append("发布恢复后应继续建图")
+    with tempfile.TemporaryDirectory() as tmp:
+        md = Path(tmp)
+        write_json(md / DRIVER_FILE, {"map": "m1", "planning_mode": "auto", "gates": {"discovery": "d"}})
+        record(md, "owner:spec", {"artifact": "spec-draft", "next": "to-epic", "decision": decision})
+        action = run(md)
+        if action["id"] != "owner:epic" or action["args"]["input"] != "spec-draft":
+            failures.append("多 MMF 应交 to-epic owner")
+        record(md, action["id"], {"artifact": "epic:123", "next": "to-spec", "decision": decision})
+        action = run(md)
+        if action["action"] != "handoff_epic" or "grant" in load(md)["driver"]:
+            failures.append("多 MMF 应交已有 Epic 调度且不冻结原 map")
+        record(md, action["id"], {"artifact": "epic-registry"})
+        if run(md)["id"] != "done:handed_off":
+            failures.append("Epic 交接后原 map 应终止推进")
+    return failures
+
+
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -1051,7 +1265,7 @@ def execute(cmd, map_dir, argv):
         if path.exists():
             raise SystemExit("driver.json 已存在")
         map_dir.mkdir(parents=True, exist_ok=True)
-        write_json(path, {"version": VERSION, "map": argv[2], "gates": {}, "plan": {"tickets": []}})
+        write_json(path, {"version": VERSION, "map": argv[2], "planning_mode": "auto", "gates": {}, "plan": {"tickets": []}})
         print(json.dumps(decide(load(map_dir)), ensure_ascii=False))
     else:
         raise SystemExit(f"未知命令 {cmd}")

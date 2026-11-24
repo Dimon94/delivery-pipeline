@@ -36,8 +36,39 @@ def fixture(root):
 def check_driver(overlay):
     state = {'driver': {'plan': {'tickets': [{'task': 'backend', 'briefs': [{}]}]},
                         'dispatch': {'config': str(overlay)}}}
-    page = driver.preflight_html(state)
+    page = driver.preflight_html(driver.brief_preflight(state))
     assert BACKEND['model'] in page and WRONG['model'] not in page, f'JB-476 map-local configuration won: {page}'
+
+
+def check_plan_gate(root, config):
+    plan = {'tickets': [{'id': 'T1', 'task': 'backend', 'briefs': [{'ticket': 'T1', 'slice_id': 'only'}],
+                         'scenario_check': ['true']}]}
+    d = dict(map='canary', gates={'discovery': 'd', 'spec': 's', 'tickets': 't'}, plan=plan, plan_check='pass')
+    old = config.read_text()
+    config.unlink()
+    for mode in ('legacy', 'auto'):
+        md = root / mode
+        md.mkdir()
+        driver.write_json(md / 'driver.json', {**d, 'planning_mode': mode})
+        try:
+            action = driver.run(md)
+            driver.record(md, action['id'], {'reply': '通过'})
+        except ValueError as error:
+            assert '预检未通过' in str(error), error
+        assert 'grant' not in driver.load(md)['driver']
+        assert '无法执行' in (md / 'plan-review.html').read_text()
+    config.write_text(old)
+    md = root / 'legacy'
+    action = driver.run(md)
+    try:
+        driver.record(md, action['id'], {'reply': '通过'})
+    except ValueError as error:
+        assert '预检已变化' in str(error), error
+    refreshed = driver.run(md)
+    assert action['id'] != refreshed['id'] and 'grant' not in driver.load(md)['driver']
+    driver.record(md, refreshed['id'], {'reply': '通过'})
+    assert driver.run(md)['id'] == 'owner:publish'
+    assert driver.run(root / 'auto')['id'] == 'owner:publish'
 
 
 def invoke(request, replies=()):
@@ -130,5 +161,6 @@ if __name__ == '__main__':
         root = Path(tmp).resolve()
         config, overlay = fixture(root)
         check_driver(overlay)
+        check_plan_gate(root, config)
         check_native(root, config, overlay)
     print('configured work dispatch: OK')

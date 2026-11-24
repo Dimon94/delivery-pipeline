@@ -78,7 +78,7 @@ def verify_rows(jobs, records, owner, integration, role, map_lane):
         rows.append(dict(agent=identity['agent'], model=identity['model'], effort=identity['effort'],
                          max_turns=identity['max_turns'], lane_id=r['name'], work_item=key[0], slice_id=key[1], role=role,
                          output_mode='commit', state='terminal', head_commit=head, base_commit=b['base'], map=map_lane,
-                         branch=r['branch'], worktree=tree, attempts=r['attempts']))
+                         branch=r['branch'], worktree=tree, attempts=r['attempts'], worker_reports=r.get('worker_reports', [])))
     if expected:
         raise ValueError(f'缺少执行片 {list(expected)}')
     return rows
