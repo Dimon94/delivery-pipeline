@@ -21,7 +21,7 @@ disable-model-invocation: true
    - `handoff_epic`：按 [Epic 调度](references/epic-scheduling.md) 接管 `args.epic`，使用原 Epic 认领入口。
      回执附 Epic 恢复坐标 `artifact`，结束原单 MMF map。
    - `dispatch` / `prepare_map`：按所属壳 dispatch 合同落位；packet 用 `references/lane-registry.md` §轻量交接。
-   - `ask_human`：Merge Review 和旧 map 的 Plan Review 展示 `args.html`；HITL 把全部问题一次问完。原文作回执。
+   - `ask_human`：Merge Review 与旧 map 的 Plan Review 按 `references/review-presentation.md` 呈现 `args.html`；HITL 把全部问题一次问完。原文作回执。
    - `judge`：轻判断当场从 `options` 选一项并附证据坐标；重判断（验收诊断、重拆、review 修复）派成 lane。
      只在 judge 时按 `args.kind` 读取 `references/execution-worktree-integration.md`、`references/frontier-lanes.md`
      或 `references/gate-state-machine.md` 对应章节。自动重拆回执附 `decision`，格式同计划 owner。

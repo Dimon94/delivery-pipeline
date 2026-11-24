@@ -24,7 +24,6 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import re
-import html
 import json
 import os
 import subprocess
@@ -38,6 +37,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 import closeout  # noqa: E402
 import brief_delivery  # noqa: E402
+import review_html  # noqa: E402
 
 DRIVER_FILE = "driver.json"
 VERSION = 1
@@ -140,13 +140,23 @@ def deviations(state) -> list[str]:
     """清单外、自动处理过的偏差；Merge Review 报告用。纯函数，每次重算。"""
     d = state["driver"]
     planned = {t["id"] for t in d["plan"]["tickets"]}
+    repair_lanes = {r.get("repair_lane") for r in state["lanes"].values() if r.get("repair_lane")}
+    fix_lanes = {r.get("fix_lane") for r in state["lanes"].values() if r.get("fix_lane")}
     out = []
     for row in sorted(state["lanes"].values(), key=lambda r: r["lane_id"]):
-        if row.get("role") in ("map", "testing", "review", "integration"):
-            if row.get("role") == "integration" and row.get("merges"):
+        role = row.get("role")
+        if role in ("map", "planning", "review", "integration"):
+            if role == "integration" and row.get("merges"):
                 out.append(f"merger {row['lane_id']} 处理 {row['merges']} 的收口失败")
             continue
-        if row.get("work_item") not in planned:
+        if role == "testing":
+            if int(row.get("repairs") or 0):
+                suffix = f"（{row['repair_lane']}）" if row.get("repair_lane") else ""
+                out.append(f"整体检查 {row['lane_id']} 修复 {row['repairs']} 轮{suffix}")
+            continue
+        if (row.get("work_item") not in planned
+                and row["lane_id"] not in repair_lanes
+                and row["lane_id"] not in fix_lanes):
             out.append(f"波次内补票 {row.get('work_item')}（{row['lane_id']}）")
         if int(row.get("repairs") or 0):
             out.append(f"{row['lane_id']} 验收修复 {row['repairs']} 轮")
@@ -612,105 +622,18 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
     return d, updates
 
 
-# ---------- HTML 审核页（同一模板，确定性） ----------
+# ---------- HTML 审核页（同一模板，确定性；实现在 review_html.py） ----------
 
 def render(state, kind: str, preflight: str = '') -> str:
-    d = state["driver"]
-    plan = d["plan"]
-    esc = lambda v: html.escape(str(v if v is not None else "Unknown"))  # noqa: E731
-    title = "Plan Review" if kind == "plan" else "Merge Review"
-    rows = []
-    by_item = lanes_by_item(state["lanes"]) if kind == "merge" else {}
-    evidence = merge_brief_evidence(state) if kind == "merge" else {}
-    reviewed_routes = {r["task"]: r for r in d.get("reviews", {}).get("plan", {}).get("preflight", [])}
-
-    def coordinate(value):
-        label = esc(value)
-        if isinstance(value, str) and value.startswith(("https://", "http://")):
-            return f'<a href="{label}">{label}</a>'
-        return f'<code>{label}</code>'
-
-    for t in sorted(plan["tickets"], key=lambda t: (t.get("wave", 1), t["id"])):
-        actual = ""
-        if kind == "merge":
-            states = ", ".join(f"{r['lane_id']}={r.get('state')}" for r in by_item.get(t["id"], []))
-            actual = esc(states or '未派发')
-            if t["id"] in evidence:
-                route = reviewed_routes.get(t.get("task", "backend"), {})
-                actual += f"<p>审核时的路由：{esc(route.get('model'))} / {esc(route.get('effort'))}</p>"
-                for row in evidence[t["id"]]["slices"]:
-                    runs = row["worker_reports"]
-                    reported = sorted({model for run in runs for model in run.get("models", [])})
-                    actual += (f"<p>执行片 {esc(row['slice_id'])} · 提交 <code>{esc(row['head_commit'])}</code><br>"
-                               f"启动路由：{esc(row['model'])} / {esc(row['effort'])}<br>"
-                               f"Worker 回报模型：{esc(', '.join(reported) or 'Unknown')}")
-                    if runs:
-                        elapsed = sum(r["elapsed_ms"] for r in runs) / 1000
-                        outputs = [r["usage"].get("output_tokens") for r in runs]
-                        tokens = sum(outputs) if all(n is not None for n in outputs) else "Unknown"
-                        actual += f"<br><small>{len(runs)} 次执行 · {elapsed:.1f} 秒 · 输出 {tokens} token</small>"
-                    actual += "</p>"
-                proof = evidence[t["id"]]["scenario"] or {}
-                status = {True: "通过", False: "失败"}.get(proof.get("ok"), "Unknown")
-                actual += (f"<details><summary>整票场景 · {status}</summary>"
-                           f"<p>集成 HEAD <code>{esc(state.get('integration_head'))}</code></p>"
-                           f"<pre>{esc(proof.get('observed'))}</pre></details>")
-            actual = f"<td>{actual}</td>"
-        contract = ''
-        if brief_delivery.has_briefs(t):
-            details = json.dumps({'briefs': t['briefs'], 'scenario_check': t.get('scenario_check')}, ensure_ascii=False, indent=2)
-            contract = f'<details><summary>派发合同与整票场景</summary><pre>{esc(details)}</pre></details>'
-        rows.append(f"<tr><td><strong>{esc(t['id'])}</strong> {esc(t.get('title', ''))}"
-                    f"<br>{esc(t.get('task', 'backend'))} · {'HITL' if t.get('hitl') else 'AFK'}{contract}</td><td>{esc(t.get('wave', 1))}</td>"
-                    f"<td>{esc(', '.join(t.get('deps', [])) or '—')}</td>"
-                    f"<td>{esc(t.get('acceptance') or 'Unknown')}</td>{actual}</tr>")
-    head = "<tr><th>票</th><th>波次</th><th>依赖</th><th>计划验收</th>" + ("<th>实际交付</th>" if kind == "merge" else "") + "</tr>"
-    parts = [
-        "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\">",
-        f"<title>{title} · {esc(d.get('map'))}</title>",
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        "<style>:root{color-scheme:light dark;--line:color-mix(in srgb,CanvasText 20%,Canvas)}"
-        "body{font:15px/1.55 system-ui;width:min(calc(100% - 1rem),1080px);margin:1rem auto}"
-        "section{margin:1.5rem 0}h1,h2,p{margin:.55rem 0}.summary{border:1px solid var(--line);padding:1rem;border-radius:.6rem}"
-        ".scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}"
-        "td,th{border-bottom:1px solid var(--line);padding:.7rem;vertical-align:top;text-align:left}"
-        "code,pre{overflow-wrap:anywhere}pre{white-space:pre-wrap}details{margin:.4rem 0}summary{cursor:pointer}"
-        "</style>",
-        f"<h1>{title} · {esc(d.get('map'))}</h1>",
-        f"<div class='summary'><p>{len(plan['tickets'])} 张票 · 计划指纹 {coordinate(plan_sha(plan))}</p>"
-        f"<p>Spec {coordinate(d.get('gates', {}).get('spec'))}</p>"
-        f"<p>关键路径 {esc(' → '.join(plan.get('critical_path', [])) or 'Unknown')}</p></div>",
-    ]
-    if kind == "merge" and state.get("integration_head"):
-        parts.append(f"<p>集成 HEAD {coordinate(state['integration_head'])}</p>")
-    if kind == "merge":
-        checks = []
-        for row in sorted(state["lanes"].values(), key=lambda r: r["lane_id"]):
-            if row.get("role") in ("testing", "review"):
-                label = "整体检查" if row["role"] == "testing" else "整体审查"
-                outcome = row.get("verdict") or row.get("checks") or row.get("state")
-                artifact = row.get("verdict_path") or row.get("delivery")
-                checks.append(f"<li>{label} · {esc(outcome)} · {coordinate(artifact)}</li>")
-        parts.append("<section><h2>验收证据</h2><ul>" + ("".join(checks) or "<li>Unknown</li>") + "</ul></section>")
-    decisions = [*plan.get("decisions", []), *d.get("planning_decisions", [])]
-    if decisions:
-        items = [f"<li><strong>{esc(item['change'])}</strong><p>{esc(item['reason'])}</p>"
-                 f"<p>{' · '.join(coordinate(ref) for ref in item['evidence'])}</p></li>" for item in decisions]
-        parts.append("<section><h2>计划调整记录</h2><ol>" + "".join(items) + "</ol></section>")
-    parts.append(f"<section><h2>计划与交付</h2><div class='scroll'><table>{head}{''.join(rows)}</table></div></section>")
-    parts.append(f"<details><summary>测试策略</summary><pre>{esc(json.dumps(plan.get('test_strategy'), ensure_ascii=False))}</pre></details>")
-    if kind == "merge":
-        devs = deviations(state)
-        parts.append("<h2>自动处理的偏差</h2><ul>" + "".join(f"<li>{esc(x)}</li>" for x in devs) + "</ul>" if devs
-                     else "<h2>自动处理的偏差</h2><p>无</p>")
-        parts.append("<p>回复“通过”授权 push、建 PR、等 CI 并按分支合同合入收尾。</p>")
-    else:
-        parts.append(preflight)
-        if d.get("planning_mode") == "auto":
-            parts.append("<p>计划检查与蜂巢预检通过后自动冻结。合入授权在最终验收时确认。</p>")
-        else:
-            parts.append("<p>回复“通过”授予 Autonomy Grant。</p>")
-    return "\n".join(parts) + "\n</html>\n"
+    return review_html.render(
+        state,
+        kind,
+        preflight,
+        deviations_fn=deviations,
+        evidence_fn=merge_brief_evidence,
+        plan_sha_fn=plan_sha,
+        has_briefs_fn=brief_delivery.has_briefs,
+    )
 
 
 # ---------- IO ----------
@@ -721,8 +644,14 @@ def load(map_dir: Path) -> dict:
     lanes = closeout.latest_rows(map_dir) if map_dir.exists() else {}
     state = {'driver': driver, 'lanes': lanes}
     mrow = map_row(lanes)
-    if driver and mrow and any(brief_delivery.has_briefs(t) for t in driver.get('plan', {}).get('tickets', ())):
-        state['integration_head'] = brief_delivery.git(mrow['integration_worktree_path'], 'rev-parse', 'HEAD')
+    if driver and mrow:
+        wt = mrow.get('integration_worktree_path')
+        if any(brief_delivery.has_briefs(t) for t in driver.get('plan', {}).get('tickets', ())):
+            state['integration_head'] = brief_delivery.git(wt, 'rev-parse', 'HEAD')
+        elif wt and Path(wt).is_dir():
+            proc = run_git(wt, 'rev-parse', 'HEAD')
+            if proc.returncode == 0 and proc.stdout.strip():
+                state['integration_head'] = proc.stdout.strip()
     return state
 
 
@@ -948,13 +877,7 @@ def brief_preflight(state):
 
 
 def preflight_html(rows):
-    esc = lambda v: html.escape(str(v))  # noqa: E731
-    if not rows:
-        return ''
-    items = ''.join(f"<li>{esc(r['task'])}：" + (f"{esc(r['agent'])} / {esc(r['model'])} / {esc(r['effort'])}，"
-                    f"每片 ≤{esc(r['max_turns'])} 轮，并发 ≤{esc(r['parallel'])}" if r['ok'] else
-                    f"<strong>无法执行</strong>：{esc(r['error'])}") + '</li>' for r in rows)
-    return f"<h2>蜂巢执行预检</h2><ul>{items}</ul>"
+    return review_html.preflight_html(rows)
 
 
 DISPATCH_CLI = SCRIPTS.parents[2] / 'scripts' / 'delivery-dispatch'
@@ -1116,6 +1039,7 @@ def self_test() -> int:
         failures.append("epic: 全部 closed 应 done")
     failures += _io_self_test()
     failures += _planning_self_test()
+    failures += _review_html_self_test()
     for f in failures:
         print("FAIL", f)
     print("driver self-test:", "fail" if failures else "pass", f"({len(_cases())} cases)")
@@ -1225,6 +1149,83 @@ def _planning_self_test():
         record(md, action["id"], {"artifact": "epic-registry"})
         if run(md)["id"] != "done:handed_off":
             failures.append("Epic 交接后原 map 应终止推进")
+    return failures
+
+
+def _review_html_self_test() -> list[str]:
+    """Merge Review 渲染：check_result、偏差过滤、结构化证据解析、diff 树与主题变量。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        md = Path(tmp)
+        rev_json = md / "review.json"
+        rev_json.write_text(json.dumps({
+            "verdict": "PASS",
+            "ocr": {"reviewable_count": 3, "excluded_count": 1},
+            "axes": {
+                "standards": {"verdict": "PASS", "counts": {"P0": 0, "P1": 0, "P2": 0, "P3": 1},
+                              "findings": [{"severity": "P3", "title": "Stale note", "file": "README.md:10", "trigger_and_impact": "Docs drift"}],
+                              "verification_gaps": ["Live CI check pending"]},
+                "spec": {"verdict": "PASS", "counts": {"P0": 0, "P1": 0, "P2": 1, "P3": 0},
+                         "findings": [{"severity": "P2", "title": "Missing main hook", "file": "test_x.py:1", "trigger_and_impact": "Skipped by runner"}],
+                         "spec_gaps": []},
+            },
+        }, ensure_ascii=False))
+        test_json = md / "testing.json"
+        test_json.write_text(json.dumps({
+            "check": ["pytest -q"],
+            "observed": "pytest -q → 42 项通过（/tmp/run.log）",
+            "gaps": [],
+        }, ensure_ascii=False))
+        plan = {
+            "repo": "demo-repo",
+            "mmf": "M1",
+            "recommendation": "按两波完成静态门禁接入",
+            "critical_path": ["01", "02"],
+            "risk": ["需保持 fail-close"],
+            "test_strategy": {"level": "focused", "unit": "单测覆盖全部规则", "e2e": "n/a"},
+            "tickets": [
+                {"id": "01", "wave": 1, "task": "backend", "kind": "contract", "deps": [],
+                 "title": "冻结接口", "check_result": "导入与类型检查通过"},
+                {"id": "02", "wave": 2, "task": "backend", "kind": "behavior", "deps": ["01"],
+                 "title": "实现分类器", "check_result": "历史样本回归零崩溃", "scenarios": ["S1", "S2"]},
+            ],
+        }
+        state = {
+            "driver": {"version": 1, "map": "demo-m1", "gates": {"spec": "https://linear.app/x/issue/JB-99/spec-demo"},
+                       "plan": plan},
+            "integration_head": "83130172aec32e67969fde2f81dfc7c1a10b72ca",
+            "diff_files": [{"path": "deploy/release/classifier.py", "added": 120, "deleted": 5}],
+            "lanes": {
+                "m": {"lane_id": "m", "role": "map", "state": "running", "branch": "feat/demo"},
+                "spec-1": {"lane_id": "spec-1", "work_item": "https://linear.app/x#spec", "role": "planning", "state": "closed"},
+                "01": {"lane_id": "01", "work_item": "01", "role": "backend", "output_mode": "commit", "state": "superseded",
+                       "repairs": "1", "repair_lane": "01-repair-1"},
+                "01-repair-1": {"lane_id": "01-repair-1", "work_item": "01", "role": "backend", "output_mode": "commit",
+                                "state": "closed", "integrated_commit": "9ae1c9ffe60d10a8"},
+                "02": {"lane_id": "02", "work_item": "02", "role": "backend", "output_mode": "commit",
+                       "state": "closed", "integrated_commit": "20c8cdad2977691b"},
+                "t": {"lane_id": "t", "work_item": "demo-m1#testing", "role": "testing", "output_mode": "checks",
+                      "state": "closed", "repairs": "1", "repair_lane": "t-fix-1", "delivery": str(test_json)},
+                "t-fix-1": {"lane_id": "t-fix-1", "work_item": "t-fix-1", "role": "backend", "output_mode": "commit",
+                            "state": "closed"},
+                "r": {"lane_id": "r", "work_item": "demo-m1#review", "role": "review", "output_mode": "verdict",
+                      "state": "consumed", "verdict": "PASS", "verdict_path": str(rev_json)},
+            },
+        }
+        devs = deviations(state)
+        if any("波次内补票" in item for item in devs):
+            failures.append(f"planning 或 repair lane 不应误判为波次内补票: {devs}")
+        if not any("整体检查 t 修复 1 轮" in item for item in devs):
+            failures.append(f"testing 修复应计入偏差: {devs}")
+        page = render(state, "merge")
+        for must in ("导入与类型检查通过", "历史样本回归零崩溃", "Stale note", "Missing main hook",
+                     "Live CI check pending", "42 项通过", "classifier.py", "需保持 fail-close",
+                     "单测覆盖全部规则", "var(--foreground"):
+            if must not in page:
+                failures.append(f"Merge Review 缺预期内容: {must}")
+        for forbid in ("波次内补票", "01=superseded", "{&quot;e2e&quot;", "100vh"):
+            if forbid in page:
+                failures.append(f"Merge Review 不应含原始噪音: {forbid}")
     return failures
 
 

@@ -25,7 +25,8 @@ run 可能在本机执行蜂巢整批合同。长命令交给命令完成事件�
 
 - **dispatch**：按 [派发 §新 work lane 的入口](references/t3code-dispatch.md) 调用 `work_dispatch.py`，使用
   [T3 packet](assets/T3CODE_ROLE_DISPATCH_PACKET.md)。目标仓与 Source 不同时先走 §跨仓路由。
-- **judge、invoke_owner、handoff_epic、prepare_map、ask_human、remote、halt**：读 [核心 §Run 循环](../delivery-pipeline/SKILL.md)
+- **ask_human（审核页）**：Merge Review 与旧 map 的 Plan Review 按 [审核页呈现](../delivery-pipeline/references/review-presentation.md) 准备 HTML，先用 `html_preview` 校验高度与明暗可读性，再用 `html_render` 内联展示，不贴裸文件路径；HITL 一次问完。原文作回执。
+- **judge、invoke_owner、handoff_epic、prepare_map、remote、halt**：读 [核心 §Run 循环](../delivery-pipeline/SKILL.md)
   的对应分支，按 Action id 交回回执。
 - **人工收口、取消或 replacement**：只读 [生命周期](references/t3code-lifecycle.md) 的相应章节。
 
