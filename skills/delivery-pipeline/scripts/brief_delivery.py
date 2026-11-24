@@ -6,6 +6,11 @@ import subprocess
 SHA = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})')
 
 
+def has_briefs(ticket):
+    # 普通票允许省略或保留空数组；其他值交给 frozen 核验。
+    return ticket.get('briefs', ()) not in ((), [])
+
+
 def frozen(ticket):
     briefs = ticket.get('briefs')
     if not isinstance(briefs, (list, tuple)) or not briefs or not all(hasattr(b, 'get') for b in briefs):
@@ -28,7 +33,7 @@ def batch(tickets, by_item, done, answers):
     jobs, writes = [], set()
     role = None
     for ticket in tickets:
-        if 'briefs' not in ticket or not all(done(dep) for dep in ticket.get('deps', ())):
+        if not has_briefs(ticket) or not all(done(dep) for dep in ticket.get('deps', ())):
             continue
         if ticket.get('hitl') and ticket['id'] not in answers:
             continue

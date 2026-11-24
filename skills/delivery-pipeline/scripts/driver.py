@@ -231,7 +231,7 @@ def decide(state) -> dict:
     tickets = sorted(d['plan']['tickets'], key=lambda t: (t.get('wave', 1), t['id']))
     by_item = lanes_by_item(lanes)
     receipts = d.get('receipts', {})
-    managed = {t['id']: t for t in tickets if 'briefs' in t or 'scenario_check' in t}
+    managed = {t['id']: t for t in tickets if brief_delivery.has_briefs(t) or 'scenario_check' in t}
 
     def scenario_id(item):
         return f"scenario:{item}:{state.get('integration_head', '')}"
@@ -534,7 +534,7 @@ def render(state, kind: str, preflight: str = '') -> str:
             states = ", ".join(f"{r['lane_id']}={r.get('state')}" for r in by_item.get(t["id"], []))
             actual = f"<td>{esc(states or '未派发')}</td>"
         contract = ''
-        if 'briefs' in t:
+        if brief_delivery.has_briefs(t):
             details = json.dumps({'briefs': t['briefs'], 'scenario_check': t.get('scenario_check')}, ensure_ascii=False, indent=2)
             contract = f'<details><summary>派发合同与整票场景</summary><pre>{esc(details)}</pre></details>'
         rows.append(f"<tr><td>{esc(t['id'])}{contract}</td><td>{esc(t.get('wave', 1))}</td><td>{esc(t.get('task'))}</td>"
@@ -571,7 +571,7 @@ def load(map_dir: Path) -> dict:
     lanes = closeout.latest_rows(map_dir) if map_dir.exists() else {}
     state = {'driver': driver, 'lanes': lanes}
     mrow = map_row(lanes)
-    if driver and mrow and any('briefs' in t for t in driver.get('plan', {}).get('tickets', ())):
+    if driver and mrow and any(brief_delivery.has_briefs(t) for t in driver.get('plan', {}).get('tickets', ())):
         state['integration_head'] = brief_delivery.git(mrow['integration_worktree_path'], 'rev-parse', 'HEAD')
     return state
 
@@ -776,7 +776,7 @@ def preflight_html(state):
     """Plan Review 展示蜂巢票实际会用的模型、档位与上限；解析失败的原因直接写在页面上。"""
     esc = lambda v: html.escape(str(v))  # noqa: E731
     tickets = state['driver']['plan']['tickets']
-    tasks = sorted({t.get('task', 'backend') for t in tickets if t.get('briefs')})
+    tasks = sorted({t.get('task', 'backend') for t in tickets if brief_delivery.has_briefs(t)})
     if not tasks:
         return ''
     p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
@@ -955,13 +955,18 @@ def _io_self_test() -> list[str]:
     failures = []
     with tempfile.TemporaryDirectory() as tmp:
         md = Path(tmp)
+        plan = _plan()
+        # JB-476 的普通票保留了空的 briefs 数组。
+        plan["tickets"][0]["briefs"] = []
         write_json(md / DRIVER_FILE, {"version": 1, "map": "m1", "gates": {"discovery": "a", "spec": "s", "tickets": "t"},
-                                      "plan": _plan(), "plan_check": "pass"})
+                                      "plan": plan, "plan_check": "pass"})
         a = run(md)
         if a["action"] != "ask_human" or a["args"]["kind"] != "plan-review" or not (md / "plan-review.html").exists():
             failures.append(f"run 应渲染 Plan Review 后交回 ask_human，got {a}")
         if render(load(md), "plan") != (md / "plan-review.html").read_text():
             failures.append("Plan Review HTML 不确定")
+        if "派发合同与整票场景" in (md / "plan-review.html").read_text():
+            failures.append("空 briefs 的普通票不应展示蜂巢合同")
         try:
             record(md, "review:plan:wrong", {"reply": "通过"})
             failures.append("错误 id 应拒绝")
