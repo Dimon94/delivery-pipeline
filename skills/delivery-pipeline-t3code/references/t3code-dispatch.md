@@ -19,12 +19,29 @@ T3 只从 coordinator 线程所属项目的根目录建子 worktree。目标仓�
    没有覆盖段时取目标仓库约定。
 3. `t3_project_list` 找 workspace root 等于该集成 worktree 的 T3 项目，没有就 `t3_project_create`。
 4. 写 map registry：`source_worktree_path` 为目标仓库主 checkout，`integration_worktree_path` 为集成 worktree，
-   `target_override` 为覆盖段的「绝对路径§小节」（无则 `none`），Coordinator Recovery 写明来源线程。
-5. `t3_thread_launch` 在该项目开 coordinator 线程，prompt 为 `/delivery-pipeline-t3code` 加 registry 绝对路径，
-   要求它按 §恢复 接管。用户对跨仓 map 调用本壳即是开这个线程的请求。
-6. 回复新线程 `link` 后结束本轮；来源线程不再派发、不 fan-in 该 map。
+   `target_override` 为覆盖段的「绝对路径§小节」（无则 `none`），`t3_project_id` 为第 3 步的项目 id，
+   Coordinator Recovery 写明来源线程。
+5. `t3_thread_launch` 显式传 `projectId: <t3_project_id>` 开 coordinator 线程，prompt 为 `/delivery-pipeline-t3code`
+   加 registry 绝对路径，要求它按 §恢复 接管。用户对跨仓 map 调用本壳即是开这个线程的请求，不再问用户。
+   只用 `t3_thread_launch`：`create_threads`、`delegate_task` 和缺 `projectId` 的调用都继承调用方项目，线程会落回原仓。
+   工具清单里看不到 `t3_thread_launch` 时先直接调用一次（T3 工具可能延迟加载），调用报不存在才算不可用。
+6. `t3_thread_read(新 threadId)` 读回 `thread.projectId` 等于 `t3_project_id`，再写 registry `coordinator_thread`。
+   不等时 `t3_thread_organize(archive)` 错落线程，回第 5 步重开一次；仍不等或工具不可用时报告
+   `dispatch unavailable`，附期望与实际 projectId。
+7. 回复新线程 `link` 后结束本轮；来源线程不再派发、不 fan-in 该 map。
 
-完成条件：registry 可读回目标仓库坐标、`target_override` 与新 coordinator 线程；新线程的 Preflight 第 2 步通过。
+失败例子（JB-528）：来源线程以为没有 `t3_thread_launch`，改用 `create_threads` 并传 `target.projectId`；
+该参数被静默忽略，新 coordinator 落在父仓项目。来源线程没读回就宣告移交，新线程 Preflight 失败后又把
+「手动新建线程」交给用户，自动化调度停在人工步骤上。
+
+完成条件：registry 可读回目标仓库坐标、`target_override`、`t3_project_id` 与新 coordinator 线程；
+新线程的 `projectId` 读回一致。
+
+### 错落项目自愈
+
+本线程按 registry 接管，registry 有 `t3_project_id`，而 `t3_thread_read(本线程)` 的 `projectId` 与之不同：
+本线程派不出 lane，但不把开线程交给用户。由本线程执行上文第 5–7 步重开 coordinator，prompt 沿用接管请求；
+第 6 步的读回保证重开不会循环。本线程不写 lane、不运行 Driver，只回复新线程 `link`。
 
 ## Preflight
 
@@ -34,7 +51,8 @@ T3 只从 coordinator 线程所属项目的根目录建子 worktree。目标仓�
    `canRunChildTask: true`；跨 provider 时还要 `canRunCrossProviderChildTask: true`。
 2. `t3_worktree_status` 读回 `projectWorkspaceRoot`；它与 coordinator 当前 checkout（`attached: true`
    时为 `worktreePath`）的 `git rev-parse --git-common-dir` 都等于 Source repo 的 common dir。T3 从
-   coordinator HEAD 在该 project 根下建子 worktree；任一 common dir 不同时报告 `dispatch unavailable`。
+   coordinator HEAD 在该 project 根下建子 worktree；任一 common dir 不同时，registry 的 `t3_project_id`
+   与本线程项目不同则走 §错落项目自愈，否则报告 `dispatch unavailable`。
 3. 按 `integration-worktree-management.md` 核对 Integration branch 与 clean state，冻结本批
    `base_sha`：普通 map 为当前 Integration HEAD；`delivery_mode: ticket_release` 为刚 fetch 的
    远端默认分支 SHA。

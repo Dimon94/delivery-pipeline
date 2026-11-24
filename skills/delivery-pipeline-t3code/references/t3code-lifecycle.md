@@ -48,6 +48,9 @@ lane 写 `awaiting_human`，在对话里给出 `link`，由用户进入子线程
 
 ## 恢复
 
+registry 有 `t3_project_id` 时先 `t3_thread_read(本线程)` 核对 `projectId`；不同则按 `t3code-dispatch.md`
+§错落项目自愈 重开 coordinator 后结束本轮，不进入下文。
+
 按 `fresh-session-boundaries.md` §Coordinator Recovery 读取六项短记录，再逐个 `runtime: t3-task`
 lane 调 `t3_thread_read(child_thread_id)`。新 work lane 未完成启动读回时，先走 §唤醒 第 1 步：
 
