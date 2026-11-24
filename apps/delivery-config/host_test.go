@@ -78,8 +78,13 @@ func TestProbeCapabilities(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.RequestID != "host-read-only" || len(result.Sources) != 3 {
-		t.Fatal("probe 未贯穿请求身份与三工具来源")
+	if result.RequestID != "host-read-only" || len(result.Sources) != 4 {
+		t.Fatal("probe 未贯穿请求身份与四工具来源")
+	}
+	for _, agent := range []string{"pi", "codex", "claude", "antigravity"} {
+		if _, ok := result.Sources[agent]; !ok {
+			t.Fatalf("probe 缺少工具来源 %s：%s", agent, output)
+		}
 	}
 	// 网关状态是证据层字段；本机网关是否在线不确定，只断言取值落在合同内。
 	if result.Gateway.Status != "ok" && result.Gateway.Status != "unreachable" {

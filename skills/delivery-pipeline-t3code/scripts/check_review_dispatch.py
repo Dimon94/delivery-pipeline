@@ -131,6 +131,24 @@ def check():
         assert recorded['axes']==axes, '丢 findings'
         assert recorded['execution_evidence'][1]['status']=='mismatch'
         rejects(lambda:adapter.fan_in(spec,axes,coords,Path(tmp)/'bad.json',2),'错误 required 轴放行')
+        ag_native = Native()
+        ag_native.caps = dict(parentThreadId='parent', inheritedProviderInstanceId='antigravity', providers=[dict(
+            providerInstanceId='antigravity', canRunChildTask=True, canRunCrossProviderChildTask=True,
+            models=[dict(id='gemini-4-neon', options=[dict(id='thought_level', values=['low', 'medium', 'high', 'xhigh'])])])])
+        ag_config = copy.deepcopy(config)
+        for axis in ('standards', 'spec'):
+            ag_config['review']['whole-change'][axis] = dict(agent='antigravity', model='gemini-4-neon', effort='xhigh', candidates=[])
+        ag_adapter = ReviewDispatch(ag_native)
+        ag_packet = ag_adapter.prepare(ag_config, {**context, 'request_id': 'ag-r1'})
+        assert ag_packet['review_plan']['lane']['selected'] == dict(agent='antigravity', model='gemini-4-neon', effort='xhigh')
+        ag_path = Path(tmp)/'ag-registry.md'
+        ag_dispatch = ag_adapter.dispatch(ag_path, dict(lane_id='ag-review', work_item='AG'), ag_packet, owner, 'read-only')
+        assert ag_dispatch['row']['t3code']['provider_instance_id'] == 'antigravity'
+        assert ag_dispatch['row']['t3code']['effort_option'] == 'thought_level'
+        for axis in axes:
+            ag_native.reads[axis] = dict(thread=dict(threadId=axis, model='REQUESTED'),
+                recentRuns=[dict(runId=axis, providerInstanceId='antigravity', executedModel='gemini-4-neon')])
+        assert ag_adapter.fan_in(ag_packet, axes, coords, Path(tmp)/'ag-ledger.json', 1) == 'PASS'
     print('t3-review-plan: pass (native I/O fixture; actual execution Unknown)')
 
 if __name__=='__main__':

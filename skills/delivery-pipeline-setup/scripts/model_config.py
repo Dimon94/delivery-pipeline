@@ -36,7 +36,8 @@ APP_REQUIRED_WORK = {
     "assistance",
     "second-opinion",
 }
-CLI_AGENTS = {"pi", "codex", "claude"}
+HERDR_AGENTS = {"pi", "codex", "claude"}
+CLI_AGENTS = HERDR_AGENTS | {"antigravity"}
 LEGACY_ROLES = {"planning", "design", "frontend", "backend", "testing", "review"}
 IMPLEMENTATION_TASKS = {"design", "frontend", "backend"}
 KINDS = {"staged", "direct"}
@@ -70,7 +71,7 @@ def _entry_errors(prefix: str, value: object, agents: set[str]) -> list[str]:
 
 
 class ModelTriple(TypedDict):
-    agent: Literal["pi", "codex", "claude"]
+    agent: Literal["pi", "codex", "claude", "antigravity"]
     model: str
     effort: str
 
@@ -382,11 +383,11 @@ def _validate_legacy_cli(document: object) -> list[str]:
     if not isinstance(roles, dict) or set(roles) != LEGACY_ROLES:
         return [f"legacy roles keys must be exactly {sorted(LEGACY_ROLES)}"]
     for role in sorted(LEGACY_ROLES):
-        errors.extend(_entry_errors(f"roles.{role}", roles[role], CLI_AGENTS))
+        errors.extend(_entry_errors(f"roles.{role}", roles[role], HERDR_AGENTS))
     if version == 3:
         execution = document.get("execution")
-        if not isinstance(execution, dict) or set(execution) != CLI_AGENTS:
-            return errors + [f"execution must define exactly {sorted(CLI_AGENTS)}"]
+        if not isinstance(execution, dict) or set(execution) != HERDR_AGENTS:
+            return errors + [f"execution must define exactly {sorted(HERDR_AGENTS)}"]
         for agent, plan in sorted(execution.items()):
             prefix = f"execution.{agent}"
             if not isinstance(plan, dict) or set(plan) != {"default_mode", *STAGES}:
@@ -993,6 +994,73 @@ def claude_models(catalog: dict) -> list[HarnessModel]:
         raise ValueError('无法读取 Claude 官方模型清单') from None
 
 
+def antigravity_models(cache: object) -> list[HarnessModel]:
+    try:
+        if not isinstance(cache, dict) or not isinstance(cache['models'], list):
+            raise ValueError
+        models: list[HarnessModel] = []
+        for model in cache['models']:
+            native = model['slug']
+            if not isinstance(native, str) or not native:
+                raise ValueError
+            descriptors = model.get('capabilities', {}).get('optionDescriptors', [])
+            if not isinstance(descriptors, list):
+                raise ValueError
+            thought = next((d for d in descriptors if isinstance(d, dict) and d.get('id') == 'thought_level'), None)
+            if not thought:
+                continue
+            options = thought.get('options', [])
+            if not isinstance(options, list):
+                raise ValueError
+            efforts = list(dict.fromkeys(
+                o['id'] for o in options if isinstance(o, dict) and isinstance(o.get('id'), str) and o['id']
+            ))
+            if efforts:
+                models.append({'native_id': native, 'gateway_id': native, 'efforts': efforts})
+        return models
+    except (KeyError, TypeError, AttributeError, ValueError):
+        raise ValueError('无法读取 T3 Code 的 Antigravity 模型清单') from None
+
+
+def antigravity_source(cache: object, settings: object = None) -> dict:
+    """只读解析 T3 Code 的 Antigravity 提供方缓存与启用状态；不触碰凭据。"""
+    origin = 'T3 Code Antigravity 提供方清单'
+    disabled_in_settings = (
+        isinstance(settings, dict)
+        and isinstance(settings.get('providerInstances'), dict)
+        and isinstance(settings['providerInstances'].get('antigravity'), dict)
+        and settings['providerInstances']['antigravity'].get('enabled') is False
+    )
+    if cache is None:
+        reason = ('请先在 T3 Code 启用 Antigravity 提供方后重新核对' if disabled_in_settings else
+                  '未检测到 T3 Code 的 Antigravity 提供方缓存，请先在 T3 Code 启用并刷新 Antigravity 后重新核对')
+        return {'binary': False, 'route': None, 'models': [], 'origin': origin, 'reason': reason}
+    if (not isinstance(cache, dict)
+            or cache.get('driver') not in (None, 'antigravity')
+            or cache.get('instanceId') not in (None, 'antigravity')):
+        return {'binary': False, 'route': None, 'models': [], 'origin': origin,
+                'reason': '无法读取 T3 Code 的 Antigravity 模型清单'}
+    installed = cache.get('installed') is True
+    if disabled_in_settings or cache.get('enabled') is False:
+        return {'binary': installed, 'route': None, 'models': [], 'origin': origin,
+                'reason': '请先在 T3 Code 启用 Antigravity 提供方后重新核对'}
+    if not installed:
+        return {'binary': False, 'route': None, 'models': [], 'origin': origin,
+                'reason': '请先在 T3 Code 安装 Antigravity 运行环境后重新核对'}
+    auth = cache.get('auth')
+    if cache.get('status') != 'ready' or not isinstance(auth, dict) or auth.get('status') != 'authenticated':
+        return {'binary': True, 'route': None, 'models': [], 'origin': origin,
+                'reason': '请先在 T3 Code 完成 Antigravity 登录后重新核对'}
+    try:
+        models = antigravity_models(cache)
+    except ValueError as error:
+        return {'binary': True, 'route': None, 'models': [], 'origin': origin, 'reason': str(error)}
+    if not models:
+        return {'binary': True, 'route': None, 'models': [], 'origin': origin,
+                'reason': '无法读取 T3 Code 的 Antigravity 模型清单'}
+    return {'binary': True, 'route': 't3code', 'models': models, 'origin': origin}
+
+
 def probe(raw: dict, request_id: str) -> ProbeEvidence:
     """只归一化 metadata；逐工具独立，不把 gateway 声明当 harness 能力。"""
     from datetime import datetime, timezone
@@ -1008,12 +1076,12 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
         harness = raw.get('harnesses', {}).get(agent, {})
         models = {}
         route = harness.get('route')
-        if harness.get('binary') is True and route in ('gateway', 'direct', 'official'):
+        if harness.get('binary') is True and route in ('gateway', 'direct', 'official', 't3code'):
             for model in harness.get('models', []):
                 native = model.get('native_id')
                 if not isinstance(native, str) or not native:
                     continue
-                if route in ('direct', 'official'):
+                if route in ('direct', 'official', 't3code'):
                     allowed = model.get('efforts', [])
                 elif gateway.get('status') == 'ok':
                     allowed = [e for e in model.get('efforts', [])
@@ -1027,7 +1095,7 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
                   if agent == 'codex' and route is None and harness.get('binary') is True else
                   '未取得精确模型与有效档位的完整证据链')
         sources[agent] = {'route': route, 'status': 'ok' if models else 'unknown',
-                          'observed_at': observed, 'reason': '' if models else harness.get('reason', reason), 'origin': harness.get('origin', '本机工具元数据'),
+                          'observed_at': observed, 'reason': '' if models else (harness.get('reason') or reason), 'origin': harness.get('origin', '本机工具元数据'),
                           'next_step': '能力仅核验配置与元数据；认证、额度和实际执行为 Unknown。' if models else
                           '请让 AI 助手核对该工具的接入、精确模型清单和思考档位，再重新核对。'}
     # 网关状态属于证据层：区分“网关挂了”与“工具未接入”，UI 不得从 sources 反推。
@@ -1157,6 +1225,21 @@ def collect_harnesses() -> dict:
             else '无法读取 Claude 官方模型清单'))
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         claude.update(route=None, reason='无法读取 Claude 官方模型清单')
+    t3_settings = None
+    try:
+        settings_file = home/'.t3/userdata/settings.json'
+        if settings_file.exists():
+            t3_settings = json.loads(settings_file.read_text())
+    except (OSError, ValueError):
+        t3_settings = None
+    ag_cache: object = None
+    cache_file = home/'.t3/caches/antigravity.json'
+    if cache_file.exists():
+        try:
+            ag_cache = json.loads(cache_file.read_text())
+        except (OSError, ValueError):
+            ag_cache = 'malformed'
+    result['antigravity'] = antigravity_source(ag_cache, t3_settings)
     return result
 
 
@@ -1498,12 +1581,12 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
     if plan.get("capability") != "verified":
         raise ValueError("capability evidence is required before startup")
     agent, model, effort = plan.get("agent"), plan.get("model"), plan.get("effort")
-    if agent not in CLI_AGENTS or not all(
+    if agent not in HERDR_AGENTS or not all(
         isinstance(value, str) and value.strip()
         for value in (worker_name, pane_id, model, effort)
     ):
         raise ValueError(
-            "startup request requires agent, model, effort, worker_name and pane_id"
+            "startup request requires Herdr agent (pi/codex/claude), model, effort, worker_name and pane_id"
         )
     prefix = [
         "herdr",
@@ -1556,7 +1639,7 @@ def valid_fixture() -> dict:
                             ("direct", "low"),
                         )
                     }
-                    for agent in sorted(CLI_AGENTS)
+                    for agent in sorted(HERDR_AGENTS)
                 },
             }
         },
@@ -1705,7 +1788,7 @@ def self_test() -> list[str]:
                 json.dumps(persisted_overlay, sort_keys=True), encoding="utf-8"
             )
             verify_overlay(persisted, json.loads(path.read_text(encoding="utf-8")))
-    for agent in sorted(CLI_AGENTS):
+    for agent in sorted(HERDR_AGENTS):
         case = json.loads(json.dumps(fixture))
         case["work"]["backend"] = {
             "agent": agent,
@@ -1722,6 +1805,21 @@ def self_test() -> list[str]:
         command = startup_request(resolved, worker_name="worker", pane_id="pane")
         if command[5] != agent:
             failures.append(f"config-to-start mapping selected the wrong {agent} kind")
+    ag_case = json.loads(json.dumps(fixture))
+    ag_case["work"]["backend"] = {
+        "agent": "antigravity",
+        "model": "provider/model",
+        "effort": "high", "fallbacks": [],
+    }
+    ag_resolved = resolve_plan(ag_case, "backend", evidence=evidence, output_mode="commit")
+    if ag_resolved["agent"] != "antigravity" or ag_resolved["capability"] != "verified":
+        failures.append("antigravity config plan failed resolution")
+    try:
+        startup_request(ag_resolved, worker_name="worker", pane_id="pane")
+    except ValueError:
+        pass
+    else:
+        failures.append("Herdr startup accepted antigravity agent")
     bad_evidence = json.loads(json.dumps(evidence))
     bad_evidence["pi"]["binary"] = False
     try:
@@ -1763,7 +1861,7 @@ def self_test() -> list[str]:
         pass
     else:
         failures.append("startup accepted missing capability evidence")
-    for agent in sorted(CLI_AGENTS):
+    for agent in sorted(HERDR_AGENTS):
         plan = {
             "mode": "direct",
             "agent": agent,
@@ -1874,7 +1972,7 @@ def self_test() -> list[str]:
                 stage: {"model": "provider/model", "effort": "high"} for stage in STAGES
             },
         }
-        for agent in sorted(CLI_AGENTS)
+        for agent in sorted(HERDR_AGENTS)
     }
     migrated, _ = migrate_document(json.loads(json.dumps(legacy_v3)))
     if (

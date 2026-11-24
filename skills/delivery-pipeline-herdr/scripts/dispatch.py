@@ -337,6 +337,8 @@ def main() -> int:
                                    ticket_mode=args.ticket_mode, map_mode=args.map_mode,
                                    evidence=evidence, output_mode=args.output_mode)
         frozen = mc.freeze_overlay(plan)
+        if plan["agent"] not in RUNTIME:
+            raise DispatchError(f"Herdr transport does not support agent: {plan['agent']}")
         coord = coordinator()
         row = {
             "lane_id": args.lane, "work_item": args.work_item, "role": args.task,

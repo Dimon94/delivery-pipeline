@@ -210,3 +210,75 @@ with tempfile.TemporaryDirectory() as directory:
             assert mc.collect_harnesses()['claude']['route'] is None
             assert not requests
 print('Claude collection request and credential isolation: pass')
+
+assert callable(getattr(mc, 'antigravity_models', None)), '缺少 Antigravity 模型清单归一化'
+assert callable(getattr(mc, 'antigravity_source', None)), '缺少 Antigravity 提供方来源解析'
+ag_cache = json.loads((root/'scripts/fixtures/antigravity-cache.json').read_text())
+expected_ag = {
+    'gemini-4-neon': ['low', 'medium', 'high', 'xhigh'],
+    'gemini-4-carbon': ['low', 'medium', 'high'],
+    'gemini-pro-orchestrator-neon': ['low', 'medium', 'high', 'xhigh'],
+    'claude-opus-5-5': ['low', 'medium', 'high'],
+    'gpt-oss-120b-medium': ['low', 'medium', 'high'],
+}
+assert mc.antigravity_models(ag_cache) == [
+    {'native_id': native, 'gateway_id': native, 'efforts': efforts}
+    for native, efforts in expected_ag.items()]
+for malformed in ({}, {'models': 'bad'}, {'models': [{}]}, {'models': [{'slug': 'm', 'capabilities': []}]}):
+    try:
+        mc.antigravity_models(malformed)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('Antigravity 非法结构必须拒绝')
+ag_probe = copy.deepcopy(raw)
+ag_probe['harnesses']['antigravity'] = mc.antigravity_source(ag_cache)
+for gateway in ({'status': 'ok', 'data': []}, {'status': 'unknown'}):
+    ag_probe['gateway'] = gateway
+    p = probe(ag_probe)
+    assert p['capabilities']['antigravity']['models'] == expected_ag
+    assert p['sources']['antigravity']['status'] == 'ok' and p['sources']['antigravity']['route'] == 't3code'
+    assert p['gateway']['status'] == ('ok' if gateway['status'] == 'ok' else 'unreachable')
+assert mc.capability_errors('antigravity', 'gemini-4-neon', 'xhigh', p['capabilities']) == []
+assert mc.capability_errors('antigravity', 'gemini-4-carbon', 'xhigh', p['capabilities'])
+ag_config = mc.valid_fixture()
+ag_config['work']['backend'] = {'agent': 'antigravity', 'model': 'gemini-4-neon', 'effort': 'xhigh', 'fallbacks': []}
+ag_plan = mc.resolve_plan(ag_config, 'backend', evidence=p['capabilities'], output_mode='commit')
+assert (ag_plan['agent'], ag_plan['model'], ag_plan['effort']) == ('antigravity', 'gemini-4-neon', 'xhigh')
+try:
+    mc.startup_request(ag_plan, worker_name='worker', pane_id='pane')
+except ValueError:
+    pass
+else:
+    raise AssertionError('Herdr startup_request 不应接受 antigravity')
+assert mc.antigravity_source(ag_cache, {'providerInstances': {'antigravity': {'enabled': False}}})['route'] is None
+for mutate in (
+    lambda c: c.update(enabled=False),
+    lambda c: c.update(installed=False),
+    lambda c: c.update(status='disabled'),
+    lambda c: c.update(auth={'status': 'unauthenticated'}),
+    lambda c: c.update(driver='other'),
+):
+    mutated = copy.deepcopy(ag_cache)
+    mutate(mutated)
+    state = mc.antigravity_source(mutated)
+    assert state['route'] is None and state['models'] == [] and state['reason']
+with tempfile.TemporaryDirectory() as directory:
+    home = Path(directory)
+    (home/'.t3/caches').mkdir(parents=True)
+    (home/'.t3/userdata').mkdir(parents=True)
+    cache_with_secret = {**ag_cache, 'usageLimits': {'credentialFingerprint': secret}}
+    (home/'.t3/caches/antigravity.json').write_text(json.dumps(cache_with_secret))
+    (home/'.t3/userdata/settings.json').write_text(json.dumps({'providerInstances': {'antigravity': {'enabled': True}}}))
+    with patch.object(Path, 'home', return_value=home), patch.dict(os.environ, {}, clear=True), patch('shutil.which', return_value=None):
+        collected = mc.collect_harnesses()['antigravity']
+        assert collected['route'] == 't3code' and collected['binary'] is True
+        assert collected['models'] == mc.antigravity_models(ag_cache)
+        assert secret not in json.dumps(mc.probe({'harnesses': {'antigravity': collected}}, 'ag-safe'))
+        (home/'.t3/userdata/settings.json').write_text(json.dumps({'providerInstances': {'antigravity': {'enabled': False}}}))
+        disabled = mc.collect_harnesses()['antigravity']
+        assert disabled['route'] is None and disabled['binary'] is True and '启用' in disabled['reason']
+        (home/'.t3/caches/antigravity.json').unlink()
+        missing = mc.collect_harnesses()['antigravity']
+        assert missing['route'] is None and missing['binary'] is False and missing['reason']
+print('Antigravity probe and isolation: pass')

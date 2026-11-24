@@ -28,8 +28,8 @@ T3 Code 0.1.3 由宿主内置 MCP 工具（`orchestrator_capabilities`、`delega
    worker 自建分支，T3 临时分支在 Cleanup 删除。不采用把 coordinator 绑到 Integration Worktree
    的方案：会结束当前会话、独立票模式仍对不齐、并切换 coordinator 目录。
 6. 模型配置映射：复用 CLI 配置实例 `~/.config/delivery-pipeline/model-roles.json`。壳内映射
-   `agent` → providerInstanceId（pi→`pi`，codex→`codex`，claude→`claudeAgent`）和
-   `effort` → option name（pi→`thinking`，codex→`reasoningEffort`，claudeAgent→`effort`）。
+   `agent` → providerInstanceId（pi→`pi`，codex→`codex`，claude→`claudeAgent`，antigravity→`antigravity`）和
+   `effort` → option name（pi→`thinking`，codex→`reasoningEffort`，claudeAgent→`effort`，antigravity→`thought_level`）。
    每批派发前用 `orchestrator_capabilities(search)` 核对 model id 完全一致、effort 在允许值内；
    不匹配就 blocked 并给候选列表，交 setup 改配置。不做 suffix 匹配或自动补前缀。
 7. Terminal 信号改为 T3 原生完成唤醒：派发时记 `taskId`/`childThreadId`/`link`；完成后 T3 唤醒，

@@ -15,7 +15,7 @@ scripts/model_config.py validate ~/.config/delivery-pipeline/model-roles.json
 ```
 
 CLI 实例必需 `work` 中的 `planning`、`design`、`frontend`、`backend`、`testing` 与完整
-review 矩阵；entry 与 review 轴的 agent 属于 `pi|codex|claude`；CLI 实例禁止
+review 矩阵；entry 与 review 轴的 agent 属于 `pi|codex|claude|antigravity`（`antigravity` 仅在 T3Code transport 可执行）；CLI 实例禁止
 `default_mode`。除结构外，所有 startup（含非实现任务
 的一次启动）都要求当前 capability evidence：binary 存在、model/effort 命中实时探测；
 没有 evidence 的计划只能解析，不能生成启动请求。
@@ -39,7 +39,7 @@ coordinator 不做运行中或 fan-in 的 pane model 对账，不把 pane 实际
 review lane 用配置 `review.<scope>.standards` 的 `{agent, model, effort}` 启动 pane；
 packet 携带该 scope 的 standards/spec 两轴模型配置，交给 resolved code-review owner 使用。
 
-setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude": { "binary": true,
+setup/dispatch 可把实时探测归一化为 `{ "pi|codex|claude|antigravity": { "binary": true,
 "models": { "<model>": ["<supported-effort>"] } } }`，交给
 `model_config.py resolve ... --output-mode commit --evidence`。
 缺 evidence、binary、model 或所选 model 不支持该 effort 时返回阻塞。
@@ -60,6 +60,7 @@ resolve 的旧 source 仍表示 mode 选择来源；备用来源只看 recovery_
 | pi | `pi --list-models` 的 provider/model 与 thinking 支持 |
 | codex | `codex debug models` 的 `models[].slug` 与 `supported_reasoning_levels[].effort` |
 | claude | `~/.claude/settings.json` 的 `env`：`ANTHROPIC_DEFAULT_FABLE_MODEL`、`ANTHROPIC_DEFAULT_HAIKU_MODEL`、`ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL`、`ANTHROPIC_MODEL`、`CLAUDE_CODE_SUBAGENT_MODEL`（显示名 `*_MODEL_NAME`，effort `CLAUDE_CODE_EFFORT_LEVEL`） |
+| antigravity | `~/.t3/caches/antigravity.json` 与 `~/.t3/userdata/settings.json` 启用态：`enabled/installed/ready/authenticated` 与各模型的 `thought_level` 档位（仅 T3Code transport 可执行） |
 
 缺失 binary、文件或字段记 Unknown。Setup 只允许从这些 `*_MODEL` / `ANTHROPIC_MODEL` /
 `CLAUDE_CODE_SUBAGENT_MODEL` 候选中选择 Claude model；校验时 Claude 必须匹配

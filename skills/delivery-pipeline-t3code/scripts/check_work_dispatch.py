@@ -16,6 +16,7 @@ import model_config
 
 BACKEND = dict(agent='pi', model='magpie/auto/gpt-6.2-sol', effort='high')
 PLANNING = dict(agent='pi', model='magpie/group/kimi-k3.1-pro', effort='max')
+ANTIGRAVITY = dict(agent='antigravity', model='gemini-4-neon', effort='xhigh')
 WRONG = dict(agent='codex', model='gpt-6-astra', effort='high')
 
 
@@ -23,6 +24,7 @@ def fixture(root):
     config = model_config.apply_limits(model_config.valid_fixture(), {'parallel': 4, 'max_turns': 100})
     config['work']['backend'].update(BACKEND)
     config['work']['planning'].update(PLANNING)
+    config['work']['frontend'].update(ANTIGRAVITY)
     path = root / '.config/delivery-pipeline/model-roles.json'
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(config))
@@ -99,6 +101,8 @@ def capabilities(model, efforts):
     return dict(parentThreadId='parent', inheritedProviderInstanceId='codex', providers=[
         dict(providerInstanceId='pi', canRunChildTask=True, canRunCrossProviderChildTask=True,
              models=[dict(id=model, options=[dict(id='thinking', values=efforts)])]),
+        dict(providerInstanceId='antigravity', canRunChildTask=True, canRunCrossProviderChildTask=True,
+             models=[dict(id=model, options=[dict(id='thought_level', values=efforts)])]),
         dict(providerInstanceId='codex', canRunChildTask=True,
              models=[dict(id=WRONG['model'], options=[dict(id='reasoningEffort', values=['high'])])]),
     ])
@@ -108,8 +112,12 @@ def check_native(root, config, overlay):
     subprocess.run(['git', 'init', '-q', root], check=True)
     common = str(root / '.git')
     status = dict(attached=False, projectWorkspaceRoot=str(root))
-    for kind, output, triple in [('planning', 'artifact', PLANNING), ('backend', 'commit', BACKEND)]:
-        lane = 'JB-478' if kind == 'backend' else 'spec'
+    for kind, output, triple, provider, option in [
+        ('planning', 'artifact', PLANNING, 'pi', 'thinking'),
+        ('backend', 'commit', BACKEND, 'pi', 'thinking'),
+        ('frontend', 'commit', ANTIGRAVITY, 'antigravity', 'thought_level'),
+    ]:
+        lane = 'JB-478' if kind == 'backend' else ('JB-479' if kind == 'frontend' else 'spec')
         path = str(root / f'registry-{lane}.md')
         row = dict(lane_id=lane, role=kind, output_mode=output, base_commit='a' * 40,
                    map='JB-476', work_item=lane)
@@ -128,7 +136,7 @@ def check_native(root, config, overlay):
         result, calls = invoke(request, [('orchestrator_capabilities', cap), ('t3_worktree_status', status),
                                          ('delegate_task', receipt)])
         saved, _ = lane_registry.read(path, lane)
-        target = dict(providerInstanceId='pi', model=triple['model'], options={'thinking': triple['effort']})
+        target = dict(providerInstanceId=provider, model=triple['model'], options={option: triple['effort']})
         assert calls[0]['search'] == triple['model'] and calls[2]['target'] == target, calls
         assert calls[2] == saved['t3code']['native_request'] and result == saved
         assert saved['state'] == 'created' and saved['recovery_plan']['primary'] == triple, saved
@@ -141,7 +149,7 @@ def check_native(root, config, overlay):
         child.mkdir(exist_ok=True)
         (child / '.git').write_text(f'gitdir: {common}\n')
         thread = dict(threadId='child', parentThreadId='parent', relationshipToParent='subagent',
-                      providerInstanceId='pi', model=triple['model'], worktreePath=str(child), branch='temp')
+                      providerInstanceId=provider, model=triple['model'], worktreePath=str(child), branch='temp')
         wrong_read = dict(thread=thread, recentRuns=[{'executedModel': WRONG['model']}])
         result, _ = invoke(recover, [('t3_thread_read', wrong_read)])
         assert result['state'] == 'setup_blocked' and 'executed model mismatch' in result['t3code']['startup_gap']

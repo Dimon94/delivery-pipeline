@@ -6,7 +6,7 @@ export const budgetKeys = ["parallel", "max_turns"] as const;
 export type BudgetKey = typeof budgetKeys[number];
 export const defaultBudget = {parallel:4, max_turns:100};
 export type Config = {dispatch?: Record<BudgetKey, number>;model_families?:Record<string,Record<string,{family:string;source:"user_declared"}>>;work: Record<string, Cell>; review: Record<string, Record<string, Cell>>; modes: Record<string, unknown>; [key: string]: unknown};
-export type SourceEvidence = {status:string;next_step:string;reason?:string;route?:'gateway'|'direct'|'official'|null};
+export type SourceEvidence = {status:string;next_step:string;reason?:string;route?:'gateway'|'direct'|'official'|'t3code'|null};
 export type Evidence = {request_id:string; observed_at:string; gateway:{status:string}; capabilities:Record<string,{binary:boolean;models:Record<string,string[]>}>; sources:Record<string,SourceEvidence>};
 // 唯一的核对状态；网关是否可达只看证据里的 gateway.status，不从 sources 反推。
 export type Check =
@@ -31,7 +31,7 @@ export type CellStatus = {
  // 主选可用、或尚未核对（无法判断）时为 null。
  takeover:{kind:'fallback';index:number}|{kind:'none'}|{kind:'candidates';usable:number}|null;
 };
-export const agentIds = ['pi','codex','claude'];
+export const agentIds = ['pi','codex','claude','antigravity'];
 export const work = ['planning','design','frontend','backend','testing'];
 export const paths = [...work.map(n=>`work.${n}`), ...['implementation','whole-change'].flatMap(s=>['standards','spec'].map(a=>`review.${s}.${a}`))];
 export function cell(config: Config, path:string):Cell {

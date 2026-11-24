@@ -1,0 +1,120 @@
+{
+  "displayName": "Antigravity",
+  "enabled": true,
+  "installed": true,
+  "version": "1.5.16",
+  "status": "ready",
+  "driver": "antigravity",
+  "instanceId": "antigravity",
+  "auth": {
+    "status": "authenticated",
+    "type": "oauth-personal",
+    "label": "Google account"
+  },
+  "models": [
+    {
+      "slug": "gemini-4-neon",
+      "name": "Gemini 4 Neon",
+      "capabilities": {
+        "optionDescriptors": [
+          {
+            "id": "thought_level",
+            "label": "Thinking Level",
+            "type": "select",
+            "role": "reasoning",
+            "options": [
+              {"id": "low", "label": "Low"},
+              {"id": "medium", "label": "Medium"},
+              {"id": "high", "label": "High"},
+              {"id": "xhigh", "label": "Extra"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "gemini-4-carbon",
+      "name": "Gemini 4 Carbon",
+      "capabilities": {
+        "optionDescriptors": [
+          {
+            "id": "thought_level",
+            "label": "Thinking Level",
+            "type": "select",
+            "role": "reasoning",
+            "options": [
+              {"id": "low", "label": "Low"},
+              {"id": "medium", "label": "Medium"},
+              {"id": "high", "label": "High"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "gemini-pro-orchestrator-neon",
+      "name": "Orchestrator (Neon)",
+      "capabilities": {
+        "optionDescriptors": [
+          {
+            "id": "thought_level",
+            "label": "Thinking Level",
+            "type": "select",
+            "role": "reasoning",
+            "options": [
+              {"id": "low", "label": "Low"},
+              {"id": "medium", "label": "Medium"},
+              {"id": "high", "label": "High"},
+              {"id": "xhigh", "label": "Extra"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "claude-opus-5-5",
+      "name": "Claude Opus 5.5",
+      "capabilities": {
+        "optionDescriptors": [
+          {
+            "id": "thought_level",
+            "label": "Thinking Level",
+            "type": "select",
+            "role": "reasoning",
+            "options": [
+              {"id": "low", "label": "Low"},
+              {"id": "medium", "label": "Medium"},
+              {"id": "high", "label": "High"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "gpt-oss-120b-medium",
+      "name": "GPT-OSS 120B (Medium)",
+      "capabilities": {
+        "optionDescriptors": [
+          {
+            "id": "thought_level",
+            "label": "Thinking Level",
+            "type": "select",
+            "role": "reasoning",
+            "options": [
+              {"id": "low", "label": "Low"},
+              {"id": "medium", "label": "Medium"},
+              {"id": "high", "label": "High"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "no-thinking-model",
+      "name": "No Thinking",
+      "capabilities": {
+        "optionDescriptors": []
+      }
+    }
+  ]
+}

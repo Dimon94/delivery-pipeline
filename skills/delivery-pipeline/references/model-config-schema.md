@@ -69,7 +69,7 @@ CLI v8 实例顶层 key 精确为 `dispatch`、 `version`、`work`、`modes`、`
 | `second-opinion` | 咨询子代理 |
 
 每个 work 项必需 `{agent, model, effort}` 三字段，非空且不写 `Unknown`。`agent` 属于
-`pi|codex|claude|codex-app`：agent 值决定 worker kind，前三个由所选 CLI transport 壳（Herdr pane、T3Code task 或 Lody session）承载，
+`pi|codex|claude|antigravity|codex-app`：agent 值决定 worker kind，前四个由所选 CLI transport 壳承载（其中 `antigravity` 仅 T3Code 壳支持，Herdr pane 拒绝），
 `codex-app` 经 App task。App 与非编辑 work 项精确为这三个字段；CLI 五 work 另必需 `fallbacks`，见 v6 条款。其他字段（含旧 `execution`）拒绝。
 配置文件可以只定义已知 key 的子集；每个 transport 声明自己的必需集（见下文），缺必需项
 阻塞该 transport，未消费的定义项不阻塞，未知 key 拒绝。
@@ -81,7 +81,7 @@ CLI v8 实例顶层 key 精确为 `dispatch`、 `version`、`work`、`modes`、`
 
 CLI 只跑 direct：CLI 实例的 mode `kind` 必须为 `direct`，lane 只消费 `direct` 组；`modes`
 可以为空，只在 ticket 或 map **显式点名** mode 名时整体覆盖 work 项，`agents` key 属于
-`pi|codex|claude`。没有点名时 lane 直接用 work 项的 `{agent, model, effort}`。
+`pi|codex|claude|antigravity`。没有点名时 lane 直接用 work 项的 `{agent, model, effort}`。
 
 App 实例的 `modes` 必须非空，`agents` key 精确为 `codex-app`，`kind` 同样必须为 `direct`
 （App Prewalk 已退役，见 ADR-0007 修订）；App 的 implementation lane 计划只能来自 mode，解析顺序为 本票 → map → 配置 `default_mode`。`default_mode` 必须
@@ -101,7 +101,7 @@ resolved code-review owner；App 由 coordinator 的 subagent 入口解析两轴
 
 - **CLI 实例**：`work` 必需 `planning`、`design`、`frontend`、`backend`、`testing` 与完整
   `review` 矩阵；允许定义其余已知任务类型（当前调度不消费，为后续留口）；entry 与 review
-  轴的 agent 属于 `pi|codex|claude`；禁止 `default_mode`。两个实例都禁止已退役的 `legacy_execution`。
+  轴的 agent 属于 `pi|codex|claude|antigravity`；禁止 `default_mode`。两个实例都禁止已退役的 `legacy_execution`。
 - **App 实例**：`work` 精确为 `coordinator`、`research`、`prototype`、`planning`、`testing`、
   `integration`、`assistance`、`second-opinion` 八项；所有 entry 与 review
   轴的 agent 必须等于 `codex-app`；必需 `default_mode`；`modes` 非空且 `agents` key 精确为

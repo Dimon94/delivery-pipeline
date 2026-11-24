@@ -97,6 +97,11 @@ def main():
   calls.clear();row=adapter.execute(no_receipt,n['lane_id'],'never relaunch')
   assert row['replacement_intent']['status']=='launching', 'missing receipt reported completed'
   assert not calls
+  ag_caps=dict(parentThreadId='parent',inheritedProviderInstanceId='antigravity',providers=[dict(
+   providerInstanceId='antigravity',canRunChildTask=True,canRunCrossProviderChildTask=True,
+   models=[dict(id='gemini-4-neon',options=[dict(id='thought_level',values=['low','medium','high','xhigh'])])])])
+  assert a.NativeReplacement(io,ag_caps).target(dict(agent='antigravity',model='gemini-4-neon',effort='xhigh'))==dict(
+   providerInstanceId='antigravity',model='gemini-4-neon',options=dict(thought_level='xhigh'))
   os.chdir(previous_cwd)
  print('T3 native Adapter checks: pass')
 

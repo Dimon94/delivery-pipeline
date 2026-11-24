@@ -118,6 +118,16 @@ test('DD-618 Claude 官方来源、可读模型名与禁用原因',()=>{
  expect(off.title).toBe(reason);expect(off.text).toContain('暂不支持');clean(off.text);
 });
 
+test('Antigravity T3 Code 来源、可读模型名与禁用原因通过禁词扫描',()=>{
+ const label=agentLabel('antigravity','t3code');expect(label).toBe('Antigravity · T3 Code');clean(label);
+ expect(agentLabel('antigravity',null)).toBe('Antigravity');
+ expect(modelLabel('gemini-4-neon')).toBe('Gemini 4 Neon');
+ expect(modelLabel('gemini-pro-orchestrator-neon')).toBe('Gemini Pro Orchestrator Neon');
+ const reason='请先在 T3 Code 启用 Antigravity 提供方后重新核对';
+ const off=toolOffText('antigravity',undefined,{evidence:{sources:{antigravity:{route:null,status:'unknown',next_step:'',reason}},capabilities:{antigravity:{binary:true,models:{}}}}});
+ expect(off.title).toBe(reason);expect(off.text).toContain('暂不支持');clean(off.text);clean(off.title!);
+});
+
 test('检查预计结果的所有说法进入禁用词扫描',()=>{
  for(const outcome of ['different','no_different_family','unrecognized','none_runnable'] as const)clean(reviewPreviewText({selected:{agent:'claude',model:'claude-opus-5-5',effort:'high'},selected_index:1,outcome,unrecognized:[]}).text);
 });

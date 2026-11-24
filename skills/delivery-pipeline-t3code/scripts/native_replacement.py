@@ -10,7 +10,12 @@ import subprocess
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'delivery-pipeline/scripts'))
 import lane_registry as registry
 
-TARGETS = {'codex': ('codex', 'reasoningEffort'), 'claude': ('claudeAgent', 'effort'), 'pi': ('pi', 'thinking')}
+TARGETS = {
+    'codex': ('codex', 'reasoningEffort'),
+    'claude': ('claudeAgent', 'effort'),
+    'pi': ('pi', 'thinking'),
+    'antigravity': ('antigravity', 'thought_level'),
+}
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted', 'rolled_back'}
 
 
