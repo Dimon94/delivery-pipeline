@@ -45,7 +45,7 @@ elif args[:2] == ["pane", "get"]:
     out({"pane": next(p for p in state["panes"] if p["pane_id"] == args[2])})
 elif args[:2] == ["agent", "wait"]:
     raise SystemExit(0 if state.get("working", True) else 1)
-elif args[:2] in (["agent", "start"], ["agent", "prompt"], ["pane", "rename"], ["pane", "close"]):
+elif args[:2] in (["agent", "start"], ["agent", "prompt"], ["pane", "rename"], ["pane", "close"], ["workspace", "rename"]):
     out({})
 else:
     raise SystemExit(2)
@@ -217,6 +217,28 @@ def main() -> int:
                 or ag_start != ["agent", "start", "lane-agy", "--kind", "agy", "--pane", "w1:p2", "--",
                                 "--model", "gemini-4-neon", "--effort", "xhigh", "--dangerously-skip-permissions"]):
             failures.append(f"antigravity herdr dispatch failed: rc={result.returncode} row={ag_row} start={ag_start}")
+
+        # 11. 可视化短命名：自动补齐 Linear Issue 号、同步 workspace rename、超宽在 herdr 调用前拒绝。
+        result, registry, calls = run(
+            root, "lane-vis", json.loads(json.dumps(base)),
+            extra=(
+                "--work-item", "https://linear.app/erplus/issue/JB-548/demo",
+                "--title", "扩表Job",
+                "--tab-prefix", "JB-512 实施",
+                "--workspace-label", "JB-512 零停机 M3",
+            ),
+        )
+        if (result.returncode != 0
+                or not any(c == ["workspace", "rename", "w1", "JB-512 零停机 M3"] for c in calls)
+                or not any(c[:2] == ["tab", "create"] and "JB-512 实施" in c for c in calls)
+                or not any(c == ["pane", "rename", "w1:p2", "JB-548 扩表Job"] for c in calls)):
+            failures.append(f"visual naming dispatch failed: rc={result.returncode} calls={calls}")
+        result, registry, calls = run(
+            root, "lane-wide", json.loads(json.dumps(base)),
+            extra=("--workspace-label", "JB-512 生产分层零停机发布体系全量方案"),
+        )
+        if result.returncode == 0 or calls or registry.exists() or "exceeds limit 20" not in result.stdout:
+            failures.append(f"over-wide workspace label not rejected before herdr: {result.stdout}")
 
     for failure in failures:
         print(f"FAIL {failure}")

@@ -30,6 +30,13 @@ HERE = Path(__file__).resolve().parent
 MODEL_CONFIG = HERE.parents[1] / "delivery-pipeline-setup" / "scripts" / "model_config.py"
 RECOVERY_RECORD = HERE.parents[1] / "delivery-pipeline" / "scripts" / "recovery_record.py"
 HERDR_NAME_MAX = 32
+MAX_WORKSPACE_COLS = 20
+MAX_TAB_PREFIX_COLS = 18
+MAX_PANE_COLS = 24
+FULLWIDTH_RE = re.compile(r"[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]")
+ANY_ISSUE_KEY_RE = re.compile(r"(?:^|\s)(?:[A-Z][A-Z0-9]*-\d+|#\d+)(?:\s|$)")
+LINEAR_KEY_RE = re.compile(r"^(?:https?://linear\.app/[^/]+/issue/)?([A-Z][A-Z0-9]*-\d+)(?:/|$|\?|#)", re.I)
+GITHUB_ISSUE_RE = re.compile(r"^https?://github\.com/[^/]+/[^/]+/issues/(\d+)(?:/|$|\?|#)", re.I)
 # 已移出交付链路、只作独立 skill 保留的 owner（5ecd9ce）；链路内派发须显式写理由。
 OFF_CHAIN_OWNERS = {"ticket-sizing"}
 OWNER_RE = re.compile(r"^Owner[：:]\s*([^；;\s]+)", re.M)
@@ -57,6 +64,36 @@ def agent_name(lane: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", lane.lower()).strip("-") or "lane"
 
 
+def display_width(text: str) -> int:
+    return sum(2 if FULLWIDTH_RE.match(ch) else 1 for ch in text)
+
+
+def extract_issue_key(work_item: str) -> str | None:
+    value = (work_item or "").strip()
+    m = LINEAR_KEY_RE.match(value)
+    if m:
+        return m.group(1).upper()
+    m = GITHUB_ISSUE_RE.match(value)
+    if m:
+        return f"#{m.group(1)}"
+    return None
+
+
+def format_visual_label(work_item: str, label: str, max_cols: int, kind: str, *, auto_prefix: bool = True) -> str:
+    cleaned = re.sub(r"\s+", " ", (label or "").strip())
+    if not cleaned:
+        raise DispatchError(f"{kind} label cannot be empty")
+    key = extract_issue_key(work_item) if auto_prefix else None
+    formatted = f"{key} {cleaned}" if (key and not ANY_ISSUE_KEY_RE.search(cleaned)) else cleaned
+    width = display_width(formatted)
+    if width > max_cols:
+        raise DispatchError(
+            f"{kind} label {formatted!r} display width {width} exceeds limit {max_cols} "
+            f"(CJK=2, ASCII=1); shorten to compact '<Issue> <中文简写>[ <英文>]'"
+        )
+    return formatted
+
+
 def contract_rev() -> str:
     result = subprocess.run(["git", "-C", str(HERE), "rev-parse", "HEAD"], capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "Unknown"
@@ -68,6 +105,15 @@ def preflight(args) -> str | None:
     if len(name) > HERDR_NAME_MAX:
         raise DispatchError(f"lane name {name!r} is {len(name)} chars; Herdr agent names allow "
                             f"{HERDR_NAME_MAX}: shorten to {name[:HERDR_NAME_MAX].rstrip('-')!r} or similar")
+    args.title = format_visual_label(args.work_item, args.title, MAX_PANE_COLS, "pane")
+    args.tab_prefix = format_visual_label(
+        args.work_item, args.tab_prefix, MAX_TAB_PREFIX_COLS, "tab-prefix",
+        auto_prefix=(args.tab_prefix != "X"),
+    )
+    if getattr(args, "workspace_label", None):
+        args.workspace_label = format_visual_label(
+            args.work_item, args.workspace_label, MAX_WORKSPACE_COLS, "workspace",
+        )
     owner = OWNER_RE.search(Path(args.packet).read_text(encoding="utf-8"))
     if owner and owner.group(1) in OFF_CHAIN_OWNERS and not args.off_chain_reason:
         raise DispatchError(f"packet owner {owner.group(1)} is off the delivery chain; "
@@ -181,6 +227,7 @@ def main() -> int:
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
     parser.add_argument("--tab-prefix", default="X")
+    parser.add_argument("--workspace-label", help="可选：同步重命名 Herdr workspace（左侧 space，≤20 列）")
     parser.add_argument("--review-scope")
     parser.add_argument("--required-axes", nargs="+", choices=["standards", "spec"])
     parser.add_argument("--request-id")
@@ -363,6 +410,8 @@ def main() -> int:
         lock_path = Path(os.environ.get("TMPDIR", "/tmp")) / f"dp-dispatch-{coord['workspace_id'].replace(':', '_')}.lock"
         with open(lock_path, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            if args.workspace_label:
+                herdr("workspace", "rename", coord["workspace_id"], args.workspace_label)
             pane = place(coord, args.worktree, args.tab_prefix)
         name = agent_name(args.lane)
         row["herdr"] = {**pane, "agent_name": name, "coordinator_pane_id": coord["pane_id"]}

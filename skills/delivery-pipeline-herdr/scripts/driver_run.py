@@ -49,12 +49,17 @@ def exec_dispatch(map_dir: Path, state, action):
     packet.parent.mkdir(parents=True, exist_ok=True)
     packet.write_text(driver.render_packet(state, {**action, "args": a},
                                            [f"Worker 合同：{PACKET}，读取 Worker 执行节"]))
-    out = subprocess.run([sys.executable, str(DISPATCH), "--evidence", cfg["evidence"],
-                          "--task", a["task"], "--output-mode", a["output_mode"], "--lane", lane,
-                          "--work-item", a["work_item"], "--title", lane, "--worktree", str(worktree),
-                          "--branch", branch, "--base", base, "--packet", str(packet),
-                          "--registry", str(registry), "--map-registry", mrow.get("_file") or "none"],
-                         capture_output=True, text=True)
+    herdr_cfg = (state["driver"].get("transport") or {}).get("herdr") or {}
+    cmd = [sys.executable, str(DISPATCH), "--evidence", cfg["evidence"],
+           "--task", a["task"], "--output-mode", a["output_mode"], "--lane", lane,
+           "--work-item", a["work_item"], "--title", a.get("title") or lane, "--worktree", str(worktree),
+           "--branch", branch, "--base", base, "--packet", str(packet),
+           "--registry", str(registry), "--map-registry", mrow.get("_file") or "none"]
+    if herdr_cfg.get("tab_prefix"):
+        cmd.extend(["--tab-prefix", str(herdr_cfg["tab_prefix"])])
+    if herdr_cfg.get("workspace_label"):
+        cmd.extend(["--workspace-label", str(herdr_cfg["workspace_label"])])
+    out = subprocess.run(cmd, capture_output=True, text=True)
     try:
         reply = json.loads((out.stdout.strip().splitlines() or ["{}"])[-1])
     except json.JSONDecodeError:

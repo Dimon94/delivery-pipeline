@@ -5,9 +5,13 @@ helper 之外仍需 coordinator 判断的规则。
 
 ## 拓扑
 
-- Coordinator Pane 所在 tab 只调度；worker lane 落在容量管理的 worker tab `X`、`X-2`…，
-  每个 worker tab 最多 4 pane（取代 ADR-0005 的一 lane 一 tab）。HITL lane 共用同一容量。
-- pane label 是 work item 标题；agent name 由 lane_id 派生（lowercase alphanumeric + hyphens）。
+- Coordinator Pane 所在 tab 只调度；worker lane 落在容量管理的 worker tab（`<tab-prefix>`、`<tab-prefix>-2`…），
+  每个 worker tab 最多 4 pane，按 2×2 四格均分（`1→右、2→左下、3→右下`；取代 ADR-0005 的一 lane 一 tab）。HITL lane 共用同一容量。
+- 可视化短命名统一为 `<Issue号> <中文简写>[ <英文>]`（Issue 号置前防截断，汉字计 2 列、ASCII 计 1 列）：
+  - Workspace（`--workspace-label`）：≤ 20 列（如 `JB-512 零停机 M3`），派发前同步 `herdr workspace rename`。
+  - Worker Tab 前缀（`--tab-prefix`）：≤ 18 列（预留 `-2` 溢出位，如 `JB-512 实施`）。
+  - Pane 标题（`--title`）：≤ 24 列（如 `JB-548 扩表Job`）；未写 Issue 号且 `--work-item` 可解析出 Linear/GitHub 编号时脚本自动补齐。
+- agent name 由 lane_id 派生（lowercase alphanumeric + hyphens，≤ 32 字符）。
 
 ## Terminal Signal 与 Watcher
 
