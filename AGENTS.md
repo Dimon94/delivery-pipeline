@@ -35,7 +35,7 @@ Issue、代码和 CI 归 GitHub,项目坐标 `Dimon94/delivery-pipeline`,操作�
 
 | 规则 | 强制入口 |
 | --- | --- |
-| 新 work lane 的模型、档位与有序备用来自 setup 和显式命名预设。 | T3 `work_dispatch.py`、Herdr `dispatch.py`、Driver 调用的 `scripts/delivery-dispatch`；`python3 scripts/validate.py` 回放错误配置覆盖。 |
+| 新 work lane 的模型、档位与有序备用来自 setup 和显式命名预设。 | T3 `work_dispatch.py`、Herdr `dispatch.py`、Driver 调用的 `scripts/delivery-dispatch`；`python3 scripts/validate.py` 回放错误配置覆盖。本仓外的调用方：my-skills `skills/herdr-autopilot/scripts/launch.js` 经 `model_config.py probe/resolve/start` 启动入口 lane，改 `start` 输出或 CLI 参数时同步核对它。 |
 
 ## Agent skills
 
