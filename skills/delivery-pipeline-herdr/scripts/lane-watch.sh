@@ -27,10 +27,29 @@ driver_wake() {
 # 上一轮 FINAL_REPORT 的 LANE_DONE 行，无增量检测会每次重挂都误唤醒（map#765 实证 4 次）。
 # 只跟踪数量变化：陈旧标记滚出（减）不唤醒，新一轮标记出现（增）才唤醒，兼容多轮 rework。
 VISIBLE_DONE_LAST=''
+# blocked 边沿去重：非 blocked -> blocked 唤醒协调者一次，持续 blocked 不刷屏；恢复运行后清零。
+BLOCKED_NOTIFIED=0
 
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   # jsonl 主通道（map#765 实证：屏扫只取可视区，LANE_DONE 滚出后 100% 错过；session jsonl 是 ground truth）
-  JSONL=$(herdr pane get "$PANE" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result",{}).get("pane",{}).get("agent_session",{}).get("value",""))' 2>/dev/null || true)
+  # 同一次 pane get 同时读取 agent_status，捕捉 worker 进入 blocked 等待回应的边沿事件。
+  PANE_INFO=$(herdr pane get "$PANE" 2>/dev/null | python3 -c 'import json,sys
+try:
+    p=json.load(sys.stdin).get("result",{}).get("pane",{})
+except Exception:
+    p={}
+print(p.get("agent_session",{}).get("value",""))
+print(p.get("agent_status",""))' 2>/dev/null || true)
+  JSONL=$(printf '%s\n' "$PANE_INFO" | sed -n '1p')
+  AGENT_STATUS=$(printf '%s\n' "$PANE_INFO" | sed -n '2p')
+  if [ "$AGENT_STATUS" = "blocked" ]; then
+    if [ "$BLOCKED_NOTIFIED" -eq 0 ]; then
+      BLOCKED_NOTIFIED=1
+      herdr agent prompt "$COORD" "WAKE_BLOCKED: $LABEL (pane $PANE, lane $LANE_ID) 进入 blocked 状态，正在等待审批或提问回应。请用 herdr agent read $PANE 检查后按规则回应或上报；本 watcher 继续监听终态 LANE_DONE。" >/dev/null 2>&1
+    fi
+  else
+    BLOCKED_NOTIFIED=0
+  fi
   # map#1262 实证修复：jsonl 通道必须只数 assistant 输出的真实 marker；packet 投递回显的
   # toolResult 含 LANE_DONE 字样（指令原文）曾致两次 false-positive WAKE。
   # map#1262 codex lane 实证：rollout jsonl 是 response_item/message/output_text 结构，

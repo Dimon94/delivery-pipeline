@@ -33,8 +33,15 @@ if args[:2] == ['pane', 'read']:
         (root / 'session.jsonl').write_text('\\n'.join(lines) + '\\n')
     print(frames[min(count, len(frames) - 1)])
 elif args[:2] == ['pane', 'get']:
+    pane = {}
     if (root / 'session.jsonl').exists():
-        print(json.dumps({'result': {'pane': {'agent_session': {'value': str(root / 'session.jsonl')}}}}))
+        pane['agent_session'] = {'value': str(root / 'session.jsonl')}
+    if (root / 'statuses.json').exists():
+        count = int((root / 'count').read_text())
+        statuses = json.loads((root / 'statuses.json').read_text())
+        pane['agent_status'] = statuses[min(count, len(statuses) - 1)]
+    if pane:
+        print(json.dumps({'result': {'pane': pane}}))
 elif args[:2] == ['agent', 'prompt']:
     assert args[2] == 'coordinator'
     with (root / 'prompts.jsonl').open('a') as stream:
@@ -165,6 +172,19 @@ def case_driver_quiet_and_wake(root: Path):
     print('lane watcher: pass (driver wait silent, driver action wakes once)')
 
 
+def case_blocked_wakes_once_then_resumes_for_done(root: Path):
+    """worker 进入 blocked 时立刻边沿唤醒协调者一次，不重复刷屏，且继续监听直到 LANE_DONE。"""
+    setup_case(root, ['running', 'approve?', 'approve?', 'resumed', 'LANE_DONE lane'])
+    (root / 'statuses.json').write_text(json.dumps(['working', 'blocked', 'blocked', 'working', 'done']))
+    result = run(root)
+    assert result.returncode == 0, (result.returncode, result.stderr)
+    prompts = prompts_of(root)
+    assert len(prompts) == 2, prompts
+    assert 'WAKE_BLOCKED:' in prompts[0][1], prompts[0]
+    assert 'terminal fan-in:' in prompts[1][1], prompts[1]
+    print('lane watcher: pass (blocked wakes once on edge, then catches LANE_DONE)')
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
@@ -175,6 +195,7 @@ def main():
             case_jsonl_commit_suffix_wakes,
             case_jsonl_sibling_lane_silent,
             case_driver_quiet_and_wake,
+            case_blocked_wakes_once_then_resumes_for_done,
         )):
             root = base / f'case{i}'
             root.mkdir()
