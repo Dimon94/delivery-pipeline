@@ -17,8 +17,8 @@ Epic Issue 先读 `epic-scheduling.md` 计算跨 MMF 批次，再按本节恢复
 2. 识别 artifact：
    - Wayfinder map：含 map label 或 Destination / Decisions-so-far / Not yet specified。
    - Spec：含 spec label/模板，并链接 source map。
-   - Implementation ticket：含 implementation label，并通过 native parent 或 `Parent`
-     字段链接 spec。
+   - Implementation ticket：含 implementation label，并以 spec 为 native parent。正文
+     `Parent` 字段或链接只是 related，不算链接；缺父项先补上并读回。
 3. 向上追踪 parent 直到 map/spec 根坐标，向下读取当前已链接的 spec 与 tickets。旧 map
    已有多份 spec 时读这份现状，不据此再发布 Spec。按 issue ID 去重。closed items 也必须读取，
    它们是已完成 gate 的证据。
@@ -29,8 +29,8 @@ Epic Issue 先读 `epic-scheduling.md` 计算跨 MMF 批次，再按本节恢复
 | Gate | 持久输入 | 通过证据 |
 | --- | --- | --- |
 | `discovery` | map 与 decision child issues | 所有 in-scope child issues closed；resolution 与 artifacts 可读回 |
-| `spec` | published spec issue | to-spec owner 执行产物、owner 要求的用户确认、spec URL/ID、source map link 和 body 可读回 |
-| `tickets` | published implementation tickets | to-tickets owner 执行产物、用户对拆分与依赖的批准、ticket ID、spec `Parent` 回链和 dependency edges 可读回 |
+| `spec` | published spec issue | to-spec owner 执行产物、owner 要求的用户确认、spec URL/ID、source map link 和 body 可读回；Epic 下的 spec 以 Epic 为 native parent |
+| `tickets` | published implementation tickets | to-tickets owner 执行产物、用户对拆分与依赖的批准、ticket ID、以 spec 为 native parent 的回链和 dependency edges 可读回 |
 | `dispatch` | ticket dependency graph | ready frontier 已派给独立 worktree tasks（kind 按绑定规则）；冲突/blocked tickets 有原因 |
 | `execute` | worker packets、worktrees | 每个 terminal worker 有与 output mode 对应的交付与 dirty-state report |
 | `collect` | terminal reports | 持久交付证据已验证；blocked 只影响对应 item |

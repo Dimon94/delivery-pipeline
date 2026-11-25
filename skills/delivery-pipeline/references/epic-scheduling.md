@@ -7,8 +7,10 @@ Interface 和验收。Wayfinder 的调查和决定留在决策 Issue。需要复
 ## 建立或恢复
 
 1. 读回 Epic 正文、关系和相关决定。按 tracker 坐标识别用户输入，核实目标仓库，跨仓按本入口规则路由。
-   用 Epic 上的稳定 MMF 标识关联已发布的 Map、Spec。精确链接、原生关系，或能同时读回
-   `Epic: <URL>` 和 `MMF: <标识>` 的正文构成关联证据。已有 Epic 可以通过候选表和 Spec 链接恢复。
+   用 Epic 上的稳定 MMF 标识关联已发布的 Map、Spec。Map 以精确链接、原生关系，或能同时读回
+   `Epic: <URL>` 和 `MMF: <标识>` 的正文为关联证据。Spec 只认以 Epic 为原生父项；正文的
+   `Epic:`／`MMF:` 只用来认出所属 MMF，tracker 只把它显示为 related。正文认得出、原生父项为空的
+   已发布 Spec，coordinator 持 Epic 认领补上父项并读回后再复用。已有 Epic 可以通过候选表和 Spec 链接恢复。
    标识或关系不唯一时暂停该项并报告缺口。
 2. 写 Issue 或派发新 lane 前，先在该 Epic 的 coordinator 宿主调用核心 skill 的 `python3 scripts/epic_claim.py claim`。
    stdin 为 `{"epic":"<tracker 返回的 canonical Epic URL>","owner":"<当前原生 coordinator 身份>"}`。
@@ -67,7 +69,7 @@ JSON 只用于本轮决策，恢复时重建。传入当前已批准结果所需
 - MMF 没有 Map 与 Spec 时，coordinator 按本壳的建图入口运行 resolved Wayfinder owner，
   写入两项关联字段并读回。本壳未单列入口时在当前会话建图。建图后建立该 Map 的 Integration 坐标。
 - 新 Spec 用 `planning/artifact` lane 调用 resolved `to-spec` owner。先认领唯一 `Epic URL + MMF id + spec gate`
-  work item，发布前重读精确关联。仅该 lane 可创建这个 Spec，coordinator 汇总 Epic 回链与待连的原生依赖。
+  work item，发布前重读精确关联。仅该 lane 可创建这个 Spec，并在创建时把原生父项设为 Epic；coordinator 汇总 Epic 正文回链与待连的原生依赖。
   按原 gate 保留确认与权限。已有 Spec 从实际 gate 续跑。显式 `Epic URL + MMF id` 输入沿单项调度。
 - 派发 packet 列出本项的 Epic、Map／Spec、依赖和已确认决定的精确 Issue 指针，worker 开工前读回。
   Epic 和 Spec 的正式计划只持久化到 Issue。运行现场及恢复坐标沿原 registry／宿主合同。
