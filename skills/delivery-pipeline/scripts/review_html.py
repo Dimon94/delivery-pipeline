@@ -275,7 +275,7 @@ def read_diff_files(state: dict) -> list[dict]:
 def _lane_summary(rows: list[dict]) -> dict:
     """把同一张票的 1..N 条 lane 归纳成可读交付状态、最终提交和精简轨迹。"""
     if not rows:
-        return {"label": "未派发", "tone": "neutral", "commit": None, "model": None, "trace": ""}
+        return {"label": "未派发", "tone": "neutral", "commit": None, "model": None, "trace": "", "drift": ""}
     ordered = sorted(rows, key=lambda r: r.get("lane_id", ""))
     done_states = {"closed", "integrated", "consumed"}
     winner = next((r for r in reversed(ordered) if r.get("state") in done_states), ordered[-1])
@@ -304,7 +304,8 @@ def _lane_summary(rows: list[dict]) -> dict:
     effort = winner.get("effort")
     model_str = f"{model} ({effort})" if model and effort else (model or "")
     trace = " → ".join(f"{r['lane_id']}:{r.get('state')}" for r in ordered) if len(ordered) > 1 else ""
-    return {"label": label, "tone": tone, "commit": commit, "model": model_str, "trace": trace}
+    return {"label": label, "tone": tone, "commit": commit, "model": model_str, "trace": trace,
+            "drift": winner.get("scope_drift") or ""}
 
 
 def _render_diff_tree(files: list[dict]) -> str:
@@ -792,6 +793,8 @@ def render(
                 cell_parts.append(f'<span class="dp-muted dp-mono">{ESC(ds["model"])}</span>')
             if ds["trace"]:
                 cell_parts.append(f'<span class="dp-muted dp-mono">{ESC(ds["trace"])}</span>')
+            if ds["drift"]:  # ADR-0028：越出合同可写范围的文件，人审时看一眼
+                cell_parts.append(f'<div class="dp-slice">{pill("超出合同范围", "warn")} {ESC(ds["drift"])}</div>')
             if tid in brief_evidence:
                 route = reviewed_routes.get(t.get("task", "backend"), {})
                 cell_parts.append(

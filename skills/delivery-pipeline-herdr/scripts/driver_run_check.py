@@ -45,12 +45,19 @@ def main():
         plan = {"tickets": [{"id": "T1", "wave": 1, "task": "backend", "deps": [],
                              "owner": {"name": "implement", "path": "/abs/SKILL.md", "label": "implement"}}]}
         sha = driver.plan_sha(plan)
+        contract = {"ticket": "T1", "slice_id": "all", "writable": ["a.txt"], "read_first": ["README.md"],
+                    "check": ["true"], "expected": "退出 0"}
         base = {"version": 1, "map": "m1", "gates": {"discovery": 1, "spec": 1, "tickets": 1}, "plan": plan,
                 "plan_check": "pass", "grant": {"plan_sha": sha}, "published": "p"}
         driver.write_json(md / "driver.json", base)
         driver.persist_lanes(md, [{"lane_id": "m1", "work_item": "m1", "role": "map", "output_mode": "none",
                                    "state": "running", "integration_worktree_path": str(integ),
                                    "integration_branch": "map", "_file": str(md / "registry.md")}])
+        # 没有派发合同：先要合同，不派发（ADR-0028）
+        out = subprocess.run([sys.executable, str(RUN), "run", str(md)], capture_output=True, text=True)
+        assert out.returncode == 10 and json.loads(out.stdout)["id"] == "contract:T1", (out.returncode, out.stdout, out.stderr)
+        base["contracts"] = {"T1": contract}
+        driver.write_json(md / "driver.json", base)
         fake = root / "dispatch.py"
         fake.write_text(FAKE)
         env = {**os.environ, "DP_DISPATCH": str(fake)}
@@ -65,12 +72,13 @@ def main():
         assert out.returncode == 0 and json.loads(out.stdout)["action"] == "wait", (out.returncode, out.stdout, out.stderr)
         packet = (md / "packets" / "T1.md").read_text()
         assert "Owner：implement; /abs/SKILL.md; implement" in packet and "HERDR_ROLE_DISPATCH_PACKET.md" in packet, packet
+        assert "范围：只改 a.txt" in packet and "输入：先读 README.md" in packet, packet  # packet 由合同生成
         assert (root / "wt" / "T1").is_dir()
-        # watch：终态行交回后 Driver 自己 fan_in（fake commit 非法 → conflict → 派 merger，需唤醒）
+        # watch：终态行交回后 Driver 自己 fan_in（fake commit 非法 → 合同无法核对 → blocked → 验收诊断，需唤醒）
         out = subprocess.run([sys.executable, str(RUN), "watch", str(md), "LANE_DONE T1 deadbeef"],
                              capture_output=True, text=True, env={**env, "DP_DISPATCH": "/nonexistent"})
         action = json.loads(out.stdout)
-        assert out.returncode == 10 and action["id"] == "dispatch:merger:T1", (out.returncode, out.stdout, out.stderr)
+        assert out.returncode == 10 and action["id"] == "judge:diagnose:T1:1", (out.returncode, out.stdout, out.stderr)
     print("driver_run check: pass")
 
 

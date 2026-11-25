@@ -8,7 +8,7 @@ pi → `herdr-pi-pane`，codex → `herdr-codex-pane`，claude → `herdr-claude
 
 ## Driver 收取派发合同
 
-票带 `briefs` 时按 `../../delivery-pipeline/references/brief-dispatch.md` 执行；本壳只多出 `driver_run.py watch` 交回终态行。
+派发合同与拆片的票按 `../../delivery-pipeline/references/brief-dispatch.md` 执行；本壳只多出 `driver_run.py watch` 交回终态行。
 
 ## 新 lane
 

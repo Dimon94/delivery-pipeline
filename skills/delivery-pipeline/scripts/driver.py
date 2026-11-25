@@ -365,9 +365,14 @@ def decide(state) -> dict:
             continue
         if ticket['id'] in managed:
             continue
+        mode, brief = ticket.get("output_mode", "commit"), thaw(d.get("contracts", {}).get(ticket["id"]))
+        if mode == "commit" and not brief:  # ADR-0028：没有合同不派发
+            return act("prepare_contract", f"contract:{ticket['id']}", owner="delegate-ticket",
+                       work_item=ticket["id"], base=state.get("integration_head"))
         return act("dispatch", f"dispatch:{ticket['id']}", task=ticket.get("task", "backend"),
-                   output_mode=ticket.get("output_mode", "commit"), work_item=ticket["id"],
-                   lane_id=ticket.get("lane_id", ticket["id"]), answer=d.get("answers", {}).get(ticket["id"]))
+                   output_mode=mode, work_item=ticket["id"],
+                   lane_id=ticket.get("lane_id", ticket["id"]), answer=d.get("answers", {}).get(ticket["id"]),
+                   **(dict(contract=brief, **brief_delivery.packet(brief)) if brief else {}))
     if pending_hitl:
         ids = ",".join(t["id"] for t in pending_hitl)
         return act("ask_human", f"hitl:{ids}", kind="hitl",
@@ -437,6 +442,7 @@ REQUIRED = {
     "ask_human": {"reply"},
     "judge": set(),
     "dispatch": {"lane"},
+    "prepare_contract": {"briefs"},
     "dispatch_briefs": {"lanes"},
     "scenario": {"base", "check", "observed", "ok"},
     "prepare_map": {"map_row"},
@@ -563,6 +569,9 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
         else:
             lid = args["lane_id"]
             if args["kind"] == "acceptance-diagnosis":
+                if "briefs" in receipt:  # 诊断结论是合同划错：换合同，原提交按新合同重核
+                    item = lanes[lid]["work_item"]
+                    d.setdefault("contracts", {})[item] = brief_delivery.contract(item, receipt["briefs"])
                 lane_update(lid, state="running", repairs=int(lanes[lid].get("repairs") or 0) + 1,
                             repair_lane=receipt["lane_id"])
             elif args["kind"] == "resplit":
@@ -572,6 +581,8 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
                 lane_update(lid, state="superseded", fix_lane=receipt["lane_id"])
     elif kind == 'dispatch_briefs':
         updates.extend({**{k: v for k, v in row.items() if k != 'worker_reports'}, '_file': None} for row in receipt['lanes'])
+    elif kind == "prepare_contract":
+        d.setdefault("contracts", {})[args["work_item"]] = brief_delivery.contract(args["work_item"], receipt["briefs"])
     elif kind == "dispatch":
         row = receipt["lane"]
         if not isinstance(row, dict) or row.get("lane_id") != args["lane_id"]:
@@ -587,11 +598,11 @@ def apply(state, action, receipt) -> tuple[dict, list[dict]]:
             raise ValueError("map row 必须 role: map 且带 integration_worktree_path")
         updates.append({**row, "_file": None})
     elif kind in ("fan_in", "consume"):
-        allowed = {"fan_in": {"integrated", "integration_conflict", "integration_checks_failed"},
+        allowed = {"fan_in": {"integrated", "integration_conflict", "integration_checks_failed", "blocked"},
                    "consume": {"consumed", "blocked"}}[kind]
         if receipt["state"] not in allowed:
             raise ValueError(f"{kind} 回执 state 非法")
-        extra = {k: receipt[k] for k in ("integrated_commit", "blocked_reason", "verdict") if k in receipt}
+        extra = {k: receipt[k] for k in ("integrated_commit", "blocked_reason", "verdict", "scope_drift") if k in receipt}
         lane_update(args["lane_id"], state=receipt["state"], **extra)
     elif kind == "closeout":
         if receipt["result"] not in ("closed", "close_pending"):
@@ -728,6 +739,11 @@ def exec_fan_in(map_dir: Path, state, action) -> dict:
         return brief_delivery.integrate(wt, row, target)
     if not wt or not commit:
         return {"state": "integration_checks_failed", "blocked_reason": "缺 integration worktree 或 head_commit"}
+    brief = (state["driver"].get("contracts") or {}).get(row.get("work_item"))
+    why, outside = brief_delivery.audit(wt, row, brief, commit) if brief else (None, [])
+    if why:  # 走既有诊断修复链（ADR-0012）
+        return {"state": "blocked", "blocked_reason": why}
+    drift = {"scope_drift": "、".join(outside)} if outside else {}  # 越界只记偏差，合并评审页显示
     if run_git(wt, "cherry-pick", commit).returncode != 0:
         run_git(wt, "cherry-pick", "--abort")
         return {"state": "integration_conflict", "blocked_reason": "cherry-pick 冲突"}
@@ -739,7 +755,7 @@ def exec_fan_in(map_dir: Path, state, action) -> dict:
             return {"state": "integration_checks_failed", "integrated_commit": head, "blocked_reason": "focused checks 命令缺失"}
         if subprocess.run(checks, shell=True, cwd=wt, capture_output=True).returncode != 0:
             return {"state": "integration_checks_failed", "integrated_commit": head, "blocked_reason": "focused checks 失败"}
-    return {"state": "integrated", "integrated_commit": head}
+    return {"state": "integrated", "integrated_commit": head, **drift}
 
 
 def exec_consume(map_dir: Path, state, action) -> dict:
@@ -819,7 +835,7 @@ def render_packet(state, action, transport_lines=()) -> str:
     a = action["args"]
     ticket = next((t for t in state["driver"]["plan"]["tickets"] if t["id"] == a["work_item"]), {})
     owner = ticket.get("owner") or {}
-    get = lambda k: ticket.get(k) or a.get(k) or "Unknown"  # noqa: E731
+    get = lambda k: a.get(k) or ticket.get(k) or "Unknown"  # noqa: E731
     lines = [
         f"Lane ID：{a['lane_id']}",
         f"Work item：{ticket.get('url') or a['work_item']}",
@@ -919,11 +935,17 @@ def _plan():
     ], "test_strategy": {"level": "focused"}, "risk": "low", "critical_path": ["T1", "T2"]}
 
 
+def _brief(item, **kw):
+    return {"ticket": item, "slice_id": "all", "writable": ["a.txt"], "read_first": ["README.md"],
+            "check": ["git", "grep", "-q", "ok", "HEAD", "--", "a.txt"], "expected": "a.txt 含 ok", **kw}
+
+
 def _granted(**extra):
     plan = _plan()
     sha = plan_sha(plan)
     d = {"version": VERSION, "map": "m1", "gates": {"discovery": "a", "spec": "s", "tickets": "t"},
          "plan": plan, "plan_check": "pass", "grant": {"plan_sha": sha}, "published": "p",
+         "contracts": {t["id"]: _brief(t["id"]) for t in plan["tickets"]},
          "test_strategy": {"level": "focused", "scope_sha": sha, "risk": "low"},
          "scope": {"sha": sha, "risk": "low"}}
     d.update(extra)
@@ -964,6 +986,7 @@ def _cases():
         ("grant-stale", _state(_granted(grant={"plan_sha": "x"})), "halt", "halt:plan_change:grant"),
         ("publish", _state(_granted(published=None)), "invoke_owner", "owner:publish"),
         ("prepare-map", _state(_granted()), "prepare_map", "prepare_map"),
+        ("contract-first", _state(_granted(contracts={}), MAP), "prepare_contract", "contract:T1"),
         ("dispatch-frontier", _state(_granted(), MAP), "dispatch", "dispatch:T1"),
         ("dep-wait", _state(_granted(), MAP, _lane("T1", "running")), "wait", "wait"),
         ("fan-in", _state(_granted(), MAP, _lane("T1", "terminal", head_commit="c")), "fan_in", "fan_in:T1"),
@@ -1023,7 +1046,7 @@ def self_test() -> int:
     if not set(HALT_CLASSES) <= halts:
         failures.append(f"Halt 类覆盖缺 {sorted(set(HALT_CLASSES) - halts)}")
     kinds = {c[2] for c in _cases()}
-    need = {"legacy", "halt", "invoke_owner", "ask_human", "render_review", "prepare_map", "dispatch", "wait",
+    need = {"legacy", "halt", "invoke_owner", "ask_human", "render_review", "prepare_map", "prepare_contract", "dispatch", "wait",
             "fan_in", "consume", "closeout", "judge", "remote", "done"}
     if not need <= kinds:
         failures.append(f"Action 覆盖缺 {sorted(need - kinds)}")
@@ -1038,6 +1061,7 @@ def self_test() -> int:
     if decide_epic({"candidates": [{"mmf": "A", "map": "mA"}], "maps": {"mA": "closed"}})["action"] != "done":
         failures.append("epic: 全部 closed 应 done")
     failures += _io_self_test()
+    failures += _contract_self_test()
     failures += _planning_self_test()
     failures += _review_html_self_test()
     for f in failures:
@@ -1077,8 +1101,20 @@ def _io_self_test() -> list[str]:
         record(md, "owner:publish", {"artifact": "tracker#1", "next": "to-tickets"})
         record(md, "prepare_map", {"map_row": dict(MAP, work_item="m1")})
         nxt = decide(load(md))
-        if nxt["id"] != "dispatch:T1":
-            failures.append(f"建 map 后应派 T1，got {nxt['id']}")
+        if nxt["id"] != "contract:T1":
+            failures.append(f"建 map 后应先要 T1 的派发合同，got {nxt['id']}")
+        for bad in ([], [_brief("T1"), _brief("T1")], [_brief("T9")], [_brief("T1", writable=[])], [_brief("T1", check=[])]):
+            try:
+                record(md, "contract:T1", {"briefs": bad})
+                failures.append(f"残缺合同应拒绝：{bad}")
+            except ValueError:
+                pass
+        record(md, "contract:T1", {"briefs": [_brief("T1")]})
+        nxt = decide(load(md))
+        if nxt["id"] != "dispatch:T1" or nxt["args"].get("contract") != _brief("T1"):
+            failures.append(f"合同齐备后应带合同派 T1，got {nxt}")
+        if "范围：只改 a.txt" not in render_packet(load(md), nxt) or "输入：先读 README.md" not in render_packet(load(md), nxt):
+            failures.append("派发包的范围与输入应由合同生成")
         try:
             record(md, "dispatch:T1", {"lane": {"lane_id": "T1", "work_item": "T9"}})
             failures.append("dispatch 回执 work_item 不符应拒绝")
@@ -1107,6 +1143,53 @@ def _io_self_test() -> list[str]:
         record(md, "halt", "接受剩余 findings 继续")
         if decide(load(md))["id"] == h["id"]:
             failures.append("已裁决的 halt 不应再触发")
+    return failures
+
+
+def _contract_self_test() -> list[str]:
+    """ADR-0028：真实 Git 现场里，空变更、验收失败的提交进不了集成分支；越界照常集成但记成偏差。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, tree = str(Path(tmp, "repo")), str(Path(tmp, "lane"))
+        git = brief_delivery.git
+        subprocess.run(["git", "init", "-qb", "integration", repo], check=True)
+        for kv in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+            git(repo, "config", *kv)
+        Path(repo, "README.md").write_text("base\n")
+        git(repo, "add", "--", "README.md")
+        git(repo, "commit", "-qm", "base")
+        base = git(repo, "rev-parse", "HEAD")
+        git(repo, "worktree", "add", "-qb", "lane", tree)
+
+        def deliver(files):
+            git(tree, "reset", "-q", "--hard", base)
+            for name, text in files.items():
+                Path(tree, name).parent.mkdir(exist_ok=True)
+                Path(tree, name).write_text(text)
+            if files:
+                git(tree, "add", "--", *files)
+                git(tree, "commit", "-qm", "work")
+            head = git(tree, "rev-parse", "HEAD")
+            row = _lane("T1", "terminal", head_commit=head, worktree=tree)
+            scoped = {"T1": _brief("T1", writable=["a.txt", "tests/"])}
+            state = _state(_granted(contracts=scoped), dict(MAP, integration_worktree_path=repo), row)
+            got = exec_fan_in(Path(tmp), state, decide(state))
+            return got, git(repo, "rev-parse", "HEAD")
+
+        for name, files, word in (("空变更", {}, "净变更为空"), ("验收失败", {"a.txt": "no\n"}, "验收命令退出")):
+            got, head = deliver(files)
+            if got.get("state") != "blocked" or word not in got.get("blocked_reason", "") or head != base:
+                failures.append(f"合同违约（{name}）应 blocked 且不进集成分支，got {got}")
+        got, head = deliver({"a.txt": "ok\n", "b.txt": "x\n", "tests/new.txt": "x\n"})
+        if got.get("state") != "integrated" or got.get("scope_drift") != "b.txt":
+            failures.append(f"越界应集成并只把范围外的文件记成偏差（目录项覆盖新文件），got {got}")
+        git(repo, "reset", "-q", "--hard", base)
+        got, head = deliver({"a.txt": "ok\n"})
+        if got.get("state") != "integrated" or "scope_drift" in got or head == base or Path(repo, "a.txt").read_text() != "ok\n":
+            failures.append(f"守约提交应集成且无偏差，got {got}")
+        blocked = _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="合同违约：验收命令退出 1"))
+        if decide(blocked)["id"] != "judge:diagnose:T1:1":
+            failures.append("合同违约应进既有诊断修复链")
     return failures
 
 
@@ -1203,7 +1286,7 @@ def _review_html_self_test() -> list[str]:
                 "01-repair-1": {"lane_id": "01-repair-1", "work_item": "01", "role": "backend", "output_mode": "commit",
                                 "state": "closed", "integrated_commit": "9ae1c9ffe60d10a8"},
                 "02": {"lane_id": "02", "work_item": "02", "role": "backend", "output_mode": "commit",
-                       "state": "closed", "integrated_commit": "20c8cdad2977691b"},
+                       "state": "closed", "integrated_commit": "20c8cdad2977691b", "scope_drift": "deploy/extra.py"},
                 "t": {"lane_id": "t", "work_item": "demo-m1#testing", "role": "testing", "output_mode": "checks",
                       "state": "closed", "repairs": "1", "repair_lane": "t-fix-1", "delivery": str(test_json)},
                 "t-fix-1": {"lane_id": "t-fix-1", "work_item": "t-fix-1", "role": "backend", "output_mode": "commit",
@@ -1213,6 +1296,9 @@ def _review_html_self_test() -> list[str]:
             },
         }
         devs = deviations(state)
+        if render(dict(state, lanes={k: {f: v for f, v in r.items() if f != "scope_drift"} for k, r in state["lanes"].items()}),
+                  "merge").count("超出合同范围"):
+            failures.append("没有越界的票不应显示超出合同范围")
         if any("波次内补票" in item for item in devs):
             failures.append(f"planning 或 repair lane 不应误判为波次内补票: {devs}")
         if not any("整体检查 t 修复 1 轮" in item for item in devs):
@@ -1220,7 +1306,7 @@ def _review_html_self_test() -> list[str]:
         page = render(state, "merge")
         for must in ("导入与类型检查通过", "历史样本回归零崩溃", "Stale note", "Missing main hook",
                      "Live CI check pending", "42 项通过", "classifier.py", "需保持 fail-close",
-                     "单测覆盖全部规则", "var(--foreground"):
+                     "单测覆盖全部规则", "var(--foreground", "超出合同范围", "deploy/extra.py"):
             if must not in page:
                 failures.append(f"Merge Review 缺预期内容: {must}")
         for forbid in ("波次内补票", "01=superseded", "{&quot;e2e&quot;", "100vh"):

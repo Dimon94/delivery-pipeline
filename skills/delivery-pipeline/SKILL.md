@@ -18,8 +18,8 @@ disable-model-invocation: true
 2. **执行 Action。** 按 `action` 分支：
    - `invoke_owner`：按 `references/owner-skill-resolution.md` 调用 owner（name + 绝对 SKILL.md path + invocation label），
      传入 Action 的 `planning_mode`。按 [计划 owner 回执](references/owner-skill-resolution.md) 交回 NEXT、工件、计划改动和脚本结果。
-   - `handoff_epic`：按 [Epic 调度](references/epic-scheduling.md) 接管 `args.epic`，使用原 Epic 认领入口。
-     回执附 Epic 恢复坐标 `artifact`，结束原单 MMF map。
+   - `handoff_epic`：按 [Epic 调度](references/epic-scheduling.md) 接管 `args.epic`，使用原 Epic 认领入口。回执附 Epic 恢复坐标 `artifact`，结束原单 MMF map。
+   - `prepare_contract` 与带合同的 `dispatch`、“合同违约”的 `judge`：按 `references/brief-dispatch.md` §单票合同。
    - `dispatch` / `prepare_map`：按所属壳 dispatch 合同落位；packet 用 `references/lane-registry.md` §轻量交接。
    - `ask_human`：Merge Review 与旧 map 的 Plan Review 按 `references/review-presentation.md` 呈现 `args.html`；HITL 把全部问题一次问完。原文作回执。
    - `judge`：轻判断当场从 `options` 选一项并附证据坐标；重判断（验收诊断、重拆、review 修复）派成 lane。
