@@ -12,44 +12,55 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReadBoard(t *testing.T) {
-	const sample = "board_samples/board.json"
-	scripts := "../../skills/delivery-pipeline/scripts"
-	want, err := os.ReadFile(filepath.Join(scripts, sample))
+	python, err := exec.LookPath("python3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := Host{Tool: filepath.Join(scripts, "model_config.py")}
-	got, err := host.ReadBoard()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatal("ReadBoard 应原样返回共享样本")
-	}
-
-	var snapshot map[string]json.RawMessage
-	if err := json.Unmarshal(want, &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	snapshot["schema"] = json.RawMessage("2")
-	invalid, err := json.Marshal(snapshot)
+	want, err := os.ReadFile("../../skills/delivery-pipeline/scripts/board_samples/board.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resources := t.TempDir()
-	path := filepath.Join(resources, sample)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	host := Host{Python: python, Tool: filepath.Join(resources, "model_config.py"), Config: filepath.Join(t.TempDir(), "test-config.json")}
+	command := filepath.Join(resources, "board_snapshot.py")
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	argsCheck := "import sys\nassert sys.argv[1:] == ['--lanes-root', " + strconv.Quote(lanesRoot) + "]\n"
+	cases := []struct {
+		name, script, reason string
+	}{
+		{"原样返回", "sys.stdout.buffer.write(" + strconv.Quote(string(want)) + ".encode('utf-8'))\n", ""},
+		{"非零退出", "sys.stdout.write('{\"schema\":1}')\nsys.exit(7)\n", "退出码 7"},
+		{"坏 JSON", "print('{broken')\n", "JSON"},
+		{"未知版本", "print('{\"schema\":2}')\n", "$.schema"},
+		{"超时", "import time\nprint('{\"schema\":1}', flush=True)\ntime.sleep(30)\n", "超时"},
 	}
-	if err := os.WriteFile(path, invalid, 0600); err != nil {
-		t.Fatal(err)
-	}
-	host.Tool = filepath.Join(resources, "model_config.py")
-	if output, err := host.ReadBoard(); err == nil || !strings.Contains(err.Error(), "$.schema") || output != nil {
-		t.Fatalf("应在 $.schema 拒绝未知版本，收到 %s，%v", output, err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if err := os.WriteFile(command, []byte(argsCheck+c.script), 0600); err != nil {
+				t.Fatal(err)
+			}
+			start := time.Now()
+			output, err := host.ReadBoard()
+			elapsed := time.Since(start)
+			if c.reason == "" {
+				if err != nil || !bytes.Equal(output, want) {
+					t.Fatalf("ReadBoard 应原样返回共享样本，返回 %d 字节，错误 %v", len(output), err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.reason) || output != nil {
+				t.Fatalf("期望无快照且错误含 %q，收到 %s，%v", c.reason, output, err)
+			}
+			if c.name == "超时" && (elapsed < 4800*time.Millisecond || elapsed > 7*time.Second) {
+				t.Fatalf("期望约 5 秒返回超时，实际耗时 %v", elapsed)
+			}
+		})
 	}
 }
 

@@ -182,6 +182,25 @@ def install(app, destination):
     return destination
 
 
+def copy_resources(resources):
+    """复制模型工具和看板命令，保留随包 Python 的同级导入位置。"""
+    resources.mkdir(parents=True, exist_ok=True)
+    skills = root.parents[1] / 'skills'
+    canonical = skills / 'delivery-pipeline-setup/scripts'
+    shutil.copy2(canonical / 'model_config.py', resources / 'model_config.py')
+    shutil.copytree(canonical / '_vendor', resources / '_vendor', dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+
+    board = skills / 'delivery-pipeline/scripts'
+    # 快照读取 lane_graph、issue_status 与 Driver，后三个模块是 Driver 的直接依赖。
+    for name in ('board_snapshot.py', 'lane_graph.py', 'issue_status.py', 'driver.py',
+                 'closeout.py', 'brief_delivery.py', 'review_html.py'):
+        shutil.copy2(board / name, resources / name)
+    samples = resources / 'board_samples'
+    samples.mkdir(exist_ok=True)
+    shutil.copy2(board / 'board_samples/board.json', samples / 'board.json')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--python', default=sys.executable)
@@ -192,11 +211,8 @@ def main():
     info = build_info(root)
     subprocess.run(['bun', 'run', 'build', '-skip-dmg'], cwd=root, env={**os.environ, 'MYGO_LDFLAGS': ldflags(python, info)}, check=True)
     app = next((root / 'build').glob('darwin-*/*.app'))
-    canonical = root.parents[1] / 'skills/delivery-pipeline-setup/scripts'
     resources = app / 'Contents/Resources'
-    shutil.copy2(canonical / 'model_config.py', resources / 'model_config.py')
-    shutil.copytree(canonical / '_vendor', resources / '_vendor', dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    copy_resources(resources)
     # 对最终资源执行隔离 probe，防止源码可用但应用漏带依赖。
     subprocess.run([str(python), str(root.parents[1] / 'scripts/check_config_toml.py'),
                     '--python', str(python), '--tool', str(resources / 'model_config.py')], check=True)

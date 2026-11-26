@@ -73,12 +73,29 @@ func (h *Host) ReadConfig() (json.RawMessage, error) {
 	return json.RawMessage(output), nil
 }
 
-// ReadBoard 从配置工具的同级资源读取共享合同样本。
+// ReadBoard 用随包快照命令读取本机交付现场。
 func (h *Host) ReadBoard() (json.RawMessage, error) {
-	path := filepath.Join(filepath.Dir(h.Tool), "board_samples", "board.json")
-	output, err := os.ReadFile(path)
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("读取看板样本失败：%w", err)
+		return nil, errors.New("读取看板失败：无法定位用户目录")
+	}
+	path := filepath.Join(filepath.Dir(h.Tool), "board_snapshot.py")
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, h.Python, "-E", "-B", "-S", path, "--lanes-root", lanesRoot)
+	// 子进程持有输出管道时，仍有界等待命令回收。
+	cmd.WaitDelay = 250 * time.Millisecond
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, errors.New("读取看板快照超时（5 秒）")
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, fmt.Errorf("看板快照命令执行失败（退出码 %d）", exit.ExitCode())
+		}
+		return nil, fmt.Errorf("无法运行看板快照命令：%w", err)
 	}
 	return validateBoard(output)
 }
