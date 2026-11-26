@@ -140,8 +140,39 @@ export const copy = {
   "请参考上次修改重新选择并查看差异": "请参考上次修改，重新选择并查看差异。",
   "当前设置与待保存的设置一致": "当前设置与待保存的设置一致。",
   "当前设置仍无法读取修改还在请让AI助手处理后再次检查": "当前设置仍无法读取，修改还在。请让 AI 助手处理后再次检查。",
-  "检查失败修改还在请处理环境后再次检查": "检查失败，修改还在，请处理环境后再次检查。"
+  "检查失败修改还在请处理环境后再次检查": "检查失败，修改还在，请处理环境后再次检查。",
+  "看板": "看板",
+  "Inbox": "Inbox",
+  "设置": "设置",
+  "返回看板": "返回看板",
+  "读取中": "读取中…",
+  "读取失败": "读取失败",
+  "重试": "重试",
+  "收起左栏": "收起左栏",
+  "展开左栏": "展开左栏",
+  "收起右栏": "收起右栏",
+  "展开右栏": "展开右栏",
+  "仓库": "仓库",
+  "已结束": "已结束",
+  "待归属": "待归属",
+  "未派发": "未派发",
+  "没有进行中的工作": "本机还没有可显示的 Epic 或 Inbox 条目",
+  "选择一张票查看详情": "在图上选择一张票或 MMF 查看详情",
+  "交付阶段": "交付阶段",
+  "执行状态": "执行状态",
+  "依赖": "依赖",
+  "无": "无",
+  "分支": "分支",
+  "打开Linear": "打开 Linear",
+  "打开计划审查页": "打开 Plan Review 页",
+  "打开合并审查页": "打开 Merge Review 页",
+  "看板快照格式不对": "看板快照格式不对，请检查随附的看板工具"
 };
+// 阶段中文名；读不出的阶段原样显示数据值。
+export const stageNames:Record<string,string>={spec:'Spec',tickets:'拆票',implement:'实施',integrate:'集成',review:'审查',merge_review:'Merge Review',merged:'合入'};
+export const stageLabel=(stage:string)=>stageNames[stage]??stage;
+// 状态分组沿用 lane_graph 的五组。
+export const laneGroupNames:Record<string,string>={done:'已完成',active:'进行中',review:'待收口',problem:'需处理',void:'作废'};
 const families:Record<string,string>={glm:'GLM',minimax:'MiniMax',gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
 export const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};
 export function modelLabel(raw:string):string {

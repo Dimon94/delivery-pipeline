@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test';
-import {guide,shouldRereadOnFocus} from './guide';
+import {guide,shouldRereadOnFocus,shouldRereadBoard} from './guide';
 const path='/tmp/dd593/配置.json';
 test('R1 missing：说明缺失、路径、影响与下一步',()=>{
  const g=guide({fileState:'missing',path});
@@ -73,4 +73,12 @@ test('R1：非字符串或数字的版本按 JSON 展示',()=>{
   const detail=guide({fileState:'unsupported_version',path,config:{version}}).detail;
   expect(detail).toContain('实际版本：'+expected);expect(detail).not.toContain('[object Object]');
  }
+});
+
+// 独立预期：DD-668 T4 失败态回前台重读、T5 已渲染回前台重读；读取中或停在设置页不重读。
+test('看板仅在显示且不在读取中时随前台重读',()=>{
+ expect(shouldRereadBoard({visible:true,state:'failed'})).toBe(true);
+ expect(shouldRereadBoard({visible:true,state:'rendered'})).toBe(true);
+ expect(shouldRereadBoard({visible:true,state:'loading'})).toBe(false);
+ expect(shouldRereadBoard({visible:false,state:'failed'})).toBe(false);
 });
