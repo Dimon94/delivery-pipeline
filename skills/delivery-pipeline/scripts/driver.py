@@ -337,8 +337,12 @@ def decide(state) -> dict:
                        verdict=row.get("verdict"))
         if row.get('work_item') in managed and not done(row['work_item']):
             continue
-        if st in ("integrated", "consumed") and row.get("role") != "review":
+        if st in ("integrated", "consumed"):
             return act("closeout", f"closeout:{lid}", lane_id=lid)
+        if st == "close_pending":  # 释放失败不重试、不跳过：停下报原因
+            return act("halt", f"halt:authority:close_pending:{lid}", kind="authority", label=HALT_CLASSES["authority"],
+                       reason=f"{lid} 未释放：{row.get('close_reason') or 'Unknown'}", evidence=[row.get("_file") or lid],
+                       options=["按原因处理 pane 或树后把 lane 改回 consumed/integrated 再 run"])
 
     # 2. 失败处理
     merging = {r.get("merges") for r in lanes.values() if r.get("role") == "integration"}
@@ -1057,18 +1061,23 @@ def _cases():
         ("testing", _state(_granted(), MAP, *all_done), "dispatch", "dispatch:testing"),
         ("review", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing")), "dispatch", "dispatch:review"),
         ("review-fix", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
-                              _lane("r", "consumed", role="review", work_item="m1#review", verdict="FIX")), "judge", "judge:review_fix:1"),
+                              _lane("r", "closed", role="review", work_item="m1#review", verdict="FIX")), "judge", "judge:review_fix:1"),
         ("render-merge", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
-                                _lane("r", "consumed", role="review", work_item="m1#review", verdict="PASS")), "render_review", "render:merge:"),
+                                _lane("r", "closed", role="review", work_item="m1#review", verdict="PASS")), "render_review", "render:merge:"),
         ("remote", _state(_granted(reviews={"merge": {"approved": True}}), MAP, *all_done,
                           _lane("t", "closed", role="testing", work_item="m1#testing"),
-                          _lane("r", "consumed", role="review", work_item="m1#review", verdict="PASS")), "remote", "remote:push"),
+                          _lane("r", "closed", role="review", work_item="m1#review", verdict="PASS")), "remote", "remote:push"),
         ("ci-wait", _state(_granted(reviews={"merge": {"approved": True}}, remote={"push": 1, "open_pr": 1, "ci": "pending", "pr": "u"}), MAP, *all_done,
                            _lane("t", "closed", role="testing", work_item="m1#testing"),
-                           _lane("r", "consumed", role="review", work_item="m1#review", verdict="PASS")), "wait", "wait"),
+                           _lane("r", "closed", role="review", work_item="m1#review", verdict="PASS")), "wait", "wait"),
         ("delivered", _state(_granted(reviews={"merge": {"approved": True}}, remote={s: 1 for s in REMOTE_STEPS}), MAP, *all_done,
                              _lane("t", "closed", role="testing", work_item="m1#testing"),
-                             _lane("r", "consumed", role="review", work_item="m1#review", verdict="PASS")), "done", "done:delivered"),
+                             _lane("r", "closed", role="review", work_item="m1#review", verdict="PASS")), "done", "done:delivered"),
+        ("review-closeout", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
+                                   _lane("r", "consumed", role="review", work_item="m1#review", verdict="PASS")), "closeout", "closeout:r"),
+        ("close-pending-halt", _state(_granted(reviews={"merge": {"approved": True}}, remote={s: 1 for s in REMOTE_STEPS}), MAP, *all_done,
+                                   _lane("t", "closed", role="testing", work_item="m1#testing"),
+                                   _lane("r", "close_pending", role="review", work_item="m1#review", verdict="PASS")), "halt", "halt:authority:close_pending:r"),
         ("aborted", _state(_granted(status="aborted")), "done", "done:aborted"),
         # Halt 封闭清单：每一类
         ("halt-1-needs-decision", _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="needs-decision:spec-gap; a")), "halt", "halt:plan_change:T1"),
