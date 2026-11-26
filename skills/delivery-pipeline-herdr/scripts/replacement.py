@@ -30,7 +30,8 @@ def execute(path, lane, observe, pane_id, evidence, verify_target, native_start=
     errors=mc.capability_errors(claimed['agent'],claimed['model'],claimed['effort'],evidence)
     if errors:
         raise ValueError('; '.join(errors))
-    argv=mc.startup_request({**claimed,'mode':'direct','capability':'verified'},worker_name=lane,pane_id=pane_id)
+    worktree = claimed.get('worktree') or (native_scope.get('cwd') if isinstance(native_scope, dict) else None)
+    argv=mc.startup_request({**claimed,'mode':'direct','capability':'verified'},worker_name=lane,pane_id=pane_id,cwd=worktree)
     def native_observation(source):
         target=verify_target(pane_id,claimed)
         if target != {'pane_id':pane_id,'identity':'match','shell':'available','scope':'isolated_lane'}:
@@ -44,6 +45,7 @@ def execute(path, lane, observe, pane_id, evidence, verify_target, native_start=
         # 这个外部 seam 只替代原生 I/O；选序、预算、intent 均走真实 Registry。
         if native_start is not None:
             return native_start(argv,row)
+        mc.pretrust_workspace(claimed['agent'], worktree)
         result = subprocess.run(argv,capture_output=True,text=True)
         if result.returncode != 0:
             raise ValueError('inspect original request: '+result.stderr.strip())

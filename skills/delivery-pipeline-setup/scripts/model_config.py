@@ -1639,7 +1639,74 @@ def recover_registry(path: Path, lane_id: str | None = None) -> dict:
     return recover_overlay(row)
 
 
-def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
+def _normalize_cwd(cwd: str | None) -> str | None:
+    if cwd is None:
+        return None
+    if not isinstance(cwd, str) or not cwd.strip():
+        raise ValueError("cwd must be a non-empty path string")
+    return os.path.realpath(os.path.expanduser(cwd.strip()))
+
+
+def pretrust_workspace(
+    agent: str,
+    cwd: str | None,
+    *,
+    claude_config_path: Path | None = None,
+) -> bool:
+    """为不支持 CLI 免信任参数的 harness（claude）原子预写目录信任。幂等；保留其余字段。"""
+    trust_cwd = _normalize_cwd(cwd)
+    if agent != "claude" or not trust_cwd:
+        return False
+    override = os.environ.get("DP_CLAUDE_CONFIG_PATH")
+    target = (
+        Path(claude_config_path)
+        if claude_config_path is not None
+        else Path(override) if override else Path.home() / ".claude.json"
+    ).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with config_lock(target):
+        if target.exists():
+            data = json.loads(target.read_bytes())
+            if not isinstance(data, dict):
+                raise ValueError(f"invalid claude config root object: {target}")
+            mode = target.stat().st_mode & 0o777
+        else:
+            data = {}
+            mode = 0o600
+        projects = data.get("projects")
+        if projects is None:
+            projects = {}
+            data["projects"] = projects
+        elif not isinstance(projects, dict):
+            raise ValueError(f"invalid claude config projects object: {target}")
+        entry = projects.get(trust_cwd)
+        if isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True:
+            return False
+        if entry is not None and not isinstance(entry, dict):
+            raise ValueError(f"invalid claude project entry for {trust_cwd}: {target}")
+        projects[trust_cwd] = {**(entry or {}), "hasTrustDialogAccepted": True}
+        payload = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        handle, temp_name = tempfile.mkstemp(dir=target.parent, prefix=target.name + ".")
+        try:
+            with os.fdopen(handle, "wb") as temp:
+                temp.write(payload)
+                temp.flush()
+                os.fsync(temp.fileno())
+            os.chmod(temp_name, mode)
+            os.replace(temp_name, target)
+            temp_name = None
+        finally:
+            if temp_name is not None:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+    return True
+
+
+def startup_request(
+    plan: dict, *, worker_name: str, pane_id: str, cwd: str | None = None
+) -> list[str]:
     """构造 Herdr 原生请求；所有 startup 都要求当前 capability evidence。"""
     if plan.get("mode") not in {"none", "direct"}:
         raise ValueError("execution plan is not runnable")
@@ -1653,6 +1720,7 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
         raise ValueError(
             "startup request requires agent, model, effort, worker_name and pane_id"
         )
+    trust_cwd = _normalize_cwd(cwd)
     kind = "agy" if agent == "antigravity" else agent
     prefix = [
         "herdr",
@@ -1668,7 +1736,7 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
     if agent == "pi":
         return prefix + ["--approve", "--model", model, "--thinking", effort]
     if agent == "codex":
-        return prefix + [
+        args = [
             "--model",
             model,
             "-c",
@@ -1678,13 +1746,21 @@ def startup_request(plan: dict, *, worker_name: str, pane_id: str) -> list[str]:
             "-a",
             "never",
         ]
-    return prefix + [
+        if trust_cwd:
+            args.extend(["-c", f'projects.{json.dumps(trust_cwd)}.trust_level="trusted"'])
+        return prefix + args
+    args = [
         "--model",
         model,
         "--effort",
         effort,
         "--dangerously-skip-permissions",
     ]
+    if agent == "antigravity" and trust_cwd:
+        args.extend(
+            ["--settings", json.dumps({"trustedWorkspaces": [trust_cwd]}, ensure_ascii=False)]
+        )
+    return prefix + args
 
 
 def valid_fixture() -> dict:
@@ -1942,6 +2018,31 @@ def self_test() -> list[str]:
             failures.append("codex startup mapping omitted reasoning effort")
         if agent in ("claude", "antigravity") and "--effort" not in command:
             failures.append(f"{agent} startup mapping omitted effort")
+    with tempfile.TemporaryDirectory() as directory:
+        wt = os.path.realpath(directory)
+        ag_with_cwd = startup_request(
+            {"mode": "direct", "agent": "antigravity", "model": "gemini-4-neon", "effort": "medium", "capability": "verified"},
+            worker_name="worker", pane_id="pane", cwd=wt,
+        )
+        if "--settings" not in ag_with_cwd or json.dumps({"trustedWorkspaces": [wt]}, ensure_ascii=False) not in ag_with_cwd:
+            failures.append("antigravity startup with cwd omitted trustedWorkspaces --settings")
+        cx_with_cwd = startup_request(
+            {"mode": "direct", "agent": "codex", "model": "gpt-6.2-sol", "effort": "high", "capability": "verified"},
+            worker_name="worker", pane_id="pane", cwd=wt,
+        )
+        if f'projects.{json.dumps(wt)}.trust_level="trusted"' not in cx_with_cwd:
+            failures.append("codex startup with cwd omitted project trust_level override")
+        claude_cfg = Path(directory) / ".claude.json"
+        claude_cfg.write_text(json.dumps({"numStartups": 3, "projects": {wt: {"allowedTools": []}}}), encoding="utf-8")
+        if pretrust_workspace("antigravity", wt, claude_config_path=claude_cfg) is not False:
+            failures.append("pretrust_workspace mutated config for non-claude agent")
+        if pretrust_workspace("claude", wt, claude_config_path=claude_cfg) is not True:
+            failures.append("pretrust_workspace did not mark claude workspace trusted")
+        if pretrust_workspace("claude", wt, claude_config_path=claude_cfg) is not False:
+            failures.append("pretrust_workspace was not idempotent on already-trusted workspace")
+        saved_claude = json.loads(claude_cfg.read_text(encoding="utf-8"))
+        if saved_claude.get("numStartups") != 3 or saved_claude["projects"][wt] != {"allowedTools": [], "hasTrustDialogAccepted": True}:
+            failures.append("pretrust_workspace did not preserve existing claude config fields")
 
     cases: dict[str, dict] = {}
     case = valid_fixture()
@@ -2207,6 +2308,8 @@ def main() -> int:
     parser.add_argument("--native-capabilities", help="本轮 Adapter 原生只读 preflight 证据 JSON")
     parser.add_argument("--worker-name", default="worker")
     parser.add_argument("--pane-id", default="pane")
+    parser.add_argument("--cwd", help="目标工作目录；用于为 harness 注入目录信任")
+    parser.add_argument("--pretrust", action="store_true", help="start 时为不支持 CLI 参数的 harness（claude）预写目录信任")
     parser.add_argument("--review-scope")
     parser.add_argument("--required-axes", nargs="+", choices=list(REVIEW_AXES))
     parser.add_argument("--implementation-registry")
@@ -2309,8 +2412,10 @@ def main() -> int:
                 ticket_mode=args.ticket_mode, map_mode=args.map_mode, evidence=evidence,
                 output_mode=args.output_mode)
         if args.command == "start":
+            if args.pretrust and args.cwd:
+                pretrust_workspace(plan["agent"], args.cwd)
             result = startup_request(
-                plan, worker_name=args.worker_name, pane_id=args.pane_id
+                plan, worker_name=args.worker_name, pane_id=args.pane_id, cwd=args.cwd
             )
         elif args.command == "freeze":
             result = freeze_overlay(plan)

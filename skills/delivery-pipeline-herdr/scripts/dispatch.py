@@ -415,7 +415,8 @@ def main() -> int:
         name = agent_name(args.lane)
         row["herdr"] = {**pane, "agent_name": name, "coordinator_pane_id": coord["pane_id"]}
         write_registry(registry, row)
-        argv = mc.startup_request(plan, worker_name=name, pane_id=pane["pane_id"])
+        argv = mc.startup_request(plan, worker_name=name, pane_id=pane["pane_id"], cwd=args.worktree)
+        mc.pretrust_workspace(plan["agent"], args.worktree)
         if review is not None:
             row["herdr"].update(startup_state="launching", request_id=args.request_id, argv=argv)
             write_registry(registry, row)

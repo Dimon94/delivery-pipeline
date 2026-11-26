@@ -216,10 +216,34 @@ def main() -> int:
                                       config_document=ag_doc, probe_evidence=ag_ev)
         ag_start = next((c for c in calls if c[:2] == ["agent", "start"]), [])
         ag_row, _ = lane_registry.read(registry, "lane-agy") if registry.exists() else ({}, None)
+        wt_real = os.path.realpath(str(root))
+        expected_ag_settings = json.dumps({"trustedWorkspaces": [wt_real]}, ensure_ascii=False)
         if (result.returncode != 0 or ag_row.get("runtime") != "herdr-agy-pane" or ag_row.get("agent") != "antigravity"
                 or ag_start != ["agent", "start", "lane-agy", "--kind", "agy", "--pane", "w1:p2", "--",
-                                "--model", "gemini-4-neon", "--effort", "xhigh", "--dangerously-skip-permissions"]):
+                                "--model", "gemini-4-neon", "--effort", "xhigh", "--dangerously-skip-permissions",
+                                "--settings", expected_ag_settings]):
             failures.append(f"antigravity herdr dispatch failed: rc={result.returncode} row={ag_row} start={ag_start}")
+
+        # 10b. Claude 派发预写 DP_CLAUDE_CONFIG_PATH 目录信任；Codex 派发注入 projects.<wt>.trust_level。
+        cl_doc = mc.valid_fixture()
+        cl_doc["work"]["backend"] = {"agent": "claude", "model": "claude-opus-5-5", "effort": "medium", "fallbacks": []}
+        cl_ev = {"claude": {"binary": True, "models": {"claude-opus-5-5": ["low", "medium", "high"]}}}
+        claude_cfg = root / "claude-trust.json"
+        result, _, _ = run(root, "lane-cl", json.loads(json.dumps(base)),
+                           config_document=cl_doc, probe_evidence=cl_ev,
+                           env_extra={"DP_CLAUDE_CONFIG_PATH": str(claude_cfg)})
+        cl_saved = json.loads(claude_cfg.read_text(encoding="utf-8")) if claude_cfg.exists() else {}
+        if result.returncode != 0 or cl_saved.get("projects", {}).get(wt_real, {}).get("hasTrustDialogAccepted") is not True:
+            failures.append(f"claude herdr dispatch did not pretrust worktree: rc={result.returncode} saved={cl_saved}")
+
+        cx_doc = mc.valid_fixture()
+        cx_doc["work"]["backend"] = {"agent": "codex", "model": "gpt-6.2-sol", "effort": "high", "fallbacks": []}
+        cx_ev = {"codex": {"binary": True, "models": {"gpt-6.2-sol": ["low", "medium", "high"]}}}
+        result, _, calls = run(root, "lane-cx", json.loads(json.dumps(base)),
+                               config_document=cx_doc, probe_evidence=cx_ev)
+        cx_start = next((c for c in calls if c[:2] == ["agent", "start"]), [])
+        if result.returncode != 0 or f'projects.{json.dumps(wt_real)}.trust_level="trusted"' not in cx_start:
+            failures.append(f"codex herdr dispatch omitted trust_level override: rc={result.returncode} start={cx_start}")
 
         # 11. 可视化短命名：自动补齐 Linear Issue 号、同步 workspace rename、超宽在 herdr 调用前拒绝。
         result, registry, calls = run(
