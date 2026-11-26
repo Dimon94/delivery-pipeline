@@ -21,6 +21,7 @@
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 import json
 import re
 import subprocess
@@ -48,6 +49,11 @@ def _first(pairs, default):
 
 
 # ---------- 纯推导 ----------
+
+def ticket_stage(d: dict, rows: Sequence[dict]) -> str | None:
+    """单票阶段推导入口，接受 Driver 状态与该票的 lane 行。"""
+    raise NotImplementedError("单票阶段推导由 DD-670 实现")
+
 
 def targets(d: dict, by_item: dict) -> dict:
     """{issue key: 目标阶段}。非 Linear 坐标的票（如 T1）不参与。"""

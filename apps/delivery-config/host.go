@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -68,6 +69,29 @@ func (h *Host) ReadConfig() (json.RawMessage, error) {
 	}
 	if !json.Valid(output) {
 		return nil, errors.New("配置工具未返回可识别的结果。请让 AI 助手重新安装应用，再点击重新读取。")
+	}
+	return json.RawMessage(output), nil
+}
+
+// ReadBoard 从配置工具的同级资源读取共享合同样本。
+func (h *Host) ReadBoard() (json.RawMessage, error) {
+	path := filepath.Join(filepath.Dir(h.Tool), "board_samples", "board.json")
+	output, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("读取看板样本失败：%w", err)
+	}
+	return validateBoard(output)
+}
+
+// validateBoard 核对 JSON 与版本后原样返回，字段校验由快照命令负责。
+func validateBoard(output []byte) (json.RawMessage, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(output, &envelope); err != nil || envelope == nil {
+		return nil, errors.New("$：看板快照必须是 JSON 对象")
+	}
+	var version int
+	if err := json.Unmarshal(envelope["schema"], &version); err != nil || version != 1 {
+		return nil, errors.New("$.schema：看板快照 schema 必须为 1")
 	}
 	return json.RawMessage(output), nil
 }

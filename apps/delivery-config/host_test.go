@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,8 +10,48 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+func TestReadBoard(t *testing.T) {
+	const sample = "board_samples/board.json"
+	scripts := "../../skills/delivery-pipeline/scripts"
+	want, err := os.ReadFile(filepath.Join(scripts, sample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := Host{Tool: filepath.Join(scripts, "model_config.py")}
+	got, err := host.ReadBoard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("ReadBoard 应原样返回共享样本")
+	}
+
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(want, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	snapshot["schema"] = json.RawMessage("2")
+	invalid, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := t.TempDir()
+	path := filepath.Join(resources, sample)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, invalid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	host.Tool = filepath.Join(resources, "model_config.py")
+	if output, err := host.ReadBoard(); err == nil || !strings.Contains(err.Error(), "$.schema") || output != nil {
+		t.Fatalf("应在 $.schema 拒绝未知版本，收到 %s，%v", output, err)
+	}
+}
 
 // 用独立 Python 进程穿过桌面公开 Interface，不替换配置 owner。
 func TestReadConfig(t *testing.T) {
