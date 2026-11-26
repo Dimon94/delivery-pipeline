@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 from functools import cache
 from hashlib import sha256
 import json
 from pathlib import Path
+from runpy import run_path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from types import UnionType
 from typing import Callable, Literal, TypedDict, cast, get_args, get_origin, get_type_hints, is_typeddict
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 import driver  # noqa: E402
@@ -273,12 +276,88 @@ def _read_repo(source: str) -> str | None:
     return Path(result.stdout.strip()).name if result.returncode == 0 else None
 
 
+def _load_live_probes() -> None:
+    scripts = Path(__file__).resolve().parent
+    if scripts.name == "scripts":
+        paths = scripts.parents[1].glob("*/scripts/board_probe.py")
+    else:
+        paths = (scripts / "board_probes").glob("*.py")
+    for path in sorted(paths):
+        run_path(str(path))["register"](LIVE_PROBES)
+
+
+def _probe_overlay(row: dict, prefix: str, read_registry: Callable) -> dict[str, str | None]:
+    overlay = row.get(prefix)
+    if isinstance(overlay, str):
+        try:
+            overlay = json.loads(overlay)
+        except ValueError:
+            return {}
+    elif overlay is None and prefix in row:
+        # 旧的多行覆盖段仍用原 registry 解析器读取。
+        try:
+            overlay = read_registry(row["_file"]).get(row["lane_id"], {}).get(prefix)
+        except OSError:
+            return {}
+    if not isinstance(overlay, dict):
+        return {}
+    return {key: value for key, value in overlay.items() if value is None or isinstance(value, str)}
+
+
+def _apply_live_probes(maps: list[tuple[Mmf, dict[str, dict]]]) -> list[ProbeResult]:
+    batches: dict[str, list[tuple[str, Lane, dict]]] = {}
+    for mmf, rows in maps:
+        lanes = [*mmf["direct_lanes"], *(t["lane"] for t in mmf["tickets"])]
+        for lane in lanes:
+            if lane is not None and lane["state"] == "running":
+                row = rows[lane["lane_id"]]
+                prefix = (row.get("runtime") or "Unknown").split("-", 1)[0]
+                batches.setdefault(prefix, []).append((mmf["map"], lane, row))
+
+    @cache
+    def read_registry(path: str) -> dict[str, dict]:
+        return {row["lane_id"]: row for row in parse_registry_file(Path(path))}
+
+    results: list[ProbeResult] = []
+    for prefix, batch in sorted(batches.items()):
+        if prefix not in LIVE_PROBES:
+            results.append({"runtime": prefix, "status": "missing", "reason": "没有注册探针"})
+            continue
+        counts = Counter(lane["lane_id"] for _, lane, _ in batch)
+        inputs: list[ProbeLane] = []
+        try:
+            for name, lane, row in batch:
+                lane_id = lane["lane_id"]
+                # registry 的 lane ID 在各 map 内唯一，批次跨 map 时补足坐标。
+                request_id = f"{name}/{lane_id}" if counts[lane_id] > 1 else lane_id
+                inputs.append({"lane_id": request_id, "overlay": _probe_overlay(row, prefix, read_registry)})
+            observed = probe_lanes(prefix, inputs)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            results.append({"runtime": prefix, "status": "failed", "reason": str(error)})
+            continue
+        missing = 0
+        for (_, lane, _), item in zip(batch, inputs):
+            lane["live"] = observed[item["lane_id"]]
+            missing += lane["live"] == "unknown"
+        reason = f"{missing} 条 running lane 未匹配到现场" if missing else None
+        results.append({"runtime": prefix, "status": "missing" if missing else "ok", "reason": reason})
+
+    for mmf, _ in maps:
+        mmf["executing"] = any(lane["state"] == "running" and lane["live"] == "working"
+                               for lane in mmf["direct_lanes"])
+        for ticket in mmf["tickets"]:
+            lane = ticket["lane"]
+            ticket["executing"] = lane is not None and lane["state"] == "running" and lane["live"] == "working"
+    return results
+
+
 def read_snapshot(lanes_root: str) -> BoardSnapshot:
     root = Path(lanes_root).expanduser().absolute()
     errors: list[BoardError] = []
     inbox: list[InboxItem] = []
     epics_by_repo: dict[str, dict[str, Epic]] = {}
     repo_at = cache(_read_repo)
+    maps: list[tuple[Mmf, dict[str, dict]]] = []
 
     def add(path, name, data, lanes):
         if data is None and not lanes:
@@ -292,15 +371,18 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
         ref = _text(mrow.get("epic")) or _text(plan.get("epic"))
         key = issue_status.issue_key(ref)
         if not key:
-            inbox.append({**mmf, "repo": repo, "attribution": "unassigned"})
-            return
-        base = _issue_base(ref) or _issue_base(mmf["links"]["linear"])
-        url = base + key if base else None
-        epic = epics_by_repo.setdefault(repo, {}).setdefault(key, {
-            "key": key, "url": url, "title": "Unknown", "ended": True, "mmfs": []})
-        epic["url"] = epic["url"] or url
-        epic["mmfs"].append(mmf)
-        epic["ended"] = epic["ended"] and mmf["stage"] == "merged"
+            inbox_item: InboxItem = {**mmf, "repo": repo, "attribution": "unassigned"}
+            inbox.append(inbox_item)
+            mmf = inbox_item
+        else:
+            base = _issue_base(ref) or _issue_base(mmf["links"]["linear"])
+            url = base + key if base else None
+            epic = epics_by_repo.setdefault(repo, {}).setdefault(key, {
+                "key": key, "url": url, "title": "Unknown", "ended": True, "mmfs": []})
+            epic["url"] = epic["url"] or url
+            epic["mmfs"].append(mmf)
+            epic["ended"] = epic["ended"] and mmf["stage"] == "merged"
+        maps.append((mmf, lanes))
 
     # 根层保留旧布局的 map；同一 map 已迁入目录时，目录现场优先。
     root_rows = driver.closeout.latest_rows(root)
@@ -339,7 +421,7 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
              for name, epics in sorted(epics_by_repo.items())]
     return validate_snapshot({"schema": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
                               "lanes_root": lanes_root, "repos": repos, "inbox": inbox,
-                              "probes": [], "errors": errors})
+                              "probes": _apply_live_probes(maps), "errors": errors})
 
 
 def _expect_rejection(snapshot: object, path: str) -> None:
@@ -484,6 +566,33 @@ runpy.run_path(sys.argv[0], run_name='__main__')
             assert (m["repo"], m["stage"], m["executing"], m["attribution"]) == (repo, stage, False, "unassigned")
             assert m["links"]["linear"] == "https://linear.app/demo/issue/DEMO-2"  # S19
 
+        states = {"A": "running", "Z": "running", "B": "created", "C": "awaiting_human",
+                  "D": "blocked", "E": "terminal", "F": "integrated", "H": "unrecognized"}
+        write_driver("execution-q", {"tickets": [{"id": ticket} for ticket in [*states, "G"]]})
+        registry(root / "execution-q" / "registry.md", *(
+            {"lane_id": ticket, "work_item": ticket, "role": "backend", "state": state,
+             "runtime": "fixture-agent"} for ticket, state in states.items()))
+        write_driver("execution-p", {"tickets": [{"id": "I"}]})
+        registry(root / "execution-p" / "registry.md",
+                 {"lane_id": "map-p", "work_item": "DEMO-20", "role": "map", "state": "running",
+                  "runtime": "fixture-agent"},
+                 {"lane_id": "merge-p", "work_item": "DEMO-20", "role": "integration", "state": "running",
+                  "runtime": "fixture-agent"},
+                 {"lane_id": "I", "work_item": "I", "role": "backend", "state": "integrated",
+                  "runtime": "fixture-agent"})
+
+        def fixture_probe(lanes):
+            assert {lane["lane_id"] for lane in lanes} == {"A", "Z", "merge-p"}
+            return {"A": "working", "merge-p": "working"}
+
+        with patch.dict(LIVE_PROBES, {"fixture": fixture_probe}):
+            observed = {m["map"]: m for m in read_snapshot(str(root))["inbox"]}
+        q = observed["execution-q"]
+        assert [t["id"] for t in q["tickets"] if t["executing"]] == ["A"]  # S13
+        assert next(t for t in q["tickets"] if t["id"] == "Z")["lane"]["live"] == "unknown"
+        p = observed["execution-p"]
+        assert p["executing"] and not p["tickets"][0]["executing"] and not q["executing"]  # S14
+
 
 def self_test() -> None:
     for path in sorted(SAMPLES.glob("*.json")):
@@ -508,6 +617,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lanes-root", required=True)
     args = parser.parse_args(argv)
+    _load_live_probes()
     print(json.dumps(read_snapshot(args.lanes_root), ensure_ascii=False))
     return 0
 

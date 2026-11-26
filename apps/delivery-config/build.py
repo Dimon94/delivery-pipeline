@@ -196,6 +196,9 @@ def copy_resources(resources):
     for name in ('board_snapshot.py', 'lane_graph.py', 'issue_status.py', 'driver.py',
                  'closeout.py', 'brief_delivery.py', 'review_html.py'):
         shutil.copy2(board / name, resources / name)
+    probes = resources / 'board_probes'
+    probes.mkdir(exist_ok=True)
+    shutil.copy2(skills / 'delivery-pipeline-herdr/scripts/board_probe.py', probes / 'herdr.py')
     samples = resources / 'board_samples'
     samples.mkdir(exist_ok=True)
     shutil.copy2(board / 'board_samples/board.json', samples / 'board.json')

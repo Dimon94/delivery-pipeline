@@ -6,9 +6,11 @@
 
 快照字段由 `board_snapshot.py` 的 `BoardSnapshot` 与 `validate_snapshot` 定义，前端用 `apps/delivery-config/src/board.ts` 消费。Host 的 `validateBoard` 负责 JSON 与 schema 版本边界，原样传递通过的字节。`LIVE_PROBES` 按 runtime 前缀注册，`probe_lanes` 接受同一前缀的 lane 批次。
 
-`board_snapshot.py --lanes-root <dir>` 从该目录读取真实现场。`board_snapshot.py self-test` 用临时 lanes 根运行命令，并校验这里的静态样本。
+`board_snapshot.py --lanes-root <dir>` 从该目录读取真实现场。对每个 runtime 前缀，一次批量读取快照所选的 running lane。票按所属 lane 判定执行中，MMF 按直挂 lane 判定。`probes` 记录每个批次的读取状态。缺少记录或读失败时，相应 lane 保持 `unknown`。
 
-DD-671 负责打包。`board_snapshot.py` 与现有 `model_config.py` 同放在 `Contents/Resources/`，同级保留依赖 `driver.py`、`issue_status.py`、`lane_graph.py`、`closeout.py`、`brief_delivery.py` 和 `review_html.py`。
+`board_snapshot.py self-test` 用临时 lanes 根运行命令，并校验这里的静态样本和注入探针后的执行状态。
+
+`board_snapshot.py` 与现有 `model_config.py` 同放在 `Contents/Resources/`，同级保留依赖 `driver.py`、`issue_status.py`、`lane_graph.py`、`closeout.py`、`brief_delivery.py` 和 `review_html.py`。源码命令从同级 skill 树的 `scripts/board_probe.py` 加载探针，包内命令从 `Contents/Resources/board_probes/` 加载。探针模块通过 `register(probes)` 登记其前缀。
 
 ## DD-668 场景验收分工
 
