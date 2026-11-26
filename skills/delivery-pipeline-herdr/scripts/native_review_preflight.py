@@ -25,6 +25,40 @@ def _command(argv, *, payload=None):
         return {'argv': argv, 'exit': None, 'stdout': '', 'stderr': type(e).__name__}
 
 
+HERDR_KIND = {'antigravity': 'agy'}
+
+
+def collect_catalogs(identities, sources):
+    """非 Pi 身份：重新采集各工具自身的模型目录（codex debug models、agy models、Claude 官方清单）。
+    目录读不到为 Unknown；目录明确不含 model/effort 才为 unavailable。"""
+    agents = {x['agent'] for x in identities}
+    if not agents:
+        return {}
+    import model_config
+    harnesses = model_config.collect_harnesses(agents)
+    catalogs, rows = {}, {}
+    for agent in sorted(agents):
+        harness = harnesses.get(agent, {})
+        models = harness.get('models') if harness.get('binary') is True else None
+        catalogs[agent] = {'route': harness.get('route'), 'origin': harness.get('origin'),
+                           'models': ({m['native_id']: m.get('efforts', []) for m in models}
+                                      if isinstance(models, list) else None)}
+    sources.append({'native_catalogs': catalogs})
+    for identity in identities:
+        catalog = catalogs[identity['agent']]
+        if not catalog['models']:
+            reason = harnesses.get(identity['agent'], {}).get('reason') or 'native model catalog unavailable'
+            row = {'status': 'unknown', 'reason': reason}
+        elif identity['model'] not in catalog['models']:
+            row = {'status': 'unavailable', 'reason': f"model absent from native catalog ({catalog['origin']}): {identity['model']}"}
+        elif identity['effort'] not in catalog['models'][identity['model']]:
+            row = {'status': 'unavailable', 'reason': f"effort absent from native catalog: {identity['model']}/{identity['effort']}"}
+        else:
+            row = {'status': 'runnable', 'reason': 'native catalog static compatibility; execution Unknown'}
+        rows[json.dumps(identity, sort_keys=True)] = {'identity': identity, **row}
+    return rows
+
+
 def preflight_review_candidates(ordered_pools, request_id):
     """每次从原生来源重新采集，外部自述 JSON 无授权效力。重复按位置保留。"""
     observed = datetime.now(timezone.utc).isoformat()
@@ -36,15 +70,17 @@ def preflight_review_candidates(ordered_pools, request_id):
     herdr = shutil.which('herdr')
     version = capture([herdr, '--version']) if herdr else None
     help_ = capture([herdr, 'agent', 'start', '--help']) if herdr else None
-    # 窄合同：当前已调查版本、支持 pi 与显式 AGENT_ARG 透传。
-    kinds = re.search(r'\[possible values: ([^\]]+)\]', help_['stdout']) if help_ else None
-    transport_ok = bool(kinds and 'pi' in [k.strip() for k in kinds[1].split(',')] and version and version['exit'] == 0 and version['stdout'].strip() == 'herdr 0.9.5'
+    # 窄合同：当前已调查版本，且支持显式 AGENT_ARG 透传；逐身份再核 kind。
+    kinds_match = re.search(r'\[possible values: ([^\]]+)\]', help_['stdout']) if help_ else None
+    kinds = {k.strip() for k in kinds_match[1].split(',')} if kinds_match else set()
+    transport_ok = bool(version and version['exit'] == 0 and version['stdout'].strip() == 'herdr 0.9.5'
         and help_['exit'] == 0 and '-- [AGENT_ARG]' in help_['stdout'])
     if herdr:
         sources.append({'herdr_binary':str(Path(herdr).resolve()), 'sha256':_digest(Path(herdr).read_bytes())})
     identities = [x for pool in ordered_pools.values() for x in pool]
     from native_pi_preflight import collect_pi
     native = collect_pi(identities, capture, sources)
+    native.update(collect_catalogs([x for x in identities if x['agent'] != 'pi'], sources))
     capabilities = {}
     for axis,pool in ordered_pools.items():
         capabilities[axis] = []
@@ -53,6 +89,8 @@ def preflight_review_candidates(ordered_pools, request_id):
             status, reason = row.get('status','unknown'), row.get('reason','version-matched native parser source unavailable')
             if not transport_ok:
                 status, reason = 'unknown', 'Herdr version/agent argument forwarding contract missing'
+            elif HERDR_KIND.get(identity['agent'], identity['agent']) not in kinds:
+                status, reason = 'unknown', 'Herdr agent kind unsupported: ' + HERDR_KIND.get(identity['agent'], identity['agent'])
             binding = {'request_id':request_id, 'observed_at':observed, 'ordered_pools':ordered_pools,
                        'axis':axis,'index':index,'identity':identity,'sources':sources,'status':status,'reason':reason}
             capabilities[axis].append({'identity':identity,'status':status,'reason':reason,

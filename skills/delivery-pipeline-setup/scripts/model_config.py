@@ -1130,8 +1130,8 @@ def probe(raw: dict, request_id: str) -> ProbeEvidence:
             'capabilities': capabilities, 'sources': sources}
 
 
-def collect_harnesses() -> dict:
-    """本机元数据与一次只读模型清单请求；不打印原始来源或凭据，不发推理。"""
+def collect_harnesses(agents=CLI_AGENTS) -> dict:
+    """本机元数据与一次只读模型清单请求；只采集 agents 内的工具，不打印原始来源或凭据，不发推理。"""
     import shutil
     import subprocess
     home = Path.home()
@@ -1153,154 +1153,158 @@ def collect_harnesses() -> dict:
         except (OSError, subprocess.TimeoutExpired):
             return None
     result = {}
-    output = command('codex', ['debug', 'models', '--bundled'])
-    codex = {'binary': bool(shutil.which('codex') or (home/'.local/bin/codex').exists()),
-             'route': None}
-    result['codex'] = codex
-    try:
+    if 'codex' in agents:
+        output = command('codex', ['debug', 'models', '--bundled'])
+        codex = {'binary': bool(shutil.which('codex') or (home/'.local/bin/codex').exists()),
+                 'route': None}
+        result['codex'] = codex
         try:
-            import tomllib
-        except ModuleNotFoundError:
-            from _vendor import tomli as tomllib
-        config_path = home/'.codex/config.toml'
-        config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
-        codex['route'] = codex_route(config, os.environ)
-    except (OSError, ValueError, ImportError):
-        codex['reason'] = '无法读取 Codex 配置'
-    route = codex['route']
-    codex['origin'] = ('Codex 内置清单（直连 OpenAI）' if route == 'direct' else
-                       'Codex 当前路由、精确 catalog 与 magpie 网关清单交集')
-    if route in ('direct', 'gateway'):
-        try:
-            data = json.loads(output or '')
-            entries = data if isinstance(data, list) else data['models']
-            catalog_path = config.get('model_catalog_json')
-            if route == 'gateway' and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
-                data = json.loads(Path(catalog_path).expanduser().read_text())
+            try:
+                import tomllib
+            except ModuleNotFoundError:
+                from _vendor import tomli as tomllib
+            config_path = home/'.codex/config.toml'
+            config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
+            codex['route'] = codex_route(config, os.environ)
+        except (OSError, ValueError, ImportError):
+            codex['reason'] = '无法读取 Codex 配置'
+        route = codex['route']
+        codex['origin'] = ('Codex 内置清单（直连 OpenAI）' if route == 'direct' else
+                           'Codex 当前路由、精确 catalog 与 magpie 网关清单交集')
+        if route in ('direct', 'gateway'):
+            try:
+                data = json.loads(output or '')
                 entries = data if isinstance(data, list) else data['models']
-            # 两种路由沿用 Codex 既有档位边界，均不提供 ultra/persistent 扩展档位。
-            codex['models'] = [{'native_id': m['slug'], 'gateway_id': m['slug'],
-                'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
-                            if e['effort'] not in ('ultra', 'persistent')]} for m in entries]
-        except (OSError, ValueError, KeyError, TypeError):
-            codex['reason'] = '无法读取 Codex 内置模型清单'
-    output = command('pi', ['--list-models', 'magpie'])
-    try:
-        config = json.loads((home/'.pi/agent/models.json').read_text())
-        provider = config.get('providers', {}).get('magpie', {})
-        models = []
-        if provider.get('baseUrl', '').rstrip('/') == 'http://127.0.0.1:3425/v1':
-            for m in provider.get('models', []):
-                if not output or m['id'] not in output:
-                    continue
-                mapping = m.get('thinkingLevelMap', {})
-                efforts = [e for e, value in mapping.items() if value == e and e not in ('off','ultra')]
-                api = m.get('api', provider.get('api'))
-                if api == 'anthropic-messages' and not m.get('compat', {}).get('forceAdaptiveThinking'):
-                    efforts = [e for e in efforts if e not in ('xhigh','max')]
-                models.append({'native_id': 'magpie/'+m['id'], 'gateway_id': m['id'], 'efforts': efforts})
-        result['pi'] = {'binary': output is not None,'route': 'gateway' if models else None, 'models': models,
-                        'origin': 'Pi 注册清单、模型映射与网关清单交集'}
-    except (OSError, ValueError, KeyError):
-        result['pi'] = {'binary': output is not None}
-    import time
-    import urllib.request
-    claude = {'binary': command('claude', ['--version']) is not None,
-              'route': None, 'origin': 'Anthropic 官方模型清单（Claude Code 当前账号与地址）'}
-    result['claude'] = claude
-    try:
-        path = home/'.claude/settings.json'
-        settings = json.loads(path.read_text()) if path.exists() else {}
-        oauth = None
-        endpoint = claude_endpoint(settings, os.environ, oauth, time.time())
-        # 有显式凭据或不支持的路由时，不触碰钥匙串。
-        if endpoint['reason'] == '请先打开 Claude Code 完成登录后重新核对':
-            try:
-                if sys.platform == 'darwin':
-                    credentials = subprocess.run(
-                        ['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w'],
-                        capture_output=True, text=True, timeout=15)
-                    record = json.loads(credentials.stdout) if credentials.returncode == 0 else {}
-                else:
-                    record = json.loads((home/'.claude/.credentials.json').read_text())
-                oauth = record.get('claudeAiOauth')
-            except (OSError, ValueError, subprocess.TimeoutExpired):
-                oauth = None
+                catalog_path = config.get('model_catalog_json')
+                if route == 'gateway' and isinstance(catalog_path, str) and Path(catalog_path).expanduser().is_absolute():
+                    data = json.loads(Path(catalog_path).expanduser().read_text())
+                    entries = data if isinstance(data, list) else data['models']
+                # 两种路由沿用 Codex 既有档位边界，均不提供 ultra/persistent 扩展档位。
+                codex['models'] = [{'native_id': m['slug'], 'gateway_id': m['slug'],
+                    'efforts': [e['effort'] for e in m.get('supported_reasoning_levels', [])
+                                if e['effort'] not in ('ultra', 'persistent')]} for m in entries]
+            except (OSError, ValueError, KeyError, TypeError):
+                codex['reason'] = '无法读取 Codex 内置模型清单'
+    if 'pi' in agents:
+        output = command('pi', ['--list-models', 'magpie'])
+        try:
+            config = json.loads((home/'.pi/agent/models.json').read_text())
+            provider = config.get('providers', {}).get('magpie', {})
+            models = []
+            if provider.get('baseUrl', '').rstrip('/') == 'http://127.0.0.1:3425/v1':
+                for m in provider.get('models', []):
+                    if not output or m['id'] not in output:
+                        continue
+                    mapping = m.get('thinkingLevelMap', {})
+                    efforts = [e for e, value in mapping.items() if value == e and e not in ('off','ultra')]
+                    api = m.get('api', provider.get('api'))
+                    if api == 'anthropic-messages' and not m.get('compat', {}).get('forceAdaptiveThinking'):
+                        efforts = [e for e in efforts if e not in ('xhigh','max')]
+                    models.append({'native_id': 'magpie/'+m['id'], 'gateway_id': m['id'], 'efforts': efforts})
+            result['pi'] = {'binary': output is not None,'route': 'gateway' if models else None, 'models': models,
+                            'origin': 'Pi 注册清单、模型映射与网关清单交集'}
+        except (OSError, ValueError, KeyError):
+            result['pi'] = {'binary': output is not None}
+    if 'claude' in agents:
+        import time
+        import urllib.request
+        claude = {'binary': command('claude', ['--version']) is not None,
+                  'route': None, 'origin': 'Anthropic 官方模型清单（Claude Code 当前账号与地址）'}
+        result['claude'] = claude
+        try:
+            path = home/'.claude/settings.json'
+            settings = json.loads(path.read_text()) if path.exists() else {}
+            oauth = None
             endpoint = claude_endpoint(settings, os.environ, oauth, time.time())
-        claude.update(route=endpoint['route'], reason=endpoint['reason'])
-        if endpoint['route'] == 'official':
-            kind = endpoint['credential_kind']
-            if kind == 'oauth':
-                credential = oauth['accessToken']
-            else:
-                name = 'ANTHROPIC_API_KEY' if kind == 'api_key' else 'ANTHROPIC_AUTH_TOKEN'
-                credential = os.environ.get(name) or settings.get('env', {}).get(name)
-            headers = {'anthropic-version': '2023-06-01'}
-            if kind == 'api_key':
-                headers['x-api-key'] = credential
-            else:
-                headers.update(Authorization='Bearer ' + credential,
-                               **{'anthropic-beta': 'oauth-2025-04-20'})
-            request = urllib.request.Request(endpoint['base_url'].rstrip('/') + '/v1/models?limit=1000',
-                                             headers=headers)
-            with urllib.request.urlopen(request, timeout=15) as response:
-                claude['models'] = claude_models(json.load(response))
-    except urllib.error.HTTPError as error:
-        claude.update(route=None, reason=(
-            '请先打开 Claude Code 完成登录后重新核对' if error.code in (401, 403)
-            else '无法读取 Claude 官方模型清单'))
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
-        claude.update(route=None, reason='无法读取 Claude 官方模型清单')
-    ag_binary = shutil.which('agy') or shutil.which('antigravity')
-    if not ag_binary:
-        for candidate in (home/'.antigravity/antigravity/bin/agy',
-                          home/'.antigravity/antigravity/bin/antigravity',
-                          home/'.local/bin/agy'):
-            if candidate.exists():
-                ag_binary = str(candidate)
-                break
-    if not ag_binary:
-        for active_file in sorted((home/'.t3/tools/antigravity-acp').glob('*/active.json')):
-            try:
-                release_id = json.loads(active_file.read_text()).get('releaseId')
-                candidate = active_file.parent / 'versions' / str(release_id) / 'antigravity'
-                if release_id and candidate.exists():
+            # 有显式凭据或不支持的路由时，不触碰钥匙串。
+            if endpoint['reason'] == '请先打开 Claude Code 完成登录后重新核对':
+                try:
+                    if sys.platform == 'darwin':
+                        credentials = subprocess.run(
+                            ['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+                            capture_output=True, text=True, timeout=15)
+                        record = json.loads(credentials.stdout) if credentials.returncode == 0 else {}
+                    else:
+                        record = json.loads((home/'.claude/.credentials.json').read_text())
+                    oauth = record.get('claudeAiOauth')
+                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    oauth = None
+                endpoint = claude_endpoint(settings, os.environ, oauth, time.time())
+            claude.update(route=endpoint['route'], reason=endpoint['reason'])
+            if endpoint['route'] == 'official':
+                kind = endpoint['credential_kind']
+                if kind == 'oauth':
+                    credential = oauth['accessToken']
+                else:
+                    name = 'ANTHROPIC_API_KEY' if kind == 'api_key' else 'ANTHROPIC_AUTH_TOKEN'
+                    credential = os.environ.get(name) or settings.get('env', {}).get(name)
+                headers = {'anthropic-version': '2023-06-01'}
+                if kind == 'api_key':
+                    headers['x-api-key'] = credential
+                else:
+                    headers.update(Authorization='Bearer ' + credential,
+                                   **{'anthropic-beta': 'oauth-2025-04-20'})
+                request = urllib.request.Request(endpoint['base_url'].rstrip('/') + '/v1/models?limit=1000',
+                                                 headers=headers)
+                with urllib.request.urlopen(request, timeout=15) as response:
+                    claude['models'] = claude_models(json.load(response))
+        except urllib.error.HTTPError as error:
+            claude.update(route=None, reason=(
+                '请先打开 Claude Code 完成登录后重新核对' if error.code in (401, 403)
+                else '无法读取 Claude 官方模型清单'))
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            claude.update(route=None, reason='无法读取 Claude 官方模型清单')
+    if 'antigravity' in agents:
+        ag_binary = shutil.which('agy') or shutil.which('antigravity')
+        if not ag_binary:
+            for candidate in (home/'.antigravity/antigravity/bin/agy',
+                              home/'.antigravity/antigravity/bin/antigravity',
+                              home/'.local/bin/agy'):
+                if candidate.exists():
                     ag_binary = str(candidate)
                     break
-            except (OSError, ValueError, TypeError):
-                continue
-    ag_cli_out = None
-    if ag_binary:
-        try:
-            proc = subprocess.run([ag_binary, 'models'], capture_output=True, text=True, timeout=15,
-                env={**os.environ, 'PATH': str(Path(ag_binary).parent) + os.pathsep + os.environ.get('PATH', '')})
-            ag_cli_out = proc.stdout if proc.returncode == 0 else None
-        except (OSError, subprocess.TimeoutExpired):
-            ag_cli_out = None
-    cli_models = antigravity_cli_models(ag_cli_out) if ag_cli_out else []
-    if cli_models:
-        result['antigravity'] = {'binary': True, 'route': 'cli', 'models': cli_models,
-                                 'origin': 'Antigravity CLI 模型清单（agy models）'}
-    else:
-        t3_settings = None
-        try:
-            settings_file = home/'.t3/userdata/settings.json'
-            if settings_file.exists():
-                t3_settings = json.loads(settings_file.read_text())
-        except (OSError, ValueError):
-            t3_settings = None
-        ag_cache: object = None
-        cache_file = home/'.t3/caches/antigravity.json'
-        if cache_file.exists():
+        if not ag_binary:
+            for active_file in sorted((home/'.t3/tools/antigravity-acp').glob('*/active.json')):
+                try:
+                    release_id = json.loads(active_file.read_text()).get('releaseId')
+                    candidate = active_file.parent / 'versions' / str(release_id) / 'antigravity'
+                    if release_id and candidate.exists():
+                        ag_binary = str(candidate)
+                        break
+                except (OSError, ValueError, TypeError):
+                    continue
+        ag_cli_out = None
+        if ag_binary:
             try:
-                ag_cache = json.loads(cache_file.read_text())
+                proc = subprocess.run([ag_binary, 'models'], capture_output=True, text=True, timeout=15,
+                    env={**os.environ, 'PATH': str(Path(ag_binary).parent) + os.pathsep + os.environ.get('PATH', '')})
+                ag_cli_out = proc.stdout if proc.returncode == 0 else None
+            except (OSError, subprocess.TimeoutExpired):
+                ag_cli_out = None
+        cli_models = antigravity_cli_models(ag_cli_out) if ag_cli_out else []
+        if cli_models:
+            result['antigravity'] = {'binary': True, 'route': 'cli', 'models': cli_models,
+                                     'origin': 'Antigravity CLI 模型清单（agy models）'}
+        else:
+            t3_settings = None
+            try:
+                settings_file = home/'.t3/userdata/settings.json'
+                if settings_file.exists():
+                    t3_settings = json.loads(settings_file.read_text())
             except (OSError, ValueError):
-                ag_cache = 'malformed'
-        fallback = antigravity_source(ag_cache, t3_settings)
-        if ag_binary and fallback.get('route') is None:
-            fallback['binary'] = True
-            fallback['reason'] = '无法读取 Antigravity 模型清单，请先完成 Antigravity 登录后重新核对'
-        result['antigravity'] = fallback
+                t3_settings = None
+            ag_cache: object = None
+            cache_file = home/'.t3/caches/antigravity.json'
+            if cache_file.exists():
+                try:
+                    ag_cache = json.loads(cache_file.read_text())
+                except (OSError, ValueError):
+                    ag_cache = 'malformed'
+            fallback = antigravity_source(ag_cache, t3_settings)
+            if ag_binary and fallback.get('route') is None:
+                fallback['binary'] = True
+                fallback['reason'] = '无法读取 Antigravity 模型清单，请先完成 Antigravity 登录后重新核对'
+            result['antigravity'] = fallback
     return result
 
 

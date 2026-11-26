@@ -97,10 +97,12 @@ sources、capabilities）。生产 dispatch 在任何 packet/Registry/pane mutat
 `native_review_preflight.preflight_review_candidates`；`--native-capabilities` 外部自述文件不再授权派发，
 非空池传入此参数会拒绝。canonical CLI 的文件输入仅用于纯计划接口，不能替代 Adapter 现场来源。
 
-当前窄合同覆盖 Herdr 0.9.5 的 pi kind 与 AGENT_ARG 透传帮助、Pi 1.5.2 安装包的原生
-parseArgs、ModelConfig schema、精确模型解析和 thinking level 支持/clamp。只覆盖当前 models.json
-注册项；不做 fuzzy/custom fallback、不从 probe 复制 native 成功。其他版本、agent 或来源缺失为
-Unknown；原生明确拒绝才为 unavailable。尚不具备未来启动、认证、网络、额度或审查成功保证。
+当前窄合同覆盖 Herdr 0.9.5 的 AGENT_ARG 透传帮助，并逐身份核对该 agent 的 kind（antigravity 为 `agy`）
+出现在 `agent start --help` 的可选值里。Pi 核对 1.5.2 安装包的原生 parseArgs、ModelConfig schema、
+精确模型解析和 thinking level 支持/clamp，只覆盖当前 models.json 注册项，不做 fuzzy/custom fallback。
+codex、claude、antigravity 在本次 preflight 内重新读取工具自身的模型目录（`codex debug models`、
+Claude 官方模型清单、`agy models`），精确 model 与 effort 都在目录里才为 runnable。不从 probe 文件复制
+native 成功。其他 Herdr 版本、kind 缺失或目录读不到为 Unknown；目录明确不含该 model/effort 才为 unavailable。尚不具备未来启动、认证、网络、额度或审查成功保证。
 
 逐项证据绑定 request、真实采集时间、完整 ordered pools（重复位置保留）、精确 identity、
 原生命令/退出码/结果及 binary/解析源码 hash；evidence_id 为这些绑定的 SHA256。models.json

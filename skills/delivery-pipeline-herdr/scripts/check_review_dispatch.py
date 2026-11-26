@@ -541,8 +541,63 @@ def check_later_round():
     print('later-round: pass (一轮制：repro 必填、R2 拒绝、同 head 复用；native执行 Unknown)')
 
 
+def check_catalog_candidates():
+    """codex 首选 + antigravity 候选：原生目录逐项核验，不再一律 Unknown。外部 I/O 为替身。"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('mc', Path(__file__).resolve().parents[2]/'delivery-pipeline-setup/scripts/model_config.py')
+    mc = importlib.util.module_from_spec(spec); spec.loader.exec_module(mc)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'delivery-pipeline/scripts'))
+    import lane_registry
+    primary = {'agent': 'codex', 'model': 'gpt-x', 'effort': 'high'}
+    candidate = {'agent': 'antigravity', 'model': 'gem-y', 'effort': 'medium'}
+    config = mc.migrate_document(mc.valid_fixture())[0]
+    for axis in ('standards', 'spec'):
+        config['review']['whole-change'][axis] = {**primary, 'candidates': [candidate]}
+    probe = {'request_id': 'cat', 'observed_at': 'fixture',
+        'sources': {'codex': {'status': 'ok'}, 'antigravity': {'status': 'ok'}},
+        'capabilities': {'codex': {'binary': True, 'models': {'gpt-x': ['high']}},
+                         'antigravity': {'binary': True, 'models': {'gem-y': ['medium']}}}}
+    base = {'tabs': [{'tab_id': 'w1:t1', 'label': 'coord', 'pane_count': 1, 'workspace_id': 'w1'}],
+            'panes': [{'pane_id': 'w1:p1', 'tab_id': 'w1:t1', 'workspace_id': 'w1'}]}
+    flags = ('--task', 'review', '--output-mode', 'verdict', '--review-scope', 'whole-change',
+             '--required-axes', 'standards', 'spec', '--request-id', 'cat')
+    map_text = GOOD_MAP.replace('role: map', 'work_item: DD-508\nrole: map\nbase_commit: abc')
+    codex_catalog = json.dumps({'models': [{'slug': 'gpt-x', 'supported_reasoning_levels': [{'effort': 'high'}]}]})
+    for name, kinds, agy_lines, expect in (
+            ('runnable', 'pi, codex, agy', 'gem-y-medium', ['runnable', 'runnable']),
+            ('absent', 'pi, codex, agy', 'gem-y-high', ['runnable', 'unavailable']),
+            ('no-kind', 'pi, codex', 'gem-y-medium', None)):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = FAKE_HERDR.replace('if args[:2] == ["pane", "current"]:',
+                f'if args == ["--version"]: print("herdr 0.9.5")\nelif args == ["agent", "start", "--help"]: print("[possible values: {kinds}] -- [AGENT_ARG]")\nelif args[:2] == ["pane", "current"]:')
+            (root/'herdr').write_text(f'#!{sys.executable}\n'+fake)
+            (root/'codex').write_text(f'#!/bin/sh\n[ "$1 $2 $3" = "debug models --bundled" ] && cat <<\'EOF\'\n{codex_catalog}\nEOF\n')
+            (root/'agy').write_text(f'#!/bin/sh\n[ "$1" = models ] && echo {agy_lines}\n')
+            (root/'watch').write_text('#!/bin/sh\nexit 0\n')
+            for item in ('herdr', 'codex', 'agy', 'watch'): (root/item).chmod(0o755)
+            owner = root/'owner/SKILL.md'; owner.parent.mkdir()
+            owner.write_text('---\nname: code-review\n---\nfixture only\n')
+            packet = f'Owner：code-review；{owner}；fixture file invocation\n'
+            result, path, calls = run(root, name, base, packet=packet, map_text=map_text,
+                config_document=config, probe_evidence=probe, extra=flags)
+            if expect is None:
+                assert result.returncode != 0 and not mutations(calls), name
+                assert 'antigravity' in result.stdout + result.stderr and not path.exists()
+                continue
+            assert result.returncode == 0, name + result.stdout + result.stderr
+            row, _ = lane_registry.read(path, name)
+            plan = row['review_plan']
+            assert plan['lane']['selected'] == primary, plan
+            for axis in ('standards', 'spec'):
+                rows = plan['native_preflight']['capabilities'][axis]
+                assert [r['status'] for r in rows] == expect, rows
+                assert all(r['reason'] for r in rows if r['status'] == 'unavailable')
+    print('catalog-candidates: pass (codex/antigravity 原生目录替身；真实执行 Unknown)')
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['later-round', 'same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback'], required=True)
+    p.add_argument('--case', choices=['later-round', 'same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback', 'catalog-candidates'], required=True)
     args = p.parse_args()
-    ({'later-round':check_later_round, 'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
+    ({'catalog-candidates':check_catalog_candidates, 'later-round':check_later_round, 'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
