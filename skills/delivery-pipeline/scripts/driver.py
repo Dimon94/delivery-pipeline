@@ -17,6 +17,8 @@ registry 只由 Driver 写；回执按 id 幂等。core 不引用任何壳文件
   driver.py init <map_dir> <map_id>               为新 map 初始化自动规划
   driver.py epic <epic_json>                      Epic 级：输出下一条 open_map / wait / done
   driver.py self-test
+
+run / record / signal 之后按状态同步 map 内 issue 的 tracker 阶段（issue_status.py）。
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from types import MappingProxyType
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 import closeout  # noqa: E402
+import issue_status  # noqa: E402
 import brief_delivery  # noqa: E402
 import review_html  # noqa: E402
 
@@ -684,6 +687,19 @@ def load(map_dir: Path) -> dict:
     return state
 
 
+def sync_issues(map_dir: Path, call=None) -> None:
+    """按当前状态把 map 内 issue 推到应处阶段；已确认的阶段写回 driver.json#issue_status。"""
+    state = load(map_dir)
+    d = state['driver']
+    if not d:
+        return
+    cache, error = issue_status.sync(d, lanes_by_item(state['lanes']), call)
+    if cache != (d.get('issue_status') or {}):
+        write_json(map_dir / DRIVER_FILE, dict(d, issue_status=cache))
+    if error:
+        raise ValueError(error)
+
+
 def mark_seen(map_dir: Path) -> None:
     """记下 Driver 自己留下的集成 HEAD；之后出现的别的 HEAD 由 detect_halt 当外来提交处理。"""
     state = load(map_dir)
@@ -941,6 +957,7 @@ def run(map_dir: Path, executors: dict | None = None, limit: int = 200) -> dict:
         fn = table.get(action["action"])
         receipt = fn(map_dir, state, action) if fn else None
         if receipt is None:  # 无执行器或执行器声明交回宿主
+            sync_issues(map_dir)
             return action
         record(map_dir, action["id"], receipt, action)
         mark_seen(map_dir)
@@ -1101,6 +1118,7 @@ def self_test() -> int:
     if decide_epic({"candidates": [{"mmf": "A", "map": "mA"}], "maps": {"mA": "closed"}})["action"] != "done":
         failures.append("epic: 全部 closed 应 done")
     failures += _io_self_test()
+    failures += _issue_sync_self_test()
     failures += _contract_self_test()
     failures += _head_guard_self_test()
     failures += _planning_self_test()
@@ -1184,6 +1202,31 @@ def _io_self_test() -> list[str]:
         record(md, "halt", "接受剩余 findings 继续")
         if decide(load(md))["id"] == h["id"]:
             failures.append("已裁决的 halt 不应再触发")
+    return failures
+
+
+def _issue_sync_self_test() -> list[str]:
+    """Driver 读 map 现场推 issue 阶段：派发中的票 In Progress、Spec 进行中，已确认阶段落 cache；回读不符即报错。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        md = Path(tmp)
+        write_json(md / DRIVER_FILE, {"version": 1, "map": "m1", "grant": {"plan_sha": "x"}, "published": "p",
+                                      "gates": {"spec": "https://linear.app/x/issue/DD-1"},
+                                      "plan": {"tickets": [{"id": "DD-2"}, {"id": "DD-3"}]}})
+        persist_lanes(md, [{**_lane("dd-2", "running", work_item="DD-2"), "_file": str(md / "registry.md")}])
+        fake = issue_status.FakeLinear({"DD-1": "Backlog", "DD-2": "Backlog", "DD-3": "Backlog"})
+        sync_issues(md, fake)
+        if fake.states != {"DD-1": "In Progress", "DD-2": "In Progress", "DD-3": "Todo"}:
+            failures.append(f"issue 同步应按 lane 现场推进阶段，got {fake.states}")
+        if load(md)["driver"].get("issue_status") != {"DD-1": "started", "DD-2": "started", "DD-3": "todo"}:
+            failures.append("已确认阶段应写回 driver.json#issue_status")
+        liar = issue_status.FakeLinear({"DD-1": "In Progress", "DD-2": "In Progress", "DD-3": "Todo"}, lie=True)
+        persist_lanes(md, [{**_lane("dd-3", "running", work_item="DD-3"), "_file": str(md / "registry.md")}])
+        try:
+            sync_issues(md, liar)
+            failures.append("回读不符应让 Driver 报错")
+        except ValueError:
+            pass
     return failures
 
 
@@ -1423,8 +1466,10 @@ def execute(cmd, map_dir, argv):
         except json.JSONDecodeError:
             receipt = raw  # halt 决定原文
         print(json.dumps(record(map_dir, argv[2], receipt), ensure_ascii=False))
+        sync_issues(map_dir)
     elif cmd == "signal":
         print(json.dumps(signal(map_dir, argv[2]), ensure_ascii=False))
+        sync_issues(map_dir)
     elif cmd == "init":
         path = map_dir / DRIVER_FILE
         if path.exists():

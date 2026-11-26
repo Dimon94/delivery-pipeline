@@ -29,7 +29,7 @@ disable-model-invocation: true
    - `halt`：把 `args` 的原因、证据坐标与可选项原样交给用户；回复后 `driver.py record <map 目录> halt <决定>`。
    - `wait` / `done`：结束本轮；`legacy`：无 Driver 的旧 map，按 `references/gate-state-machine.md` 推进。
 3. **record。** `scripts/driver.py record <map 目录> <id> <回执JSON>`；worker 终态行用
-   `driver.py signal <map 目录> "<LANE_DONE 行>"`。registry 只由 Driver 写，回执按 id 幂等。回到第 1 步。
+   `driver.py signal <map 目录> "<LANE_DONE 行>"`。registry 只由 Driver 写，回执按 id 幂等。Linear issue 状态由 Driver 自动推进，不手工改。回到第 1 步。
 
 ## 停点
 新 map 用 `driver.py init` 进入自动规划。to-tickets 脚本检查和蜂巢预检通过后，Driver 自动冻结计划与测试策略，

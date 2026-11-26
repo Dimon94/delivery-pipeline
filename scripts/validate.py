@@ -959,6 +959,7 @@ def check_driver() -> None:
     if re.search(r"delivery-pipeline-(?:herdr|codex-app|orca|t3code|lody)", core.read_text()):
         record("Driver core must not reference transport shell files")
     for cmd in ([sys.executable, str(core), "self-test"],
+                [sys.executable, str(CORE / "scripts" / "issue_status.py"), "self-test"],
                 [sys.executable, str(HERDR / "scripts" / "driver_run_check.py")],
                 [sys.executable, str(ROOT / 'scripts/check_delivery_dispatch.py')]):
         result = subprocess.run(cmd, text=True, capture_output=True)
