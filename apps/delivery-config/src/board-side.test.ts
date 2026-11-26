@@ -131,3 +131,40 @@ test('S19 Inbox 三条各显示来源仓库、交付阶段、执行状态与 iss
   expect(el.textContent).not.toMatch(/分配|归属到|标记|忽略|移入/);
  });
 });
+
+test('S12/R3 左栏独立渲染读取失败分组并显示条数、map 名与原因原文，无按钮；errors 为空时不渲染该分组',()=>{
+ const withErrors:BoardSnapshot=structuredClone(boardSample);
+ withErrors.errors=[{map:'tkada-jb416',reason:'缺少可读的 driver.json 与 registry'}];
+ const groups=buildBoardGroups(withErrors);
+ const doc=mount(renderLeftColumn({
+  groups,
+  selectedGroupId:groups.all[0]!.id,
+  selectedMap:groups.all[0]!.mmfs[0]!.map,
+  open:true,
+  endedOpen:false,
+  expandedEpics:new Map(),
+ }));
+ const section=doc.querySelector<HTMLElement>('.board-errors')!;
+ expect(section).not.toBeNull();
+ expect(section.hidden).toBe(false);
+ expect(section.querySelector('h3')!.textContent).toBe('读取失败');
+ expect(section.querySelector('small')!.textContent).toBe('1');
+ const item=section.querySelector<HTMLElement>('.board-error-item[data-error-map="tkada-jb416"]')!;
+ expect(item).not.toBeNull();
+ expect(item.textContent).toContain('tkada-jb416');
+ expect(item.textContent).toContain('缺少可读的 driver.json 与 registry');
+ expect(section.querySelectorAll('button').length).toBe(0);
+ expect(doc.querySelector('.board-epic[data-epic="example/dispatch|DEMO-1"]')).not.toBeNull();
+
+ const emptyGroups=buildBoardGroups({...structuredClone(boardSample),errors:[]});
+ const emptyDoc=mount(renderLeftColumn({
+  groups:emptyGroups,
+  selectedGroupId:emptyGroups.all[0]!.id,
+  selectedMap:emptyGroups.all[0]!.mmfs[0]!.map,
+  open:true,
+  endedOpen:false,
+  expandedEpics:new Map(),
+ }));
+ expect(emptyDoc.querySelector('.board-errors')).toBeNull();
+ expect(emptyDoc.body.textContent).not.toContain('读取失败');
+});

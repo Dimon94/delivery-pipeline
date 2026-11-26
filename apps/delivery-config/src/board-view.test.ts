@@ -313,3 +313,33 @@ test('S19 通过真实入口加载 probed 样本，Inbox 三条展示完整字�
  expect(q('#board-right .detail-sub')!.textContent).toContain('example/publisher');
  expect(q('#board-right .detail-sub')!.textContent).toContain('待归属');
 });
+
+test('S12/R3 快照 errors 在左栏独立“读取失败”分组显示 map 名与原因原文，正常 map 不受影响；errors 为空时不显示该分组',async()=>{
+ const withErrors=structuredClone(sample);
+ withErrors.errors=[{map:'tkada-jb416',reason:'缺少可读的 driver.json 与 registry'}];
+ answer=()=>Promise.resolve(withErrors);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ const left=q('#board-left')!;
+ const errSection=left.querySelector<HTMLElement>('.board-errors');
+ expect(errSection).not.toBeNull();
+ expect(errSection!.hidden).toBe(false);
+ expect(errSection!.textContent).toContain('读取失败');
+ expect(errSection!.textContent).toContain('1');
+ expect(errSection!.textContent).toContain('tkada-jb416');
+ expect(errSection!.textContent).toContain('缺少可读的 driver.json 与 registry');
+ expect(errSection!.querySelectorAll('button').length).toBe(0);
+ expect(q('.board-failed')).toBeNull();
+ expect(left.textContent).toContain('DEMO-1');
+ click([...doc.querySelectorAll<HTMLElement>('.board-entry')].find(b=>b.dataset.group?.includes('DEMO-1'))??null);
+ expect(q('.graph-mmf[data-map="dispatch-rules"]')).not.toBeNull();
+
+ const withoutErrors=structuredClone(sample);
+ withoutErrors.errors=[];
+ answer=()=>Promise.resolve(withoutErrors);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ expect(q('#board-left .board-errors')).toBeNull();
+ expect(q('#board-left')!.textContent).not.toContain('读取失败');
+ expect(q('.graph-mmf[data-map="dispatch-rules"]')).not.toBeNull();
+});

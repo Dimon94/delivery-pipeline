@@ -178,6 +178,12 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .inbox-status{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}
 .exec-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
 .inbox-link{font-size:11px;justify-self:start}
+.board-errors-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.board-errors-head small{color:var(--red);font-size:11px;white-space:nowrap}
+.board-error-list{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:6px}
+.board-error-item{background:color-mix(in srgb,var(--red) 6%,var(--card));border:1px solid color-mix(in srgb,var(--red) 35%,var(--line-soft));border-radius:8px;padding:7px 8px;display:grid;gap:3px}
+.board-error-map{font-size:12px;font-weight:500;color:var(--ink);overflow-wrap:anywhere}
+.board-error-reason{font-size:11px;color:var(--muted);line-height:1.45;overflow-wrap:anywhere}
 .board-center{position:relative}
 .graph{position:relative}
 .graph-links{position:absolute;inset:0 auto auto 0;stroke:var(--line);stroke-width:1.5;fill:none}

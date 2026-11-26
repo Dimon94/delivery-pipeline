@@ -1,4 +1,4 @@
-import type {BoardSnapshot,Epic,InboxItem} from './board';
+import type {BoardError,BoardSnapshot,Epic,InboxItem} from './board';
 import type {GraphGroup} from './board-graph';
 import {copy,issueLinkLabel,mmfStatusText,stageLabel} from './copy';
 
@@ -37,6 +37,7 @@ export type BoardGroups={
  repos:SideRepoSection[];
  ended:SideEpicEntry[];
  inbox:{group:GraphGroup;items:InboxItem[]};
+ errors:BoardError[];
  all:GraphGroup[];
 };
 
@@ -60,12 +61,13 @@ export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
   if(activeEpics.length)repos.push({name:r.name,epics:activeEpics});
  }
  const inboxGroup:GraphGroup={id:INBOX_GROUP_ID,label:copy.Inbox,url:null,mmfs:board.inbox};
+ const errors=Array.isArray(board.errors)?board.errors:[];
  const all:GraphGroup[]=[
   ...repos.flatMap(r=>r.epics.map(e=>e.group)),
   ...ended.map(e=>e.group),
   ...(board.inbox.length?[inboxGroup]:[]),
  ];
- return {repos,ended,inbox:{group:inboxGroup,items:board.inbox},all};
+ return {repos,ended,inbox:{group:inboxGroup,items:board.inbox},errors,all};
 }
 
 export function isEpicExpanded(entry:SideEpicEntry,overrides:ReadonlyMap<string,boolean>):boolean {
@@ -97,6 +99,14 @@ function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedG
  return `<section class="board-repo board-inbox" aria-label="${copy.Inbox}"><div class="board-inbox-head"><button class="board-entry${inboxSelected?' selected':''}" data-board="group" data-group="${INBOX_GROUP_ID}" aria-current="${inboxSelected}"><span class="board-entry-label">${copy.Inbox}</span><small>${inbox.items.length}</small></button></div><ul class="inbox-list">${itemsHtml}</ul></section>`;
 }
 
+function renderErrorsSection(errors:BoardError[]):string {
+ if(!errors.length)return '';
+ const itemsHtml=errors.map(err=>
+  `<li class="board-error-item" data-error-map="${esc(err.map)}"><span class="board-error-map">${esc(err.map)}</span><span class="board-error-reason">${esc(err.reason)}</span></li>`
+ ).join('');
+ return `<section class="board-repo board-errors" data-board-errors="true" aria-label="${copy.读取失败}"><div class="board-errors-head"><h3>${copy.读取失败}</h3><small>${errors.length}</small></div><ul class="board-error-list">${itemsHtml}</ul></section>`;
+}
+
 export interface LeftColumnParams {
  groups:BoardGroups;
  selectedGroupId?:string;
@@ -116,5 +126,6 @@ export function renderLeftColumn(params:LeftColumnParams):string {
   ?`<details class="board-repo board-ended" data-board-ended="true"${endedExpanded?' open':''}><summary>${copy.已结束} ${groups.ended.length}</summary>${groups.ended.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics)).join('')}</details>`
   :'';
  const inboxHtml=renderInboxSection(groups.inbox,selectedGroupId,selectedMap);
- return `<nav class="board-col board-left" id="board-left" aria-label="Epic" ${open?'':'hidden'}><div class="board-col-head"><h2>Epic</h2><button class="quiet" data-board="left">${copy.收起左栏}</button></div>${activeHtml}${endedHtml}${inboxHtml}</nav>`;
+ const errorsHtml=renderErrorsSection(groups.errors);
+ return `<nav class="board-col board-left" id="board-left" aria-label="Epic" ${open?'':'hidden'}><div class="board-col-head"><h2>Epic</h2><button class="quiet" data-board="left">${copy.收起左栏}</button></div>${activeHtml}${endedHtml}${inboxHtml}${errorsHtml}</nav>`;
 }
