@@ -58,10 +58,10 @@ recover_launch，不换 pane/name、不新建 successor、不重发原生启动�
 `init`/`primary` 是隔离 checks lane 的有界验收入口；nonce/fault 仅发只读提示，sample
 独立采集响应，均不生成实际模型或 effort 的断言。验收过程不启动 watcher。
 
-Herdr 0.9.5 已采集的帮助未提供持久历史请求账本。当前 Adapter 只在原 name/pane/kind
+已采集的 Herdr 帮助未提供持久历史请求账本。当前 Adapter 只在原 name/pane/kind
 唯一且 ready 的独立读回后消费启动 receipt；CLI 非零（包括 agent_not_ready）不等于正面
 startup_failed，shell 空闲和 agent 缺席也不等于原请求未启动。不能独立对账时保持
-launching 并 blocked，不重发、不推进 C；需补版本匹配的原请求正面拒绝/历史账本证据。
+launching 并 blocked，不重发、不推进 C；需补原请求正面拒绝/历史账本证据。
 尚无这样的原生证据时，不把 A→B→C 的 seam 检查当作原生验收通过。
 
 ## whole-change Review Plan 入口
@@ -97,12 +97,12 @@ sources、capabilities）。生产 dispatch 在任何 packet/Registry/pane mutat
 `native_review_preflight.preflight_review_candidates`；`--native-capabilities` 外部自述文件不再授权派发，
 非空池传入此参数会拒绝。canonical CLI 的文件输入仅用于纯计划接口，不能替代 Adapter 现场来源。
 
-当前窄合同覆盖 Herdr 0.9.5 的 AGENT_ARG 透传帮助，并逐身份核对该 agent 的 kind（antigravity 为 `agy`）
-出现在 `agent start --help` 的可选值里。Pi 核对 1.5.2 安装包的原生 parseArgs、ModelConfig schema、
+Harness 版本号不作门（Herdr、Pi 会持续升级）：只核 `agent start --help` 仍有 AGENT_ARG 透传，并逐身份核对该 agent 的 kind（antigravity 为 `agy`）
+出现在 `agent start --help` 的可选值里。Pi 加载当前安装包的原生 parseArgs、ModelConfig schema、
 精确模型解析和 thinking level 支持/clamp，只覆盖当前 models.json 注册项，不做 fuzzy/custom fallback。
 codex、claude、antigravity 在本次 preflight 内重新读取工具自身的模型目录（`codex debug models`、
 Claude 官方模型清单、`agy models`），精确 model 与 effort 都在目录里才为 runnable。不从 probe 文件复制
-native 成功。其他 Herdr 版本、kind 缺失或目录读不到为 Unknown；目录明确不含该 model/effort 才为 unavailable。尚不具备未来启动、认证、网络、额度或审查成功保证。
+native 成功。AGENT_ARG 透传或 kind 缺失、原生接口加载失败、目录读不到为 Unknown；目录明确不含该 model/effort 才为 unavailable。尚不具备未来启动、认证、网络、额度或审查成功保证。
 
 逐项证据绑定 request、真实采集时间、完整 ordered pools（重复位置保留）、精确 identity、
 原生命令/退出码/结果及 binary/解析源码 hash；evidence_id 为这些绑定的 SHA256。models.json

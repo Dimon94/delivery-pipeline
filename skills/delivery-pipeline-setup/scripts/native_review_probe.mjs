@@ -1,4 +1,4 @@
-// 只调用版本匹配的原生纯解析接口；不运行 main/session/auth/inference。
+// 只调用已安装 Pi 的原生纯解析接口（不限版本）；不运行 main/session/auth/inference。
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));

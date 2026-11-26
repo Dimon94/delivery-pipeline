@@ -62,8 +62,10 @@ def check():
     busy=False
     for bad in [reply(out=raw.replace('agent process exited before becoming interactive','agent start response did not include terminal_id')),
                 reply(out=raw.replace('agent_start_failed','timeout')),reply(version='Unknown'),
-                reply(version='herdr 0.9.6'),reply(code=0)]:
+                reply(code=0)]:
         assert bad['status']=='unknown'
+    # Herdr 升级不阻断：版本号变了但原生错误信封完全一致，仍是正面失败。
+    assert reply(version='herdr 0.9.6')['status']=='failed'
     for key,value in [('agent_name','other'),('pane_id','w1:p3')]:
         bad=deepcopy(request);bad[key]=value
         assert reply(req=bad)['status']=='unknown'

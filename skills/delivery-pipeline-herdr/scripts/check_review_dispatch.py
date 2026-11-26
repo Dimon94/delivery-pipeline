@@ -140,14 +140,14 @@ def check_axis_evidence():
     print('axis-evidence-mismatch: pass (adapter simulation; native model/effort Unknown)')
 
 
-def native_boundary(root):
+def native_boundary(root, pi_version='1.5.2', herdr_version='0.9.5', agent_arg=True):
     """替身只在安装文件与原生进程 I/O；不以此证明 native 接受。"""
     model_path=root/'.pi/agent/models.json'; model_path.parent.mkdir(parents=True); model_path.write_text('{}')
     pkg = root/'pi-package'
     for name in ['dist/bundle/cli.js', 'dist/cli/args.js', 'dist/core/model-config.js',
                  'dist/core/model-resolver.js', 'node_modules/@earendil-works/pi-ai/dist/models.js']:
-        path = pkg/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(f'#!{sys.executable}\nprint("1.5.2")\n' if name=='dist/bundle/cli.js' else '// external fixture')
-    (pkg/'package.json').write_text(json.dumps({'name':'@earendil-works/pi-coding-agent','version':'1.5.2'}))
+        path = pkg/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(f'#!{sys.executable}\nprint("{pi_version}")\n' if name=='dist/bundle/cli.js' else '// external fixture')
+    (pkg/'package.json').write_text(json.dumps({'name':'@earendil-works/pi-coding-agent','version':pi_version}))
     (root/'pi').symlink_to(pkg/'dist/bundle/cli.js'); (pkg/'dist/bundle/cli.js').chmod(0o755)
     (root/'node').write_text(f'#!{sys.executable}\n'+r'''import json,sys
 from pathlib import Path
@@ -159,7 +159,7 @@ print(json.dumps([{'identity':i,'status':statuses.get(i['model'],'runnable'),
 ''')
     (root/'node').chmod(0o755)
     fake = FAKE_HERDR.replace('if args[:2] == ["pane", "current"]:',
-        'if args == ["--version"]: print("herdr 0.9.5")\nelif args == ["agent", "start", "--help"]: print("[possible values: pi, codex] -- [AGENT_ARG]")\nelif args[:2] == ["pane", "current"]:')
+        f'if args == ["--version"]: print("herdr {herdr_version}")\nelif args == ["agent", "start", "--help"]: print("[possible values: pi, codex]{" -- [AGENT_ARG]" if agent_arg else ""}")\nelif args[:2] == ["pane", "current"]:')
     (root/'herdr').write_text(f'#!{sys.executable}\n'+fake)
     (root/'herdr').chmod(0o755)
 
@@ -596,8 +596,33 @@ def check_catalog_candidates():
     print('catalog-candidates: pass (codex/antigravity 原生目录替身；真实执行 Unknown)')
 
 
+def check_harness_version_drift():
+    """Harness 升级不阻断审查：Pi/Herdr 版本号变化时仍按原生解析与能力帮助判定。外部 I/O 为替身。"""
+    import os
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'delivery-pipeline-setup/scripts'))
+    import native_review_preflight as nrp
+    pools = {'standards': [{'agent': 'pi', 'model': 'p/m', 'effort': 'high'}]}
+    for name, kwargs, expect in (
+            ('pinned', {}, 'runnable'),
+            ('upgraded', {'pi_version': '1.6.1', 'herdr_version': '0.9.9'}, 'runnable'),
+            ('no-agent-arg', {'herdr_version': '0.9.9', 'agent_arg': False}, 'unknown')):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); native_boundary(root, **kwargs)
+            (root/'state.json').write_text(json.dumps({'tabs': [], 'panes': []}))
+            saved = {k: os.environ.get(k) for k in ('PATH', 'HOME')}
+            os.environ.update(PATH=f'{root}:{saved["PATH"]}', HOME=str(root))
+            try:
+                got = nrp.preflight_review_candidates(pools, name)
+            finally:
+                os.environ.update({k: v for k, v in saved.items() if v is not None})
+            row = got['capabilities']['standards'][0]
+            assert row['status'] == expect, (name, row)
+    print('harness-version-drift: pass (Pi/Herdr 版本号不作门；原生 I/O 替身，真实执行 Unknown)')
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--case', choices=['later-round', 'same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback', 'catalog-candidates'], required=True)
+    p.add_argument('--case', choices=['later-round', 'same-round-recovery', 'single-model', 'axis-evidence-mismatch', 'different-family', 'capability-safety', 'runnable-fallback', 'catalog-candidates', 'harness-version-drift'], required=True)
     args = p.parse_args()
-    ({'catalog-candidates':check_catalog_candidates, 'later-round':check_later_round, 'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()
+    ({'harness-version-drift':check_harness_version_drift, 'catalog-candidates':check_catalog_candidates, 'later-round':check_later_round, 'same-round-recovery':check_same_round, 'runnable-fallback':check_runnable_fallback, 'capability-safety':check_capability_safety, 'axis-evidence-mismatch': check_axis_evidence, 'different-family': check_different_family}.get(args.case, check))()

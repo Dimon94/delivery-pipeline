@@ -50,7 +50,7 @@ def collect_native(pools, request_id):
             terminal=capture([str(executable),'terminal','send','--help'])
             worktree=capture([str(executable),'worktree','create','--help'])
             g=json.loads(guide['stdout'])
-            pi_transport=(installed=='1.4.258' and version['stdout'].strip()==installed
+            pi_transport=(version['stdout'].strip()==installed  # 只核 CLI 与 app 同源，不钉版本号：Orca 会持续升级
                 and all(x['exit']==0 for x in (version,guide,worker,terminal,worktree))
                 and g.get('name')=='orca-cli' and g.get('full') is True
                 and all(x in g.get('markdown','') for x in ('terminal','worktree','orchestration'))
@@ -87,13 +87,13 @@ process.stdout.write(JSON.stringify({rows,sources,pi_transport}));'''
             for axis,pool in pools.items():
                 for index,target in enumerate(pool):
                     if target['agent']=='pi':
-                        rows[axis][index]=native.get(json.dumps(target,sort_keys=True),dict(status='unknown',reason='version-matched Pi parser evidence missing'))
+                        rows[axis][index]=native.get(json.dumps(target,sort_keys=True),dict(status='unknown',reason='Pi native parser evidence missing'))
                         rows[axis][index]={k:v for k,v in rows[axis][index].items() if k!='identity'}
         else:
             for axis,pool in pools.items():
                 for index,target in enumerate(pool):
                     if target['agent']=='pi':
-                        rows[axis][index]=dict(status='unknown',reason='Orca version/guide/native agent-argv transport evidence missing')
+                        rows[axis][index]=dict(status='unknown',reason='Orca CLI/app mismatch or guide/native agent-argv transport evidence missing')
         result['executable']=str(executable)
     except (OSError,ValueError,KeyError,TypeError,subprocess.TimeoutExpired) as error:
         reason=str(error)

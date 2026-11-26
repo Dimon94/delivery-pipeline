@@ -1,4 +1,5 @@
-"""版本匹配的 Pi 纯 parser/model/effort 采集；不包含 transport 放行规则。"""
+"""Pi 纯 parser/model/effort 采集；不包含 transport 放行规则。
+不按 Pi 版本号设门：Harness 会持续升级，原生接口仍能加载并给出判定即有效；接口变了探针失败才是 Unknown。"""
 import hashlib
 import json
 import shutil
@@ -15,12 +16,10 @@ def collect_pi(identities, capture, sources):
         binary = Path(pi).resolve()
         package = binary.parent.parent.parent if binary.parent.name == 'bundle' else binary.parent.parent
         try:
-            pi_version = capture([pi, '--version'])
-            if pi_version['exit'] != 0 or pi_version['stdout'].strip() != '1.5.2':
-                raise ValueError('Pi binary/source version mismatch')
+            capture([pi, '--version'])  # 版本号只作证据记录。
             meta = json.loads((package/'package.json').read_text())
-            if meta.get('name') != '@earendil-works/pi-coding-agent' or meta.get('version') != '1.5.2':
-                raise ValueError('version-matched Pi source required')
+            if meta.get('name') != '@earendil-works/pi-coding-agent':
+                raise ValueError('Pi package source required')
             paths = [binary, Path.home()/'.pi/agent/models.json', package/'package.json', HERE/'native_review_probe.mjs',
                      *[package/p for p in ('dist/cli/args.js', 'dist/core/model-config.js',
                         'dist/core/model-resolver.js', 'node_modules/@earendil-works/pi-ai/dist/models.js')]]

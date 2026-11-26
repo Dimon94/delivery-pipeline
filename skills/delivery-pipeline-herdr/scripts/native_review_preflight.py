@@ -70,11 +70,10 @@ def preflight_review_candidates(ordered_pools, request_id):
     herdr = shutil.which('herdr')
     version = capture([herdr, '--version']) if herdr else None
     help_ = capture([herdr, 'agent', 'start', '--help']) if herdr else None
-    # 窄合同：当前已调查版本，且支持显式 AGENT_ARG 透传；逐身份再核 kind。
+    # 只核能力不核版本号：Herdr 会持续升级，帮助里仍有 AGENT_ARG 透传即可；逐身份再核 kind。
     kinds_match = re.search(r'\[possible values: ([^\]]+)\]', help_['stdout']) if help_ else None
     kinds = {k.strip() for k in kinds_match[1].split(',')} if kinds_match else set()
-    transport_ok = bool(version and version['exit'] == 0 and version['stdout'].strip() == 'herdr 0.9.5'
-        and help_['exit'] == 0 and '-- [AGENT_ARG]' in help_['stdout'])
+    transport_ok = bool(help_ and help_['exit'] == 0 and '-- [AGENT_ARG]' in help_['stdout'])
     if herdr:
         sources.append({'herdr_binary':str(Path(herdr).resolve()), 'sha256':_digest(Path(herdr).read_bytes())})
     identities = [x for pool in ordered_pools.values() for x in pool]
@@ -88,7 +87,7 @@ def preflight_review_candidates(ordered_pools, request_id):
             row = native.get(json.dumps(identity,sort_keys=True), {})
             status, reason = row.get('status','unknown'), row.get('reason','version-matched native parser source unavailable')
             if not transport_ok:
-                status, reason = 'unknown', 'Herdr version/agent argument forwarding contract missing'
+                status, reason = 'unknown', 'Herdr agent argument forwarding (-- [AGENT_ARG]) missing'
             elif HERDR_KIND.get(identity['agent'], identity['agent']) not in kinds:
                 status, reason = 'unknown', 'Herdr agent kind unsupported: ' + HERDR_KIND.get(identity['agent'], identity['agent'])
             binding = {'request_id':request_id, 'observed_at':observed, 'ordered_pools':ordered_pools,

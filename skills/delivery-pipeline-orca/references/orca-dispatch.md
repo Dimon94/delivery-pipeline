@@ -180,12 +180,12 @@ spec-only 仍选 standards lane，但 owner_calls 只派 spec。
 runtime preflight。缺 binary、模块、精确 catalog 成员或未知 launch transport 是 Unknown，
 不能作为 unavailable 跳过；原生精确参数拒绝才是正面 unavailable。
 
-Pi `agent-argv` 只覆盖已调查的本机 Orca App 1.4.258：固定 executable 的版本必须与
-Info.plist 一致；同一 CLI 的完整 guide 与 worktree create / terminal send / worker-start
+Pi `agent-argv` 不钉 Orca 或 Pi 版本号（Harness 会持续升级）：固定 executable 的版本必须与
+Info.plist 一致（同源核对）；同一 CLI 的完整 guide 与 worktree create / terminal send / worker-start
 help 必须有既有 terminal/worktree 链合同，App 原生 TUI 配置必须明确 Pi 的 argv transport。
-再调用 setup 共用的 Pi 1.5.2 纯 parser/model resolution/thinking clamp 采集，精确请求
+再调用 setup 共用的当前安装 Pi 纯 parser/model resolution/thinking clamp 采集，精确请求
 必须原值通过；模型 metadata 单独不放行。共用 owner 不含 Herdr transport 判断。
-缺版本、工具、模块、精确模型或 transport 来源仍为 Unknown；clamp/remap 为 unavailable。
+缺工具、模块、原生接口、精确模型或 transport 来源仍为 Unknown；clamp/remap 为 unavailable。
 保存当前来源 hash、原生命令、request、完整有序池与位置的 evidence id；来源采集中变化拒绝。
 这仅是静态兼容，完整 host/runtime/terminal/owner preflight 仍由原入口执行；启动、auth、
 network、quota、执行和实际身份均 Unknown。其他 agent-argv 不扩展，不借 DD418、旧 Task/Run、

@@ -56,12 +56,12 @@ def execute(path, lane, observe, pane_id, evidence, verify_target, native_start=
 
 
 def start_result(returncode, stdout, stderr, *, version=None, request=None, request_id=None):
-    """只识别 v0.9.5 wait_for_named_agent 的精确退出分支；坐标来自本次调用。"""
+    """只识别 wait_for_named_agent 的精确错误信封；坐标来自本次调用。版本号只作证据，不作门。"""
     raw=dict(returncode=returncode,stdout=stdout,stderr=stderr)
     receipt=dict(start_reply=raw,version=version,native_request=request,request_id=request_id)
     unknown=dict(status='unknown',native_reply=raw,receipt=receipt,
                  gap='原请求结果 Unknown；缺席不证明未启动，不重发')
-    if version != 'herdr 0.9.5' or returncode != 1 or not request or not request_id:
+    if not str(version or '').startswith('herdr ') or returncode != 1 or not request or not request_id:
         return unknown
     argv=request.get('argv',[])
     scope=request.get('scope',{})

@@ -36,11 +36,11 @@ def check():
             p=package/name; p.parent.mkdir(parents=True,exist_ok=True); p.write_text('{}')
         (package/'package.json').write_text(json.dumps({'name':'@earendil-works/pi-coding-agent','version':'1.5.2'}))
         models=root/'.pi/agent/models.json'; models.parent.mkdir(parents=True); models.write_text('{}')
-        mode='ok'; calls=[]
+        mode='ok'; calls=[]; orca_version='1.4.258'; pi_version='1.5.2'
         def io(argv, **kw):
             calls.append(argv)
             if argv[0]==str(exe):
-                if argv[1:]==['--version']: value='1.4.258'
+                if argv[1:]==['--version']: value=orca_version
                 elif argv[1:]==['skills','get','orca-cli','--full','--json']:
                     value=json.dumps(dict(name='orca-cli',full=True,markdown='terminal worktree orchestration'))
                 elif argv[1:]==['orchestration','worker-start','--help']:
@@ -48,7 +48,7 @@ def check():
                 elif argv[1:]==['terminal','send','--help']: value='--terminal --text --enter --wait-submit'
                 elif argv[1:]==['worktree','create','--help']: value='--name --base-branch'
                 else: raise AssertionError('native mutation: '+repr(argv))
-            elif argv[1:]==['--version']: value='1.5.2'
+            elif argv[1:]==['--version']: value=pi_version
             elif '-e' in argv:
                 rows={a:[dict(status='unknown',reason='exact native model catalog evidence missing') for t in ts] for a,ts in pools.items()}
                 value=json.dumps(dict(rows=rows,sources=[],pi_transport=mode!='transport'))
@@ -78,6 +78,12 @@ def check():
             mode='ok'
             second=d.collect_native(pools,'r2')
             assert second['capabilities']['standards'][0]['evidence_id']!=ids[0]
+            # Harness 升级不阻断：Orca/Pi 版本号变了，能力与原生解析仍在即 runnable。
+            orca_version, pi_version = '1.5.0', '1.6.1'
+            app.write_bytes(plistlib.dumps({'CFBundleShortVersionString':orca_version}))
+            (package/'package.json').write_text(json.dumps({'name':'@earendil-works/pi-coding-agent','version':pi_version}))
+            got=d.collect_native(pools,'r3')
+            assert all(r['status']=='runnable' for rs in got['capabilities'].values() for r in rs), got
         # 穿过真实共享 JS probe；替身仅为 Pi 安装模块这个外部边界。
         (package/'package.json').write_text('{"type":"module"}')
         (package/'dist/cli/args.js').write_text("export const parseArgs = a => ({model:a[2], thinking:a[4], diagnostics:[], unknownFlags:new Set()});")
