@@ -168,8 +168,21 @@ export const copy = {
   "打开Linear": "打开 Linear",
   "打开计划审查页": "打开 Plan Review 页",
   "打开合并审查页": "打开 Merge Review 页",
-  "看板快照格式不对": "看板快照格式不对，请检查随附的看板工具"
+  "看板快照格式不对": "看板快照格式不对，请检查随附的看板工具",
+  "更多现场信息": "更多现场信息",
+  "来源仓库": "来源仓库",
+  "角色": "角色",
+  "工作目录": "工作目录",
+  "实时状态": "实时状态",
+  "更新时间": "更新时间",
+  "阻塞原因": "阻塞原因",
+  "直属执行": "直属执行",
+  "编号": "编号",
+  "展开Epic": "展开",
+  "收起Epic": "收起",
+  "非活跃": "未活跃"
 };
+export const STAGE_ORDER:readonly import('./board').Stage[]=['spec','tickets','implement','integrate','review','merge_review','merged'];
 // 阶段中文名；读不出的阶段原样显示数据值。
 export const stageNames:Record<string,string>={spec:'Spec',tickets:'拆票',implement:'实施',integrate:'集成',review:'审查',merge_review:'Merge Review',merged:'合入'};
 export const stageLabel=(stage:string)=>stageNames[stage]??stage;
@@ -182,6 +195,26 @@ export function ticketStatusText(ticket:Pick<import('./board').Ticket,'lane'|'ex
  if(ticket.lane.state==='running'&&ticket.lane.live==='unknown')return `${ticket.lane.state} · ${copy.现场} Unknown`;
  const group=laneGroupNames[ticket.lane.group]??ticket.lane.group;
  return `${group} · ${ticket.lane.state}`;
+}
+// MMF / Inbox 条目的执行状态摘要；与“待归属”归属标签严格分开。
+export function mmfStatusText(mmf:Pick<import('./board').Mmf,'executing'|'direct_lanes'|'tickets'|'stage'>):string {
+ if(mmf.executing||mmf.tickets.some(t=>t.executing))return copy.执行中;
+ const lanes=[...mmf.direct_lanes,...mmf.tickets.flatMap(t=>t.lane?[t.lane]:[])];
+ const pick=(fn:(l:import('./board').Lane)=>boolean)=>lanes.find(fn);
+ const lane=pick(l=>l.group==='problem')??pick(l=>l.group==='review')??pick(l=>l.state==='running'&&l.live==='unknown')??pick(l=>l.group==='active')??pick(l=>l.group==='done')??lanes[0];
+ if(!lane)return mmf.stage==='merged'?laneGroupNames.done!:copy.未派发;
+ if(lane.state==='running'&&lane.live==='unknown')return `${lane.state} · ${copy.现场} Unknown`;
+ const group=laneGroupNames[lane.group]??lane.group;
+ return `${group} · ${lane.state}`;
+}
+export function liveStatusLabel(live:import('./board').LiveStatus):string {
+ if(live==='working')return copy.执行中;
+ if(live==='not_working')return copy.非活跃;
+ return 'Unknown';
+}
+export function issueLinkLabel(url:string):string {
+ const m=url.match(/\/issue\/([A-Z]+-\d+)\b/i);
+ return m?m[1]!:copy.打开Linear;
 }
 const families:Record<string,string>={glm:'GLM',minimax:'MiniMax',gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
 export const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};

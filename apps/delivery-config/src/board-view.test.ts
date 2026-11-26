@@ -218,3 +218,98 @@ test('S18 4 层超宽图首次打开与切 Epic 可见根与第一层 MMF，点�
  expect(q('.graph-root')!.textContent).toContain('DEMO-3');
  expect(q('.graph-mmf')).not.toBeNull();
 });
+
+test('S6 全部合入的 Epic 在默认折叠的“已结束”组，有 running 票的 Epic 默认展开',async()=>{
+ answer=()=>Promise.resolve(sample);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ const demo1Btn=[...doc.querySelectorAll<HTMLElement>('.board-entry')].find(b=>b.dataset.group?.includes('DEMO-1'))!;
+ click(demo1Btn);
+
+ const demo1Wrap=q<HTMLElement>('.board-epic[data-epic="example/dispatch|DEMO-1"]')!;
+ expect(demo1Wrap.dataset.expanded).toBe('true');
+ expect(demo1Wrap.querySelector<HTMLElement>('.epic-mmfs')!.hidden).toBe(false);
+
+ const ended=q<HTMLDetailsElement>('details[data-board-ended]')!;
+ expect(ended.open).toBe(false);
+ expect(ended.textContent).toContain('DEMO-3');
+
+ ended.open=true;
+ ended.dispatchEvent(new win.Event('toggle'));
+ expect(q<HTMLDetailsElement>('details[data-board-ended]')!.open).toBe(true);
+});
+
+test('S10 选中某票后快照变更，失焦再 focus/visibilitychange 重读保留选中并更新右栏阶段；所选票消失退回该 Epic 第一张票',async()=>{
+ const base=structuredClone(sample);
+ answer=()=>Promise.resolve(base);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ click(q('.graph-ticket[data-ticket="05"]'));
+ expect(q('#board-right h2')!.textContent).toBe('05');
+ expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('implement');
+
+ const updated=structuredClone(base);
+ updated.repos[0].epics[0].mmfs[0].tickets.find((t:{id:string})=>t.id==='05')!.stage='integrate';
+ answer=()=>Promise.resolve(updated);
+
+ Object.defineProperty(doc,'visibilityState',{value:'hidden',configurable:true});
+ doc.dispatchEvent(new win.Event('visibilitychange'));
+ await settle();
+ expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('implement');
+
+ Object.defineProperty(doc,'visibilityState',{value:'visible',configurable:true});
+ doc.dispatchEvent(new win.Event('visibilitychange'));
+ await settle();
+ expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('05');
+ expect(q('#board-right h2')!.textContent).toBe('05');
+ expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('integrate');
+
+ const removed=structuredClone(updated);
+ removed.repos[0].epics[0].mmfs[0].tickets=removed.repos[0].epics[0].mmfs[0].tickets.filter((t:{id:string})=>t.id!=='05');
+ answer=()=>Promise.resolve(removed);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+ expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
+ expect(q('#board-right h2')!.textContent).toBe('01');
+});
+
+test('S11 切 Epic/MMF/票时中右栏同步，七步条、现场与链接对应所选对象，“更多现场信息”默认折叠且无写按钮',async()=>{
+ answer=()=>Promise.resolve(sample);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ click(q('.board-mmf-entry[data-map="dispatch-rules"]'));
+ expect(q('.graph-mmf.selected')!.dataset.map).toBe('dispatch-rules');
+ expect(q('#board-right h2')!.textContent).toBe('MMF');
+ expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('implement');
+ expect(q('#board-right .detail-links')!.innerHTML).toContain('/fixture/artifacts/plan-review.html');
+ expect(q<HTMLDetailsElement>('#board-right details.detail-more')!.open).toBe(false);
+ expect([...doc.querySelectorAll('#board-right button')].map(b=>b.textContent)).toEqual(['收起右栏']);
+
+ click(q('.graph-ticket[data-ticket="01"]'));
+ expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
+ expect(q('#board-right h2')!.textContent).toBe('01');
+ expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('integrate');
+ expect(q('#board-right .detail-links')!.innerHTML).toContain('DEMO-11');
+ expect(q<HTMLDetailsElement>('#board-right details.detail-more')!.open).toBe(false);
+ expect([...doc.querySelectorAll('#board-right button')].map(b=>b.textContent)).toEqual(['收起右栏']);
+});
+
+test('S19 通过真实入口加载 probed 样本，Inbox 三条展示完整字段且点选同步中右栏',async()=>{
+ const probed=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8'));
+ answer=()=>Promise.resolve(probed);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ const inboxItems=[...doc.querySelectorAll<HTMLElement>('.board-inbox .inbox-item')];
+ expect(inboxItems.length).toBe(3);
+ expect(inboxItems[0]!.classList.contains('is-executing')).toBe(true);
+ expect(inboxItems[0]!.querySelector('.inbox-repo')!.textContent).toBe('example/dispatch');
+ expect(inboxItems[0]!.querySelector('.inbox-attribution')!.textContent).toBe('待归属');
+ expect(inboxItems[0]!.querySelector('.inbox-status')!.textContent).toBe('执行中');
+ expect(inboxItems[0]!.querySelector<HTMLAnchorElement>('.inbox-link')!.getAttribute('href')).toBe('https://linear.app/example/issue/DEMO-6');
+
+ click(inboxItems[1]!.querySelector('.inbox-select'));
+ expect(q('.graph-root')!.textContent).toBe('Inbox');
+ expect(q('.graph-mmf.selected')!.dataset.map).toBe('repair-input');
+ expect(q('#board-right .detail-title')!.textContent).toBe('修复输入');
+ expect(q('#board-right .detail-sub')!.textContent).toContain('example/publisher');
+ expect(q('#board-right .detail-sub')!.textContent).toContain('待归属');
+});

@@ -1,7 +1,9 @@
-import type {BoardSnapshot,Epic,Mmf,Ticket} from './board';
-import {copy,stageLabel,laneGroupNames} from './copy';
+import type {BoardSnapshot,InboxItem,Mmf,Ticket} from './board';
+import {copy} from './copy';
 import {shouldRereadBoard} from './guide';
 import {GRAPH_GEOMETRY,applyHoverChain,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+import {INBOX_GROUP_ID,buildBoardGroups,isEpicExpanded,renderLeftColumn,type BoardGroups} from './board-side';
+import {renderRightColumn} from './board-detail';
 
 export {ticketLayers};
 
@@ -13,8 +15,6 @@ type Group=GraphGroup;
 type Pick={group?:string;map?:string;ticket?:string};
 
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const INBOX='inbox';
-const epicId=(repo:string,epic:Epic)=>`${repo}|${epic.key}`;
 
 export class BoardView {
  state:BoardState={kind:'loading'};
@@ -25,8 +25,11 @@ export class BoardView {
  private generation=0;
  private currentGroup:Group|undefined;
  private lastGroupId:string|undefined;
+ private lastGroups:BoardGroups|undefined;
  private hovered:{map:string;ticket:string}|undefined;
  private scrollRequest:'reset'|'selected'|'preserve'='reset';
+ private expandedEpics=new Map<string,boolean>();
+ private endedOpen=false;
  constructor(private root:HTMLElement,private host:BoardHost) {
   root.addEventListener('click',event=>this.click(event));
   root.addEventListener('mouseover',event=>this.hover(event));
@@ -49,11 +52,6 @@ export class BoardView {
   if(shouldRereadBoard({visible:this.visible,state:this.state.kind}))void this.load();
  }
  show(visible:boolean) {this.visible=visible;this.root.hidden=!visible;}
- private groups(board:BoardSnapshot) {
-  const repos=board.repos.map(r=>({name:r.name,epics:r.epics.map(e=>({ended:e.ended,group:{id:epicId(r.name,e),label:e.title&&e.title!==e.key&&e.title!=='Unknown'?`${e.key} · ${e.title}`:e.key,url:e.url,mmfs:e.mmfs} as Group}))}));
-  const inbox:Group={id:INBOX,label:copy.Inbox,url:null,mmfs:board.inbox};
-  return {repos,inbox,all:[...repos.flatMap(r=>r.epics.filter(e=>!e.ended).map(e=>e.group)),...repos.flatMap(r=>r.epics.filter(e=>e.ended).map(e=>e.group)),...(board.inbox.length?[inbox]:[])]};
- }
  // 所选 Epic 或票消失时退回该 Epic 的第一张票；没有 Epic 时退回第一个入口。
  private settle(all:Group[]):{group?:Group;mmf?:Mmf;ticket?:Ticket} {
   const group=all.find(g=>g.id===this.pick.group)??all[0];
@@ -94,7 +92,24 @@ export class BoardView {
   if(action==='retry'){void this.load();return;}
   if(action==='left'){this.left=!this.left;this.scrollRequest='preserve';this.render();return;}
   if(action==='right'){this.right=!this.right;this.scrollRequest='preserve';this.render();return;}
+  if(action==='toggle-epic'&&group){
+   const entry=this.lastGroups?[...this.lastGroups.repos.flatMap(r=>r.epics),...this.lastGroups.ended].find(e=>e.group.id===group):undefined;
+   const current=entry?isEpicExpanded(entry,this.expandedEpics):Boolean(this.expandedEpics.get(group));
+   this.expandedEpics.set(group,!current);
+   this.scrollRequest='preserve';
+   this.render();
+   return;
+  }
   if(action==='group'){this.pick={group};this.hovered=undefined;this.scrollRequest='reset';this.render();return;}
+  if(action==='side-mmf'){
+   const sameGroup=group===this.pick.group;
+   this.pick={group,map,ticket:undefined};
+   this.hovered=undefined;
+   this.right=true;
+   this.scrollRequest=sameGroup?'selected':'reset';
+   this.render();
+   return;
+  }
   // 图上点票或 MMF：右栏收起时自动展开（R15），并将所选节点滚入中栏视口（R12）。
   if(action==='mmf'||action==='ticket'){this.pick={group:this.pick.group,map,ticket};this.right=true;this.scrollRequest='selected';this.render();}
  }
@@ -106,17 +121,27 @@ export class BoardView {
   const bar=`<header class="app-bar"><div class="app-brand">Delivery Pipeline</div><div class="app-location">${copy.看板}</div><div class="right">${s.kind==='rendered'?toggle('left',this.left)+toggle('right',this.right):''}<button class="plain" data-board="settings">${copy.设置}</button></div></header>`;
   if(s.kind==='loading'){this.currentGroup=undefined;this.hovered=undefined;this.root.innerHTML=`${bar}<main class="board-frame"><p class="board-state" role="status">${copy.读取中}</p></main>`;return;}
   if(s.kind==='failed'){this.currentGroup=undefined;this.hovered=undefined;this.root.innerHTML=`${bar}<main class="board-frame"><div class="board-state board-failed" role="alert"><h2>${copy.读取失败}</h2><p class="board-reason">${esc(s.reason)}</p><button class="primary" data-board="retry">${copy.重试}</button></div></main>`;return;}
-  const {repos,inbox,all}=this.groups(s.board);
-  const {group,mmf,ticket}=this.settle(all);
+  const groups=buildBoardGroups(s.board);
+  this.lastGroups=groups;
+  const {group,mmf,ticket}=this.settle(groups.all);
   const groupChanged=group?.id!==this.lastGroupId;
   this.currentGroup=group;
   this.lastGroupId=group?.id;
-  const entry=(g:Group)=>`<button class="board-entry${g.id===group?.id?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${g.id===group?.id}">${esc(g.label)}<small>${g.mmfs.length} MMF</small></button>`;
-  const ended=repos.flatMap(r=>r.epics.filter(e=>e.ended).map(e=>e.group));
-  const leftCol=`<nav class="board-col board-left" id="board-left" aria-label="Epic" ${this.left?'':'hidden'}><div class="board-col-head"><h2>Epic</h2><button class="quiet" data-board="left">${copy.收起左栏}</button></div>${repos.filter(r=>r.epics.some(e=>!e.ended)).map(r=>`<section class="board-repo"><h3>${esc(r.name)}</h3>${r.epics.filter(e=>!e.ended).map(e=>entry(e.group)).join('')}</section>`).join('')}${ended.length?`<details class="board-repo"${ended.some(g=>g.id===group?.id)?' open':''}><summary>${copy.已结束} ${ended.length}</summary>${ended.map(entry).join('')}</details>`:''}${board_inbox(inbox,entry)}</nav>`;
+  const isInbox=group?.id===INBOX_GROUP_ID;
+  const inboxRepo=isInbox&&mmf?(mmf as InboxItem).repo:undefined;
+  const leftCol=renderLeftColumn({
+   groups,
+   selectedGroupId:group?.id,
+   selectedMap:mmf?.map,
+   open:this.left,
+   endedOpen:this.endedOpen,
+   expandedEpics:this.expandedEpics,
+  });
   const center=`<section class="board-col board-center" aria-label="${copy.依赖}">${group?renderGraph(group,mmf,ticket):`<p class="board-state">${copy.没有进行中的工作}</p>`}</section>`;
-  const rightCol=`<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${this.right?'':'hidden'}><div class="board-col-head"><h2>${ticket?esc(ticket.id):mmf?'MMF':''}</h2><button class="quiet" data-board="right">${copy.收起右栏}</button></div>${detail(mmf,ticket,group?.id===INBOX)}</aside>`;
+  const rightCol=renderRightColumn({mmf,ticket,inbox:isInbox,inboxRepo,open:this.right});
   this.root.innerHTML=`${bar}<main class="board-grid" data-left="${this.left?'open':'closed'}" data-right="${this.right?'open':'closed'}">${leftCol}${center}${rightCol}</main>`;
+  const endedDetails=this.root.querySelector<HTMLDetailsElement>('details[data-board-ended]');
+  endedDetails?.addEventListener('toggle',()=>{this.endedOpen=endedDetails.open;});
   const centerEl=this.root.querySelector<HTMLElement>('.board-center');
   if(centerEl){
    const mode=groupChanged?'reset':this.scrollRequest;
@@ -152,21 +177,4 @@ export class BoardView {
   if(this.hovered&&!groupChanged)applyHoverChain(this.root,this.currentGroup,this.hovered);
   else this.hovered=undefined;
  }
-}
-
-function board_inbox(inbox:Group,entry:(g:Group)=>string) {
- return inbox.mmfs.length?`<section class="board-repo board-inbox">${entry(inbox)}</section>`:'';
-}
-
-const groupOf=(t:Ticket)=>t.lane?laneGroupNames[t.lane.group]??t.lane.group:copy.未派发;
-
-function detail(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolean) {
- if(!mmf)return `<p class="board-state">${copy.选择一张票查看详情}</p>`;
- const row=(k:string,v:string)=>`<div class="detail-row"><dt>${k}</dt><dd>${v}</dd></div>`;
- const link=(url:string|null,label:string)=>url?`<a href="${esc(url)}" target="_blank" rel="noreferrer">${label}</a>`:'';
- if(ticket){
-  const lane=ticket.lane;
-  return `<h3 class="detail-title">${esc(ticket.title)}</h3><p class="detail-sub">${esc(mmf.title)}${inbox?` · ${copy.待归属}`:''}</p><dl>${row(copy.交付阶段,esc(stageLabel(ticket.stage)))}${row(copy.执行状态,lane?`${esc(groupOf(ticket))} · ${esc(lane.state)}`:copy.未派发)}${lane?row('Agent',`${esc(lane.agent)} · ${esc(lane.model)}`)+row(copy.分支,esc(lane.branch??lane.lane_id)):''}${row(copy.依赖,ticket.deps.length?ticket.deps.map(esc).join('、'):copy.无)}</dl><div class="detail-links">${link(ticket.linear,copy.打开Linear)}</div>`;
- }
- return `<h3 class="detail-title">${esc(mmf.title)}</h3><p class="detail-sub">${esc(mmf.map)}${inbox?` · ${copy.待归属}`:''}</p><dl>${row(copy.交付阶段,esc(stageLabel(mmf.stage)))}${mmf.halt?row('Halt',esc(mmf.halt.label)):''}</dl><div class="detail-links">${link(mmf.links.plan_review,copy.打开计划审查页)}${link(mmf.links.merge_review,copy.打开合并审查页)}${link(mmf.links.linear,copy.打开Linear)}</div>`;
 }
