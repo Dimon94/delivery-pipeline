@@ -8,8 +8,36 @@ export type DependencyChain={nodes:Set<string>;edges:Set<string>};
 
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 
-// 图的几何：坐标只由层号与行号决定，栏宽变化后连线仍与卡片对齐。
-export const GRAPH_GEOMETRY={root:136,card:176,h:56,gx:32,gy:10,head:92,band:14,pad:10,rootGap:36,mmfGap:32} as const;
+// 图的几何：对齐锁定原型 v4 方案 A；坐标只由层号与行号决定，栏宽变化后连线仍与卡片对齐。
+export const GRAPH_GEOMETRY={
+ root:150,
+ rootH:75.69,
+ mmfW:170,
+ mmfH:85.39,
+ ticketW:150,
+ ticketH:45.48,
+ gx:34,
+ gy:8,
+ band:14,
+ pad:8,
+ rootGap:56,
+ mmfGap:44,
+} as const;
+
+const escapeRegExp=(s:string)=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+
+// 判定某张票是否命中所属 MMF 的 halt：仅在 mmf.halt 非空且明确命中该票时返回 true。
+export function ticketMatchesHalt(mmf:Mmf,ticket:Ticket):boolean {
+ const halt=mmf.halt;
+ if(!halt||!ticket.lane)return false;
+ const reason=halt.reason.trim();
+ const blocked=(ticket.lane.blocked_reason??'').trim();
+ if(reason&&reason!=='Unknown'&&blocked&&blocked===reason)return true;
+ const hasToken=(text:string,token:string)=>Boolean(token)&&new RegExp(`(^|[^a-z0-9])${escapeRegExp(token)}([^a-z0-9]|$)`,'i').test(text);
+ if(hasToken(halt.id,ticket.id)||hasToken(halt.id,ticket.lane.lane_id))return true;
+ if(ticket.lane.group==='problem'&&(hasToken(reason,ticket.id)||hasToken(reason,ticket.lane.lane_id)))return true;
+ return false;
+}
 
 // 同一 map 内按 deps 求拓扑层；map 外或成环的依赖不再加层。
 export function ticketLayers(tickets:Ticket[]):Map<string,number> {
@@ -107,10 +135,12 @@ function ticketStateClass(ticket:Ticket):string {
 
 export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined):string {
  const G=GRAPH_GEOMETRY;
+ const round2=(n:number)=>Number(n.toFixed(2));
  const bands:string[]=[],nodes:string[]=[],links:string[]=[];
- const mmfX=G.root+G.rootGap;
- const ticketX0=mmfX+G.card+G.mmfGap;
- let y=G.pad,width=mmfX+G.card+G.pad;
+ const bandX=G.root+G.rootGap;
+ const mmfX=bandX+G.pad;
+ const ticketX0=mmfX+G.mmfW+G.mmfGap;
+ let y=0,width=mmfX+G.mmfW+G.pad;
 
  const totalTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.length,0);
  const doneTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.filter(t=>t.lane?.group==='done').length,0);
@@ -118,6 +148,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  // 预计算每个 MMF 横带的高度与垂直中心，使 EP 根节点可垂直居中对齐。
  type BandLayout={mmf:Mmf;bandY:number;bandH:number;mmfY:number;pos:Map<string,{x:number;y:number}>;bandW:number};
  const layouts:BandLayout[]=[];
+ let maxBandW=0;
  for(const m of group.mmfs){
   const layer=ticketLayers(m.tickets),rows=new Map<number,number>();
   for(const t of m.tickets){
@@ -125,44 +156,46 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
    rows.set(l,(rows.get(l)??0)+1);
   }
   const maxRows=Math.max(1,...rows.values());
-  const ticketsH=m.tickets.length?maxRows*G.h+(maxRows-1)*G.gy:G.head;
-  const contentH=Math.max(G.head,ticketsH);
-  const bandH=contentH+G.pad*2;
-  const mmfY=Math.round(y+(bandH-G.head)/2);
+  const ticketsH=m.tickets.length?maxRows*G.ticketH+(maxRows-1)*G.gy:G.mmfH;
+  const contentH=Math.max(G.mmfH,ticketsH);
+  const bandH=round2(contentH+G.pad*2);
+  const mmfY=round2(y+(bandH-G.mmfH)/2);
 
   // 每列在横带内垂直居中，同原型 .layers align-items:center
   const colCursor=new Map<number,number>();
   const pos=new Map<string,{x:number;y:number}>();
-  let bandRight=mmfX+G.card+G.pad;
+  let bandRight=mmfX+G.mmfW+G.pad;
   for(const t of m.tickets){
    const l=layer.get(t.id)!,r=colCursor.get(l)??0;
    colCursor.set(l,r+1);
    const colCount=rows.get(l)??1;
-   const colH=colCount*G.h+(colCount-1)*G.gy;
-   const colTop=Math.round(y+(bandH-colH)/2);
-   const tx=ticketX0+l*(G.card+G.gx);
-   const ty=colTop+r*(G.h+G.gy);
+   const colH=colCount*G.ticketH+(colCount-1)*G.gy;
+   const colTop=y+(bandH-colH)/2;
+   const tx=ticketX0+l*(G.ticketW+G.gx);
+   const ty=round2(colTop+r*(G.ticketH+G.gy));
    pos.set(t.id,{x:tx,y:ty});
-   bandRight=Math.max(bandRight,tx+G.card+G.pad);
+   bandRight=Math.max(bandRight,tx+G.ticketW+G.pad);
   }
-  if(!m.tickets.length)bandRight=Math.max(bandRight,ticketX0+160+G.pad);
-  const bandW=bandRight-(mmfX-G.pad);
-  width=Math.max(width,bandRight+G.pad);
-  layouts.push({mmf:m,bandY:y,bandH,mmfY,pos,bandW});
-  y+=bandH+G.band;
+  if(!m.tickets.length)bandRight=Math.max(bandRight,ticketX0+G.ticketW+G.pad);
+  const bandW=bandRight-bandX;
+  maxBandW=Math.max(maxBandW,bandW);
+  width=Math.max(width,bandRight);
+  layouts.push({mmf:m,bandY:round2(y),bandH,mmfY,pos,bandW});
+  y=round2(y+bandH+G.band);
  }
 
- const h=Math.max(y,G.head+G.pad*2);
- const rootH=74;
- const rootY=Math.max(G.pad,Math.round((h-rootH)/2));
- const rootMidY=rootY+rootH/2;
+ const totalH=layouts.length?round2(y-G.band):round2(G.mmfH+G.pad*2);
+ const h=Math.max(totalH,round2(G.mmfH+G.pad*2));
+ const rootH=G.rootH;
+ const rootY=Math.max(0,round2((h-rootH)/2));
+ const rootMidY=round2(rootY+rootH/2);
 
  for(const item of layouts){
-  const {mmf:m,bandY,bandH,mmfY,pos,bandW}=item;
-  const mmfMidY=mmfY+G.head/2;
-  bands.push(`<div class="graph-band" data-band="${esc(m.map)}" style="left:${mmfX-G.pad}px;top:${bandY}px;width:${bandW}px;height:${bandH}px"></div>`);
+  const {mmf:m,bandY,bandH,mmfY,pos}=item;
+  const mmfMidY=round2(mmfY+G.mmfH/2);
+  bands.push(`<div class="graph-band" data-band="${esc(m.map)}" style="left:${bandX}px;top:${bandY}px;width:${maxBandW}px;height:${bandH}px"></div>`);
   const dxRoot=Math.max(16,(mmfX-G.root)/2);
-  links.push(`<path class="e-mmf" data-link="${esc(group.id)}>${esc(m.map)}" d="M${G.root} ${rootMidY} C${G.root+dxRoot} ${rootMidY},${mmfX-dxRoot} ${mmfMidY},${mmfX} ${mmfMidY}"/>`);
+  links.push(`<path class="e-mmf" data-link="${esc(group.id)}>${esc(m.map)}" d="M${G.root} ${rootMidY} C${round2(G.root+dxRoot)} ${rootMidY},${round2(mmfX-dxRoot)} ${mmfMidY},${mmfX} ${mmfMidY}"/>`);
 
   const mmfSelected=m===mmf&&!ticket;
   const mmfExec=Boolean(m.executing);
@@ -170,28 +203,33 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
   const segHtml=m.tickets.map(t=>`<i class="g-${t.lane?esc(t.lane.group):'pending'}"></i>`).join('');
   const countText=m.tickets.length?`${doneCount}/${m.tickets.length} 已集成`:'尚无票';
   const mmfTitleAttr=`${m.title} · ${stageLabel(m.stage)} · ${countText}`;
-  nodes.push(`<button class="graph-mmf${mmfExec?' is-executing':''}${mmfSelected?' selected':''}" data-board="mmf" data-map="${esc(m.map)}" data-x="${mmfX}" data-y="${mmfY}" aria-pressed="${mmfSelected}" title="${esc(mmfTitleAttr)}" style="left:${mmfX}px;top:${mmfY}px">${mmfExec?execRing(G.card,G.head):''}<span class="mmf-top"><b class="mmf-key">${esc(m.map)}</b><span class="mmf-stage">${esc(stageLabel(m.stage))}</span></span><span class="mmf-t">${esc(m.title)}</span><span class="mmf-seg">${segHtml}</span><span class="mmf-meta">${esc(countText)}${mmfExec?` · <span class="exec-label">${esc(copy.执行中)}</span>`:''}</span></button>`);
+  nodes.push(`<button class="graph-mmf${mmfExec?' is-executing':''}${mmfSelected?' selected':''}" data-board="mmf" data-map="${esc(m.map)}" data-x="${mmfX}" data-y="${mmfY}" aria-pressed="${mmfSelected}" title="${esc(mmfTitleAttr)}" style="left:${mmfX}px;top:${mmfY}px">${mmfExec?execRing(G.mmfW,G.mmfH):''}<span class="mmf-top"><b class="mmf-key">${esc(m.map)}</b><span class="mmf-stage">${esc(stageLabel(m.stage))}</span></span><span class="mmf-t">${esc(m.title)}</span><span class="mmf-seg">${segHtml}</span><span class="mmf-meta">${esc(countText)}${mmfExec?` · <span class="exec-label">${esc(copy.执行中)}</span>`:''}</span></button>`);
 
   if(!m.tickets.length){
-   nodes.push(`<div class="graph-band-empty" style="left:${ticketX0}px;top:${Math.round(bandY+bandH/2-10)}px">尚无票</div>`);
+   nodes.push(`<div class="graph-band-empty" style="left:${ticketX0}px;top:${round2(bandY+bandH/2-8)}px">尚无票</div>`);
   }
 
   for(const t of m.tickets){
    const p=pos.get(t.id)!;
+   const tMidY=round2(p.y+G.ticketH/2);
    if(!t.deps.length){
-    const dxFirst=Math.max(16,(p.x-(mmfX+G.card))/2);
-    links.push(`<path class="e-root" data-map="${esc(m.map)}" data-root-to="${esc(t.id)}" d="M${mmfX+G.card} ${mmfMidY} C${mmfX+G.card+dxFirst} ${mmfMidY},${p.x-dxFirst} ${p.y+G.h/2},${p.x} ${p.y+G.h/2}"/>`);
+    const dxFirst=Math.max(16,(p.x-(mmfX+G.mmfW))/2);
+    links.push(`<path class="e-root" data-map="${esc(m.map)}" data-root-to="${esc(t.id)}" d="M${mmfX+G.mmfW} ${mmfMidY} C${round2(mmfX+G.mmfW+dxFirst)} ${mmfMidY},${round2(p.x-dxFirst)} ${tMidY},${p.x} ${tMidY}"/>`);
    }
    for(const d of t.deps){
     const q=pos.get(d);
-    if(q)links.push(`<path class="e-dep" data-map="${esc(m.map)}" data-dep="${esc(d)}>${esc(t.id)}" d="M${q.x+G.card} ${q.y+G.h/2} C${q.x+G.card+G.gx/2} ${q.y+G.h/2},${p.x-G.gx/2} ${p.y+G.h/2},${p.x} ${p.y+G.h/2}"/>`);
+    if(q){
+     const qMidY=round2(q.y+G.ticketH/2);
+     links.push(`<path class="e-dep" data-map="${esc(m.map)}" data-dep="${esc(d)}>${esc(t.id)}" d="M${q.x+G.ticketW} ${qMidY} C${round2(q.x+G.ticketW+G.gx/2)} ${qMidY},${round2(p.x-G.gx/2)} ${tMidY},${p.x} ${tMidY}"/>`);
+    }
    }
    const selected=m===mmf&&t===ticket;
    const executing=Boolean(t.executing);
+   const halted=ticketMatchesHalt(m,t);
    const status=ticketStatusText(t);
    const groupCls=t.lane?esc(t.lane.group):'pending';
    const titleAttr=`${t.id} ${t.title} · ${status}`;
-   nodes.push(`<button class="graph-ticket g-${groupCls}${executing?' is-executing':''}${selected?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${p.x}px;top:${p.y}px">${executing?execRing(G.card,G.h):''}<span class="tk-row"><b class="tk-id">${esc(t.id)}</b><span class="tk-t">${esc(t.title)}</span></span><small class="tk-st ${ticketStateClass(t)}${executing?' exec-label':''}">${executing?'<i class="pulse-dot" aria-hidden="true"></i>':''}${esc(status)}</small></button>`);
+   nodes.push(`<button class="graph-ticket g-${groupCls}${executing?' is-executing':''}${selected?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${p.x}px;top:${p.y}px">${executing?execRing(G.ticketW,G.ticketH):''}<span class="tk-row"><span class="tk-id">${esc(t.id)}</span><span class="tk-t">${esc(t.title)}</span>${halted?'<span class="tk-h">Halt</span>':''}</span><small class="tk-st ${ticketStateClass(t)}${executing?' exec-label':''}">${executing?'<i class="pulse-dot" aria-hidden="true"></i>':''}${esc(status)}</small></button>`);
   }
  }
 

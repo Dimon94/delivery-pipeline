@@ -92,9 +92,10 @@ function renderEpicItem(entry:SideEpicEntry,selectedGroupId:string|undefined,sel
  return `<div class="board-epic${expanded?' is-expanded':''}" data-epic="${esc(g.id)}" data-expanded="${expanded}"><div class="board-epic-row"><button class="epic-toggle" data-board="toggle-epic" data-group="${esc(g.id)}" aria-expanded="${expanded}" aria-label="${esc(expanded?copy.收起Epic:copy.展开Epic)} ${esc(g.label)}">${expanded?'▾':'▸'}</button><button class="board-entry${selected?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${selected}" title="${esc(g.label)}"><span class="epic-top"><span class="board-entry-label">${esc(g.label)}</span><small>${g.mmfs.length} MMF${allTickets.length?` · ${allTickets.length} 票`:''}</small></span><span class="epic-bar"><i style="width:${pct}%"></i></span>${flagsHtml?`<span class="epic-flags">${flagsHtml}</span>`:''}</button></div><div class="epic-mmfs"${expanded?'':' hidden'}>${mmfsHtml}</div></div>`;
 }
 
-function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedGroupId:string|undefined,selectedMap:string|undefined):string {
+function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedGroupId:string|undefined,selectedMap:string|undefined,inboxOpen:boolean):string {
  if(!inbox.items.length)return '';
  const inboxSelected=selectedGroupId===INBOX_GROUP_ID;
+ const expanded=inboxOpen||inboxSelected;
  const itemsHtml=inbox.items.map(item=>{
   const executing=inboxItemExecuting(item);
   const status=mmfStatusText(item);
@@ -102,7 +103,7 @@ function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedG
   const link=item.links.linear?`<a class="inbox-link" href="${esc(item.links.linear)}" target="_blank" rel="noreferrer">${esc(issueLinkLabel(item.links.linear))} ↗</a>`:'';
   return `<li class="inbox-item${executing?' is-executing':''}${selected?' selected':''}" data-inbox-map="${esc(item.map)}"><button class="inbox-select" data-board="side-mmf" data-group="${INBOX_GROUP_ID}" data-map="${esc(item.map)}" aria-current="${selected}" title="${esc(item.title)} · ${esc(item.repo)}"><span class="inbox-title">${esc(item.title)}</span><span class="inbox-repo">${esc(item.repo)}</span><span class="inbox-meta"><span class="inbox-attribution">${copy.待归属}</span><span class="inbox-stage">${esc(stageLabel(item.stage))}</span><span class="inbox-status${executing?' exec-label':''}">${executing?'<span class="exec-dot" aria-hidden="true"></span>':''}${esc(status)}</span></span></button>${link}</li>`;
  }).join('');
- return `<section class="board-repo board-inbox" aria-label="${copy.Inbox}"><div class="board-inbox-head"><button class="board-entry${inboxSelected?' selected':''}" data-board="group" data-group="${INBOX_GROUP_ID}" aria-current="${inboxSelected}"><span class="epic-top"><span class="board-entry-label">${copy.Inbox} · ${copy.待归属}</span><small>${inbox.items.length}</small></span></button></div><ul class="inbox-list">${itemsHtml}</ul></section>`;
+ return `<section class="board-repo board-inbox" data-board-inbox="true" data-expanded="${expanded}" aria-label="${copy.Inbox}"><div class="board-inbox-head"><button class="inbox-toggle${inboxSelected?' selected':''}" data-board="toggle-inbox" aria-expanded="${expanded}"><span class="chev" aria-hidden="true">${expanded?'▾':'▸'}</span><span class="inbox-head-label">${copy.Inbox} · ${copy.待归属}</span><small class="muted">${inbox.items.length}</small></button></div><ul class="inbox-list"${expanded?'':' hidden'}>${itemsHtml}</ul></section>`;
 }
 
 function renderErrorsSection(errors:BoardError[]):string {
@@ -119,6 +120,7 @@ export interface LeftColumnParams {
  selectedMap?:string;
  open:boolean;
  endedOpen:boolean;
+ inboxOpen?:boolean;
  expandedEpics:ReadonlyMap<string,boolean>;
  generatedAt?:string;
 }
@@ -129,7 +131,7 @@ function formatSnapshotTime(iso?:string):string {
 }
 
 export function renderLeftColumn(params:LeftColumnParams):string {
- const {groups,selectedGroupId,selectedMap,open,endedOpen,expandedEpics,generatedAt}=params;
+ const {groups,selectedGroupId,selectedMap,open,endedOpen,inboxOpen=false,expandedEpics,generatedAt}=params;
  const activeCount=groups.repos.reduce((sum,r)=>sum+r.epics.length,0);
  const activeHtml=groups.repos.map(r=>
   `<section class="board-repo" data-repo="${esc(r.name)}"><div class="board-repo-head"><h3>${esc(r.name)}</h3><small>${r.epics.length}</small></div>${r.epics.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics)).join('')}</section>`
@@ -138,9 +140,9 @@ export function renderLeftColumn(params:LeftColumnParams):string {
  const endedHtml=groups.ended.length
   ?`<details class="board-repo board-ended" data-board-ended="true"${endedExpanded?' open':''}><summary>${copy.已结束} ${groups.ended.length}</summary>${groups.ended.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics)).join('')}</details>`
   :'';
- const inboxHtml=renderInboxSection(groups.inbox,selectedGroupId,selectedMap);
+ const inboxHtml=renderInboxSection(groups.inbox,selectedGroupId,selectedMap,inboxOpen);
  const errorsHtml=renderErrorsSection(groups.errors);
  const snapTime=formatSnapshotTime(generatedAt);
  const footHtml=`<footer class="board-col-foot muted small">${snapTime?`快照 ${esc(snapTime)} · `:''}回到前台自动重读</footer>`;
- return `<nav class="board-col board-left" id="board-left" aria-label="Epic" ${open?'':'hidden'}><div class="board-col-head"><h2>Epic <span class="muted small">进行中 ${activeCount}</span></h2><button class="quiet col-close" data-board="left">${copy.收起左栏}</button></div><div class="board-scroll board-left-body">${activeHtml}${endedHtml}${inboxHtml}${errorsHtml}</div>${footHtml}</nav>`;
+ return `<nav class="board-col board-left" id="board-left" aria-label="Epic" ${open?'':'hidden'}><div class="board-col-head"><h2>Epic <span class="muted small">进行中 ${activeCount}</span></h2><button class="quiet col-close" data-board="left">${copy.收起左栏}</button></div><div class="board-scroll board-left-body">${inboxHtml}${activeHtml}${endedHtml}${errorsHtml}</div>${footHtml}</nav>`;
 }

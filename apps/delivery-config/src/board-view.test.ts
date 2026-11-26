@@ -1,6 +1,7 @@
 import {test,expect} from 'bun:test';
 import {Window} from 'happy-dom';
 import {readFileSync} from 'fs';
+import {GRAPH_GEOMETRY} from './board-graph';
 
 // 经真实入口 main.ts 启动；外部边界只有 Host（mygo.call）。
 const sample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board.json',import.meta.url),'utf8'));
@@ -105,8 +106,10 @@ function linksAligned() {
   const map=p.getAttribute('data-map');
   const a=cards.get(`${map}/${from}`)!,b=cards.get(`${map}/${to}`)!;
   const nums=p.getAttribute('d')!.match(/-?\d+(\.\d+)?/g)!.map(Number);
-  expect([nums[0],nums[1]]).toEqual([a.x+176,a.y+28]);
-  expect(nums.slice(-2)).toEqual([b.x,b.y+28]);
+  expect(nums[0]).toBe(a.x+GRAPH_GEOMETRY.ticketW);
+  expect(nums[1]).toBeCloseTo(a.y+GRAPH_GEOMETRY.ticketH/2,2);
+  expect(nums[nums.length-2]).toBe(b.x);
+  expect(nums[nums.length-1]).toBeCloseTo(b.y+GRAPH_GEOMETRY.ticketH/2,2);
  }
 }
 
@@ -198,7 +201,7 @@ test('S18 4 层超宽图首次打开与切 Epic 可见根与第一层 MMF，点�
  const graphW=parseFloat(q<HTMLElement>('.graph')!.style.width);
  expect(graphW).toBeGreaterThan(600);
  expect(Number(q<HTMLElement>('.graph-root')!.dataset.x)).toBe(0);
- expect(Number(q<HTMLElement>('.graph-mmf')!.dataset.x)+176).toBeLessThan(600);
+ expect(Number(q<HTMLElement>('.graph-mmf')!.dataset.x)+GRAPH_GEOMETRY.mmfW).toBeLessThan(600);
 
  // 点第 4 层票（10），视口滚动到该票可见
  click(q<HTMLElement>('.graph-ticket[data-ticket="10"]'));
@@ -207,7 +210,7 @@ test('S18 4 层超宽图首次打开与切 Epic 可见根与第一层 MMF，点�
  const x10=Number(card10.dataset.x);
  expect(afterClickCenter.scrollLeft).toBeGreaterThan(0);
  expect(x10).toBeGreaterThanOrEqual(afterClickCenter.scrollLeft);
- expect(x10+176).toBeLessThanOrEqual(afterClickCenter.scrollLeft+600);
+ expect(x10+GRAPH_GEOMETRY.ticketW).toBeLessThanOrEqual(afterClickCenter.scrollLeft+600);
 
  // 切到另一个 Epic（DEMO-3），视口回到根与第一层 MMF
  const otherEpic=[...doc.querySelectorAll<HTMLElement>('.board-entry')].find(b=>b.dataset.group?.includes('DEMO-3'))!;
@@ -372,4 +375,29 @@ test('DD-668 溢出与窄窗口布局集成验证：长标题/长标识符/长�
   return cond.includes('max-width:1000px')&&[...m.cssRules].some(sr=>(sr as CSSStyleRule).selectorText?.includes('.board-grid'));
  });
  expect(hasNarrowRule).toBe(true);
+});
+
+test('DD-668 visual-fix-2 项1交互：Inbox 在左栏顶部默认折叠，点击展开控件切换展开与收起，R6 进行中 Epic 保持默认展开',async()=>{
+ const probed=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8'));
+ answer=()=>Promise.resolve(probed);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ const sections=[...doc.querySelectorAll<HTMLElement>('#board-left .board-left-body > *')];
+ expect(sections[0]!.classList.contains('board-inbox')).toBe(true);
+
+ const toggle=q<HTMLButtonElement>('#board-left [data-board="toggle-inbox"]');
+ expect(toggle).not.toBeNull();
+ expect(toggle!.getAttribute('aria-expanded')).toBe('false');
+ expect(q<HTMLElement>('#board-left .board-inbox .inbox-list')!.hidden).toBe(true);
+
+ // R6：有 running 票的 Epic 依然默认展开
+ expect(q<HTMLElement>('#board-left .board-epic[data-epic="example/dispatch|DEMO-1"]')!.dataset.expanded).toBe('true');
+
+ click(toggle);
+ expect(q<HTMLButtonElement>('#board-left [data-board="toggle-inbox"]')!.getAttribute('aria-expanded')).toBe('true');
+ expect(q<HTMLElement>('#board-left .board-inbox .inbox-list')!.hidden).toBe(false);
+
+ click(q('#board-left [data-board="toggle-inbox"]'));
+ expect(q<HTMLButtonElement>('#board-left [data-board="toggle-inbox"]')!.getAttribute('aria-expanded')).toBe('false');
+ expect(q<HTMLElement>('#board-left .board-inbox .inbox-list')!.hidden).toBe(true);
 });

@@ -179,19 +179,19 @@ test('S18 4 层超宽图视口滚动目标：初始可见根与第 1 层，点�
  const rootX=Number(box.querySelector<HTMLElement>('.graph-root')!.dataset.x);
  const mmfX=Number(box.querySelector<HTMLElement>('.graph-mmf')!.dataset.x);
  expect(rootX).toBe(0);
- expect(mmfX+GRAPH_GEOMETRY.card).toBeLessThan(viewportWidth);
+ expect(mmfX+GRAPH_GEOMETRY.mmfW).toBeLessThan(viewportWidth);
 
  const layer4Card=box.querySelector<HTMLElement>('.graph-ticket[data-ticket="10"]')!;
  const x=Number(layer4Card.dataset.x),y=Number(layer4Card.dataset.y);
- expect(x+GRAPH_GEOMETRY.card).toBeGreaterThan(viewportWidth);
+ expect(x+GRAPH_GEOMETRY.ticketW).toBeGreaterThan(viewportWidth);
 
  const target=scrollTargetForNode(
   {scrollLeft:0,scrollTop:0,clientWidth:viewportWidth,clientHeight:400,scrollWidth:graphWidth,scrollHeight:400},
-  {x,y,width:GRAPH_GEOMETRY.card,height:GRAPH_GEOMETRY.h}
+  {x,y,width:GRAPH_GEOMETRY.ticketW,height:GRAPH_GEOMETRY.ticketH}
  );
  expect(target.scrollLeft).toBeGreaterThan(0);
  expect(x).toBeGreaterThanOrEqual(target.scrollLeft);
- expect(x+GRAPH_GEOMETRY.card).toBeLessThanOrEqual(target.scrollLeft+viewportWidth);
+ expect(x+GRAPH_GEOMETRY.ticketW).toBeLessThanOrEqual(target.scrollLeft+viewportWidth);
 });
 
 test('DD-668 视觉对齐与溢出反例：长中英文混排标题与 80 字符无空格标识符不挤出状态行，完整标题由 title 可读，EP 深色根与 MMF 横带存在',()=>{
@@ -227,4 +227,120 @@ test('DD-668 视觉对齐与溢出反例：长中英文混排标题与 80 字符
  expect(tkTRule!.style.getPropertyValue('overflow')).toBe('hidden');
  const rootRules=rules.filter(r=>r.selectorText?.split(',').some(s=>s.trim()==='.graph-root'));
  expect(rootRules.some(r=>(r.style.getPropertyValue('background')||r.style.getPropertyValue('background-color')).includes('var(--ink)'))).toBe(true);
+});
+
+test('DD-668 visual-fix-2 项2-5：GRAPH_GEOMETRY 分离票卡 150×45.48、MMF 卡 170×85.39、EP 根 150×75.69 及全部间距，4行带高对齐 221.94 且连线端点随几何更新',()=>{
+ const G=GRAPH_GEOMETRY as Record<string,number>;
+ expect(G.ticketW).toBe(150);
+ expect(G.ticketH).toBeCloseTo(45.48,2);
+ expect(G.mmfW).toBe(170);
+ expect(G.mmfH).toBeCloseTo(85.39,2);
+ expect(G.root).toBe(150);
+ expect(G.rootH).toBeCloseTo(75.69,2);
+ expect(G.gx).toBe(34);
+ expect(G.gy).toBe(8);
+ expect(G.rootGap).toBe(56);
+ expect(G.mmfGap).toBe(44);
+ expect(G.pad).toBe(8);
+ expect(G.band).toBe(14);
+
+ // 构造同列 4 张票的 M3 形状（第 1 列 1 票，第 2 列 4 票）
+ const t1=makeTicket('T1');
+ const t4=makeTicket('T4',{deps:['T1']});
+ const t6=makeTicket('T6',{deps:['T1']});
+ const t7=makeTicket('T7',{deps:['T1']});
+ const t8=makeTicket('T8',{deps:['T1']});
+ const mmf=makeMmf([t1,t4,t6,t7,t8],{map:'ep-101-m3',title:'投放执行与重试'});
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph({id:'repo|EP-101',label:'EP-101',url:null,mmfs:[mmf]},mmf,t7);
+
+ const band=box.querySelector<HTMLElement>('.graph-band')!;
+ expect(parseFloat(band.style.left)).toBe(206); // 150 + 56
+ expect(parseFloat(band.style.height)).toBeCloseTo(221.94,1);
+
+ const mmfEl=box.querySelector<HTMLElement>('.graph-mmf')!;
+ expect(Number(mmfEl.dataset.x)).toBe(214); // 206 + 8
+
+ const card1=box.querySelector<HTMLElement>('.graph-ticket[data-ticket="T1"]')!;
+ const card7=box.querySelector<HTMLElement>('.graph-ticket[data-ticket="T7"]')!;
+ expect(Number(card1.dataset.x)).toBe(428); // 214 + 170 + 44
+ expect(Number(card7.dataset.x)).toBe(612); // 428 + 150 + 34
+
+ // 验证连线端点对齐新几何
+ const depPath=box.querySelector('path[data-dep="T1>T7"]')!;
+ const nums=depPath.getAttribute('d')!.match(/-?\d+(\.\d+)?/g)!.map(Number);
+ expect(nums[0]).toBe(Number(card1.dataset.x)+150);
+ expect(nums[1]).toBeCloseTo(Number(card1.dataset.y)+G.ticketH!/2,2);
+ expect(nums[nums.length-2]).toBe(Number(card7.dataset.x));
+ expect(nums[nums.length-1]).toBeCloseTo(Number(card7.dataset.y)+G.ticketH!/2,2);
+});
+
+test('DD-668 visual-fix-2 项6-8：横带白 50% 无描边圆角 12；票卡字体与行高、padding 5×8、行间 2、标题行 gap 6 匹配原型',()=>{
+ const rules=[...sheet.cssRules].filter((r):r is CSSStyleRule=>r.type===1);
+ const findProp=(selector:string,prop:string)=>{
+  let val='';
+  for(const r of rules){
+   if(r.selectorText?.split(',').some(s=>s.trim()===selector)){
+    const v=r.style.getPropertyValue(prop);
+    if(v)val=v.trim();
+   }
+  }
+  return val;
+ };
+
+ // 项 6：横带底白 50%、无描边、圆角 12
+ const bandCss=cssText.match(/\.graph-band\{[^}]+\}/)?.[0]??'';
+ expect(bandCss).toContain('color-mix(in srgb,var(--card) 50%,transparent)');
+ expect(findProp('.graph-band','border-radius')).toBe('12px');
+ expect(bandCss).toContain('border:0');
+
+ // 项 2/3/4：卡片尺寸样式
+ expect(findProp('.graph-ticket','width')).toBe('150px');
+ expect(findProp('.graph-mmf','width')).toBe('170px');
+ expect(findProp('.graph-root','width')).toBe('150px');
+
+ // 项 7：票卡字体与行高（12/16.8 400、10.5/14.7 400、10.5/14.7 600）
+ expect(findProp('.graph-ticket','line-height')).toBe('1.4');
+ expect(findProp('.tk-t','font-size')).toBe('12px');
+ expect(findProp('.tk-id','font-size')).toBe('10.5px');
+ expect(findProp('.tk-id','font-weight')).toBe('400');
+ expect(findProp('.tk-st','font-size')).toBe('10.5px');
+ expect(findProp('.tk-st','line-height')).toBe('1.4');
+
+ // 项 8：padding 5×8、行间 2、标题行 gap 6
+ expect(findProp('.graph-ticket','padding')).toBe('5px 8px');
+ expect(findProp('.graph-ticket','gap')).toBe('2px');
+ expect(findProp('.tk-row','gap')).toBe('6px');
+});
+
+test('DD-668 visual-fix-2 项9：MMF 快照 halt 非空且命中该票时卡片标题行显示红底白字 Halt 徽标，未命中或无 halt 不显示',()=>{
+ const haltReason='needs-decision：重试上限由谁定未写进 Spec';
+ const t5=makeTicket('T5',{lane:makeLane({lane_id:'ep-101-m3-t5',state:'terminal',group:'review'})});
+ const t6=makeTicket('T6',{deps:['T5'],lane:makeLane({lane_id:'ep-101-m3-t6',state:'running',group:'active',blocked_reason:'registry 写着 running，但本机找不到匹配的活 agent'})});
+ const t7=makeTicket('T7',{deps:['T5'],lane:makeLane({lane_id:'ep-101-m3-t7',state:'blocked',group:'problem',blocked_reason:haltReason})});
+ const mmfHalted=makeMmf([t5,t6,t7],{
+  map:'ep-101-m3',
+  halt:{id:'halt-t7',kind:'plan_change',label:'计划变更',reason:haltReason,options:['补充 Spec']},
+ });
+ const tOther=makeTicket('T1',{lane:makeLane({lane_id:'ep-101-m4-t1',state:'blocked',group:'problem',blocked_reason:'普通阻塞无 halt'})});
+ const mmfNoHalt=makeMmf([tOther],{map:'ep-101-m4',halt:null});
+
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph({id:'repo|EP-101',label:'EP-101',url:null,mmfs:[mmfHalted,mmfNoHalt]},mmfHalted,t7);
+
+ const t7Badge=box.querySelector('.graph-ticket[data-map="ep-101-m3"][data-ticket="T7"] .tk-row .tk-h');
+ expect(t7Badge).not.toBeNull();
+ expect(t7Badge!.textContent).toBe('Halt');
+
+ expect(box.querySelector('.graph-ticket[data-map="ep-101-m3"][data-ticket="T5"] .tk-h')).toBeNull();
+ expect(box.querySelector('.graph-ticket[data-map="ep-101-m3"][data-ticket="T6"] .tk-h')).toBeNull();
+ expect(box.querySelector('.graph-ticket[data-map="ep-101-m4"][data-ticket="T1"] .tk-h')).toBeNull();
+
+ const rules=[...sheet.cssRules].filter((r):r is CSSStyleRule=>r.type===1);
+ const tkHRule=rules.find(r=>r.selectorText?.split(',').some(s=>s.trim()==='.tk-h'));
+ expect(tkHRule).toBeDefined();
+ expect(tkHRule!.style.getPropertyValue('font-size')).toBe('10px');
+ expect(tkHRule!.style.getPropertyValue('border-radius')).toBe('4px');
+ expect(tkHRule!.style.getPropertyValue('background')||tkHRule!.style.getPropertyValue('background-color')).toContain('var(--red)');
+ expect(tkHRule!.style.getPropertyValue('color')).toMatch(/#fff|rgb\(255,\s*255,\s*255\)/i);
 });

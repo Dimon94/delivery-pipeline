@@ -30,6 +30,7 @@ export class BoardView {
  private scrollRequest:'reset'|'selected'|'preserve'='reset';
  private expandedEpics=new Map<string,boolean>();
  private endedOpen=false;
+ private inboxOpen=false;
  constructor(private root:HTMLElement,private host:BoardHost) {
   root.addEventListener('click',event=>this.click(event));
   root.addEventListener('mouseover',event=>this.hover(event));
@@ -92,6 +93,12 @@ export class BoardView {
   if(action==='retry'){void this.load();return;}
   if(action==='left'){this.left=!this.left;this.scrollRequest='preserve';this.render();return;}
   if(action==='right'){this.right=!this.right;this.scrollRequest='preserve';this.render();return;}
+  if(action==='toggle-inbox'){
+   this.inboxOpen=!this.inboxOpen;
+   this.scrollRequest='preserve';
+   this.render();
+   return;
+  }
   if(action==='toggle-epic'&&group){
    const entry=this.lastGroups?[...this.lastGroups.repos.flatMap(r=>r.epics),...this.lastGroups.ended].find(e=>e.group.id===group):undefined;
    const current=entry?isEpicExpanded(entry,this.expandedEpics):Boolean(this.expandedEpics.get(group));
@@ -135,6 +142,7 @@ export class BoardView {
    selectedMap:mmf?.map,
    open:this.left,
    endedOpen:this.endedOpen,
+   inboxOpen:this.inboxOpen,
    expandedEpics:this.expandedEpics,
    generatedAt:s.board.generated_at,
   });
@@ -161,7 +169,9 @@ export class BoardView {
       const graphW=graphEl?parseFloat(graphEl.style.width)||0:0;
       const graphH=graphEl?parseFloat(graphEl.style.height)||0:0;
       const x=Number(selectedEl.dataset.x??0),y=Number(selectedEl.dataset.y??0);
-      const h=selectedEl.classList.contains('graph-mmf')?GRAPH_GEOMETRY.head:GRAPH_GEOMETRY.h;
+      const isMmf=selectedEl.classList.contains('graph-mmf');
+      const w=isMmf?GRAPH_GEOMETRY.mmfW:GRAPH_GEOMETRY.ticketW;
+      const h=isMmf?GRAPH_GEOMETRY.mmfH:GRAPH_GEOMETRY.ticketH;
       const target=scrollTargetForNode({
        scrollLeft:centerEl.scrollLeft,
        scrollTop:centerEl.scrollTop,
@@ -169,7 +179,7 @@ export class BoardView {
        clientHeight:centerEl.clientHeight||prevViewport.height,
        scrollWidth:centerEl.scrollWidth||graphW,
        scrollHeight:centerEl.scrollHeight||graphH,
-      },{x,y,width:GRAPH_GEOMETRY.card,height:h});
+      },{x,y,width:w,height:h});
       centerEl.scrollLeft=target.scrollLeft;
       centerEl.scrollTop=target.scrollTop;
      }

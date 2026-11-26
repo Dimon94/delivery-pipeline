@@ -192,3 +192,59 @@ test('DD-668 溢出反例：80 字符无空格 map 名与长错误原因全文�
  expect(errItem.querySelector('.board-error-map')!.classList.contains('mono')).toBe(true);
  expect(errItem.querySelector('.board-error-reason')!.textContent).toBe(longReason);
 });
+
+test('DD-668 visual-fix-2 项1：左栏 Inbox 位于顶部第一组、默认折叠且标题行带展开控件，随后进行中、已结束与读取失败，R6 进行中 Epic 默认展开保留',()=>{
+ const snap:BoardSnapshot=structuredClone(probedSample);
+ snap.repos[0]!.epics.push({
+  key:'DEMO-ENDED',
+  url:null,
+  title:'已结束需求',
+  ended:true,
+  mmfs:[],
+ });
+ snap.errors=[{map:'broken-map',reason:'缺少可读的 driver.json'}];
+ const groups=buildBoardGroups(snap);
+ const doc=mount(renderLeftColumn({
+  groups,
+  selectedGroupId:groups.all[0]!.id,
+  selectedMap:groups.all[0]!.mmfs[0]!.map,
+  open:true,
+  endedOpen:false,
+  expandedEpics:new Map(),
+ }));
+
+ const sections=[...doc.querySelectorAll<HTMLElement>('.board-left-body > *')];
+ expect(sections.length).toBeGreaterThanOrEqual(4);
+ expect(sections[0]!.classList.contains('board-inbox')).toBe(true);
+ expect(sections[1]!.hasAttribute('data-repo')).toBe(true);
+ expect(sections[sections.length-2]!.classList.contains('board-ended')).toBe(true);
+ expect(sections[sections.length-1]!.classList.contains('board-errors')).toBe(true);
+
+ const inboxToggle=sections[0]!.querySelector<HTMLButtonElement>('[data-board="toggle-inbox"]');
+ expect(inboxToggle).not.toBeNull();
+ expect(inboxToggle!.getAttribute('aria-expanded')).toBe('false');
+ expect(inboxToggle!.textContent).toContain('▸');
+ expect(inboxToggle!.textContent).toContain('Inbox · 待归属');
+ expect(inboxToggle!.textContent).toContain(String(groups.inbox.items.length));
+ expect(sections[0]!.querySelector<HTMLElement>('.inbox-list')!.hidden).toBe(true);
+
+ // R6：有 running 票的进行中 Epic 仍默认展开
+ const activeEpic=doc.querySelector<HTMLElement>('.board-epic[data-epic="example/dispatch|DEMO-1"]')!;
+ expect(activeEpic.dataset.expanded).toBe('true');
+ expect(activeEpic.querySelector<HTMLElement>('.epic-mmfs')!.hidden).toBe(false);
+
+ // 展开 Inbox 后列表可见
+ const docOpen=mount(renderLeftColumn({
+  groups,
+  selectedGroupId:groups.all[0]!.id,
+  selectedMap:groups.all[0]!.mmfs[0]!.map,
+  open:true,
+  endedOpen:false,
+  inboxOpen:true,
+  expandedEpics:new Map(),
+ } as Parameters<typeof renderLeftColumn>[0]));
+ const openToggle=docOpen.querySelector<HTMLButtonElement>('[data-board="toggle-inbox"]')!;
+ expect(openToggle.getAttribute('aria-expanded')).toBe('true');
+ expect(openToggle.textContent).toContain('▾');
+ expect(docOpen.querySelector<HTMLElement>('.board-inbox .inbox-list')!.hidden).toBe(false);
+});
