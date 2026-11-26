@@ -7,7 +7,7 @@
               --output-mode <mode> --lane <lane_id> --work-item <url> --title <pane label>
               --worktree <abs> --branch <branch> --base <sha> --packet <abs> --registry <abs .md>
               --map-registry <abs map registry .md | none>
-              [--ticket-mode NAME] [--map-mode NAME] [--tab-prefix X] [--off-chain-reason TEXT]
+              --tab-prefix <tab 前缀> [--ticket-mode NAME] [--map-mode NAME] [--off-chain-reason TEXT]
 
 派发前（任何 herdr 调用前）拒绝：lane 名超过 Herdr agent 名上限、map registry 未通过
 recovery_record.py check、packet owner 已移出交付链路且未给 --off-chain-reason。
@@ -33,6 +33,7 @@ HERDR_NAME_MAX = 32
 MAX_WORKSPACE_COLS = 20
 MAX_TAB_PREFIX_COLS = 18
 MAX_PANE_COLS = 24
+CJK_RE = re.compile(r"[\u3400-\u9FFF]")
 FULLWIDTH_RE = re.compile(r"[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]")
 ANY_ISSUE_KEY_RE = re.compile(r"(?:^|\s)(?:[A-Z][A-Z0-9]*-\d+|#\d+)(?:\s|$)")
 LINEAR_KEY_RE = re.compile(r"^(?:https?://linear\.app/[^/]+/issue/)?([A-Z][A-Z0-9]*-\d+)(?:/|$|\?|#)", re.I)
@@ -79,11 +80,12 @@ def extract_issue_key(work_item: str) -> str | None:
     return None
 
 
-def format_visual_label(work_item: str, label: str, max_cols: int, kind: str, *, auto_prefix: bool = True) -> str:
+def format_visual_label(work_item: str, label: str, max_cols: int, kind: str) -> str:
     cleaned = re.sub(r"\s+", " ", (label or "").strip())
-    if not cleaned:
-        raise DispatchError(f"{kind} label cannot be empty")
-    key = extract_issue_key(work_item) if auto_prefix else None
+    if len(CJK_RE.findall(cleaned)) < 2:
+        raise DispatchError(f"{kind} label {cleaned!r} lacks a 中文简写 (>= 2 汉字); "
+                            f"use '<Issue> <中文简写>[ <英文>]' such as 'JB-548 扩表Job'")
+    key = extract_issue_key(work_item)
     formatted = f"{key} {cleaned}" if (key and not ANY_ISSUE_KEY_RE.search(cleaned)) else cleaned
     width = display_width(formatted)
     if width > max_cols:
@@ -106,10 +108,7 @@ def preflight(args) -> str | None:
         raise DispatchError(f"lane name {name!r} is {len(name)} chars; Herdr agent names allow "
                             f"{HERDR_NAME_MAX}: shorten to {name[:HERDR_NAME_MAX].rstrip('-')!r} or similar")
     args.title = format_visual_label(args.work_item, args.title, MAX_PANE_COLS, "pane")
-    args.tab_prefix = format_visual_label(
-        args.work_item, args.tab_prefix, MAX_TAB_PREFIX_COLS, "tab-prefix",
-        auto_prefix=(args.tab_prefix != "X"),
-    )
+    args.tab_prefix = format_visual_label(args.work_item, args.tab_prefix, MAX_TAB_PREFIX_COLS, "tab-prefix")
     if getattr(args, "workspace_label", None):
         args.workspace_label = format_visual_label(
             args.work_item, args.workspace_label, MAX_WORKSPACE_COLS, "workspace",
@@ -226,7 +225,7 @@ def main() -> int:
     parser.add_argument("--off-chain-reason")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
-    parser.add_argument("--tab-prefix", default="X")
+    parser.add_argument("--tab-prefix", required="--recover-review" not in sys.argv)
     parser.add_argument("--workspace-label", help="可选：同步重命名 Herdr workspace（左侧 space，≤20 列）")
     parser.add_argument("--review-scope")
     parser.add_argument("--required-axes", nargs="+", choices=["standards", "spec"])

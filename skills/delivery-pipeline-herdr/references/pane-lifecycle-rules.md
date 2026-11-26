@@ -7,7 +7,10 @@ helper 之外仍需 coordinator 判断的规则。
 
 - Coordinator Pane 所在 tab 只调度；worker lane 落在容量管理的 worker tab（`<tab-prefix>`、`<tab-prefix>-2`…），
   每个 worker tab 最多 4 pane，按 2×2 四格均分（`1→右、2→左下、3→右下`；取代 ADR-0005 的一 lane 一 tab）。HITL lane 共用同一容量。
-- 可视化短命名统一为 `<Issue号> <中文简写>[ <英文>]`（Issue 号置前防截断，汉字计 2 列、ASCII 计 1 列）：
+- 可视化短命名统一为 `<Issue号> <中文简写>[ <英文>]`（Issue 号置前防截断，汉字计 2 列、ASCII 计 1 列）。
+  `dispatch.py` 在调用 herdr 前拒绝少于 2 个汉字或超宽的名字。Driver 派发时，tab 前缀取
+  `transport.herdr.tab_prefix`，票 lane 的 pane 标题取 `transport.herdr.labels[<票号>]`，合并、测试、评审 lane
+  用固定短名；缺短名时 Action 交回 coordinator。coordinator 建 driver.json 时为每张票写好中文简写：
   - Workspace（`--workspace-label`）：≤ 20 列（如 `JB-512 零停机 M3`），派发前同步 `herdr workspace rename`。
   - Worker Tab 前缀（`--tab-prefix`）：≤ 18 列（预留 `-2` 溢出位，如 `JB-512 实施`）。
   - Pane 标题（`--title`）：≤ 24 列（如 `JB-548 扩表Job`）；未写 Issue 号且 `--work-item` 可解析出 Linear/GitHub 编号时脚本自动补齐。

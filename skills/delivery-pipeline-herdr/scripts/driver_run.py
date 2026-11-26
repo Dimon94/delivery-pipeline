@@ -25,16 +25,20 @@ import driver  # noqa: E402
 
 DISPATCH = Path(os.environ.get("DP_DISPATCH", HERE / "dispatch.py"))
 PACKET = HERE.parent / "assets" / "HERDR_ROLE_DISPATCH_PACKET.md"
+# 角色 lane 的中文短名固定；票 lane 的短名由 coordinator 写进 transport.herdr.labels。
+ROLE_LABELS = {"integration": "合并", "testing": "测试", "review": "评审"}
 
 
 def exec_dispatch(map_dir: Path, state, action):
     cfg = state["driver"].get("dispatch") or {}
-    root = ((state["driver"].get("transport") or {}).get("herdr") or {}).get("worktrees_root")
+    herdr_cfg = (state["driver"].get("transport") or {}).get("herdr") or {}
+    root = herdr_cfg.get("worktrees_root")
     mrow = driver.map_row(state["lanes"]) or {}
     integration = mrow.get("integration_worktree_path")
-    if not (cfg.get("evidence") and root and integration):
-        return None  # 缺配置：交回 coordinator 按壳合同派发
     a = dict(action["args"])
+    title = ROLE_LABELS.get(a["task"]) or (herdr_cfg.get("labels") or {}).get(a["work_item"])
+    if not (cfg.get("evidence") and root and integration and title and herdr_cfg.get("tab_prefix")):
+        return None  # 缺配置或中文短名：交回 coordinator 按壳合同派发
     lane = a["lane_id"]
     worktree = Path(root) / lane
     branch = f"{mrow.get('integration_branch') or 'map'}--{lane}"
@@ -49,14 +53,12 @@ def exec_dispatch(map_dir: Path, state, action):
     packet.parent.mkdir(parents=True, exist_ok=True)
     packet.write_text(driver.render_packet(state, {**action, "args": a},
                                            [f"Worker 合同：{PACKET}，读取 Worker 执行节"]))
-    herdr_cfg = (state["driver"].get("transport") or {}).get("herdr") or {}
     cmd = [sys.executable, str(DISPATCH), "--evidence", cfg["evidence"],
            "--task", a["task"], "--output-mode", a["output_mode"], "--lane", lane,
-           "--work-item", a["work_item"], "--title", a.get("title") or lane, "--worktree", str(worktree),
+           "--work-item", a["work_item"], "--title", title, "--worktree", str(worktree),
            "--branch", branch, "--base", base, "--packet", str(packet),
-           "--registry", str(registry), "--map-registry", mrow.get("_file") or "none"]
-    if herdr_cfg.get("tab_prefix"):
-        cmd.extend(["--tab-prefix", str(herdr_cfg["tab_prefix"])])
+           "--registry", str(registry), "--map-registry", mrow.get("_file") or "none",
+           "--tab-prefix", str(herdr_cfg["tab_prefix"])]
     if herdr_cfg.get("workspace_label"):
         cmd.extend(["--workspace-label", str(herdr_cfg["workspace_label"])])
     out = subprocess.run(cmd, capture_output=True, text=True)

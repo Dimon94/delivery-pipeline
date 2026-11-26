@@ -70,6 +70,9 @@ GOOD_MAP = ("<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: map-demo\nro
             "下一步：fan-in；合同入口: a.md§B\n")
 
 
+TAB = "#1 实施"
+
+
 def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", map_text=GOOD_MAP,
         extra=(), config_document=None, probe_evidence=None):
     (root / "state.json").write_text(json.dumps(state))
@@ -89,7 +92,7 @@ def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", 
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--evidence", str(evidence),
          "--task", "backend", "--output-mode", "commit", "--lane", lane, "--work-item", "https://x/1",
-         "--title", "#1 demo", "--worktree", str(root), "--branch", "b", "--base", "abc",
+         "--title", "#1 演示", "--tab-prefix", TAB, "--worktree", str(root), "--branch", "b", "--base", "abc",
          "--packet", str(root / "packet.md"), "--registry", str(registry),
          "--map-registry", str(map_registry), *extra],
         env=env, capture_output=True, text=True)
@@ -126,8 +129,8 @@ def main() -> int:
             failures.append("registry missing contract_rev = skill repo HEAD at dispatch")
         if "map: map-demo" not in text:
             failures.append("registry missing map = map registry lane_id")
-        if not any(c[:2] == ["tab", "create"] and "X" in c for c in calls):
-            failures.append("first lane did not open worker tab X")
+        if not any(c[:2] == ["tab", "create"] and TAB in c for c in calls):
+            failures.append("first lane did not open worker tab #1 实施")
         start = next((c for c in calls if c[:2] == ["agent", "start"]), [])
         if "--pane" not in start or start[start.index("--pane") + 1] != "w1:p2":
             failures.append("agent start not bound to placed pane")
@@ -148,21 +151,21 @@ def main() -> int:
         if result.returncode == 0 or calls:
             failures.append("active registry writer was not rejected before herdr")
 
-        # 3. X tab 未满 → split 进同一 tab，不开新 tab。
+        # 3. worker tab 未满 → split 进同一 tab，不开新 tab。
         state = json.loads(json.dumps(base))
-        state["tabs"].append({"tab_id": "w1:t2", "label": "X", "pane_count": 1, "workspace_id": "w1"})
+        state["tabs"].append({"tab_id": "w1:t2", "label": TAB, "pane_count": 1, "workspace_id": "w1"})
         state["panes"].append({"pane_id": "w1:p2", "tab_id": "w1:t2", "workspace_id": "w1"})
         result, registry, calls = run(root, "lane-b", state)
         if result.returncode != 0 or any(c[:2] == ["tab", "create"] for c in calls) \
                 or not any(c[:2] == ["pane", "split"] and "right" in c for c in calls):
             failures.append("non-full worker tab was not reused via right split")
 
-        # 4. 满 tab → 开 X-2。
+        # 4. 满 tab → 开 <前缀>-2。
         state = json.loads(json.dumps(base))
-        state["tabs"].append({"tab_id": "w1:t2", "label": "X", "pane_count": 4, "workspace_id": "w1"})
+        state["tabs"].append({"tab_id": "w1:t2", "label": TAB, "pane_count": 4, "workspace_id": "w1"})
         result, _, calls = run(root, "lane-c", state)
-        if not any(c[:2] == ["tab", "create"] and "X-2" in c for c in calls):
-            failures.append("full worker tab did not overflow to X-2")
+        if not any(c[:2] == ["tab", "create"] and f"{TAB}-2" in c for c in calls):
+            failures.append("full worker tab did not overflow to <prefix>-2")
 
         # 5. agent 两次都未进入 working → 关 pane，registry setup_blocked，exit 1。
         state = json.loads(json.dumps(base))
@@ -239,6 +242,12 @@ def main() -> int:
         )
         if result.returncode == 0 or calls or registry.exists() or "exceeds limit 20" not in result.stdout:
             failures.append(f"over-wide workspace label not rejected before herdr: {result.stdout}")
+        # 12. 只有编号、没有中文简写的 tab 前缀与 pane 标题，在 herdr 调用前拒绝。
+        for lane, flags in (("lane-bare-tab", ("--tab-prefix", "DD-654")),
+                            ("lane-bare-pane", ("--title", "dd-655"))):
+            result, registry, calls = run(root, lane, json.loads(json.dumps(base)), extra=flags)
+            if result.returncode == 0 or calls or registry.exists() or "中文简写" not in result.stdout:
+                failures.append(f"label without CJK short name not rejected before herdr {flags}: {result.stdout}")
 
     for failure in failures:
         print(f"FAIL {failure}")

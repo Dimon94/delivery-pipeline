@@ -17,7 +17,7 @@ Epic 输入按 `../delivery-pipeline/references/epic-scheduling.md` 从 Issue �
    `dispatch_runtime: herdr`。每次唤醒调 `scripts/driver_run.py run <map 目录>`：退出 0 结束本轮；
    退出 10 执行打印的一行 Action，按 canonical 用 `driver.py record` 交回后再调 run。
 2. `dispatch` 由本壳程序执行：driver.json `dispatch` 提供 `config`、`evidence`，`transport.herdr` 提供
-   `worktrees_root` 时，`driver_run.py` 建 Execution Worktree、渲染 packet 并调 `scripts/dispatch.py`
+   `worktrees_root`、`tab_prefix` 与 `labels`（票号 → 中文简写，命名见 `references/pane-lifecycle-rules.md`）时，`driver_run.py` 建 Execution Worktree、渲染 packet 并调 `scripts/dispatch.py`
    一次完成落位、启动、投递、watcher 与 registry。缺配置或 dispatch 失败时 Action 交回，coordinator 按
    `references/dispatch-runtime-routing.md` 验证 Herdr session/workspace/tab/pane 后派发；只有用户显式要求新
    Workspace 才创建。worker kind 由 version 5 work config 的 `agent` 决定（pi → `herdr-pi-pane`、codex → `herdr-codex-pane`、claude → `herdr-claude-pane`、antigravity → `herdr-agy-pane`），

@@ -16,6 +16,7 @@ FAKE = '''import json, sys
 args = sys.argv[1:]
 v = lambda k: args[args.index(k) + 1]
 assert "--config" not in args, f"map-local config reached dispatch: {args}"
+open(v("--registry") + ".args", "w").write(json.dumps(args))
 open(v("--registry"), "w").write("""<!-- wayfinder-lane-registry:v2 -->
 ```yaml
 lane_id: %s
@@ -65,11 +66,20 @@ def main():
         out = subprocess.run([sys.executable, str(RUN), "run", str(md)], capture_output=True, text=True, env=env)
         action = json.loads(out.stdout)
         assert out.returncode == 10 and action["id"] == "dispatch:T1", (out.returncode, out.stdout, out.stderr)
-        # 旧 map 带自选配置路径时，程序只传 evidence，结果 wait。
-        driver.write_json(md / "driver.json", {**base, "dispatch": {"config": "/map-local.json", "evidence": "/e.json"},
-            "transport": {"herdr": {"worktrees_root": str(root / "wt")}}})
+        # transport 没给这张票的中文短名：不拿 lane 编号凑名字，交回 coordinator。
+        dispatch_cfg = {"config": "/map-local.json", "evidence": "/e.json"}
+        herdr_cfg = {"worktrees_root": str(root / "wt"), "tab_prefix": "M1 实施"}
+        driver.write_json(md / "driver.json", {**base, "dispatch": dispatch_cfg, "transport": {"herdr": herdr_cfg}})
+        out = subprocess.run([sys.executable, str(RUN), "run", str(md)], capture_output=True, text=True, env=env)
+        assert out.returncode == 10 and json.loads(out.stdout)["id"] == "dispatch:T1", (out.returncode, out.stdout, out.stderr)
+        assert not (md / "registry-T1.md.args").exists(), "dispatch ran without a 中文短名"
+        # 旧 map 带自选配置路径时，程序只传 evidence，结果 wait；pane 标题取 transport.herdr.labels。
+        herdr_cfg["labels"] = {"T1": "上传接口"}
+        driver.write_json(md / "driver.json", {**base, "dispatch": dispatch_cfg, "transport": {"herdr": herdr_cfg}})
         out = subprocess.run([sys.executable, str(RUN), "run", str(md)], capture_output=True, text=True, env=env)
         assert out.returncode == 0 and json.loads(out.stdout)["action"] == "wait", (out.returncode, out.stdout, out.stderr)
+        sent = json.loads((md / "registry-T1.md.args").read_text())
+        assert sent[sent.index("--title") + 1] == "上传接口" and sent[sent.index("--tab-prefix") + 1] == "M1 实施", sent
         packet = (md / "packets" / "T1.md").read_text()
         assert "Owner：implement; /abs/SKILL.md; implement" in packet and "HERDR_ROLE_DISPATCH_PACKET.md" in packet, packet
         assert "范围：只改 a.txt" in packet and "输入：先读 README.md" in packet, packet  # packet 由合同生成
