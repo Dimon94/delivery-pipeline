@@ -136,8 +136,10 @@ export class BoardView {
    open:this.left,
    endedOpen:this.endedOpen,
    expandedEpics:this.expandedEpics,
+   generatedAt:s.board.generated_at,
   });
-  const center=`<section class="board-col board-center" aria-label="${copy.依赖}">${group?renderGraph(group,mmf,ticket):`<p class="board-state">${copy.没有进行中的工作}</p>`}</section>`;
+  const legend=`<div class="board-subbar"><span class="board-legend"><span><i class="g-done"></i>已完成</span><span><i class="g-active"></i>进行中</span><span><i class="g-review"></i>待收口</span><span><i class="g-problem"></i>需处理</span><span><i class="g-pending"></i>未派发</span><span class="lg-exec"><b class="lg-ring"></b>执行中（running 且现场 working）</span></span></div>`;
+  const center=`<section class="board-center-pane" aria-label="${copy.依赖}"><div class="board-col-head"><h2 title="${esc(group?.label??copy.看板)}">${esc(group?.label??copy.看板)}</h2></div>${legend}<div class="board-col board-center">${group?renderGraph(group,mmf,ticket):`<p class="board-state">${copy.没有进行中的工作}</p>`}</div></section>`;
   const rightCol=renderRightColumn({mmf,ticket,inbox:isInbox,inboxRepo,open:this.right});
   this.root.innerHTML=`${bar}<main class="board-grid" data-left="${this.left?'open':'closed'}" data-right="${this.right?'open':'closed'}">${leftCol}${center}${rightCol}</main>`;
   const endedDetails=this.root.querySelector<HTMLDetailsElement>('details[data-board-ended]');

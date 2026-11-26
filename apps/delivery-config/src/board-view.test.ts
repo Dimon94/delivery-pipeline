@@ -114,7 +114,7 @@ test('S22 1440 宽：收起左栏中栏变宽；收起右栏中栏占满、选�
  expect(win.innerWidth).toBe(1440);
  const grid=()=>q('.board-grid')!;
  const selected=q('#board-right h2')!.textContent;
- expect(columns(grid())).toBe('240px minmax(0,1fr) 320px');
+ expect(columns(grid())).toBe('260px minmax(0,1fr) 320px');
  click(button('收起左栏'));
  expect(q('#board-left')!.hidden).toBe(true);
  expect(columns(grid())).toBe('minmax(0,1fr) 320px');
@@ -131,7 +131,7 @@ test('S22 1440 宽：收起左栏中栏变宽；收起右栏中栏占满、选�
  expect(columns(grid())).toBe('minmax(0,1fr) 320px');
  click(button('展开左栏'));
  expect(q('#board-left')!.hidden).toBe(false);
- expect(columns(grid())).toBe('240px minmax(0,1fr) 320px');
+ expect(columns(grid())).toBe('260px minmax(0,1fr) 320px');
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe(id);
  linksAligned();
 });
@@ -342,4 +342,34 @@ test('S12/R3 快照 errors 在左栏独立“读取失败”分组显示 map 名
  expect(q('#board-left .board-errors')).toBeNull();
  expect(q('#board-left')!.textContent).not.toContain('读取失败');
  expect(q('.graph-mmf[data-map="dispatch-rules"]')).not.toBeNull();
+});
+
+test('DD-668 溢出与窄窗口布局集成验证：长标题/长标识符/长错误原因完整可读，状态行与全称阶段条不丢失，栏宽 260/320 且窄窗口有适配规则',async()=>{
+ const longTitle='生产只读带 ANALYZE 补测素材 1/7 日基线、表规模与方案 A 计划形状（已完成，JB-459 超长中英文混排）';
+ const longId='map_delivery_pipeline_dd668_super_long_identifier_without_spaces_0123456789abcdef';
+ const longReason='driver.json 解析失败：Expecting value at line 1 column 1 ' + 'unbroken_diagnostic_token_1234567890'.repeat(3);
+ const overflowSnap=structuredClone(sample);
+ overflowSnap.repos[0].epics[0].mmfs[0].tickets[0].title=longTitle;
+ overflowSnap.repos[0].epics[0].mmfs[0].tickets[0].lane.lane_id=longId;
+ overflowSnap.errors=[{map:longId,reason:longReason}];
+ answer=()=>Promise.resolve(overflowSnap);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ expect(columns(q('.board-grid')!)).toBe('260px minmax(0,1fr) 320px');
+ const card=q<HTMLElement>('.graph-ticket[data-ticket="01"]')!;
+ expect(card.getAttribute('title')).toContain(longTitle);
+ expect(card.querySelector('.tk-st')!.textContent).toBeTruthy();
+ expect(q('#board-right .detail-title')!.textContent).toBe(longTitle);
+ expect([...doc.querySelectorAll('#board-right .stage-step .step-label')].map(s=>s.textContent?.trim())).toEqual(['spec','tickets','实施','集成','审查','Merge Review','合入']);
+ expect(q('#board-left .board-error-map')!.textContent).toBe(longId);
+ expect(q('#board-left .board-error-reason')!.textContent).toBe(longReason);
+
+ // 窄窗口（≤1000px）存在针对 .board-grid 的媒体查询适配规则
+ const hasNarrowRule=[...sheet.cssRules].some(rule=>{
+  if(rule.type!==4)return false;
+  const m=rule as CSSMediaRule;
+  const cond=(m.conditionText||m.media?.mediaText||'').replace(/\s+/g,'');
+  return cond.includes('max-width:1000px')&&[...m.cssRules].some(sr=>(sr as CSSStyleRule).selectorText?.includes('.board-grid'));
+ });
+ expect(hasNarrowRule).toBe(true);
 });

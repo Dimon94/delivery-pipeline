@@ -67,3 +67,38 @@ test('S11 票详情与 MMF 详情显示对应七步条、现场与链接，“�
   expect(doc.querySelector('#board-right')!.textContent).not.toMatch(/回复 Halt|确认 Merge Review|触发 Driver/);
  }
 });
+
+test('DD-668 视觉对齐与溢出反例：右栏纵向七步全称不截断，长中英文标题与 80 字符无空格标识符全文可读且防撑栏',()=>{
+ const cssText=readFileSync(new URL('./style.css',import.meta.url),'utf8');
+ const win=new Window({width:1440,height:900});
+ const sheet=new win.CSSStyleSheet();
+ sheet.replaceSync(cssText);
+ const rules=[...sheet.cssRules].filter((r):r is CSSStyleRule=>r.type===1);
+
+ // 阶段名全称对齐原型（spec、tickets、实施、集成、审查、Merge Review、合入）
+ const stageDoc=mount(renderStageBar('merge_review'));
+ const labels=[...stageDoc.querySelectorAll('.stage-step .step-label')].map(el=>el.textContent?.trim());
+ expect(labels).toEqual(['spec','tickets','实施','集成','审查','Merge Review','合入']);
+
+ // 样式为纵向步骤（非 7 等分横排），不截断阶段名
+ const barRule=rules.find(r=>r.selectorText?.split(',').some(s=>s.trim()==='.stage-bar'));
+ expect(barRule).toBeDefined();
+ expect(barRule!.style.getPropertyValue('grid-template-columns')).not.toContain('repeat(7');
+ const stepRule=rules.find(r=>r.selectorText?.split(',').some(s=>s.trim()==='.stage-step'));
+ expect(stepRule).toBeDefined();
+ expect(stepRule!.style.getPropertyValue('text-overflow')).not.toBe('ellipsis');
+
+ // 长中英文标题 + 80 字符无空格 lane_id / branch / worktree 全文可读
+ const longTitle='生产只读带 ANALYZE 补测素材 1/7 日基线、表规模与方案 A 计划形状（已完成，JB-459）';
+ const longId='lane_delivery_pipeline_dd668_unbroken_identifier_without_any_spaces_0123456789abcdef';
+ const mmf=structuredClone(boardSample.repos[0]!.epics[0]!.mmfs[0]!);
+ const tk=structuredClone(mmf.tickets[0]!);
+ tk.title=longTitle;
+ tk.lane={...tk.lane!,lane_id:longId,branch:`feat/${longId}`,worktree:`/tmp/${longId}`,blocked_reason:`阻塞原因全文：${longId}`};
+ const doc=mount(renderRightColumn({mmf,ticket:tk,inbox:false,open:true}));
+ expect(doc.querySelector('.detail-title')!.textContent).toBe(longTitle);
+ expect(doc.body.textContent).toContain(longId);
+ expect(doc.body.textContent).toContain(`feat/${longId}`);
+ expect(doc.body.textContent).toContain(`阻塞原因全文：${longId}`);
+ expect(doc.querySelectorAll('.mono').length).toBeGreaterThanOrEqual(2);
+});

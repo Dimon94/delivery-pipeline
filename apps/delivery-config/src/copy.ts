@@ -183,8 +183,8 @@ export const copy = {
   "非活跃": "未活跃"
 };
 export const STAGE_ORDER:readonly import('./board').Stage[]=['spec','tickets','implement','integrate','review','merge_review','merged'];
-// 阶段中文名；读不出的阶段原样显示数据值。
-export const stageNames:Record<string,string>={spec:'Spec',tickets:'拆票',implement:'实施',integrate:'集成',review:'审查',merge_review:'Merge Review',merged:'合入'};
+// 阶段全称对齐锁定原型 v4；读不出的阶段原样显示数据值。
+export const stageNames:Record<string,string>={spec:'spec',tickets:'tickets',implement:'实施',integrate:'集成',review:'审查',merge_review:'Merge Review',merged:'合入'};
 export const stageLabel=(stage:string)=>stageNames[stage]??stage;
 // 状态分组沿用 lane_graph 的五组。
 export const laneGroupNames:Record<string,string>={done:'已完成',active:'进行中',review:'待收口',problem:'需处理',void:'作废'};

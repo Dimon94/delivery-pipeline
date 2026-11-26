@@ -193,3 +193,38 @@ test('S18 4 层超宽图视口滚动目标：初始可见根与第 1 层，点�
  expect(x).toBeGreaterThanOrEqual(target.scrollLeft);
  expect(x+GRAPH_GEOMETRY.card).toBeLessThanOrEqual(target.scrollLeft+viewportWidth);
 });
+
+test('DD-668 视觉对齐与溢出反例：长中英文混排标题与 80 字符无空格标识符不挤出状态行，完整标题由 title 可读，EP 深色根与 MMF 横带存在',()=>{
+ const longMixedTitle='生产只读带 ANALYZE 补测素材 1/7 日基线、表规模与方案 A 计划形状（已完成，JB-459 超长中英文混排标题）';
+ const longId='lane_delivery_pipeline_dd668_unbroken_identifier_without_any_spaces_0123456789abcdef';
+ const t1=makeTicket('01',{title:longMixedTitle,executing:false,lane:makeLane({state:'integrated',group:'done',live:'unknown'})});
+ const t2=makeTicket('02',{title:longId,deps:['01'],executing:false,lane:makeLane({state:'blocked',group:'problem',live:'unknown'})});
+ const mmf=makeMmf([t1,t2],{map:longId,title:longMixedTitle});
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph({id:'repo|EP-101',label:'EP-101',url:null,mmfs:[mmf]},mmf,t1);
+
+ // MMF 横带与实体卡片存在
+ expect(box.querySelectorAll('.graph-band').length).toBe(1);
+ const mmfEl=box.querySelector<HTMLElement>('.graph-mmf')!;
+ expect(mmfEl.getAttribute('title')).toContain(longMixedTitle);
+
+ // 卡片内标题与状态行分离渲染，完整标题在 title 属性可读
+ const card1=box.querySelector<HTMLElement>('.graph-ticket[data-ticket="01"]')!;
+ const card2=box.querySelector<HTMLElement>('.graph-ticket[data-ticket="02"]')!;
+ expect(card1.getAttribute('title')).toContain(longMixedTitle);
+ expect(card1.querySelector('.tk-t')!.textContent).toBe(longMixedTitle);
+ expect(card1.querySelector('.tk-st')!.textContent).toContain('已完成');
+ expect(card2.getAttribute('title')).toContain(longId);
+ expect(card2.querySelector('.tk-t')!.textContent).toBe(longId);
+ expect(card2.querySelector('.tk-st')!.textContent).toContain('blocked');
+
+ // 样式规则：标题单行省略，EP 根使用深色 var(--ink) 背景
+ const rules=[...sheet.cssRules].filter((r):r is CSSStyleRule=>r.type===1);
+ const tkTRule=rules.find(r=>r.selectorText?.split(',').some(s=>s.trim()==='.tk-t'));
+ expect(tkTRule).toBeDefined();
+ expect(tkTRule!.style.getPropertyValue('white-space')).toBe('nowrap');
+ expect(tkTRule!.style.getPropertyValue('text-overflow')).toBe('ellipsis');
+ expect(tkTRule!.style.getPropertyValue('overflow')).toBe('hidden');
+ const rootRules=rules.filter(r=>r.selectorText?.split(',').some(s=>s.trim()==='.graph-root'));
+ expect(rootRules.some(r=>(r.style.getPropertyValue('background')||r.style.getPropertyValue('background-color')).includes('var(--ink)'))).toBe(true);
+});

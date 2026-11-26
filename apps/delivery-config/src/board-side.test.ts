@@ -168,3 +168,27 @@ test('S12/R3 左栏独立渲染读取失败分组并显示条数、map 名与原
  expect(emptyDoc.querySelector('.board-errors')).toBeNull();
  expect(emptyDoc.body.textContent).not.toContain('读取失败');
 });
+
+test('DD-668 溢出反例：80 字符无空格 map 名与长错误原因全文可读，长 MMF 标题通过 title 保留全称',()=>{
+ const longMap='broken_map_with_extremely_long_unbroken_identifier_without_spaces_0123456789abcdef';
+ const longReason='JSONDecodeError: Expecting property name enclosed in double quotes at line 1 column 2 (char 1) ' + 'segment_without_spaces_0123456789'.repeat(3);
+ const longMmfTitle='生产只读带 ANALYZE 补测素材 1/7 日基线、表规模与方案 A 计划形状与全链路校验回归';
+ const snap:BoardSnapshot=structuredClone(boardSample);
+ snap.repos[0]!.epics[0]!.mmfs[0]!.title=longMmfTitle;
+ snap.errors=[{map:longMap,reason:longReason}];
+ const groups=buildBoardGroups(snap);
+ const doc=mount(renderLeftColumn({
+  groups,
+  selectedGroupId:groups.all[0]!.id,
+  selectedMap:groups.all[0]!.mmfs[0]!.map,
+  open:true,
+  endedOpen:false,
+  expandedEpics:new Map(),
+ }));
+ const mmfBtn=doc.querySelector<HTMLElement>('.board-mmf-entry')!;
+ expect(mmfBtn.getAttribute('title')).toContain(longMmfTitle);
+ const errItem=doc.querySelector<HTMLElement>(`.board-error-item[data-error-map="${longMap}"]`)!;
+ expect(errItem.querySelector('.board-error-map')!.textContent).toBe(longMap);
+ expect(errItem.querySelector('.board-error-map')!.classList.contains('mono')).toBe(true);
+ expect(errItem.querySelector('.board-error-reason')!.textContent).toBe(longReason);
+});
