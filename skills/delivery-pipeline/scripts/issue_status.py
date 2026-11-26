@@ -50,31 +50,44 @@ def _first(pairs, default):
 
 # ---------- 纯推导 ----------
 
+def is_merged(d: dict) -> bool:
+    return bool((d.get("remote") or {}).get("merge")) or d.get("status") == "done"
+
+
+def _delivery_stage(d: dict) -> str | None:
+    return _first([("done", is_merged(d)), ("acceptance", (d.get("reviews") or {}).get("merge"))], None)
+
+
 def ticket_stage(d: dict, rows: Sequence[dict]) -> str | None:
     """单票阶段推导入口，接受 Driver 状态与该票的 lane 行。"""
-    raise NotImplementedError("单票阶段推导由 DD-670 实现")
+    if not d or not d.get("grant") or not d.get("published"):
+        return None
+    return _delivery_stage(d) or _first([("review", any(r.get("state") in LANE_DONE for r in rows)),
+                                         ("started", bool(rows))], "todo")
+
+
+def spec_stage(d: dict, by_item: dict) -> str | None:
+    if not d or not d.get("grant"):
+        return None
+    reviewing = any(r.get("role") in ("testing", "review") for rows in by_item.values() for r in rows)
+    return _delivery_stage(d) or ("review" if reviewing else "started")
 
 
 def targets(d: dict, by_item: dict) -> dict:
     """{issue key: 目标阶段}。非 Linear 坐标的票（如 T1）不参与。"""
     if not d or not d.get("grant"):
         return {}
-    shipped = bool((d.get("remote") or {}).get("merge")) or d.get("status") == "done"
-    accepting = bool((d.get("reviews") or {}).get("merge"))
-    reviewing = any(r.get("role") in ("testing", "review") for rows in by_item.values() for r in rows)
     out = {}
     spec = issue_key((d.get("gates") or {}).get("spec"))
     if spec:
-        out[spec] = _first([("done", shipped), ("acceptance", accepting), ("review", reviewing)], "started")
+        out[spec] = spec_stage(d, by_item)
     if not d.get("published"):
         return out
     for ticket in d.get("plan", {}).get("tickets", ()):
         key = issue_key(ticket.get("url") or ticket["id"])
         rows = by_item.get(ticket["id"], ())
         if key:
-            out[key] = _first([("done", shipped), ("acceptance", accepting),
-                               ("review", any(r.get("state") in LANE_DONE for r in rows)),
-                               ("started", bool(rows))], "todo")
+            out[key] = ticket_stage(d, rows)
     return out
 
 
