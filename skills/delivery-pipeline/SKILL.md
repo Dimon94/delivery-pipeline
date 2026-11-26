@@ -48,7 +48,7 @@ disable-model-invocation: true
 
 ## 边界
 
-- coordinator 不亲自实现、cherry-pick 或 fan-in；沟通走 context pointers，不复制 spec、ticket 与日志正文。
+- coordinator 不亲自实现、cherry-pick 或 fan-in，冲突交回 `run` 派 merger；集成分支出现不是 Driver 留下的提交时 `run` 以 `halt` 停下。沟通走 context pointers，不复制 spec、ticket 与日志正文。
 - 本地 worktree、修改与 commit 用 local execution authority；push、PR/MR、merge 与 publication 只在 Merge Review
   授权后由 Driver 下发。证据缺失写 Unknown。面向用户与 tracker 的自然语言用中文。
 

@@ -181,6 +181,13 @@ def detect_halt(state):
                    evidence=list(evidence), options=list(options))
 
     candidates = []
+    head, seen = state.get("integration_head"), d.get("integration_seen")
+    if seen and head and head != seen and driver_owns_head(lanes):
+        candidates.append(halt("authority", f"integration-head:{head}",
+                               "集成分支上有不是 Driver 留下的提交。coordinator 不在集成树手工 cherry-pick、合并或改码；"
+                               "冲突和检查失败交回 Driver，由它派 merger 或修复 lane",
+                               [f"Driver 留下 {seen[:12]}，当前 {head[:12]}", *state.get("integration_foreign", ())],
+                               ["认可这些提交并继续", f"回退到 {seen[:12]} 后继续", "放弃本 MMF"]))
     for row in sorted(lanes.values(), key=lambda r: r["lane_id"]):
         lid, reason = row["lane_id"], row.get("blocked_reason") or ""
         if row.get("state") == "blocked" and "REVIEW_EXHAUSTED" in reason:
@@ -213,6 +220,13 @@ def detect_halt(state):
         candidates.append(halt("authority", wanted, f"需要授权外操作：{wanted}", [DRIVER_FILE + "#remote"],
                                ["授权", "拒绝"]))
     return next((c for c in candidates if c), None)
+
+
+def driver_owns_head(lanes) -> bool:
+    """票实施阶段集成 HEAD 只由 Driver 移动；merger 在途或进入整体测试、评审后，别的 lane 也会合法地动它。"""
+    return not any(r.get("role") in ("testing", "review")
+                   or (r.get("role") == "integration" and r.get("state") in ACTIVE | {"terminal"})
+                   for r in lanes.values())
 
 
 def owner_action_id(d, gate, prefix):
@@ -663,7 +677,19 @@ def load(map_dir: Path) -> dict:
             proc = run_git(wt, 'rev-parse', 'HEAD')
             if proc.returncode == 0 and proc.stdout.strip():
                 state['integration_head'] = proc.stdout.strip()
+        seen, head = driver.get('integration_seen'), state.get('integration_head')
+        if seen and head and seen != head:
+            log = run_git(wt, 'log', '--format=%h %s', '-20', f'{seen}..{head}')
+            state['integration_foreign'] = log.stdout.splitlines() if log.returncode == 0 else []
     return state
+
+
+def mark_seen(map_dir: Path) -> None:
+    """记下 Driver 自己留下的集成 HEAD；之后出现的别的 HEAD 由 detect_halt 当外来提交处理。"""
+    state = load(map_dir)
+    d, head = state['driver'], state.get('integration_head')
+    if d and head and d.get('integration_seen') != head:
+        write_json(map_dir / DRIVER_FILE, dict(d, integration_seen=head))
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -917,6 +943,7 @@ def run(map_dir: Path, executors: dict | None = None, limit: int = 200) -> dict:
         if receipt is None:  # 无执行器或执行器声明交回宿主
             return action
         record(map_dir, action["id"], receipt, action)
+        mark_seen(map_dir)
     raise RuntimeError("run 超过步数上限，疑似回执未推进状态")
 
 
@@ -964,6 +991,10 @@ def _state(driver, *rows):
     return {"driver": driver, "lanes": {r["lane_id"]: r for r in rows}}
 
 
+def _moved(state):
+    return dict(state, integration_head="b", integration_foreign=["b 手工修冲突"])
+
+
 def _cases():
     done = lambda *ids: [_lane(i, "closed") for i in ids]  # noqa: E731
     all_done = done("T1", "T2", "T3", "T4")
@@ -993,6 +1024,15 @@ def _cases():
         ("consume", _state(_granted(), MAP, _lane("T1", "terminal", output_mode="artifact")), "consume", "consume:T1"),
         ("closeout", _state(_granted(), MAP, _lane("T1", "integrated")), "closeout", "closeout:T1"),
         ("merger", _state(_granted(), MAP, _lane("T1", "integration_conflict")), "dispatch", "dispatch:merger:T1"),
+        ("foreign-head", _moved(_state(_granted(integration_seen="a"), MAP, _lane("T1", "integration_conflict"))),
+         "halt", "halt:authority:integration-head:b"),
+        ("foreign-head-resolved", _moved(_state(_granted(integration_seen="a", resolved_halts=["halt:authority:integration-head:b"]),
+                                               MAP, _lane("T1", "integration_conflict"))), "dispatch", "dispatch:merger:T1"),
+        ("merger-moves-head", _moved(_state(_granted(integration_seen="a"), MAP, _lane("T1", "integration_conflict"),
+                                            _lane("T1-merger", "running", role="integration", merges="T1"))), "wait", "wait"),
+        ("whole-change-moves-head", _moved(_state(_granted(integration_seen="a"), MAP, *all_done,
+                                                  _lane("t", "closed", role="testing", work_item="m1#testing"))),
+         "dispatch", "dispatch:review"),
         ("judge-light", _state(_granted(), MAP, _lane("T1", "blocked")), "judge", "judge:classify:T1"),
         ("judge-heavy", _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="acceptance failed")), "judge", "judge:diagnose:T1:1"),
         ("resplit", _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="x", repairs="2")), "judge", "judge:resplit:T1"),
@@ -1062,6 +1102,7 @@ def self_test() -> int:
         failures.append("epic: 全部 closed 应 done")
     failures += _io_self_test()
     failures += _contract_self_test()
+    failures += _head_guard_self_test()
     failures += _planning_self_test()
     failures += _review_html_self_test()
     for f in failures:
@@ -1190,6 +1231,43 @@ def _contract_self_test() -> list[str]:
         blocked = _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="合同违约：验收命令退出 1"))
         if decide(blocked)["id"] != "judge:diagnose:T1:1":
             failures.append("合同违约应进既有诊断修复链")
+    return failures
+
+
+def _head_guard_self_test():
+    """集成 HEAD 只认 Driver 留下的：旧错误是 coordinator 在集成树手工 cherry-pick 后 Driver 照单全收。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        md, repo, tree = Path(tmp, "map"), str(Path(tmp, "repo")), str(Path(tmp, "tree"))
+        md.mkdir()
+        subprocess.run(["git", "init", "-qb", "integration", repo], check=True)
+        git = brief_delivery.git
+        git(repo, "config", "user.name", "t")
+        git(repo, "config", "user.email", "t@example.invalid")
+        Path(repo, "README.md").write_text("base\n")
+        git(repo, "add", "README.md")
+        git(repo, "commit", "-qm", "base")
+        git(repo, "worktree", "add", "-qb", "lane", tree)
+        Path(tree, "a.txt").write_text("ok\n")
+        git(tree, "add", "a.txt")
+        git(tree, "commit", "-qm", "work")
+        registry = str(md / "registry.md")
+        write_json(md / DRIVER_FILE, _granted())
+        persist_lanes(md, [dict(MAP, integration_worktree_path=repo, _file=registry),
+                           dict(_lane("T1", "terminal", head_commit=git(tree, "rev-parse", "HEAD"), worktree=tree), _file=registry)])
+        first = run(md)
+        head = git(repo, "rev-parse", "HEAD")
+        if first["action"] == "halt" or load(md)["lanes"]["T1"]["state"] not in closeout.DONE or load(md)["driver"].get("integration_seen") != head:
+            failures.append(f"Driver 自己 fan-in 后应记下集成 HEAD 且不停机，got {first}")
+        Path(repo, "b.txt").write_text("x\n")
+        git(repo, "add", "b.txt")
+        git(repo, "commit", "-qm", "手工修冲突")
+        foreign = git(repo, "rev-parse", "HEAD")
+        got = run(md)
+        if got["id"] != f"halt:authority:integration-head:{foreign}" or "手工修冲突" not in " ".join(got["args"]["evidence"]):
+            failures.append(f"集成树出现外来提交应停机并列出提交，got {got}")
+        elif record(md, "halt", "认可这些提交并继续") and run(md)["action"] == "halt":
+            failures.append("用户认可外来提交后应继续")
     return failures
 
 

@@ -37,6 +37,7 @@ Issue、代码和 CI 归 GitHub,项目坐标 `Dimon94/delivery-pipeline`,操作�
 | --- | --- |
 | 新 work lane 的模型、档位与有序备用来自 setup 和显式命名预设。 | T3 `work_dispatch.py`、Herdr `dispatch.py`、Driver 调用的 `scripts/delivery-dispatch`；`python3 scripts/validate.py` 回放错误配置覆盖。本仓外的调用方：my-skills `skills/herdr-autopilot/scripts/launch.js` 经 `model_config.py probe/resolve/start` 启动入口 lane，改 `start` 输出或 CLI 参数时同步核对它。 |
 | commit 票派发前必带一份派发合同；空变更或合同验收不过不进集成分支，越出 `writable` 的文件记成偏差进 Merge Review 页（ADR-0028）。 | `driver.py` 的 `prepare_contract` 与 `exec_fan_in`；`driver.py self-test` 回放无合同派发、空变更、验收失败和越界记偏差。 |
+| coordinator 不在集成树手工 cherry-pick、合并或改码；票实施阶段集成 HEAD 只认 Driver 留下的（ADR-0029）。 | `driver.py` 的 `mark_seen` 与 `detect_halt`；`driver.py self-test` 回放集成树手工提交后停机。 |
 
 ## Agent skills
 
