@@ -135,3 +135,86 @@ test('S22 1440 宽：收起左栏中栏变宽；收起右栏中栏占满、选�
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe(id);
  linksAligned();
 });
+
+test('S11 悬停 4 层 MMF 中的票只高亮上下游链，点 MMF 与点票切换中栏选中态',async()=>{
+ answer=()=>Promise.resolve(sample);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ const ticket05=q<HTMLElement>('.graph-ticket[data-ticket="05"]')!;
+ ticket05.dispatchEvent(new win.MouseEvent('mouseover',{bubbles:true}));
+ expect(q('.graph')!.classList.contains('has-hover')).toBe(true);
+ expect([...doc.querySelectorAll<HTMLElement>('.graph-ticket.chain')].map(el=>el.dataset.ticket).sort()).toEqual(['02','05','07','08','10','11','12']);
+ expect([...doc.querySelectorAll<HTMLElement>('.graph-ticket.dimmed')].map(el=>el.dataset.ticket).sort()).toEqual(['01','03','04','06','09']);
+
+ ticket05.dispatchEvent(new win.MouseEvent('mouseout',{bubbles:true,relatedTarget:q('.board-center')}));
+ expect(q('.graph')!.classList.contains('has-hover')).toBe(false);
+ expect(doc.querySelectorAll('.graph-ticket.dimmed').length).toBe(0);
+
+ click(q('.graph-mmf'));
+ expect(q('.graph-mmf')!.classList.contains('selected')).toBe(true);
+ expect(q('.graph-ticket.selected')).toBeNull();
+
+ click(q('.graph-ticket[data-ticket="07"]'));
+ expect(q('.graph-mmf')!.classList.contains('selected')).toBe(false);
+ expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('07');
+});
+
+test('S16 通过重新读取快照切换执行中动画：A 停止并显示待收口，B 出现虚线环',async()=>{
+ const baseLane={role:'backend',agent:'pi',model:'gpt-6.1-sol',worktree:null,branch:null,blocked_reason:null,updated_at:'2026-01-15T12:00:00+00:00'};
+ const snap=(a:{state:string;group:string;live:string;executing:boolean},b:{state:string;group:string;live:string;executing:boolean})=>({
+  schema:1,generated_at:'2026-01-15T12:00:00+00:00',lanes_root:'/fixture/lanes',
+  repos:[{name:'example/dispatch',epics:[{key:'DEMO-1',url:null,title:'Unknown',ended:false,mmfs:[{
+   map:'dispatch-rules',title:'交付规则',stage:'implement',halt:null,links:{plan_review:null,merge_review:null,linear:null},
+   updated_at:'2026-01-15T12:00:00+00:00',direct_lanes:[],executing:false,
+   tickets:[
+    {id:'A',title:'票 A',deps:[],stage:'implement',lane:{...baseLane,lane_id:'a',state:a.state,group:a.group,live:a.live},executing:a.executing,linear:null},
+    {id:'B',title:'票 B',deps:['A'],stage:'implement',lane:{...baseLane,lane_id:'b',state:b.state,group:b.group,live:b.live},executing:b.executing,linear:null},
+   ],
+  }]}]}],inbox:[],probes:[],errors:[],
+ });
+ answer=()=>Promise.resolve(snap({state:'running',group:'active',live:'working',executing:true},{state:'created',group:'active',live:'unknown',executing:false}));
+ window.dispatchEvent(new win.Event('focus'));await settle();
+ expect(q('[data-ticket="A"] .exec-ring')).not.toBeNull();
+ expect(q('[data-ticket="A"]')!.textContent).toContain('执行中');
+ expect(q('[data-ticket="B"] .exec-ring')).toBeNull();
+
+ answer=()=>Promise.resolve(snap({state:'terminal',group:'review',live:'unknown',executing:false},{state:'running',group:'active',live:'working',executing:true}));
+ window.dispatchEvent(new win.Event('focus'));await settle();
+ expect(q('[data-ticket="A"] .exec-ring')).toBeNull();
+ expect(q('[data-ticket="A"]')!.textContent).toContain('待收口');
+ expect(q('[data-ticket="B"] .exec-ring')).not.toBeNull();
+ expect(q('[data-ticket="B"]')!.textContent).toContain('执行中');
+});
+
+test('S18 4 层超宽图首次打开与切 Epic 可见根与第一层 MMF，点第 4 层票后滚动到该票',async()=>{
+ answer=()=>Promise.resolve(sample);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ const center=q<HTMLElement>('.board-center')!;
+ Object.defineProperty(center,'clientWidth',{value:600,configurable:true});
+ Object.defineProperty(center,'clientHeight',{value:500,configurable:true});
+
+ expect(center.scrollLeft).toBe(0);
+ const graphW=parseFloat(q<HTMLElement>('.graph')!.style.width);
+ expect(graphW).toBeGreaterThan(600);
+ expect(Number(q<HTMLElement>('.graph-root')!.dataset.x)).toBe(0);
+ expect(Number(q<HTMLElement>('.graph-mmf')!.dataset.x)+176).toBeLessThan(600);
+
+ // 点第 4 层票（10），视口滚动到该票可见
+ click(q<HTMLElement>('.graph-ticket[data-ticket="10"]'));
+ const afterClickCenter=q<HTMLElement>('.board-center')!;
+ const card10=q<HTMLElement>('.graph-ticket[data-ticket="10"]')!;
+ const x10=Number(card10.dataset.x);
+ expect(afterClickCenter.scrollLeft).toBeGreaterThan(0);
+ expect(x10).toBeGreaterThanOrEqual(afterClickCenter.scrollLeft);
+ expect(x10+176).toBeLessThanOrEqual(afterClickCenter.scrollLeft+600);
+
+ // 切到另一个 Epic（DEMO-3），视口回到根与第一层 MMF
+ const otherEpic=[...doc.querySelectorAll<HTMLElement>('.board-entry')].find(b=>b.dataset.group?.includes('DEMO-3'))!;
+ click(otherEpic);
+ const afterSwitchCenter=q<HTMLElement>('.board-center')!;
+ expect(afterSwitchCenter.scrollLeft).toBe(0);
+ expect(afterSwitchCenter.scrollTop).toBe(0);
+ expect(q('.graph-root')!.textContent).toContain('DEMO-3');
+ expect(q('.graph-mmf')).not.toBeNull();
+});

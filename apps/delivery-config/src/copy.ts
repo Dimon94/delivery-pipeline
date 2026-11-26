@@ -156,6 +156,8 @@ export const copy = {
   "已结束": "已结束",
   "待归属": "待归属",
   "未派发": "未派发",
+  "执行中": "执行中",
+  "现场": "现场",
   "没有进行中的工作": "本机还没有可显示的 Epic 或 Inbox 条目",
   "选择一张票查看详情": "在图上选择一张票或 MMF 查看详情",
   "交付阶段": "交付阶段",
@@ -173,6 +175,14 @@ export const stageNames:Record<string,string>={spec:'Spec',tickets:'拆票',impl
 export const stageLabel=(stage:string)=>stageNames[stage]??stage;
 // 状态分组沿用 lane_graph 的五组。
 export const laneGroupNames:Record<string,string>={done:'已完成',active:'进行中',review:'待收口',problem:'需处理',void:'作废'};
+// 票卡片状态文字：只有 executing 为真显示“执行中”；running 但 live 为 unknown 显示静态“running · 现场 Unknown”。
+export function ticketStatusText(ticket:Pick<import('./board').Ticket,'lane'|'executing'>):string {
+ if(ticket.executing)return copy.执行中;
+ if(!ticket.lane)return copy.未派发;
+ if(ticket.lane.state==='running'&&ticket.lane.live==='unknown')return `${ticket.lane.state} · ${copy.现场} Unknown`;
+ const group=laneGroupNames[ticket.lane.group]??ticket.lane.group;
+ return `${group} · ${ticket.lane.state}`;
+}
 const families:Record<string,string>={glm:'GLM',minimax:'MiniMax',gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
 export const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};
 export function modelLabel(raw:string):string {

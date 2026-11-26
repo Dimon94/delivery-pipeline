@@ -1,33 +1,20 @@
 import type {BoardSnapshot,Epic,Mmf,Ticket} from './board';
 import {copy,stageLabel,laneGroupNames} from './copy';
 import {shouldRereadBoard} from './guide';
+import {GRAPH_GEOMETRY,applyHoverChain,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+
+export {ticketLayers};
 
 // 看板视图：读取中 → 已渲染 | 读取失败（DD-668 T1–T6）；左右栏各自收起（R15）。
 export type BoardState={kind:'loading'}|{kind:'rendered';board:BoardSnapshot}|{kind:'failed';reason:string};
 export interface BoardHost {read():Promise<unknown>; openSettings():void}
 // 左栏一级入口：仓库下的 Epic，或独立的 Inbox。
-type Group={id:string;label:string;url:string|null;mmfs:Mmf[]};
+type Group=GraphGroup;
 type Pick={group?:string;map?:string;ticket?:string};
 
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const INBOX='inbox';
 const epicId=(repo:string,epic:Epic)=>`${repo}|${epic.key}`;
-// 图的几何：坐标只由层号与行号决定，栏宽变化后连线仍与卡片对齐。
-const G={root:120,card:176,h:56,gx:44,gy:14,head:40,band:20};
-
-// 同一 map 内按 deps 求拓扑层；map 外或成环的依赖不再加层。
-export function ticketLayers(tickets:Ticket[]):Map<string,number> {
- const byId=new Map(tickets.map(t=>[t.id,t])),layer=new Map<string,number>();
- const visit=(t:Ticket,path:Set<string>):number=>{
-  const known=layer.get(t.id);if(known!==undefined)return known;
-  path.add(t.id);
-  let n=0;
-  for(const d of t.deps){const dep=byId.get(d);if(dep&&!path.has(d))n=Math.max(n,visit(dep,path)+1);}
-  path.delete(t.id);layer.set(t.id,n);return n;
- };
- for(const t of tickets)visit(t,new Set());
- return layer;
-}
 
 export class BoardView {
  state:BoardState={kind:'loading'};
@@ -36,8 +23,14 @@ export class BoardView {
  right=true;
  private pick:Pick={};
  private generation=0;
+ private currentGroup:Group|undefined;
+ private lastGroupId:string|undefined;
+ private hovered:{map:string;ticket:string}|undefined;
+ private scrollRequest:'reset'|'selected'|'preserve'='reset';
  constructor(private root:HTMLElement,private host:BoardHost) {
   root.addEventListener('click',event=>this.click(event));
+  root.addEventListener('mouseover',event=>this.hover(event));
+  root.addEventListener('mouseout',event=>this.unhover(event));
  }
  // T1 启动或从设置返回；T4 重试；T5 回到前台。选择跨读取保留。
  async load() {
@@ -49,6 +42,7 @@ export class BoardView {
    next=board&&typeof board==='object'&&board.schema===1&&Array.isArray(board.repos)&&Array.isArray(board.inbox)?{kind:'rendered',board}:{kind:'failed',reason:copy.看板快照格式不对};
   }catch(error){next={kind:'failed',reason:error instanceof Error?error.message:String(error)};}
   if(generation!==this.generation)return;
+  this.scrollRequest='preserve';
   this.state=next;this.render();
  }
  rereadOnFocus() {
@@ -71,32 +65,92 @@ export class BoardView {
   this.pick={group:group.id,map:first?.map,ticket:first?.tickets[0]?.id};
   return {group,mmf:first,ticket:first?.tickets[0]};
  }
+ private hover(event:Event) {
+  const el=(event.target as Element|null)?.closest<HTMLElement>('.graph-ticket');
+  if(!el||!el.dataset.map||!el.dataset.ticket)return;
+  if(this.hovered?.map===el.dataset.map&&this.hovered?.ticket===el.dataset.ticket)return;
+  this.hovered={map:el.dataset.map,ticket:el.dataset.ticket};
+  applyHoverChain(this.root,this.currentGroup,this.hovered);
+ }
+ private unhover(event:Event) {
+  const from=(event.target as Element|null)?.closest<HTMLElement>('.graph-ticket');
+  if(!from)return;
+  const related=((event as MouseEvent).relatedTarget as Element|null)?.closest<HTMLElement>('.graph-ticket');
+  if(related===from)return;
+  if(related&&related.dataset.map&&related.dataset.ticket){
+   this.hovered={map:related.dataset.map,ticket:related.dataset.ticket};
+   applyHoverChain(this.root,this.currentGroup,this.hovered);
+   return;
+  }
+  if(!this.hovered)return;
+  this.hovered=undefined;
+  applyHoverChain(this.root,this.currentGroup,undefined);
+ }
  private click(event:Event) {
   const target=(event.target as Element).closest<HTMLElement>('[data-board]');
   if(!target)return;
   const {board:action,group,map,ticket}=target.dataset;
   if(action==='settings'){this.host.openSettings();return;}
   if(action==='retry'){void this.load();return;}
-  if(action==='left'){this.left=!this.left;this.render();return;}
-  if(action==='right'){this.right=!this.right;this.render();return;}
-  if(action==='group'){this.pick={group};this.render();return;}
-  // 图上点票或 MMF：右栏收起时自动展开（R15）。
-  if(action==='mmf'||action==='ticket'){this.pick={group:this.pick.group,map,ticket};this.right=true;this.render();}
+  if(action==='left'){this.left=!this.left;this.scrollRequest='preserve';this.render();return;}
+  if(action==='right'){this.right=!this.right;this.scrollRequest='preserve';this.render();return;}
+  if(action==='group'){this.pick={group};this.hovered=undefined;this.scrollRequest='reset';this.render();return;}
+  // 图上点票或 MMF：右栏收起时自动展开（R15），并将所选节点滚入中栏视口（R12）。
+  if(action==='mmf'||action==='ticket'){this.pick={group:this.pick.group,map,ticket};this.right=true;this.scrollRequest='selected';this.render();}
  }
  render() {
+  const prevCenter=this.root.querySelector<HTMLElement>('.board-center');
+  const prevViewport={left:prevCenter?.scrollLeft??0,top:prevCenter?.scrollTop??0,width:prevCenter?.clientWidth??0,height:prevCenter?.clientHeight??0};
   const s=this.state;
   const toggle=(side:'left'|'right',open:boolean)=>`<button class="plain" data-board="${side}" aria-pressed="${!open}" aria-controls="board-${side}">${open?(side==='left'?copy.收起左栏:copy.收起右栏):(side==='left'?copy.展开左栏:copy.展开右栏)}</button>`;
   const bar=`<header class="app-bar"><div class="app-brand">Delivery Pipeline</div><div class="app-location">${copy.看板}</div><div class="right">${s.kind==='rendered'?toggle('left',this.left)+toggle('right',this.right):''}<button class="plain" data-board="settings">${copy.设置}</button></div></header>`;
-  if(s.kind==='loading'){this.root.innerHTML=`${bar}<main class="board-frame"><p class="board-state" role="status">${copy.读取中}</p></main>`;return;}
-  if(s.kind==='failed'){this.root.innerHTML=`${bar}<main class="board-frame"><div class="board-state board-failed" role="alert"><h2>${copy.读取失败}</h2><p class="board-reason">${esc(s.reason)}</p><button class="primary" data-board="retry">${copy.重试}</button></div></main>`;return;}
+  if(s.kind==='loading'){this.currentGroup=undefined;this.hovered=undefined;this.root.innerHTML=`${bar}<main class="board-frame"><p class="board-state" role="status">${copy.读取中}</p></main>`;return;}
+  if(s.kind==='failed'){this.currentGroup=undefined;this.hovered=undefined;this.root.innerHTML=`${bar}<main class="board-frame"><div class="board-state board-failed" role="alert"><h2>${copy.读取失败}</h2><p class="board-reason">${esc(s.reason)}</p><button class="primary" data-board="retry">${copy.重试}</button></div></main>`;return;}
   const {repos,inbox,all}=this.groups(s.board);
   const {group,mmf,ticket}=this.settle(all);
+  const groupChanged=group?.id!==this.lastGroupId;
+  this.currentGroup=group;
+  this.lastGroupId=group?.id;
   const entry=(g:Group)=>`<button class="board-entry${g.id===group?.id?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${g.id===group?.id}">${esc(g.label)}<small>${g.mmfs.length} MMF</small></button>`;
   const ended=repos.flatMap(r=>r.epics.filter(e=>e.ended).map(e=>e.group));
   const leftCol=`<nav class="board-col board-left" id="board-left" aria-label="Epic" ${this.left?'':'hidden'}><div class="board-col-head"><h2>Epic</h2><button class="quiet" data-board="left">${copy.收起左栏}</button></div>${repos.filter(r=>r.epics.some(e=>!e.ended)).map(r=>`<section class="board-repo"><h3>${esc(r.name)}</h3>${r.epics.filter(e=>!e.ended).map(e=>entry(e.group)).join('')}</section>`).join('')}${ended.length?`<details class="board-repo"${ended.some(g=>g.id===group?.id)?' open':''}><summary>${copy.已结束} ${ended.length}</summary>${ended.map(entry).join('')}</details>`:''}${board_inbox(inbox,entry)}</nav>`;
-  const center=`<section class="board-col board-center" aria-label="${copy.依赖}">${group?graph(group,mmf,ticket):`<p class="board-state">${copy.没有进行中的工作}</p>`}</section>`;
+  const center=`<section class="board-col board-center" aria-label="${copy.依赖}">${group?renderGraph(group,mmf,ticket):`<p class="board-state">${copy.没有进行中的工作}</p>`}</section>`;
   const rightCol=`<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${this.right?'':'hidden'}><div class="board-col-head"><h2>${ticket?esc(ticket.id):mmf?'MMF':''}</h2><button class="quiet" data-board="right">${copy.收起右栏}</button></div>${detail(mmf,ticket,group?.id===INBOX)}</aside>`;
   this.root.innerHTML=`${bar}<main class="board-grid" data-left="${this.left?'open':'closed'}" data-right="${this.right?'open':'closed'}">${leftCol}${center}${rightCol}</main>`;
+  const centerEl=this.root.querySelector<HTMLElement>('.board-center');
+  if(centerEl){
+   const mode=groupChanged?'reset':this.scrollRequest;
+   this.scrollRequest='preserve';
+   if(mode==='reset'){
+    centerEl.scrollLeft=0;
+    centerEl.scrollTop=0;
+   }else{
+    centerEl.scrollLeft=prevViewport.left;
+    centerEl.scrollTop=prevViewport.top;
+    if(mode==='selected'){
+     const selectedEl=centerEl.querySelector<HTMLElement>('.graph-ticket.selected,.graph-mmf.selected');
+     if(selectedEl){
+      const graphEl=centerEl.querySelector<HTMLElement>('.graph');
+      const graphW=graphEl?parseFloat(graphEl.style.width)||0:0;
+      const graphH=graphEl?parseFloat(graphEl.style.height)||0:0;
+      const x=Number(selectedEl.dataset.x??0),y=Number(selectedEl.dataset.y??0);
+      const h=selectedEl.classList.contains('graph-mmf')?GRAPH_GEOMETRY.head:GRAPH_GEOMETRY.h;
+      const target=scrollTargetForNode({
+       scrollLeft:centerEl.scrollLeft,
+       scrollTop:centerEl.scrollTop,
+       clientWidth:centerEl.clientWidth||prevViewport.width,
+       clientHeight:centerEl.clientHeight||prevViewport.height,
+       scrollWidth:centerEl.scrollWidth||graphW,
+       scrollHeight:centerEl.scrollHeight||graphH,
+      },{x,y,width:GRAPH_GEOMETRY.card,height:h});
+      centerEl.scrollLeft=target.scrollLeft;
+      centerEl.scrollTop=target.scrollTop;
+     }
+    }
+   }
+  }
+  if(this.hovered&&!groupChanged)applyHoverChain(this.root,this.currentGroup,this.hovered);
+  else this.hovered=undefined;
  }
 }
 
@@ -105,26 +159,6 @@ function board_inbox(inbox:Group,entry:(g:Group)=>string) {
 }
 
 const groupOf=(t:Ticket)=>t.lane?laneGroupNames[t.lane.group]??t.lane.group:copy.未派发;
-function graph(group:Group,mmf:Mmf|undefined,ticket:Ticket|undefined) {
- const nodes:string[]=[],links:string[]=[];
- const x0=G.root+G.gx;let y=0,width=x0+G.card;
- for(const m of group.mmfs){
-  const layer=ticketLayers(m.tickets),rows=new Map<number,number>();
-  const pos=new Map<string,{x:number;y:number}>();
-  for(const t of m.tickets){const l=layer.get(t.id)!,r=rows.get(l)??0;rows.set(l,r+1);pos.set(t.id,{x:x0+l*(G.card+G.gx),y:y+G.head+r*(G.h+G.gy)});}
-  const height=G.head+Math.max(1,...rows.values())*(G.h+G.gy);
-  links.push(`<path data-link="${esc(group.id)}>${esc(m.map)}" d="M${G.root} ${G.h/2} C${G.root+G.gx/2} ${G.h/2},${x0-G.gx/2} ${y+G.head/2-4},${x0} ${y+G.head/2-4}"/>`);
-  nodes.push(`<button class="graph-mmf${m===mmf&&!ticket?' selected':''}" data-board="mmf" data-map="${esc(m.map)}" style="left:${x0}px;top:${y}px">${esc(m.title)}<small>${esc(stageLabel(m.stage))}</small></button>`);
-  for(const t of m.tickets){
-   const p=pos.get(t.id)!;width=Math.max(width,p.x+G.card);
-   for(const d of t.deps){const q=pos.get(d);if(q)links.push(`<path data-map="${esc(m.map)}" data-dep="${esc(d)}>${esc(t.id)}" d="M${q.x+G.card} ${q.y+G.h/2} C${q.x+G.card+G.gx/2} ${q.y+G.h/2},${p.x-G.gx/2} ${p.y+G.h/2},${p.x} ${p.y+G.h/2}"/>`);}
-   nodes.push(`<button class="graph-ticket g-${t.lane?esc(t.lane.group):'none'}${m===mmf&&t===ticket?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" style="left:${p.x}px;top:${p.y}px"><b>${esc(t.id)}</b> ${esc(t.title)}<small>${esc(groupOf(t))}${t.lane?` · ${esc(t.lane.state)}`:''}</small></button>`);
-  }
-  y+=height+G.band;
- }
- const h=Math.max(y,G.h);
- return `<div class="graph" style="width:${width}px;height:${h}px"><svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" aria-hidden="true">${links.join('')}</svg><div class="graph-root" style="left:0;top:0">${esc(group.label)}</div>${nodes.join('')}</div>`;
-}
 
 function detail(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolean) {
  if(!mmf)return `<p class="board-state">${copy.选择一张票查看详情}</p>`;
