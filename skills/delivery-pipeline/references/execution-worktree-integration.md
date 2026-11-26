@@ -46,7 +46,7 @@ checks与 verdict 是执行真相源。
 
 `integrated` 或 `consumed` 后统一，各壳只换第 1 步：
 
-1. 所属壳释放 transport（Herdr：关闭本 lane pane，空 worker tab 保留复用）。
+1. 所属壳释放 transport（Herdr：Driver 的 closeout 执行器关闭本 lane pane）。
 2. 运行 `scripts/closeout.py lane <本 lane registry 文件>`，壳登记的额外 branch 用 `--branch` 传入；
    它删 clean worktree 与 branch 并 readback，dirty 或被 Integration/未结束 lane 占用时不动。
 3. 按首行写回 `closed` 或 `close_pending`（保留坐标，恢复时重跑；已完成的 Integration/consumption

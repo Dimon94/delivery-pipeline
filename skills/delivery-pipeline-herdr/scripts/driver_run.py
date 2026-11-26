@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Herdr 壳的 Driver run 循环（ADR-0026 决策 1、4）。
 
-在 core `driver.run` 上追加 Herdr dispatch 执行器：建 Execution Worktree、按派发模板渲染
-packet、调 `dispatch.py`。缺 `dispatch.evidence`、`transport.herdr.worktrees_root` 或执行失败时交回 coordinator。
+在 core `driver.run` 上追加 Herdr 执行器。dispatch：建 Execution Worktree、按派发模板渲染
+packet、调 `dispatch.py`。closeout：core 收口成功后关闭本 lane 的 pane。缺 `dispatch.evidence`、`transport.herdr.worktrees_root` 或执行失败时交回 coordinator。
 
 命令：
   driver_run.py run <map_dir>                 coordinator 每次唤醒调一次
@@ -71,6 +71,47 @@ def exec_dispatch(map_dir: Path, state, action):
     return {"lane": {"lane_id": lane, "work_item": a["work_item"]}, "persisted": True}
 
 
+# ---------- closeout：core 删树删分支，壳释放本 lane pane ----------
+# 合同：lane 收口后它的 pane 由本执行器关闭，不靠 merger 或 coordinator 自觉。
+# 只关 registry `herdr.pane_id`；pane 上跑的不是 `herdr.agent_name` 时不关，回 close_pending。
+# pane 已不在算已释放（幂等）。检查：driver_run_check.py 的 closeout 段。
+
+def herdr_json(*args: str) -> dict:
+    out = subprocess.run(["herdr", *args], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise RuntimeError(f"herdr {' '.join(args)} 失败：{(out.stderr or out.stdout).strip()}")
+    return json.loads(out.stdout)["result"]
+
+
+def release_pane(row) -> str | None:
+    """关闭 lane 自己的 pane。返回 None 表示已释放，否则返回不能关的原因。"""
+    owner = json.loads(row.get("herdr") or "null")
+    if not owner:
+        return None  # 没经 Herdr 派发（HITL、旧 map）：没有 pane
+    pane, name = owner.get("pane_id"), owner.get("agent_name")
+    if pane not in {p["pane_id"] for p in herdr_json("pane", "list")["panes"]}:
+        return None
+    holders = {a["name"] for a in herdr_json("agent", "list")["agents"] if a["pane_id"] == pane}
+    if holders - {name}:
+        return f"pane {pane} 已换成 {sorted(holders)}，不是 {name}，保留现场"
+    herdr_json("pane", "close", pane)
+    return None
+
+
+def exec_closeout(map_dir: Path, state, action):
+    receipt = driver.exec_closeout(map_dir, state, action)
+    if receipt["result"] != "closed":
+        return receipt
+    try:
+        reason = release_pane(state["lanes"][action["args"]["lane_id"]])
+    except (RuntimeError, json.JSONDecodeError, KeyError) as error:
+        reason = str(error)
+    return {"result": "close_pending", "reason": reason} if reason else receipt
+
+
+EXECUTORS = {"dispatch": exec_dispatch, "closeout": exec_closeout}
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[0] not in ("run", "watch"):
         print(__doc__)
@@ -83,7 +124,7 @@ def main(argv: list[str]) -> int:
                 if len(argv) != 3:
                     raise ValueError('watch 需要一行终态信号')
                 driver.signal(map_dir, argv[2])
-            action = driver.run(map_dir, {'dispatch': exec_dispatch})
+            action = driver.run(map_dir, EXECUTORS)
     except (ValueError, RuntimeError, OSError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False))
         return 1

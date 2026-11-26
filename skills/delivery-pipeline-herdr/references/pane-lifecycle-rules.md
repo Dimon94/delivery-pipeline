@@ -33,7 +33,7 @@ nohup "$SKILL_ROOT/scripts/lane-watch.sh" "$pane_id" "$coordinator_pane_id" "$la
 
 ## 收尾
 
-关闭本 lane pane；空 worker tab 保留供复用；保留 Coordinator Pane 与 Workspace。
+Driver 的 closeout 执行器（`scripts/driver_run.py`）在删树删分支后关闭本 lane pane，coordinator 和 merger 不手工关。保留 Coordinator Pane 与 Workspace。
 
 ## 正式 review 同轮恢复
 

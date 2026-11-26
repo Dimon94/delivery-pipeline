@@ -34,6 +34,47 @@ def git(cwd, *args):
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
 
 
+FAKE_HERDR = '''#!/usr/bin/env python3
+import json, os, sys
+state = json.load(open(os.environ["FAKE_HERDR_STATE"]))
+open(os.environ["FAKE_HERDR_STATE"] + ".log", "a").write(" ".join(sys.argv[1:]) + "\\n")
+kind = sys.argv[1:3]
+if kind == ["pane", "list"]:
+    print(json.dumps({"result": {"panes": [{"pane_id": p} for p in state["panes"]]}}))
+elif kind == ["agent", "list"]:
+    print(json.dumps({"result": {"agents": [{"name": n, "pane_id": p} for p, n in state["agents"].items()]}}))
+elif kind == ["pane", "close"]:
+    print(json.dumps({"result": {}}))
+'''
+
+
+def check_closeout(root: Path):
+    """lane 收口后 Driver 关掉它的 pane；pane 换了 agent 时不关。"""
+    import driver_run
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "herdr").write_text(FAKE_HERDR)
+    (bin_dir / "herdr").chmod(0o755)
+    state_file = root / "herdr.json"
+    os.environ["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
+    os.environ["FAKE_HERDR_STATE"] = str(state_file)
+    driver_run.driver.exec_closeout = lambda *_: {"result": "closed"}
+    row = {"lane_id": "T1", "herdr": json.dumps({"pane_id": "w:p2", "agent_name": "t1"})}
+    state, action = {"lanes": {"T1": row}}, {"args": {"lane_id": "T1"}}
+
+    def closeout(panes, agents):
+        state_file.write_text(json.dumps({"panes": panes, "agents": agents}))
+        log = Path(str(state_file) + ".log")
+        log.unlink(missing_ok=True)
+        receipt = driver_run.EXECUTORS["closeout"](root, state, action)
+        return receipt, "pane close w:p2" in log.read_text()
+
+    assert closeout(["w:p2"], {"w:p2": "t1"}) == ({"result": "closed"}, True)
+    receipt, closed = closeout(["w:p2"], {"w:p2": "other"})
+    assert receipt["result"] == "close_pending" and not closed, receipt
+    assert closeout([], {}) == ({"result": "closed"}, False)  # 已不在：幂等
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -89,6 +130,7 @@ def main():
                              capture_output=True, text=True, env={**env, "DP_DISPATCH": "/nonexistent"})
         action = json.loads(out.stdout)
         assert out.returncode == 10 and action["id"] == "judge:diagnose:T1:1", (out.returncode, out.stdout, out.stderr)
+        check_closeout(root)
     print("driver_run check: pass")
 
 

@@ -24,5 +24,5 @@ monitor 请求才进入本文件。
 ## Fan-in
 
 WAKE 后按 `frontier-lanes.md` §Terminal Fan-in 派发或累积 merger；上表是 merger 的验收依据。
-merger 在 Herdr pane 内运行，自行关闭已收口 lane 的 pane。
+已收口 lane 的 pane 由 Driver closeout 关闭，merger 不关。
 lane blocked 不停止其他 ready work；一次异常只做一次状态检查；未知 active writer fail closed。
