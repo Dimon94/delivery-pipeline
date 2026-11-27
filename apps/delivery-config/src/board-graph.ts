@@ -1,7 +1,7 @@
 import {isFinishedMmf,type Mmf,type Ticket} from './board';
 import {copy,stageLabel,ticketStatusText} from './copy';
 
-export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];inbox?:true};
+export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];inbox?:true;linearStatus?:string;hasLinear?:boolean};
 export type NodeRect={x:number;y:number;width:number;height:number};
 export type ViewportMetrics={scrollLeft:number;scrollTop:number;clientWidth:number;clientHeight:number;scrollWidth?:number;scrollHeight?:number};
 export type DependencyChain={nodes:Set<string>;edges:Set<string>};
@@ -156,6 +156,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  const summaryRight=mmfX+G.mmfW;
  let y=0,width=summaryRight+G.pad;
 
+ const showLinear=Boolean(group.hasLinear)||group.mmfs.some(m=>m.tickets.some(t=>Boolean(t.linear_issue)));
  const totalTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.length,0);
  const doneTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.filter(t=>t.lane?.group==='done').length,0);
 
@@ -256,13 +257,17 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
    const executing=Boolean(t.executing);
    const halted=ticketMatchesHalt(m,t);
    const status=ticketStatusText(t);
+   const displayTitle=t.linear_issue?.title||t.title;
+   const linearStatus=t.linear_issue?.status??'Unknown';
    const groupCls=t.lane?esc(t.lane.group):'pending';
-   const titleAttr=`${t.id} ${t.title} · ${status}`;
-   nodes.push(`<button class="graph-ticket g-${groupCls}${executing?' is-executing':''}${selected?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${p.x}px;top:${p.y}px">${executing?execRing(G.ticketW,G.ticketH):''}<span class="tk-row"><span class="tk-id">${esc(t.id)}</span><span class="tk-t">${esc(t.title)}</span>${halted?'<span class="tk-h">Halt</span>':''}</span><small class="tk-st ${ticketStateClass(t)}${executing?' exec-label':''}">${executing?'<i class="pulse-dot" aria-hidden="true"></i>':''}${esc(status)}</small></button>`);
+   const titleAttr=showLinear?`${t.id} ${displayTitle} · ${status} · Linear ${linearStatus}`:`${t.id} ${t.title} · ${status}`;
+   const linearStatusHtml=showLinear?` · <span class="tk-linear-status">${esc(linearStatus)}</span>`:'';
+   nodes.push(`<button class="graph-ticket g-${groupCls}${executing?' is-executing':''}${selected?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${p.x}px;top:${p.y}px">${executing?execRing(G.ticketW,G.ticketH):''}<span class="tk-row"><span class="tk-id">${esc(t.id)}</span><span class="tk-t">${esc(displayTitle)}</span>${halted?'<span class="tk-h">Halt</span>':''}</span><small class="tk-st ${ticketStateClass(t)}${executing?' exec-label':''}">${executing?'<i class="pulse-dot" aria-hidden="true"></i>':''}${esc(status)}${linearStatusHtml}</small></button>`);
   }
  }
 
- const rootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${group.mmfs.length} MMF · ${doneTickets}/${totalTickets} 票`;
+ const baseRootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${group.mmfs.length} MMF · ${doneTickets}/${totalTickets} 票`;
+ const rootMeta=group.linearStatus?`${baseRootMeta} · ${group.linearStatus}`:baseRootMeta;
  return `<div class="graph" style="width:${width}px;height:${h}px">${bands.join('')}<svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" style="width:${width}px;height:${h}px" aria-hidden="true">${links.join('')}</svg><div class="graph-root" data-x="0" data-y="${rootY}" data-meta="${esc(rootMeta)}" title="${esc(group.label)} · ${esc(rootMeta)}" style="left:0;top:${rootY}px">${esc(group.label)}</div>${nodes.join('')}</div>`;
 }
 

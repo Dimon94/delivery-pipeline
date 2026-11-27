@@ -3,8 +3,10 @@ import {Window} from 'happy-dom';
 import {readFileSync} from 'node:fs';
 import type {BoardSnapshot,Lane,Mmf,Ticket} from './board';
 import {GRAPH_GEOMETRY,applyHoverChain,dependencyChain,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+import {buildBoardGroups} from './board-side';
 
 const sample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board.json',import.meta.url),'utf8')) as BoardSnapshot;
+const probedSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8')) as BoardSnapshot;
 const cssText=readFileSync(new URL('./style.css',import.meta.url),'utf8');
 const win=new Window({width:1440,height:900});
 const doc=win.document;
@@ -343,4 +345,42 @@ test('DD-668 visual-fix-2 项9：MMF 快照 halt 非空且命中该票时卡片�
  expect(tkHRule!.style.getPropertyValue('border-radius')).toBe('4px');
  expect(tkHRule!.style.getPropertyValue('background')||tkHRule!.style.getPropertyValue('background-color')).toContain('var(--red)');
  expect(tkHRule!.style.getPropertyValue('color')).toMatch(/#fff|rgb\(255,\s*255,\s*255\)/i);
+});
+
+test('S2 M1 样本渲染不含候选卡、跨 MMF 边与 Linear 状态标签',()=>{
+ for(const snap of [sample,probedSample]){
+  const groups=buildBoardGroups(snap);
+  for(const group of groups.all){
+   const box=doc.createElement('div');
+   box.innerHTML=renderGraph(group,group.mmfs[0],group.mmfs[0]?.tickets[0]);
+   expect(box.querySelector('.tk-linear-status')).toBeNull();
+   expect(box.querySelector('[data-candidate]')).toBeNull();
+   expect(box.querySelector('[data-mmf-edge]')).toBeNull();
+  }
+ }
+});
+
+test('S6 票 01 显示 Linear 标题与状态，票 02 无 key、票 03 缓存无记录的状态标签均为 Unknown',()=>{
+ const t01=makeTicket('01',{
+  title:'本地 01',
+  stage:'implement',
+  linear:'https://linear.app/demo/issue/DEMO-101',
+  linear_issue:{title:'Linear 票 01',status:'In Review'},
+ });
+ const t02=makeTicket('02',{title:'本地 02',deps:['01'],stage:'implement',linear:null});
+ const t03=makeTicket('03',{title:'本地 03',deps:['02'],stage:'implement',linear:'https://linear.app/demo/issue/DEMO-103'});
+ const mmf=makeMmf([t01,t02,t03]);
+ const group:GraphGroup={id:'demo|DEMO-E',label:'DEMO-E · Epic E 标题',url:null,mmfs:[mmf],linearStatus:'In Progress',hasLinear:true};
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph(group,mmf,t01);
+
+ const card=(id:string)=>box.querySelector<HTMLElement>(`.graph-ticket[data-ticket="${id}"]`)!;
+ expect(card('01').querySelector('.tk-t')!.textContent).toBe('Linear 票 01');
+ expect(card('01').querySelector('.tk-linear-status')!.textContent).toBe('In Review');
+ expect(card('02').querySelector('.tk-t')!.textContent).toBe('本地 02');
+ expect(card('02').querySelector('.tk-linear-status')!.textContent).toBe('Unknown');
+ expect(card('03').querySelector('.tk-t')!.textContent).toBe('本地 03');
+ expect(card('03').querySelector('.tk-linear-status')!.textContent).toBe('Unknown');
+ expect(box.querySelector('.graph-root')!.textContent).toBe('DEMO-E · Epic E 标题');
+ expect(box.querySelector('.graph-root')!.getAttribute('data-meta')).toContain('In Progress');
 });

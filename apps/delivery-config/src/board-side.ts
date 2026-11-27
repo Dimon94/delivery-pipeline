@@ -42,6 +42,7 @@ export type BoardGroups={
 };
 
 export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
+ const hasLinear=Boolean(board.linear?.fetched_at);
  const repos:SideRepoSection[]=[];
  const ended:SideEpicEntry[]=[];
  for(const r of board.repos){
@@ -53,14 +54,28 @@ export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
     epic:e,
     ended:e.ended,
     hasRunning:epicHasRunningTicket(e),
-    group:{id:epicGroupId(r.name,e),label,url:e.url,mmfs:e.mmfs},
+    group:{
+     id:epicGroupId(r.name,e),
+     label,
+     url:e.url,
+     mmfs:e.mmfs,
+     ...(e.linear_status?{linearStatus:e.linear_status}:{}),
+     ...(hasLinear?{hasLinear:true}:{}),
+    },
    };
    if(e.ended)ended.push(entry);
    else activeEpics.push(entry);
   }
   if(activeEpics.length)repos.push({name:r.name,epics:activeEpics});
  }
- const inboxGroup:GraphGroup={id:INBOX_GROUP_ID,label:copy.Inbox,url:null,mmfs:board.inbox,inbox:true};
+ const inboxGroup:GraphGroup={
+  id:INBOX_GROUP_ID,
+  label:copy.Inbox,
+  url:null,
+  mmfs:board.inbox,
+  inbox:true,
+  ...(hasLinear?{hasLinear:true}:{}),
+ };
  const errors=Array.isArray(board.errors)?board.errors:[];
  const all:GraphGroup[]=[
   ...repos.flatMap(r=>r.epics.map(e=>e.group)),
@@ -84,7 +99,8 @@ function renderEpicItem(entry:SideEpicEntry,selectedGroupId:string|undefined,sel
  const problemCount=allTickets.filter(t=>t.lane?.group==='problem').length;
  const activeCount=allTickets.filter(t=>t.lane?.group==='active'||t.lane?.group==='review').length;
  const pct=allTickets.length?Math.round((doneCount/allTickets.length)*100):0;
- const flagsHtml=(problemCount?`<em class="epic-flag problem">${problemCount} 需处理</em>`:'')+(activeCount?`<em class="epic-flag">${activeCount} 进行中</em>`:'');
+ const linearStatusHtml=entry.epic.linear_status?`<em class="epic-flag epic-linear-status">${esc(entry.epic.linear_status)}</em>`:'';
+ const flagsHtml=linearStatusHtml+(problemCount?`<em class="epic-flag problem">${problemCount} 需处理</em>`:'')+(activeCount?`<em class="epic-flag">${activeCount} 进行中</em>`:'');
  const mmfLink=(m:(typeof g.mmfs)[number])=>{
   const mmfSelected=selected&&m.map===selectedMap;
   const stage=m.archived_at?copy.已归档:stageLabel(m.stage);

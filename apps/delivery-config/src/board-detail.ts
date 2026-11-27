@@ -23,6 +23,7 @@ export interface RightColumnParams {
  inbox:boolean;
  inboxRepo?:string;
  inboxSpec?:boolean;
+ hasLinear?:boolean;
  open:boolean;
 }
 
@@ -85,12 +86,15 @@ function renderRelSection(title:string,mmf:Mmf,tickets:Ticket[]):string {
  return `<div class="detail-rel"><div class="muted small">${esc(title)}</div>${body}</div>`;
 }
 
-function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolean,inboxRepo:string|undefined,showSteps:boolean):string {
+function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolean,inboxRepo:string|undefined,showSteps:boolean,hasLinear?:boolean):string {
  if(!mmf)return `<p class="board-state detail-empty">${copy.选择一张票查看详情}</p>`;
  if(ticket){
   const lane=ticket.lane;
   const status=ticketStatusText(ticket);
   const statusHtml=ticket.executing?`<b class="exec-label">${esc(status)}</b>`:esc(status);
+  const showLinear=Boolean(hasLinear)||Boolean(ticket.linear_issue)||mmf.tickets.some(t=>Boolean(t.linear_issue));
+  const displayTitle=ticket.linear_issue?.title||ticket.title;
+  const linearStatus=ticket.linear_issue?.status??'Unknown';
   const bad=lane?.group==='problem';
   const waiting=!lane;
   const note=lane?lane.state:copy.未派发;
@@ -106,6 +110,7 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
   const branchText=lane?.branch?.trim()?lane.branch:'Unknown';
   const coreHtml=[
    kvRow(copy.状态,`${statusHtml} <span class="muted small"${updatedTitle}>· ${esc(updatedText)}</span>`),
+   ...(showLinear?[kvRow('Linear',`<span class="detail-linear-status">${esc(linearStatus)}</span>`)]:[]),
    kvRow('Agent',esc(agentText)),
    kvRow(copy.分支,esc(branchText),true),
   ].join('');
@@ -121,9 +126,10 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
    renderLinkRow(mmf.links.merge_review,copy.MergeReview页),
    renderLinkRow(ticket.linear,copy.LinearIssue),
   ].join('');
-  return `<h3 class="detail-title">${esc(ticket.title)}</h3>${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details>${renderRelSection(copy.上游,mmf,ups)}${renderRelSection(copy.下游,mmf,downs)}<div class="detail-links">${linksHtml}</div>`;
+  return `<h3 class="detail-title">${esc(displayTitle)}</h3>${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details>${renderRelSection(copy.上游,mmf,ups)}${renderRelSection(copy.下游,mmf,downs)}<div class="detail-links">${linksHtml}</div>`;
  }
  const inboxSub=inbox?`<p class="detail-sub">${inboxRepo?`${esc(inboxRepo)} · `:''}${copy.待归属}</p>`:'';
+ const attributionSub=!inbox&&mmf.attribution_source==='linear'?'<p class="detail-sub detail-attribution">归属来自 Linear</p>':'';
  const directLane=mmf.direct_lanes.find(l=>l.state==='running'&&l.live==='working')
   ??mmf.direct_lanes.find(l=>l.group==='problem')
   ??mmf.direct_lanes.find(l=>l.group==='review')
@@ -162,15 +168,15 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
   renderLinkRow(mmf.links.merge_review,copy.MergeReview页),
   renderLinkRow(mmf.links.linear,copy.LinearIssue),
  ].join('');
- return `<h3 class="detail-title">${esc(mmf.title)}</h3>${inboxSub}${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details><div class="detail-links">${linksHtml}</div>`;
+ return `<h3 class="detail-title">${esc(mmf.title)}</h3>${inboxSub}${attributionSub}${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details><div class="detail-links">${linksHtml}</div>`;
 }
 
 export function renderRightColumn(params:RightColumnParams):string {
- const {epicKey,mmf,ticket,inbox,inboxRepo,inboxSpec,open}=params;
+ const {epicKey,mmf,ticket,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
  const showSteps=!inbox||inboxSpec===true;
  const groupCls=ticket?(ticket.lane?ticket.lane.group:'pending'):undefined;
  const pillHtml=ticket&&groupCls
   ?`<span class="board-pill g-${esc(groupCls)}">${esc(laneGroupNames[groupCls]??copy.未派发)}</span>`
   :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
- return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps)}</div></aside>`;
+ return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps,hasLinear)}</div></aside>`;
 }

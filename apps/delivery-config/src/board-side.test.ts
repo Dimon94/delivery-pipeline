@@ -6,6 +6,7 @@ import {buildBoardGroups,epicHasRunningTicket,inboxItemExecuting,renderLeftColum
 
 const boardSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board.json',import.meta.url),'utf8')) as BoardSnapshot;
 const probedSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8')) as BoardSnapshot;
+const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
 
 function mount(html:string) {
  const win=new Window({width:1440,height:900});
@@ -248,4 +249,35 @@ test('DD-668 visual-fix-2 项1：左栏 Inbox 位于顶部第一组、默认折�
  expect(openToggle.getAttribute('aria-expanded')).toBe('true');
  expect(openToggle.textContent).toContain('▾');
  expect(docOpen.querySelector<HTMLElement>('.board-inbox .inbox-list')!.hidden).toBe(false);
+});
+
+test('S2/S3 M1 样本左栏不显示 Linear 状态标签；带成功 Linear 缓存的 Epic 显示 Linear 标题与状态',()=>{
+ for(const snap of [boardSample,probedSample]){
+  const groups=buildBoardGroups(snap);
+  expect(groups.all.every(g=>!g.hasLinear)).toBe(true);
+  const doc=mount(renderLeftColumn({
+   groups,
+   selectedGroupId:groups.all[0]?.id,
+   selectedMap:groups.all[0]?.mmfs[0]?.map,
+   open:true,
+   endedOpen:true,
+   expandedEpics:new Map(),
+  }));
+  expect(doc.querySelector('.epic-linear-status')).toBeNull();
+ }
+
+ const linearGroups=buildBoardGroups(linearSample);
+ expect(linearGroups.repos[0]!.epics[0]!.group.label).toBe('DEMO-1 · 交付看板');
+ expect(linearGroups.repos[0]!.epics[0]!.group.hasLinear).toBe(true);
+ expect(linearGroups.repos[0]!.epics[0]!.group.linearStatus).toBe('In Progress');
+ const linearDoc=mount(renderLeftColumn({
+  groups:linearGroups,
+  selectedGroupId:linearGroups.all[0]!.id,
+  selectedMap:linearGroups.all[0]!.mmfs[0]!.map,
+  open:true,
+  endedOpen:false,
+  expandedEpics:new Map(),
+ }));
+ expect(linearDoc.querySelector('.board-entry-label')!.textContent).toBe('DEMO-1 · 交付看板');
+ expect(linearDoc.querySelector('.epic-linear-status')!.textContent).toBe('In Progress');
 });

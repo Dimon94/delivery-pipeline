@@ -34,7 +34,7 @@
 
 `board-linear.json` 是已接上 Linear 的 schema 1 快照样本，覆盖所有新增可选字段、三类候选、两类边及有无 Linear 信息的票。`board-linear-failed.json` 只有顶层 `linear` 失败摘要和本机数据。M1 的 `board.json`、`probed.json` 仍使用原形状。三层测试可通过 `BOARD_M1_SNAPSHOT` 读取本机留存的 M1 真实快照。
 
-`board_snapshot.py --lanes-root <dir> --refresh-linear` 通过现有 Linear 通道读取 Epic、Spec 和 Inbox Spec 的父项，按 Spec 批量读取实施票。命令原子写入 `board-linear.json`，并输出更新摘要。部分失败时保留失败条目及其旧子项。全部失败或超过 120 秒时保留上次获取时间与全部条目。打包后的命令位于 `Contents/Resources/board_snapshot.py`。
+`board_snapshot.py --lanes-root <dir> --refresh-linear` 通过现有 Linear 通道读取 Epic、Spec 和 Inbox Spec 的父项，按 Spec 批量读取实施票。命令原子写入 `board-linear.json`，并输出更新摘要。部分失败时保留失败条目及其旧子项。全部失败或超过 120 秒时保留上次获取时间与全部条目。`board_snapshot.py --lanes-root <dir>` 存在合法缓存时合并顶层 `linear`、Epic 标题与 `linear_status`、票 `linear_issue` 及无本地 epic 时的 Linear 归属（标记 `attribution_source: "linear"`），无缓存时输出与 M1 逐字段相同。打包后的命令位于 `Contents/Resources/board_snapshot.py`。
 
 | 场景 | 验收票及入口 |
 | --- | --- |

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from functools import cache
@@ -17,7 +17,7 @@ from runpy import run_path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from time import monotonic
 from types import UnionType
 from typing import Callable, Literal, TypedDict, cast, get_args, get_origin, get_type_hints, is_typeddict
@@ -466,7 +466,18 @@ def _apply_live_probes(maps: list[tuple[Mmf, dict[str, dict]]]) -> list[ProbeRes
     return results
 
 
-def _read_snapshot(lanes_root: str) -> tuple[BoardSnapshot, set[str], set[str]]:
+def _load_linear_cache(root: Path, errors: list[BoardError]) -> LinearCache | None:
+    try:
+        loaded = json.loads((root / LINEAR_CACHE).read_text(encoding="utf-8"))
+        return validate_linear_cache(loaded)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        errors.append({"map": LINEAR_CACHE, "reason": str(error)})
+        return None
+
+
+def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[BoardSnapshot, set[str], set[str]]:
     root = Path(lanes_root).expanduser().absolute()
     errors: list[BoardError] = []
     archives: dict[str, str] = {}
@@ -478,6 +489,8 @@ def _read_snapshot(lanes_root: str) -> tuple[BoardSnapshot, set[str], set[str]]:
     except (OSError, ValueError) as error:
         errors.append({"map": SPEC_ARCHIVES, "reason": str(error)})
         archives = {}
+    linear_cache = _load_linear_cache(root, errors) if apply_linear else None
+    linear_issues = linear_cache["issues"] if linear_cache is not None else {}
     inbox: list[InboxItem] = []
     spec_keys: set[str] = set()
     inbox_spec_keys: set[str] = set()
@@ -493,21 +506,33 @@ def _read_snapshot(lanes_root: str) -> tuple[BoardSnapshot, set[str], set[str]]:
         source = mrow.get("source_worktree_path")
         repo = (repo_at(source) if source else None) or _text(plan.get("repo")) or "Unknown"
         ref = _text(mrow.get("epic")) or _text(plan.get("epic"))
-        key = issue_status.issue_key(ref)
+        local_key = issue_status.issue_key(ref)
+        key = local_key
         spec = _spec_ref(data or {}, plan, key)
         mmf = _mmf(path, name, data, lanes, _text(mrow.get("work_item")), spec)
         _validate(mmf, Mmf, "$.mmf")
-        if spec_key := issue_status.issue_key(spec):
+        spec_key = issue_status.issue_key(spec)
+        if spec_key:
             spec_keys.add(spec_key)
-            if not key:
+            if not local_key:
                 inbox_spec_keys.add(spec_key)
+        if linear_cache is not None:
+            for ticket in mmf["tickets"]:
+                ticket_key = issue_status.issue_key(ticket["linear"]) or issue_status.issue_key(ticket["id"])
+                if ticket_key and (ticket_issue := linear_issues.get(ticket_key)):
+                    ticket["linear_issue"] = {"title": ticket_issue["title"], "status": ticket_issue["status"]}
+        if not key and spec_key and linear_cache is not None:
+            parent_key = issue_status.issue_key((linear_issues.get(spec_key) or {}).get("parent"))
+            if parent_key:
+                key = parent_key
+                mmf["attribution_source"] = "linear"
         if not key or not spec:
             inbox_item: InboxItem = {**mmf, "repo": repo, "attribution": "unassigned",
                                      "kind": "spec" if spec else "item"}
             inbox.append(inbox_item)
             mmf = inbox_item
         else:
-            if archived_at := archives.get(issue_status.issue_key(spec) or ""):
+            if archived_at := archives.get(spec_key or ""):
                 mmf["archived_at"] = archived_at
             base = _issue_base(ref) or _issue_base(mmf["links"]["linear"])
             url = base + key if base else None
@@ -562,11 +587,29 @@ def _read_snapshot(lanes_root: str) -> tuple[BoardSnapshot, set[str], set[str]]:
             add(root, name, None, lanes)
         except (OSError, ValueError) as error:
             errors.append({"map": name, "reason": str(error)})
+    if linear_cache is not None:
+        for epics in epics_by_repo.values():
+            for epic in epics.values():
+                if epic_issue := linear_issues.get(epic["key"]):
+                    if title := _text(epic_issue.get("title")):
+                        epic["title"] = title
+                    if status := _text(epic_issue.get("status")):
+                        epic["linear_status"] = status
     repos = [{"name": name, "epics": sorted(epics.values(), key=lambda epic: epic["key"])}
              for name, epics in sorted(epics_by_repo.items())]
-    snapshot = validate_snapshot({"schema": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
-                                  "lanes_root": lanes_root, "repos": repos, "inbox": inbox,
-                                  "probes": _apply_live_probes(maps), "errors": errors})
+    raw_snapshot: dict[str, object] = {
+        "schema": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
+        "lanes_root": lanes_root, "repos": repos, "inbox": inbox,
+        "probes": _apply_live_probes(maps), "errors": errors,
+    }
+    if linear_cache is not None:
+        raw_snapshot["linear"] = {
+            "status": linear_cache["status"],
+            "fetched_at": linear_cache["fetched_at"],
+            "attempted_at": linear_cache["attempted_at"],
+            "reason": linear_cache["reason"],
+        }
+    snapshot = validate_snapshot(raw_snapshot)
     return snapshot, spec_keys, inbox_spec_keys
 
 
@@ -631,68 +674,102 @@ class _LinearDeadline(TimeoutError):
 
 
 def _collect_linear(root: Path, call: Callable, at: str) -> tuple[dict[str, LinearIssue], dict[str, str]]:
-    board, specs, inbox = _read_snapshot(str(root))
+    board, specs, inbox = _read_snapshot(str(root), apply_linear=False)
     epics = {epic["key"] for repo in board["repos"] for epic in repo["epics"]}
     details: dict[str, dict] = {}
     aliases: dict[str, str] = {}
     parents: dict[str, str] = {}
     issues: dict[str, LinearIssue] = {}
     failed: dict[str, str] = {}
+    claimed_groups: set[str] = set()
+    lock = Lock()
     linear_errors = (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.SubprocessError)
 
     def lookup(ref):
-        if ref in aliases:
-            return aliases[ref]
+        with lock:
+            if ref in aliases:
+                return aliases[ref]
         raw = call("get_issue", {"id": ref, "fields": [*LINEAR_FIELDS, "uuid", "description"]})
         key = issue_status.issue_key(raw["id"])
         if key is None or issue_status.issue_key(ref) not in (None, key):
             raise ValueError(f"{ref} issue 回读不符")
-        details[key] = raw
-        aliases.update({ref: key, key: key})
-        if uuid := _text(raw.get("uuid")):
-            aliases[uuid] = key
+        with lock:
+            details[key] = raw
+            aliases.update({ref: key, key: key})
+            if uuid := _text(raw.get("uuid")):
+                aliases[uuid] = key
         return key
 
     def record(ref, error):
         if isinstance(error, _LinearDeadline):
             raise error
-        failed[ref] = str(error) or type(error).__name__
+        with lock:
+            failed[ref] = str(error) or type(error).__name__
 
     def read_group(ref, *, epic):
-        key = aliases.get(ref, ref)
-        if key in failed or (key in issues and issues[key]["children"] is not None):
-            return
+        with lock:
+            key = aliases.get(ref, ref)
+            if key in failed or key in claimed_groups or (key in issues and issues[key]["children"] is not None):
+                return
+            claimed_groups.add(key)
         try:
             key = lookup(ref)
             rows = _linear_rows(call, key)
-            issues[key] = _linear_fact(details[key], None, list(rows), at)
+            with lock:
+                raw_detail = details[key]
+            fact = _linear_fact(raw_detail, None, list(rows), at)
         except linear_errors as error:
             record(key, error)
             return
-        if epic:
-            parents.update(dict.fromkeys(rows, key))
-            specs.update(rows)
-            return
+        with lock:
+            issues[key] = fact
+            if epic:
+                parents.update(dict.fromkeys(rows, key))
+                specs.update(rows)
+                return
         for child, raw in rows.items():
-            if child in issues and issues[child]["children"] is not None:
-                continue
+            with lock:
+                if child in issues and issues[child]["children"] is not None:
+                    continue
             try:
-                issues[child] = _linear_fact(raw, key, None, at)
+                child_fact = _linear_fact(raw, key, None, at)
             except linear_errors as error:
                 record(child, error)
+            else:
+                with lock:
+                    if not (child in issues and issues[child]["children"] is not None):
+                        issues[child] = child_fact
 
-    for key in sorted(epics):
-        read_group(key, epic=True)
-    for key in sorted(inbox):
+    def run_batch(fn, items):
+        if not items:
+            return
+        pool = ThreadPoolExecutor(max_workers=min(6, len(items)))
         try:
-            raw = details[lookup(key)]
+            futures = [pool.submit(fn, item) for item in items]
+            for fut in futures:
+                fut.result()
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    run_batch(lambda k: read_group(k, epic=True), sorted(epics))
+
+    discovered_parents: list[str] = []
+
+    def inspect_inbox(key):
+        try:
+            resolved = lookup(key)
+            with lock:
+                raw = details[resolved]
         except linear_errors as error:
             record(key, error)
-            continue
+            return
         if parent := _text(raw.get("parentId")):
-            read_group(parent, epic=True)
-    for key in sorted(specs):
-        read_group(key, epic=False)
+            with lock:
+                discovered_parents.append(parent)
+
+    run_batch(inspect_inbox, sorted(inbox))
+    run_batch(lambda p: read_group(p, epic=True), sorted(set(discovered_parents)))
+    run_batch(lambda k: read_group(k, epic=False), sorted(specs))
     for key, raw in details.items():
         if key in issues and issues[key]["children"] is not None:
             ref = _text(raw.get("parentId"))
@@ -883,6 +960,18 @@ runpy.run_path(sys.argv[0], run_name='__main__')
             del snapshot["generated_at"]
         snapshot, repeated = snapshots
         assert snapshot == repeated and snapshot["lanes_root"] == str(root)  # S2
+        assert "linear" not in snapshot  # S1：无缓存不含新字段
+        for repo in snapshot["repos"]:
+            for e in repo["epics"]:
+                assert not ({"linear_status", "candidates", "mmf_edges"} & e.keys())
+                for m in e["mmfs"]:
+                    assert not ({"mmf_id", "attribution_source"} & m.keys())
+                    for t in m["tickets"]:
+                        assert "linear_issue" not in t
+        for m in snapshot["inbox"]:
+            assert not ({"mmf_id", "attribution_source"} & m.keys())
+            for t in m["tickets"]:
+                assert "linear_issue" not in t
         assert [(e["map"], bool(e["reason"])) for e in snapshot["errors"]] == [("broken", True)]  # S3
         assert "old-world" not in outputs[0]  # S7
 
@@ -1111,6 +1200,134 @@ def _test_linear_refresh() -> None:
             release.set()
 
 
+def _test_linear_merge() -> None:
+    with TemporaryDirectory() as temp:
+        root = Path(temp) / "lanes"
+        source = Path(temp) / "source-repo"
+        subprocess.run(["git", "init", "-q", str(source)], check=True)
+        url = "https://linear.app/demo/issue/"
+
+        def write_map(name: str, spec_key: str, *, epic_key: str | None = None,
+                      repo: str | None = "plan-repo", source_path: Path | None = None,
+                      tickets: list[dict] | None = None, rows: list[dict] | None = None) -> None:
+            folder = root / name
+            folder.mkdir(parents=True, exist_ok=True)
+            plan: dict[str, object] = {"mmf": f"MMF {name}", "tickets": tickets or []}
+            if repo:
+                plan["repo"] = repo
+            if epic_key:
+                plan["epic"] = url + epic_key
+            data = {"grant": {"plan_sha": "fixture"}, "published": "fixture",
+                    "gates": {"spec": url + spec_key}, "plan": plan}
+            (folder / "driver.json").write_text(json.dumps(data), encoding="utf-8")
+            map_row_data: dict[str, object] = {"lane_id": f"map-{name}", "role": "map", "work_item": spec_key}
+            if epic_key:
+                map_row_data["epic"] = url + epic_key
+            if source_path:
+                map_row_data["source_worktree_path"] = str(source_path)
+            all_rows = [map_row_data, *(rows or [])]
+            (folder / "registry.md").write_text("".join(
+                "<!-- wayfinder-lane-registry:v2 -->\n```yaml\n"
+                + "".join(f"{k}: {v}\n" for k, v in row.items()) + "```\n"
+                for row in all_rows), encoding="utf-8")
+
+        # S6 + S7 夹具：
+        # map A 本地无 epic、Spec 父项为 DEMO-1，仓库按 source_worktree_path 推导为 source-repo；
+        # map B 本地 epic 为 DEMO-2、Linear 父项为 DEMO-1；
+        # map C 本地无 epic 且无父项。
+        write_map("map-a", "DEMO-20", source_path=source, repo="ignored-repo", tickets=[
+            {"id": "01", "title": "本地 01", "url": url + "DEMO-101"},
+            {"id": "02", "title": "本地 02", "deps": ["01"]},
+            {"id": "03", "title": "本地 03", "deps": ["02"], "url": url + "DEMO-103"},
+        ])
+        write_map("map-b", "DEMO-21", epic_key="DEMO-2", repo="plan-repo", tickets=[
+            {"id": "01", "title": "B 票 01"},
+        ])
+        write_map("map-c", "DEMO-22", repo="plan-repo", tickets=[
+            {"id": "01", "title": "C 票 01"},
+        ])
+
+        without_cache = read_snapshot(str(root))
+        assert "linear" not in without_cache
+        base_a = next(m for m in without_cache["inbox"] if m["map"] == "map-a")
+        base_tickets = {t["id"]: (t["stage"], t["executing"], list(t["deps"])) for t in base_a["tickets"]}
+        assert base_tickets == {
+            "01": ("implement", False, []),
+            "02": ("implement", False, ["01"]),
+            "03": ("implement", False, ["02"]),
+        }
+
+        fetched_at = "2026-11-27T04:00:00Z"
+        cache_data: LinearCache = {
+            "version": 1,
+            "status": "ok",
+            "fetched_at": fetched_at,
+            "attempted_at": fetched_at,
+            "reason": None,
+            "issues": {
+                "DEMO-1": {"title": "Epic E 标题", "status": "In Progress", "status_type": "started",
+                           "parent": None, "description": None, "children": ["DEMO-20", "DEMO-21"], "fetched_at": fetched_at},
+                "DEMO-2": {"title": "Epic F 标题", "status": "Todo", "status_type": "unstarted",
+                           "parent": None, "description": None, "children": [], "fetched_at": fetched_at},
+                "DEMO-20": {"title": "Spec A", "status": "In Progress", "status_type": "started",
+                            "parent": "DEMO-1", "description": None, "children": ["DEMO-101"], "fetched_at": fetched_at},
+                "DEMO-21": {"title": "Spec B", "status": "In Progress", "status_type": "started",
+                            "parent": "DEMO-1", "description": None, "children": [], "fetched_at": fetched_at},
+                "DEMO-22": {"title": "Spec C", "status": "Todo", "status_type": "unstarted",
+                            "parent": None, "description": None, "children": [], "fetched_at": fetched_at},
+                "DEMO-101": {"title": "Linear 票 01", "status": "In Review", "status_type": "started",
+                             "parent": "DEMO-20", "description": None, "children": None, "fetched_at": fetched_at},
+            },
+            "failed": {},
+        }
+        driver.write_json(root / LINEAR_CACHE, cache_data)
+
+        merged = read_snapshot(str(root))
+        # S3：顶层 linear 与 Epic 标题/状态
+        assert merged["linear"] == {"status": "ok", "fetched_at": fetched_at, "attempted_at": fetched_at, "reason": None}
+        repos = {r["name"]: {e["key"]: e for e in r["epics"]} for r in merged["repos"]}
+        assert "source-repo" in repos and "DEMO-1" in repos["source-repo"]
+        epic_e = repos["source-repo"]["DEMO-1"]
+        assert epic_e["title"] == "Epic E 标题" and epic_e["linear_status"] == "In Progress"
+        assert epic_e["url"] == url + "DEMO-1"
+        epic_f = repos["plan-repo"]["DEMO-2"]
+        assert epic_f["title"] == "Epic F 标题" and epic_f["linear_status"] == "Todo"
+
+        # S7：A 移到 E 下带 attribution_source: "linear"，B 留在 F，C 仍在 Inbox
+        [mmf_a] = epic_e["mmfs"]
+        assert mmf_a["map"] == "map-a" and mmf_a["attribution_source"] == "linear"
+        [mmf_b] = epic_f["mmfs"]
+        assert mmf_b["map"] == "map-b" and "attribution_source" not in mmf_b
+        assert [m["map"] for m in merged["inbox"]] == ["map-c"]
+        assert "attribution_source" not in merged["inbox"][0]
+
+        # S6：01 带 linear_issue 且 stage 仍为 implement，02/03 无 linear_issue，三张票 stage/executing/deps 不变
+        by_id = {t["id"]: t for t in mmf_a["tickets"]}
+        assert by_id["01"]["linear_issue"] == {"title": "Linear 票 01", "status": "In Review"}
+        assert by_id["01"]["title"] == "本地 01"
+        assert "linear_issue" not in by_id["02"] and "linear_issue" not in by_id["03"]
+        merged_tickets = {t["id"]: (t["stage"], t["executing"], list(t["deps"])) for t in mmf_a["tickets"]}
+        assert merged_tickets == base_tickets
+
+        # 失败缓存无条目时仅输出顶层 linear，不改 Epic 标题与归属
+        failed_cache: LinearCache = {
+            "version": 1, "status": "failed", "fetched_at": None,
+            "attempted_at": fetched_at, "reason": "Linear 暂不可用", "issues": {}, "failed": {},
+        }
+        driver.write_json(root / LINEAR_CACHE, failed_cache)
+        degraded = read_snapshot(str(root))
+        assert degraded["linear"]["status"] == "failed" and degraded["linear"]["fetched_at"] is None
+        assert {m["map"] for m in degraded["inbox"]} == {"map-a", "map-c"}
+        degraded_f = next(e for r in degraded["repos"] for e in r["epics"] if e["key"] == "DEMO-2")
+        assert degraded_f["title"] == "Unknown" and "linear_status" not in degraded_f
+
+        # 损坏缓存记 errors，不中断快照
+        (root / LINEAR_CACHE).write_text("{bad json", encoding="utf-8")
+        broken = read_snapshot(str(root))
+        assert "linear" not in broken
+        assert any(e["map"] == LINEAR_CACHE for e in broken["errors"])
+
+
 def self_test() -> None:
     for path in sorted(SAMPLES.glob("*.json")):
         if path.name.startswith("linear-cache-"):
@@ -1142,6 +1359,7 @@ def self_test() -> None:
 
     _test_local_snapshot()
     _test_linear_refresh()
+    _test_linear_merge()
     print("board_snapshot self-test ok")
 
 

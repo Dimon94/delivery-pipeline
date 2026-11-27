@@ -320,3 +320,41 @@ test('SP-09/SP-11：blocked 当前步骤保持蓝色外环与「收起」文案�
  expect(more.textContent).toContain('blocked');
  expect(more.textContent).toContain('/tmp/fixture-mmf');
 });
+
+test('S2/S6/S7 M1 样本右栏无 Linear 状态与归属说明；有 Linear 缓存时票显示 Linear 标题/状态或 Unknown，线性归属 MMF 显示归属来自 Linear',()=>{
+ // S2：M1 样本不出现 Linear 状态与归属说明
+ const m1Mmf=boardSample.repos[0]!.epics[0]!.mmfs[0]!;
+ const m1TicketDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf:m1Mmf,ticket:m1Mmf.tickets[0],inbox:false,open:true}));
+ expect(m1TicketDoc.querySelector('.detail-linear-status')).toBeNull();
+ const m1MmfDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf:m1Mmf,inbox:false,open:true}));
+ expect(m1MmfDoc.querySelector('.detail-attribution')).toBeNull();
+ expect(m1MmfDoc.body.textContent).not.toContain('归属来自 Linear');
+
+ // S6 + S7：带 Linear 归属的 MMF 与三张票
+ const linearMmf={
+  ...structuredClone(m1Mmf),
+  map:'map-a',
+  title:'MMF A',
+  attribution_source:'linear' as const,
+  tickets:[
+   {id:'01',title:'本地 01',deps:[],stage:'implement' as const,lane:null,executing:false,linear:'https://linear.app/demo/issue/DEMO-101',linear_issue:{title:'Linear 票 01',status:'In Review'}},
+   {id:'02',title:'本地 02',deps:['01'],stage:'implement' as const,lane:null,executing:false,linear:null},
+   {id:'03',title:'本地 03',deps:['02'],stage:'implement' as const,lane:null,executing:false,linear:'https://linear.app/demo/issue/DEMO-103'},
+  ],
+ };
+
+ const docA=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,inbox:false,open:true}));
+ expect(docA.querySelector('.detail-attribution')!.textContent).toBe('归属来自 Linear');
+
+ const doc01=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,ticket:linearMmf.tickets[0],inbox:false,open:true}));
+ expect(doc01.querySelector('.detail-title')!.textContent).toBe('Linear 票 01');
+ expect(doc01.querySelector('.detail-linear-status')!.textContent).toBe('In Review');
+
+ const doc02=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,ticket:linearMmf.tickets[1],inbox:false,open:true}));
+ expect(doc02.querySelector('.detail-title')!.textContent).toBe('本地 02');
+ expect(doc02.querySelector('.detail-linear-status')!.textContent).toBe('Unknown');
+
+ const doc03=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,ticket:linearMmf.tickets[2],inbox:false,open:true}));
+ expect(doc03.querySelector('.detail-title')!.textContent).toBe('本地 03');
+ expect(doc03.querySelector('.detail-linear-status')!.textContent).toBe('Unknown');
+});
