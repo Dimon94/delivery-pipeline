@@ -140,8 +140,103 @@ export const copy = {
   "请参考上次修改重新选择并查看差异": "请参考上次修改，重新选择并查看差异。",
   "当前设置与待保存的设置一致": "当前设置与待保存的设置一致。",
   "当前设置仍无法读取修改还在请让AI助手处理后再次检查": "当前设置仍无法读取，修改还在。请让 AI 助手处理后再次检查。",
-  "检查失败修改还在请处理环境后再次检查": "检查失败，修改还在，请处理环境后再次检查。"
+  "检查失败修改还在请处理环境后再次检查": "检查失败，修改还在，请处理环境后再次检查。",
+  "看板": "看板",
+  "Inbox": "Inbox",
+  "条目": "条目",
+  "零散票": "零散票",
+  "展开零散票": "展开查看零散票",
+  "收起零散票": "收起零散票",
+  "设置": "设置",
+  "返回看板": "← 返回看板",
+  "读取中": "读取中…",
+  "读取失败": "读取失败",
+  "重试": "重试",
+  "收起左栏": "收起左栏",
+  "展开左栏": "展开左栏",
+  "收起右栏": "收起右栏",
+  "展开右栏": "展开右栏",
+  "仓库": "仓库",
+  "已结束": "已结束",
+  "已归档": "已归档",
+  "展开已结束": "展开已结束的 MMF",
+  "收起已结束": "收起已结束的 MMF",
+  "待归属": "待归属",
+  "未派发": "未派发",
+  "等待人工": "等待人工",
+  "执行中": "执行中",
+  "现场": "现场",
+  "没有进行中的工作": "本机还没有可显示的 Epic 或 Inbox 条目",
+  "选择一张票查看详情": "在图上选择一张票或 MMF 查看详情",
+  "交付阶段": "交付阶段",
+  "执行状态": "执行状态",
+  "依赖": "依赖",
+  "无": "无",
+  "分支": "分支",
+  "打开Linear": "打开 Linear",
+  "打开计划审查页": "打开 Plan Review 页",
+  "打开合并审查页": "打开 Merge Review 页",
+  "看板快照格式不对": "看板快照格式不对，请检查随附的看板工具",
+  "更多现场信息": "更多现场信息",
+  "来源仓库": "来源仓库",
+  "角色": "角色",
+  "工作目录": "工作目录",
+  "实时状态": "实时状态",
+  "更新时间": "更新时间",
+  "阻塞原因": "阻塞原因",
+  "直属执行": "直属执行",
+  "编号": "编号",
+  "展开Epic": "展开",
+  "收起Epic": "收起",
+  "非活跃": "未活跃",
+  "状态": "状态",
+  "工作树": "工作树",
+  "上游": "上游",
+  "下游": "下游",
+  "尚无": "尚无",
+  "无lane": "无 lane",
+  "PlanReview页": "Plan Review 页",
+  "MergeReview页": "Merge Review 页",
+  "LinearIssue": "Linear issue",
+  "可选": "可选：",
+  "回复Halt说明": "回复 Halt 不在本看板（链接到 Driver 现场）"
 };
+export const STAGE_ORDER:readonly import('./board').Stage[]=['spec','tickets','implement','integrate','review','merge_review','merged'];
+// 阶段全称对齐锁定原型 v4；读不出的阶段原样显示数据值。
+export const stageNames:Record<string,string>={spec:'spec',tickets:'tickets',implement:'实施',integrate:'集成',review:'审查',merge_review:'Merge Review',merged:'合入'};
+export const stageLabel=(stage:string)=>stageNames[stage]??stage;
+// 状态分组沿用 lane_graph 的五组。
+export const laneGroupNames:Record<string,string>={done:'已完成',active:'进行中',review:'待收口',problem:'需处理',void:'作废'};
+// 票卡片状态文字：只有 executing 为真显示“执行中”；running 且未确认 working 显示静态“running · 现场 Unknown”；awaiting_human 显示等待人工。
+export function ticketStatusText(ticket:Pick<import('./board').Ticket,'lane'|'executing'>):string {
+ if(ticket.executing)return copy.执行中;
+ if(!ticket.lane)return copy.未派发;
+ if(ticket.lane.state==='running'&&ticket.lane.live!=='working')return `${ticket.lane.state} · ${copy.现场} Unknown`;
+ if(ticket.lane.state==='awaiting_human')return `${copy.等待人工} · ${ticket.lane.state}`;
+ const group=laneGroupNames[ticket.lane.group]??ticket.lane.group;
+ return `${group} · ${ticket.lane.state}`;
+}
+// MMF / Inbox 条目的执行状态摘要；MMF 自身执行中只看直属 lane（mmf.executing），不按子票聚合。
+export function mmfStatusText(mmf:Pick<import('./board').Mmf,'executing'|'direct_lanes'|'tickets'|'stage'>):string {
+ if(mmf.executing)return copy.执行中;
+ const lanes=[...mmf.direct_lanes,...mmf.tickets.flatMap(t=>t.lane?[t.lane]:[])];
+ const pick=(fn:(l:import('./board').Lane)=>boolean)=>lanes.find(fn);
+ const lane=pick(l=>l.group==='problem')??pick(l=>l.group==='review')??pick(l=>l.state==='running'&&l.live!=='working')??pick(l=>l.state==='awaiting_human')??pick(l=>l.group==='active')??pick(l=>l.group==='done')??lanes[0];
+ if(!lane)return mmf.stage==='merged'?laneGroupNames.done!:copy.未派发;
+ if(lane.state==='running'&&lane.live!=='working')return `${lane.state} · ${copy.现场} Unknown`;
+ if(lane.state==='awaiting_human')return `${copy.等待人工} · ${lane.state}`;
+ const group=laneGroupNames[lane.group]??lane.group;
+ return `${group} · ${lane.state}`;
+}
+export function liveStatusLabel(live:import('./board').LiveStatus):string {
+ if(live==='working')return copy.执行中;
+ if(live==='not_working')return copy.非活跃;
+ return 'Unknown';
+}
+export function issueLinkLabel(url:string):string {
+ const m=url.match(/\/issue\/([A-Z]+-\d+)\b/i);
+ return m?m[1]!:copy.打开Linear;
+}
 const families:Record<string,string>={glm:'GLM',minimax:'MiniMax',gpt:'GPT',claude:'Claude',kimi:'Kimi',gemini:'Gemini',deepseek:'DeepSeek',grok:'Grok',k3:'Kimi K3',hy3:'腾讯混元'};
 export const sources:Record<string,string>={auto:'自动路由',group:'模型分组',junbo:'骏伯',codex:'OpenAI',claude:'Anthropic',cursor:'Cursor',grok:'xAI','kimi-code-cn':'Kimi Code','workbuddy-ai':'WorkBuddy'};
 export function modelLabel(raw:string):string {

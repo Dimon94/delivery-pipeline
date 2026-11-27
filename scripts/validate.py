@@ -967,6 +967,17 @@ def check_driver() -> None:
             record(f"Driver check failed: {' '.join(cmd[1:])}: {(result.stdout + result.stderr).strip()[-400:]}")
 
 
+def check_board() -> None:
+    for script, args in (
+        (CORE / "scripts/board_snapshot.py", ["self-test"]),
+        (HERDR / "scripts/board_probe_check.py", []),
+        (ROOT / "scripts/check_board_bundle.py", []),
+    ):
+        result = subprocess.run([sys.executable, str(script), *args], text=True, capture_output=True)
+        if result.returncode != 0:
+            record(f"board check failed: {script.relative_to(ROOT)}: {result.stdout}{result.stderr}")
+
+
 def check_orchestration_metrics() -> None:
     script = ROOT / "scripts" / "orchestration_metrics.py"
     if not is_executable(script):
@@ -1008,6 +1019,7 @@ def main() -> None:
     check_review_gate()
     check_artifact_gc()
     check_closeout()
+    check_board()
     check_orchestration_metrics()
     check_driver()
 

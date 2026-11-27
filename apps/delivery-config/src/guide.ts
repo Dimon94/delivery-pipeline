@@ -31,3 +31,8 @@ export function guide(input:GuideInput, app?:AppInfo):Guide {
 export function shouldRereadOnFocus(s:{ready:boolean;reading:boolean}):boolean {
  return !s.ready && !s.reading;
 }
+
+// 看板只在显示时随前台重读；读取中不重复发起（DD-668 T4 T5）。
+export function shouldRereadBoard(s:{visible:boolean;state:'loading'|'rendered'|'failed'}):boolean {
+ return s.visible && s.state!=='loading';
+}

@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "generated_at": "2026-01-15T12:00:00+00:00",
+  "lanes_root": "/fixture/lanes",
+  "repos": [
+    {
+      "name": "example/dispatch",
+      "epics": [
+        {
+          "key": "DEMO-1",
+          "url": "https://linear.app/example/issue/DEMO-1",
+          "title": "Unknown",
+          "ended": false,
+          "mmfs": [
+            {
+              "map": "dispatch-rules",
+              "title": "交付规则",
+              "stage": "implement",
+              "halt": null,
+              "links": {"plan_review": null, "merge_review": null, "linear": "https://linear.app/example/issue/DEMO-2"},
+              "updated_at": "2026-01-15T12:00:00+00:00",
+              "direct_lanes": [
+                {
+                  "lane_id": "dispatch-integration",
+                  "role": "integration",
+                  "state": "running",
+                  "group": "active",
+                  "agent": "Unknown",
+                  "model": "Unknown",
+                  "worktree": null,
+                  "branch": null,
+                  "blocked_reason": null,
+                  "updated_at": "2026-01-15T12:00:00+00:00",
+                  "live": "working"
+                }
+              ],
+              "executing": true,
+              "tickets": [
+                {
+                  "id": "01",
+                  "title": "冻结接口",
+                  "deps": [],
+                  "stage": "integrate",
+                  "lane": {
+                    "lane_id": "dispatch-01",
+                    "role": "backend",
+                    "state": "integrated",
+                    "group": "done",
+                    "agent": "Unknown",
+                    "model": "Unknown",
+                    "worktree": "/fixture/worktrees/demo-01",
+                    "branch": "feat/sample-01",
+                    "blocked_reason": null,
+                    "updated_at": "2026-01-15T12:00:00+00:00",
+                    "live": "unknown"
+                  },
+                  "executing": false,
+                  "linear": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "inbox": [
+    {
+      "map": "check-notices",
+      "title": "检查通知",
+      "stage": "implement",
+      "halt": null,
+      "links": {"plan_review": null, "merge_review": null, "linear": "https://linear.app/example/issue/DEMO-6"},
+      "updated_at": "2026-01-15T12:00:00+00:00",
+      "direct_lanes": [],
+      "executing": false,
+      "tickets": [
+        {
+          "id": "01",
+          "title": "读取通知",
+          "deps": [],
+          "stage": "implement",
+          "lane": {
+            "lane_id": "standalone-notices-01",
+            "role": "backend",
+            "state": "running",
+            "group": "active",
+            "agent": "Unknown",
+            "model": "Unknown",
+            "worktree": null,
+            "branch": null,
+            "blocked_reason": null,
+            "updated_at": "2026-01-15T12:00:00+00:00",
+            "live": "working"
+          },
+          "executing": true,
+          "linear": null
+        },
+        {
+          "id": "02",
+          "title": "复查通知",
+          "deps": ["01"],
+          "stage": "implement",
+          "lane": {
+            "lane_id": "standalone-notices-02",
+            "role": "backend",
+            "state": "created",
+            "group": "active",
+            "agent": "Unknown",
+            "model": "Unknown",
+            "worktree": null,
+            "branch": null,
+            "blocked_reason": null,
+            "updated_at": "2026-01-15T12:00:00+00:00",
+            "live": "unknown"
+          },
+          "executing": false,
+          "linear": null
+        }
+      ],
+      "repo": "example/dispatch",
+      "attribution": "unassigned"
+    },
+    {
+      "map": "repair-input",
+      "title": "修复输入",
+      "stage": "implement",
+      "halt": null,
+      "links": {"plan_review": null, "merge_review": null, "linear": "https://linear.app/example/issue/DEMO-7"},
+      "updated_at": "2026-01-15T12:00:00+00:00",
+      "direct_lanes": [],
+      "executing": false,
+      "tickets": [
+        {
+          "id": "01",
+          "title": "补齐输入",
+          "deps": [],
+          "stage": "implement",
+          "lane": {
+            "lane_id": "standalone-repair-01",
+            "role": "backend",
+            "state": "blocked",
+            "group": "problem",
+            "agent": "Unknown",
+            "model": "Unknown",
+            "worktree": null,
+            "branch": null,
+            "blocked_reason": "等样本",
+            "updated_at": "2026-01-15T12:00:00+00:00",
+            "live": "unknown"
+          },
+          "executing": false,
+          "linear": null
+        }
+      ],
+      "repo": "example/publisher",
+      "attribution": "unassigned"
+    },
+    {
+      "map": "reconcile",
+      "title": "核对历史",
+      "stage": "merged",
+      "halt": null,
+      "links": {"plan_review": null, "merge_review": null, "linear": "https://linear.app/example/issue/DEMO-8"},
+      "updated_at": "2026-01-15T12:00:00+00:00",
+      "direct_lanes": [],
+      "executing": false,
+      "tickets": [],
+      "repo": "example/dispatch",
+      "attribution": "unassigned"
+    }
+  ],
+  "probes": [
+    {"runtime": "fixture", "status": "ok", "reason": null},
+    {"runtime": "fixture-missing", "status": "missing", "reason": "没有注册探针"},
+    {"runtime": "fixture-failed", "status": "failed", "reason": "读取失败"}
+  ],
+  "errors": []
+}

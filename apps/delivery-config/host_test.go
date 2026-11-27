@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,8 +10,60 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
+
+func TestReadBoard(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("../../skills/delivery-pipeline/scripts/board_samples/board.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	host := Host{Python: python, Tool: filepath.Join(resources, "model_config.py"), Config: filepath.Join(t.TempDir(), "test-config.json")}
+	command := filepath.Join(resources, "board_snapshot.py")
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	argsCheck := "import sys\nassert sys.argv[1:] == ['--lanes-root', " + strconv.Quote(lanesRoot) + "]\n"
+	cases := []struct {
+		name, script, reason string
+	}{
+		{"原样返回", "sys.stdout.buffer.write(" + strconv.Quote(string(want)) + ".encode('utf-8'))\n", ""},
+		{"非零退出", "sys.stdout.write('{\"schema\":1}')\nsys.exit(7)\n", "退出码 7"},
+		{"坏 JSON", "print('{broken')\n", "JSON"},
+		{"未知版本", "print('{\"schema\":2}')\n", "$.schema"},
+		{"坏 schema 1 结构", "print('{\"schema\":1,\"generated_at\":\"2026-01-01T00:00:00Z\",\"lanes_root\":\"/tmp\",\"repos\":[{}],\"inbox\":[],\"probes\":[],\"errors\":[]}')\n", "$.repos[0].name"},
+		{"超时", "import time\nprint('{\"schema\":1}', flush=True)\ntime.sleep(30)\n", "超时"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if err := os.WriteFile(command, []byte(argsCheck+c.script), 0600); err != nil {
+				t.Fatal(err)
+			}
+			start := time.Now()
+			output, err := host.ReadBoard()
+			elapsed := time.Since(start)
+			if c.reason == "" {
+				if err != nil || !bytes.Equal(output, want) {
+					t.Fatalf("ReadBoard 应原样返回共享样本，返回 %d 字节，错误 %v", len(output), err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.reason) || output != nil {
+				t.Fatalf("期望无快照且错误含 %q，收到 %s，%v", c.reason, output, err)
+			}
+			if c.name == "超时" && (elapsed < 4800*time.Millisecond || elapsed > 7*time.Second) {
+				t.Fatalf("期望约 5 秒返回超时，实际耗时 %v", elapsed)
+			}
+		})
+	}
+}
 
 // 用独立 Python 进程穿过桌面公开 Interface，不替换配置 owner。
 func TestReadConfig(t *testing.T) {
@@ -324,5 +377,40 @@ print(json.dumps([c,e]))`, tool)
 	after, _ := os.ReadFile(path)
 	if string(after) != "unchanged" {
 		t.Fatal("预览改写配置")
+	}
+}
+
+func TestOpenLocalFile(t *testing.T) {
+	dir := t.TempDir()
+	html := filepath.Join(dir, "plan-review.html")
+	if err := os.WriteFile(html, []byte("<h1>ok</h1>"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	txt := filepath.Join(dir, "note.txt")
+	if err := os.WriteFile(txt, []byte("nope"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var opened []string
+	saved := openLocalPath
+	openLocalPath = func(path string) error {
+		opened = append(opened, path)
+		return nil
+	}
+	defer func() { openLocalPath = saved }()
+
+	h := &Host{}
+	if err := h.OpenLocalFile(html); err != nil {
+		t.Fatalf("打开本地 HTML 应成功：%v", err)
+	}
+	if err := h.OpenLocalFile("file://" + html); err != nil {
+		t.Fatalf("打开 file:// 本地 HTML 应成功：%v", err)
+	}
+	if len(opened) != 2 || opened[0] != html || opened[1] != html {
+		t.Fatalf("期望调用两次本地打开 %q，实际 %v", html, opened)
+	}
+	for _, bad := range []string{"", "relative/plan-review.html", txt, filepath.Join(dir, "missing.html"), "https://example.com/a.html"} {
+		if err := h.OpenLocalFile(bad); err == nil {
+			t.Fatalf("非法路径 %q 应被拒绝", bad)
+		}
 	}
 }

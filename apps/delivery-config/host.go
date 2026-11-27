@@ -7,11 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -70,6 +73,245 @@ func (h *Host) ReadConfig() (json.RawMessage, error) {
 		return nil, errors.New("配置工具未返回可识别的结果。请让 AI 助手重新安装应用，再点击重新读取。")
 	}
 	return json.RawMessage(output), nil
+}
+
+// ReadBoard 用随包快照命令读取本机交付现场。
+func (h *Host) ReadBoard() (json.RawMessage, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, errors.New("读取看板失败：无法定位用户目录")
+	}
+	path := filepath.Join(filepath.Dir(h.Tool), "board_snapshot.py")
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, h.Python, "-E", "-B", "-S", path, "--lanes-root", lanesRoot)
+	// 子进程持有输出管道时，仍有界等待命令回收。
+	cmd.WaitDelay = 250 * time.Millisecond
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, errors.New("读取看板快照超时（5 秒）")
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, fmt.Errorf("看板快照命令执行失败（退出码 %d）", exit.ExitCode())
+		}
+		return nil, fmt.Errorf("无法运行看板快照命令：%w", err)
+	}
+	return validateBoard(output)
+}
+
+// validateBoard 核对 schema 1 必填结构与类型后原样返回。
+func validateBoard(output []byte) (json.RawMessage, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(output, &root); err != nil || root == nil {
+		return nil, errors.New("$：看板快照必须是 JSON 对象")
+	}
+	var version int
+	if err := json.Unmarshal(root["schema"], &version); err != nil || version != 1 {
+		return nil, errors.New("$.schema：看板快照 schema 必须为 1")
+	}
+	if err := requireStringField(root, "generated_at", "$"); err != nil {
+		return nil, err
+	}
+	if err := requireStringField(root, "lanes_root", "$"); err != nil {
+		return nil, err
+	}
+	repos, err := requireArrayField(root, "repos", "$")
+	if err != nil {
+		return nil, err
+	}
+	for i, rawRepo := range repos {
+		repoPath := fmt.Sprintf("$.repos[%d]", i)
+		repo, err := requireObject(rawRepo, repoPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := requireStringField(repo, "name", repoPath); err != nil {
+			return nil, err
+		}
+		epics, err := requireArrayField(repo, "epics", repoPath)
+		if err != nil {
+			return nil, err
+		}
+		for j, rawEpic := range epics {
+			epicPath := fmt.Sprintf("%s.epics[%d]", repoPath, j)
+			epic, err := requireObject(rawEpic, epicPath)
+			if err != nil {
+				return nil, err
+			}
+			if err := requireStringField(epic, "key", epicPath); err != nil {
+				return nil, err
+			}
+			if err := requireStringField(epic, "title", epicPath); err != nil {
+				return nil, err
+			}
+			if err := requireBoolField(epic, "ended", epicPath); err != nil {
+				return nil, err
+			}
+			mmfs, err := requireArrayField(epic, "mmfs", epicPath)
+			if err != nil {
+				return nil, err
+			}
+			for k, rawMmf := range mmfs {
+				if err := validateMmf(rawMmf, fmt.Sprintf("%s.mmfs[%d]", epicPath, k)); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	inbox, err := requireArrayField(root, "inbox", "$")
+	if err != nil {
+		return nil, err
+	}
+	for i, rawItem := range inbox {
+		if err := validateMmf(rawItem, fmt.Sprintf("$.inbox[%d]", i)); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := requireArrayField(root, "probes", "$"); err != nil {
+		return nil, err
+	}
+	errs, err := requireArrayField(root, "errors", "$")
+	if err != nil {
+		return nil, err
+	}
+	for i, rawErr := range errs {
+		errPath := fmt.Sprintf("$.errors[%d]", i)
+		item, err := requireObject(rawErr, errPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := requireStringField(item, "map", errPath); err != nil {
+			return nil, err
+		}
+		if err := requireStringField(item, "reason", errPath); err != nil {
+			return nil, err
+		}
+	}
+	return json.RawMessage(output), nil
+}
+
+func requireObject(raw json.RawMessage, path string) (map[string]json.RawMessage, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+		return nil, fmt.Errorf("%s：需要对象", path)
+	}
+	return obj, nil
+}
+
+func requireStringField(obj map[string]json.RawMessage, field, parent string) error {
+	raw, ok := obj[field]
+	if !ok {
+		return fmt.Errorf("%s.%s：缺少必填字段", parent, field)
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("%s.%s：需要字符串", parent, field)
+	}
+	return nil
+}
+
+func requireBoolField(obj map[string]json.RawMessage, field, parent string) error {
+	raw, ok := obj[field]
+	if !ok {
+		return fmt.Errorf("%s.%s：缺少必填字段", parent, field)
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("%s.%s：需要布尔值", parent, field)
+	}
+	return nil
+}
+
+func requireArrayField(obj map[string]json.RawMessage, field, parent string) ([]json.RawMessage, error) {
+	raw, ok := obj[field]
+	if !ok {
+		return nil, fmt.Errorf("%s.%s：缺少必填字段", parent, field)
+	}
+	var value []json.RawMessage
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return nil, fmt.Errorf("%s.%s：需要数组", parent, field)
+	}
+	return value, nil
+}
+
+func validateMmf(raw json.RawMessage, path string) error {
+	mmf, err := requireObject(raw, path)
+	if err != nil {
+		return err
+	}
+	for _, field := range []string{"map", "title", "stage"} {
+		if err := requireStringField(mmf, field, path); err != nil {
+			return err
+		}
+	}
+	if err := requireBoolField(mmf, "executing", path); err != nil {
+		return err
+	}
+	if _, err := requireObject(mmf["links"], path+".links"); err != nil {
+		return err
+	}
+	if _, err := requireArrayField(mmf, "direct_lanes", path); err != nil {
+		return err
+	}
+	tickets, err := requireArrayField(mmf, "tickets", path)
+	if err != nil {
+		return err
+	}
+	for i, rawTicket := range tickets {
+		ticketPath := fmt.Sprintf("%s.tickets[%d]", path, i)
+		ticket, err := requireObject(rawTicket, ticketPath)
+		if err != nil {
+			return err
+		}
+		for _, field := range []string{"id", "title", "stage"} {
+			if err := requireStringField(ticket, field, ticketPath); err != nil {
+				return err
+			}
+		}
+		if _, err := requireArrayField(ticket, "deps", ticketPath); err != nil {
+			return err
+		}
+		if err := requireBoolField(ticket, "executing", ticketPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// openLocalPath 用系统默认浏览器打开本机 HTML 审阅页；测试可替换。
+var openLocalPath = func(path string) error {
+	return exec.Command("open", path).Start()
+}
+
+// OpenLocalFile 仅允许打开本机已存在的 HTML 审阅页，绕过 MyGo 对非 HTTP(S) 链接的拦截。
+func (h *Host) OpenLocalFile(raw string) error {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return errors.New("审阅页路径为空")
+	}
+	if strings.HasPrefix(target, "file://") {
+		u, err := url.Parse(target)
+		if err != nil || u.Path == "" {
+			return errors.New("无效的本地文件链接")
+		}
+		target = u.Path
+	}
+	if !filepath.IsAbs(target) {
+		return errors.New("只允许打开本地绝对路径的审阅页")
+	}
+	clean := filepath.Clean(target)
+	ext := strings.ToLower(filepath.Ext(clean))
+	if ext != ".html" && ext != ".htm" {
+		return errors.New("只允许打开本地 HTML 审阅页")
+	}
+	info, err := os.Stat(clean)
+	if err != nil || !info.Mode().IsRegular() {
+		return errors.New("本地审阅页不存在或不可读")
+	}
+	return openLocalPath(clean)
 }
 
 func installedHost() *Host {
