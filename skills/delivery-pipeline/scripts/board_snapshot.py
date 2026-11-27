@@ -404,47 +404,69 @@ def _read_repo_origin(source: str) -> tuple[str, str] | None:
     match = _REMOTE_URL_RE.match(url) or _REMOTE_SCP_RE.match(url)
     if not match:
         return None
-    return match.group(1).lower(), match.group(2).lower()
+    return match.group(1).lower(), match.group(2)
 
 
-def _normalize_repo_groups(epics_by_repo: dict[str, dict[str, Epic]],
-                           repo_sources: dict[str, list[str | None]]) -> None:
-    """仅在肯定 remote 证据下将裸仓名 name 归一到唯一匹配的 owner/name 组；无 remote、多 owner 或不同 host 时不合并。"""
-    by_tail: dict[str, list[str]] = {}
-    for repo_name in epics_by_repo:
-        if "/" in repo_name:
-            tail = repo_name.rsplit("/", 1)[-1].lower()
-            by_tail.setdefault(tail, []).append(repo_name)
-    if not by_tail:
-        return
-    for bare in [name for name in epics_by_repo if "/" not in name and name != "Unknown"]:
-        targets = by_tail.get(bare.lower(), [])
-        if len(targets) != 1:
+def _resolve_repo_names(entries: list[tuple[str, str | None]]) -> list[str]:
+    """有 Linear 缓存时按逐 map 的 origin 证据解析最终仓库组名。
+
+    - 显式 owner/name 与 Unknown 保持原名；缺证据（无 source/origin/无法解析）的裸名 map 保持原裸名，不混入已核实 origin 组。
+    - 已核实 origin 的裸名 map：slug 匹配显式 owner/name 且该 slug 的已核实 host 唯一时并入该 owner/name 组。
+    - 同一裸名下有多个不同 origin、混有缺证据 map、或同 slug 存在多 host 时按 origin 分桶：
+      同 slug 存在多 host 或与显式组撞名时组名为 host/owner/name，否则为 owner/name。
+    """
+    origin_at = cache(_read_repo_origin)
+    origins = [origin_at(src) if (src and "/" not in raw and raw != "Unknown") else None
+               for raw, src in entries]
+    explicit_by_slug: dict[str, str] = {}
+    bare_origins: dict[str, set[tuple[str, str]]] = {}
+    bare_has_unverified: set[str] = set()
+    hosts_by_slug: dict[str, set[str]] = {}
+    display_slug: dict[tuple[str, str], str] = {}
+
+    for (raw, _), origin in zip(entries, origins):
+        if "/" in raw:
+            explicit_by_slug.setdefault(raw.lower(), raw)
             continue
-        target = targets[0]
-        sources = repo_sources.get(bare, [])
-        if not sources or any(src is None for src in sources):
+        if raw == "Unknown":
             continue
-        origins = [_read_repo_origin(src) for src in sources if src is not None]
-        if any(origin is None for origin in origins):
+        bare_lower = raw.lower()
+        if origin is None:
+            bare_has_unverified.add(bare_lower)
             continue
-        bare_hosts = {origin[0] for origin in origins if origin is not None}
-        bare_slugs = {origin[1] for origin in origins if origin is not None}
-        if len(bare_hosts) != 1 or bare_slugs != {target.lower()}:
+        host, slug_raw = origin
+        slug_lower = slug_raw.lower()
+        okey = (host, slug_lower)
+        bare_origins.setdefault(bare_lower, set()).add(okey)
+        hosts_by_slug.setdefault(slug_lower, set()).add(host)
+        display_slug.setdefault(okey, slug_raw)
+
+    resolved: list[str] = []
+    for (raw, _), origin in zip(entries, origins):
+        if "/" in raw or raw == "Unknown" or origin is None:
+            resolved.append(raw)
             continue
-        target_origins = [_read_repo_origin(src) for src in repo_sources.get(target, []) if src is not None]
-        target_hosts = {origin[0] for origin in target_origins if origin is not None}
-        if target_hosts and target_hosts != bare_hosts:
+        bare_lower = raw.lower()
+        host, slug_raw = origin
+        slug_lower = slug_raw.lower()
+        slug_hosts = hosts_by_slug[slug_lower]
+        if slug_lower in explicit_by_slug and len(slug_hosts) == 1:
+            resolved.append(explicit_by_slug[slug_lower])
             continue
-        bare_epics = epics_by_repo.pop(bare)
-        target_epics = epics_by_repo[target]
-        for epic_key, epic in bare_epics.items():
-            if existing := target_epics.get(epic_key):
-                existing["url"] = existing["url"] or epic["url"]
-                existing["mmfs"].extend(epic["mmfs"])
-                existing["ended"] = existing["ended"] and epic["ended"]
-            else:
-                target_epics[epic_key] = epic
+        need_disambiguate = (
+            len(bare_origins[bare_lower]) > 1
+            or bare_lower in bare_has_unverified
+            or len(slug_hosts) > 1
+        )
+        if not need_disambiguate:
+            resolved.append(raw)
+            continue
+        shown_slug = display_slug[(host, slug_lower)]
+        if len(slug_hosts) > 1 or slug_lower in explicit_by_slug:
+            resolved.append(f"{host}/{shown_slug}")
+        else:
+            resolved.append(shown_slug)
+    return resolved
 
 
 def _load_live_probes() -> None:
@@ -745,8 +767,7 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
     inbox: list[InboxItem] = []
     spec_keys: set[str] = set()
     inbox_spec_keys: set[str] = set()
-    epics_by_repo: dict[str, dict[str, Epic]] = {}
-    repo_sources: dict[str, list[str | None]] = {}
+    epic_entries: list[tuple[str, str | None, str, str | None, Mmf]] = []
     repo_at = cache(_read_repo)
     maps: list[tuple[Mmf, dict[str, dict]]] = []
 
@@ -789,12 +810,7 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
                 mmf["archived_at"] = archived_at
             base = _issue_base(ref) or _issue_base(mmf["links"]["linear"])
             url = base + key if base else None
-            epic = epics_by_repo.setdefault(repo, {}).setdefault(key, {
-                "key": key, "url": url, "title": "Unknown", "ended": True, "mmfs": []})
-            epic["url"] = epic["url"] or url
-            epic["mmfs"].append(mmf)
-            epic["ended"] = epic["ended"] and (mmf["stage"] == "merged" or bool(mmf.get("archived_at")))
-            repo_sources.setdefault(repo, []).append(source if (source and source_repo) else None)
+            epic_entries.append((repo, source if (source and source_repo) else None, key, url, mmf))
         maps.append((mmf, lanes))
 
     # 根层保留旧布局的 map；同一 map 已迁入目录时，目录现场优先。单份根层 registry 不可读只记错误。
@@ -841,8 +857,19 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
             add(root, name, None, lanes)
         except (OSError, ValueError) as error:
             errors.append({"map": name, "reason": str(error)})
+    resolved_repos = (
+        _resolve_repo_names([(repo, src) for repo, src, _, _, _ in epic_entries])
+        if linear_cache is not None
+        else [repo for repo, _, _, _, _ in epic_entries]
+    )
+    epics_by_repo: dict[str, dict[str, Epic]] = {}
+    for repo_name, (_, _, key, url, mmf) in zip(resolved_repos, epic_entries):
+        epic = epics_by_repo.setdefault(repo_name, {}).setdefault(key, {
+            "key": key, "url": url, "title": "Unknown", "ended": True, "mmfs": []})
+        epic["url"] = epic["url"] or url
+        epic["mmfs"].append(mmf)
+        epic["ended"] = epic["ended"] and (mmf["stage"] == "merged" or bool(mmf.get("archived_at")))
     if linear_cache is not None:
-        _normalize_repo_groups(epics_by_repo, repo_sources)
         epic_matched_specs: dict[str, set[str]] = {}
         epic_matched_mmfs: dict[str, set[str]] = {}
         for epics in epics_by_repo.values():
@@ -1817,32 +1844,60 @@ def _test_linear_repo_dedup() -> None:
         assert [c["mmf_id"] for c in repos_nr["Owner/repo-noremote"]["DEMO-80"].get("candidates", [])] == ["M3"]
         assert [c["mmf_id"] for c in repos_nr["repo-noremote"]["DEMO-80"].get("candidates", [])] == ["M3"]
 
-        # 反例 b)：remote 为不同 owner 或不同 host → 不合并
-        repo_d = Path(temp) / "repo-d"
-        subprocess.run(["git", "init", "-q", str(repo_d)], check=True)
-        subprocess.run(["git", "-C", str(repo_d), "remote", "add", "origin", "git@github.com:OtherOwner/repo-d.git"],
+        # 反例 b)：remote 为不同 owner 或不同 host → 不同 origin 不得同组，缺证据留在原裸名
+        repo_d2 = Path(temp) / "d2" / "repo-d"
+        repo_d3 = Path(temp) / "d3" / "repo-d"
+        repo_d2.mkdir(parents=True)
+        repo_d3.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(repo_d2)], check=True)
+        subprocess.run(["git", "-C", str(repo_d2), "remote", "add", "origin", "git@github.com:OtherOwner/repo-d.git"],
+                       check=True)
+        subprocess.run(["git", "init", "-q", str(repo_d3)], check=True)
+        subprocess.run(["git", "-C", str(repo_d3), "remote", "add", "origin", "git@github.com:Owner/repo-d.git"],
                        check=True)
         write_map("map-d1", "DEMO-70", "DEMO-71", repo="Owner/repo-d")
-        write_map("map-d2", "DEMO-70", "DEMO-72", source_path=repo_d)
+        write_map("map-d2", "DEMO-70", "DEMO-72", source_path=repo_d2)
+        write_map("map-d3", "DEMO-70", "DEMO-73", source_path=repo_d3)
 
         repo_h1 = Path(temp) / "h1" / "repo-h"
+        repo_h1b = Path(temp) / "h1b" / "repo-h"
         repo_h2 = Path(temp) / "h2" / "repo-h"
-        repo_h1.mkdir(parents=True)
-        repo_h2.mkdir(parents=True)
-        subprocess.run(["git", "init", "-q", str(repo_h1)], check=True)
+        repo_h3 = Path(temp) / "h3" / "repo-h"
+        for p in (repo_h1, repo_h1b, repo_h2, repo_h3):
+            p.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", str(p)], check=True)
         subprocess.run(["git", "-C", str(repo_h1), "remote", "add", "origin", "git@github.com:Owner/repo-h.git"],
                        check=True)
-        subprocess.run(["git", "init", "-q", str(repo_h2)], check=True)
+        subprocess.run(["git", "-C", str(repo_h1b), "remote", "add", "origin", "https://github.com/Owner/repo-h.git"],
+                       check=True)
         subprocess.run(["git", "-C", str(repo_h2), "remote", "add", "origin", "git@gitlab.com:Owner/repo-h.git"],
                        check=True)
         write_map("map-h0", "DEMO-75", "DEMO-76", repo="Owner/repo-h")
         write_map("map-h1", "DEMO-75", "DEMO-77", source_path=repo_h1)
+        write_map("map-h1b", "DEMO-75", "DEMO-79", source_path=repo_h1b)
         write_map("map-h2", "DEMO-75", "DEMO-78", source_path=repo_h2)
+        write_map("map-h3", "DEMO-75", "DEMO-83", source_path=repo_h3)
 
         snap2 = read_snapshot(str(root))
-        repos2 = {r["name"] for r in snap2["repos"]}
-        assert {"Owner/repo-d", "repo-d"} <= repos2, f"不同 owner 的 remote 不应合并：{repos2}"
-        assert {"Owner/repo-h", "repo-h"} <= repos2, f"不同 host 的 remote 不应合并：{repos2}"
+        map_repo = {m["map"]: r["name"] for r in snap2["repos"] for e in r["epics"] for m in e["mmfs"]}
+        # G2 严格断言：不同 host 的 h1/h2 不得同组，h0 不与 gitlab 同组，同 origin 的 h1/h1b 同组，缺证据 h3 留在原裸名
+        assert map_repo["map-h0"] == "Owner/repo-h", f"显式 plan.repo 组名应保持原样：{map_repo}"
+        assert map_repo["map-h1"] == "github.com/Owner/repo-h" and map_repo["map-h2"] == "gitlab.com/Owner/repo-h", (
+            f"同 slug 多 host 时组名应带 host 区分：{map_repo}"
+        )
+        assert map_repo["map-h1"] == map_repo["map-h1b"], (
+            f"同 origin 的 map 应同组：h1={map_repo['map-h1']}, h1b={map_repo['map-h1b']}"
+        )
+        assert map_repo["map-h3"] == "repo-h" and map_repo["map-h3"] not in {
+            map_repo["map-h0"], map_repo["map-h1"], map_repo["map-h2"],
+        }, f"缺证据的 map 必须保持原裸名且不混入已核实 origin 组：{map_repo}"
+        # 不同 owner 的 repo-d 不得同组；同 owner 且 host 唯一时并入 Owner/repo-d
+        assert map_repo["map-d1"] == "Owner/repo-d" and map_repo["map-d3"] == "Owner/repo-d", (
+            f"同 owner 且 host 唯一时应并入 Owner/repo-d：{map_repo}"
+        )
+        assert map_repo["map-d2"] == "OtherOwner/repo-d", (
+            f"不同 owner 的 repo-d 应独立为可区分组名：{map_repo}"
+        )
 
 
 def self_test() -> None:
