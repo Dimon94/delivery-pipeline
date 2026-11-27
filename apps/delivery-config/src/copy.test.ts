@@ -134,10 +134,12 @@ test('检查预计结果的所有说法进入禁用词扫描',()=>{
  for(const outcome of ['different','no_different_family','unrecognized','none_runnable'] as const)clean(reviewPreviewText({selected:{agent:'claude',model:'claude-opus-5-5',effort:'high'},selected_index:1,outcome,unrecognized:[]}).text);
 });
 
-test('DD-674 票状态文字区分执行中、running 现场 Unknown、待收口与未派发',()=>{
+test('DD-674 票状态文字区分执行中、running 现场 Unknown（含 not_working）、等待人工、待收口与未派发',()=>{
  const baseLane={lane_id:'l1',role:'frontend',agent:'pi',model:'gpt-6.1-sol',worktree:null,branch:null,blocked_reason:null,updated_at:null};
  expect(ticketStatusText({executing:true,lane:{...baseLane,state:'running',group:'active',live:'working'}})).toBe('执行中');
  expect(ticketStatusText({executing:false,lane:{...baseLane,state:'running',group:'active',live:'unknown'}})).toBe('running · 现场 Unknown');
+ expect(ticketStatusText({executing:false,lane:{...baseLane,state:'running',group:'active',live:'not_working'}})).toBe('running · 现场 Unknown');
+ expect(ticketStatusText({executing:false,lane:{...baseLane,state:'awaiting_human',group:'active',live:'unknown'}})).toBe('等待人工 · awaiting_human');
  expect(ticketStatusText({executing:false,lane:{...baseLane,state:'terminal',group:'review',live:'unknown'}})).toBe('待收口 · terminal');
  expect(ticketStatusText({executing:false,lane:{...baseLane,state:'blocked',group:'problem',live:'unknown'}})).toBe('需处理 · blocked');
  expect(ticketStatusText({executing:false,lane:null})).toBe('未派发');
@@ -150,8 +152,10 @@ test('DD-675 MMF 执行状态、实时状态、七步顺序与 Linear 链接标�
  expect(liveStatusLabel('working')).toBe('执行中');
  expect(liveStatusLabel('not_working')).toBe('未活跃');
  expect(liveStatusLabel('unknown')).toBe('Unknown');
+ expect(copy.返回看板).toBe('← 返回看板');
  const baseLane={lane_id:'l1',role:'backend',agent:'pi',model:'gpt-6.1-sol',worktree:null,branch:null,blocked_reason:null,updated_at:null};
- expect(mmfStatusText({stage:'implement',executing:false,direct_lanes:[],tickets:[{id:'01',title:'a',deps:[],stage:'implement',executing:true,linear:null,lane:{...baseLane,state:'running',group:'active',live:'working'}}]})).toBe('执行中');
+ expect(mmfStatusText({stage:'implement',executing:true,direct_lanes:[{...baseLane,role:'integration',state:'running',group:'active',live:'working'}],tickets:[]})).toBe('执行中');
+ expect(mmfStatusText({stage:'implement',executing:false,direct_lanes:[],tickets:[{id:'01',title:'a',deps:[],stage:'implement',executing:true,linear:null,lane:{...baseLane,state:'running',group:'active',live:'working'}}]})).not.toBe('执行中');
  expect(mmfStatusText({stage:'implement',executing:false,direct_lanes:[],tickets:[{id:'01',title:'a',deps:[],stage:'implement',executing:false,linear:null,lane:{...baseLane,state:'blocked',group:'problem',live:'unknown'}}]})).toBe('需处理 · blocked');
  expect(mmfStatusText({stage:'merged',executing:false,direct_lanes:[],tickets:[]})).toBe('已完成');
  expect(mmfStatusText({stage:'tickets',executing:false,direct_lanes:[],tickets:[]})).toBe('未派发');

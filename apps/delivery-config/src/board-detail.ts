@@ -31,9 +31,11 @@ function kvRow(k:string,v:string,mono=false):string {
 }
 
 function renderLinkRow(url:string|null,label:string):string {
- return url
-  ?`<a class="detail-lnk" href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)} ↗</a>`
-  :`<span class="detail-lnk off">${esc(label)} · ${copy.尚无}</span>`;
+ if(!url)return `<span class="detail-lnk off">${esc(label)} · ${copy.尚无}</span>`;
+ if(/^https?:\/\//i.test(url)){
+  return `<a class="detail-lnk" href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)} ↗</a>`;
+ }
+ return `<button type="button" class="detail-lnk" data-board="open-link" data-href="${esc(url)}">${esc(label)} ↗</button>`;
 }
 
 function renderHaltCard(halt:Halt):string {
@@ -122,29 +124,45 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
   return `<h3 class="detail-title">${esc(ticket.title)}</h3>${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details>${renderRelSection(copy.上游,mmf,ups)}${renderRelSection(copy.下游,mmf,downs)}<div class="detail-links">${linksHtml}</div>`;
  }
  const inboxSub=inbox?`<p class="detail-sub">${inboxRepo?`${esc(inboxRepo)} · `:''}${copy.待归属}</p>`:'';
+ const directLane=mmf.direct_lanes.find(l=>l.state==='running'&&l.live==='working')
+  ??mmf.direct_lanes.find(l=>l.group==='problem')
+  ??mmf.direct_lanes.find(l=>l.group==='review')
+  ??mmf.direct_lanes.find(l=>l.group==='active')
+  ??mmf.direct_lanes[0]
+  ??null;
  const status=mmfStatusText(mmf);
  const statusHtml=mmf.executing?`<b class="exec-label">${esc(status)}</b>`:esc(status);
- const stepsHtml=showSteps?renderStageBar(mmf.stage,{bad:Boolean(mmf.halt)}):'';
- const haltCard=mmf.halt?renderHaltCard(mmf.halt):'';
+ const stepsHtml=showSteps?renderStageBar(mmf.stage,{bad:Boolean(mmf.halt)||directLane?.group==='problem'}):'';
+ const blockedDirect=directLane?.blocked_reason?directLane:mmf.direct_lanes.find(l=>Boolean(l.blocked_reason))??null;
+ const alertCard=mmf.halt
+  ?renderHaltCard(mmf.halt)
+  :blockedDirect?.blocked_reason
+   ?`<div class="detail-halt soft"><b>${blockedDirect.state==='running'&&blockedDirect.live!=='working'?copy.现场:copy.阻塞原因}</b><p>${esc(blockedDirect.blocked_reason)}</p></div>`
+   :'';
  const directLanesText=mmf.direct_lanes.length
-  ?mmf.direct_lanes.map(l=>`${esc(l.lane_id)}（${esc(l.role)} · ${esc(l.state)} · ${esc(liveStatusLabel(l.live))}）`).join('<br>')
+  ?mmf.direct_lanes.map(l=>`${esc(l.role)} · ${esc(liveStatusLabel(l.live))}`).join('<br>')
   :copy.无;
+ const mmfUpdated=directLane?.updated_at??mmf.updated_at;
  const coreHtml=[
-  kvRow(copy.状态,`${statusHtml} <span class="muted small">· ${esc(formatUpdatedAt(mmf.updated_at))}</span>`),
-  kvRow('map',esc(mmf.map),true),
+  kvRow(copy.状态,`${statusHtml} <span class="muted small"${mmfUpdated?` title="${esc(mmfUpdated)}"`:''}>· ${esc(formatUpdatedAt(mmfUpdated))}</span>`),
+  kvRow('Agent',esc(formatAgentModel(directLane))),
+  kvRow(copy.分支,esc(directLane?.branch?.trim()?directLane.branch:'Unknown'),true),
   kvRow(copy.直属执行,directLanesText),
  ].join('');
  const extraHtml=[
+  kvRow('lane',esc(directLane?.lane_id?.trim()?directLane.lane_id:'Unknown'),true),
+  kvRow('registry',esc(directLane?directLane.state:copy.无lane),true),
+  kvRow(copy.工作树,esc(directLane?.worktree?.trim()?directLane.worktree:'Unknown'),true),
   ...(inbox&&inboxRepo?[kvRow(copy.来源仓库,esc(inboxRepo))]:[]),
   kvRow('map',esc(mmf.map),true),
-  kvRow(copy.更新时间,esc(mmf.updated_at??'Unknown')),
+  kvRow(copy.更新时间,esc(mmfUpdated??'Unknown')),
  ].join('');
  const linksHtml=[
   renderLinkRow(mmf.links.plan_review,copy.PlanReview页),
   renderLinkRow(mmf.links.merge_review,copy.MergeReview页),
   renderLinkRow(mmf.links.linear,copy.LinearIssue),
  ].join('');
- return `<h3 class="detail-title">${esc(mmf.title)}</h3>${inboxSub}${stepsHtml}${haltCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details><div class="detail-links">${linksHtml}</div>`;
+ return `<h3 class="detail-title">${esc(mmf.title)}</h3>${inboxSub}${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details><div class="detail-links">${linksHtml}</div>`;
 }
 
 export function renderRightColumn(params:RightColumnParams):string {
@@ -154,5 +172,5 @@ export function renderRightColumn(params:RightColumnParams):string {
  const pillHtml=ticket&&groupCls
   ?`<span class="board-pill g-${esc(groupCls)}">${esc(laneGroupNames[groupCls]??copy.未派发)}</span>`
   :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
- return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right">${copy.收起右栏}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps)}</div></aside>`;
+ return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps)}</div></aside>`;
 }

@@ -122,6 +122,7 @@ test('S19 Inbox 三条各显示来源仓库、交付阶段、执行状态与 iss
 
   expect(el.classList.contains('is-executing')).toBe(exp.executing);
   expect(Boolean(el.querySelector('.exec-dot'))).toBe(exp.executing);
+  expect(Boolean(el.querySelector('svg.exec-ring rect.exec-ring-path'))).toBe(exp.executing);
   expect(status.classList.contains('exec-label')).toBe(exp.executing);
 
   // 每条 Inbox 只有 1 个查看选择按钮，无任何分配/归属/标记按钮

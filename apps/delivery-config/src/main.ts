@@ -27,6 +27,7 @@ const app = shell.querySelector<HTMLDivElement>('#settings-view')!;
 const board = new BoardView(shell.querySelector<HTMLDivElement>('#board-view')!,{
  read:()=>mygo.call<unknown>('Host.ReadBoard'),
  openSettings:()=>{board.show(false);app.hidden=false;},
+ openLink:(target:string)=>mygo.call<void>('Host.OpenLocalFile',target),
 });
 function backToBoard(){app.hidden=true;board.show(true);void board.load();}
 let snapshot: Snapshot | undefined;

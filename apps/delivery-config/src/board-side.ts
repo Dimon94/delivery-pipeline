@@ -103,10 +103,11 @@ function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedG
  const expanded=inboxOpen||inboxSelected;
  const itemsHtml=inbox.items.map(item=>{
   const executing=inboxItemExecuting(item);
-  const status=mmfStatusText(item);
+  const status=executing?copy.执行中:mmfStatusText(item);
   const selected=inboxSelected&&selectedMap===item.map;
+  const ringHtml=executing?'<svg class="exec-ring inbox-exec-ring" aria-hidden="true"><rect class="exec-ring-path" x="1.5" y="1.5" rx="11" ry="11" pathLength="100"/></svg>':'';
   const link=item.links.linear?`<a class="inbox-link" href="${esc(item.links.linear)}" target="_blank" rel="noreferrer">${esc(issueLinkLabel(item.links.linear))} ↗</a>`:'';
-  return `<li class="inbox-item${executing?' is-executing':''}${selected?' selected':''}" data-inbox-map="${esc(item.map)}"><button class="inbox-select" data-board="side-mmf" data-group="${INBOX_GROUP_ID}" data-map="${esc(item.map)}" aria-current="${selected}" title="${esc(item.title)} · ${esc(item.repo)}"><span class="inbox-title">${esc(item.title)}</span><span class="inbox-repo">${esc(item.repo)}</span><span class="inbox-meta"><span class="inbox-attribution">${copy.待归属}</span><span class="inbox-stage">${esc(stageLabel(item.stage))}</span><span class="inbox-status${executing?' exec-label':''}">${executing?'<span class="exec-dot" aria-hidden="true"></span>':''}${esc(status)}</span></span></button>${link}</li>`;
+  return `<li class="inbox-item${executing?' is-executing':''}${selected?' selected':''}" data-inbox-map="${esc(item.map)}">${ringHtml}<button class="inbox-select" data-board="side-mmf" data-group="${INBOX_GROUP_ID}" data-map="${esc(item.map)}" aria-current="${selected}" title="${esc(item.title)} · ${esc(item.repo)}"><span class="inbox-title">${esc(item.title)}</span><span class="inbox-repo">${esc(item.repo)}</span><span class="inbox-meta"><span class="inbox-attribution">${copy.待归属}</span><span class="inbox-stage">${esc(stageLabel(item.stage))}</span><span class="inbox-status${executing?' exec-label':''}">${executing?'<span class="exec-dot" aria-hidden="true"></span>':''}${esc(status)}</span></span></button>${link}</li>`;
  }).join('');
  return `<section class="board-repo board-inbox" data-board-inbox="true" data-expanded="${expanded}" aria-label="${copy.Inbox}"><div class="board-inbox-head"><button class="inbox-toggle${inboxSelected?' selected':''}" data-board="toggle-inbox" aria-expanded="${expanded}"><span class="chev" aria-hidden="true">${expanded?'▾':'▸'}</span><span class="inbox-head-label">${copy.Inbox} · ${copy.待归属}</span><small class="muted">${inbox.items.length}</small></button></div><ul class="inbox-list"${expanded?'':' hidden'}>${itemsHtml}</ul></section>`;
 }
@@ -142,7 +143,7 @@ export function renderLeftColumn(params:LeftColumnParams):string {
  const activeHtml=groups.repos.map(r=>
   `<section class="board-repo" data-repo="${esc(r.name)}"><div class="board-repo-head"><h3>${esc(r.name)}</h3><small>${r.epics.length}</small></div>${r.epics.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics,expandedFinished)).join('')}</section>`
  ).join('');
- const endedExpanded=endedOpen||groups.ended.some(e=>e.group.id===selectedGroupId);
+ const endedExpanded=endedOpen;
  const endedHtml=groups.ended.length
   ?`<details class="board-repo board-ended" data-board-ended="true"${endedExpanded?' open':''}><summary>${copy.已结束} ${groups.ended.length}</summary>${groups.ended.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics,expandedFinished)).join('')}</details>`
   :'';

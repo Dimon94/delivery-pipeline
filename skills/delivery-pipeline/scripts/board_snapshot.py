@@ -200,8 +200,9 @@ def _issue_base(ref: str | None) -> str | None:
 
 
 def _linear(ref: str | None, base: str | None) -> str | None:
-    if _issue_base(ref):
-        return ref
+    match = issue_status.URL_RE.match((ref or "").strip())
+    if match:
+        return match.group(0)
     key = issue_status.issue_key(ref)
     return base + key if base and key else None
 
@@ -290,8 +291,11 @@ def _mmf(path: Path, name: str, d: dict | None, lanes: dict[str, dict],
                         "lane": _lane(row) if row else None, "executing": False, "linear": ticket_link})
 
     reviews = data.get("reviews") or {}
+    direct_roles = {"integration", "testing", "review"}
     direct = [_lane(row) for _, row in sorted(lanes.items())
-              if row.get("role") != "map" and row.get("work_item") not in ids]
+              if row.get("work_item") not in ids and (
+                  row.get("role") in direct_roles if d is not None else row.get("role") != "map"
+              )]
     updated = max((row.get("updated_at") or "" for row in lanes.values()), default="")
     return {"map": name, "title": _text(plan.get("mmf")) or _text(plan.get("title")) or "Unknown",
             "stage": stage, "halt": _halt(data.get("halt")), "updated_at": updated or None,
@@ -431,8 +435,19 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
             epic["ended"] = epic["ended"] and (mmf["stage"] == "merged" or bool(mmf.get("archived_at")))
         maps.append((mmf, lanes))
 
-    # 根层保留旧布局的 map；同一 map 已迁入目录时，目录现场优先。
-    root_rows = driver.closeout.latest_rows(root)
+    # 根层保留旧布局的 map；同一 map 已迁入目录时，目录现场优先。单份根层 registry 不可读只记错误。
+    root_rows: dict[str, dict] = {}
+    try:
+        root_files = driver.closeout.registry_files(root)
+    except OSError as error:
+        errors.append({"map": root.name, "reason": str(error)})
+        root_files = []
+    for registry_file in root_files:
+        try:
+            for row in driver.closeout.parse_rows(registry_file):
+                root_rows[row["lane_id"]] = row
+        except OSError as error:
+            errors.append({"map": registry_file.name, "reason": str(error)})
     root_maps = {lid: {lid: row} for lid, row in root_rows.items() if row.get("role") == "map"}
     aliases = {rows[lid]["work_item"]: lid for lid, rows in root_maps.items() if rows[lid].get("work_item")}
     for lid, row in root_rows.items():
@@ -473,16 +488,26 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
 
 def refresh_archives(lanes_root: str, call=issue_status.linear_call) -> dict[str, str]:
     root = Path(lanes_root).expanduser().absolute()
+    existing: dict[str, str] = {}
+    try:
+        loaded = json.loads((root / SPEC_ARCHIVES).read_text(encoding="utf-8"))
+        _validate(loaded, dict[str, str], "$.archives")
+        existing = dict(loaded)
+    except (FileNotFoundError, OSError, ValueError):
+        existing = {}
     board = read_snapshot(str(root))
     keys = {issue_status.issue_key(mmf["links"]["linear"])
             for repo in board["repos"] for epic in repo["epics"] for mmf in epic["mmfs"]}
-    archived = {}
+    # 有 map 读取失败时保留未重新核验的既有归档缓存，不因部分失败清空已确认记录。
+    archived: dict[str, str] = dict(existing) if board["errors"] else {}
     for key in sorted(k for k in keys if k):
         issue = call("get_issue", {"id": key, "fields": ["id", "archivedAt"]})
         if issue.get("id") != key or "archivedAt" not in issue:
             raise ValueError(f"{key} 归档回读不符")
         if at := _text(issue["archivedAt"]):
             archived[key] = at
+        else:
+            archived.pop(key, None)
     driver.write_json(root / SPEC_ARCHIVES, archived)
     return archived
 
@@ -687,6 +712,47 @@ runpy.run_path(sys.argv[0], run_name='__main__')
         assert next(t for t in q["tickets"] if t["id"] == "Z")["lane"]["live"] == "unknown"
         p = observed["execution-p"]
         assert p["executing"] and not p["tickets"][0]["executing"] and not q["executing"]  # S14
+
+        # SP-08：复合 gates.spec 含本机路径后缀时，只提取合法 Linear URL。
+        compound = write_driver("compound-ref", {"repo": "source-repo"})
+        compound["gates"]["spec"] = "https://linear.app/demo/issue/DEMO-55 ; /tmp/spec.md"
+        (root / "compound-ref" / "driver.json").write_text(json.dumps(compound), encoding="utf-8")
+        compound_snap = read_snapshot(str(root))
+        compound_item = next(m for m in compound_snap["inbox"] if m["map"] == "compound-ref")
+        assert compound_item["links"]["linear"] == "https://linear.app/demo/issue/DEMO-55"
+
+        # SP-15：计划外 backend 补票不计入 MMF direct_lanes，不让 mmf.executing 为真。
+        write_driver("supplement-only", {"repo": "source-repo", "epic": short, "tickets": [{"id": "A"}]})
+        registry(root / "supplement-only" / "registry-sup.md",
+                 {"lane_id": "sup-1", "work_item": "SUPPLEMENT", "role": "backend", "state": "running",
+                  "runtime": "fixture-local"})
+        with patch.dict(LIVE_PROBES, {"fixture": lambda ls: {l["lane_id"]: "working" for l in ls}}):
+            sup_snap = read_snapshot(str(root))
+        sup_mmf = next(m for r in sup_snap["repos"] for e in r["epics"] for m in e["mmfs"]
+                       if m["map"] == "supplement-only")
+        assert sup_mmf["direct_lanes"] == [] and not sup_mmf["executing"]
+
+        # SP-14 / STD-02：map 临时损坏时 refresh_archives 不清空已有归档缓存。
+        (root / "archived-only" / "driver.json").write_text("{broken", encoding="utf-8")
+        kept = refresh_archives(str(root), lambda tool, args: {"id": args["id"], "archivedAt": None})
+        assert kept.get("DEMO-42") == archived_time
+        (root / "archived-only" / "driver.json").write_text(json.dumps(archived_fixture), encoding="utf-8")
+        restored = read_snapshot(str(root))
+        restored_mmf = next(m for r in restored["repos"] for e in r["epics"] for m in e["mmfs"]
+                            if m["map"] == "archived-only")
+        assert restored_mmf.get("archived_at") == archived_time
+
+        # SP-12 / STD-03：根层单份 registry 不可读只记 errors，不中断其余健康 map。
+        unreadable = root / "registry-unreadable.md"
+        unreadable.write_text("", encoding="utf-8")
+        unreadable.chmod(0o000)
+        try:
+            resilient = read_snapshot(str(root))
+            assert any(e["map"] == "registry-unreadable.md" for e in resilient["errors"])
+            assert any(r["name"] == "source-repo" for r in resilient["repos"])
+        finally:
+            unreadable.chmod(0o600)
+            unreadable.unlink()
 
 
 def self_test() -> None:

@@ -198,10 +198,11 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .inbox-toggle.selected{background:var(--selected);color:var(--ink)}
 .inbox-toggle .chev{width:10px;color:var(--faint);flex:none}
 .inbox-toggle small{margin-left:auto;font-weight:400;font-size:11px;color:var(--muted)}
-.inbox-list{list-style:none;margin:2px 0 0;padding:0;display:grid;gap:6px}
-.inbox-item{position:relative;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 9px;display:grid;gap:4px;font-size:12px;min-width:0}
+.inbox-list{list-style:none;margin:2px 0 0;padding:4px 5px;display:grid;gap:8px}
+.inbox-item{position:relative;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 9px;display:grid;gap:4px;font-size:12px;min-width:0;overflow:visible}
 .inbox-item.selected{border-color:var(--accent);background:var(--selected)}
-.inbox-item.is-executing{border-color:#2563eb}
+.inbox-exec-ring{inset:-5px;width:calc(100% + 10px);height:calc(100% + 10px)}
+.inbox-exec-ring .exec-ring-path{width:calc(100% - 3px);height:calc(100% - 3px)}
 .inbox-select{display:grid;gap:3px;text-align:left;padding:0;width:100%;min-width:0}
 .inbox-title{font-size:12px;font-weight:500;color:var(--ink);overflow-wrap:anywhere}
 .inbox-repo{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
@@ -285,7 +286,7 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .stage-step.done .step-dot{background:var(--green);border-color:var(--green)}
 .stage-step.current{color:var(--ink);font-weight:500}
 .stage-step.current .step-dot{border-color:#3b82f6;background:#3b82f6;box-shadow:0 0 0 3px color-mix(in srgb,#3b82f6 25%,transparent)}
-.stage-step.current.bad .step-dot{background:var(--amber);border-color:var(--amber);box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 25%,transparent)}
+.stage-step.current.bad .step-dot{background:var(--amber);border-color:var(--amber)}
 .stage-step.current.wait .step-dot{background:var(--card);border-style:dashed;border-color:var(--faint);box-shadow:none}
 .stage-step .step-note{grid-column:2;font-style:normal;font-size:11px;color:var(--muted);font-weight:400;margin:-2px 0 4px;overflow-wrap:anywhere}
 .stage-unknown{margin-top:6px;font-size:11px;color:var(--muted)}
@@ -305,6 +306,7 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .detail-chip:hover{background:var(--pill-hover)}
 .detail-links{display:grid;gap:6px;margin-top:16px;font-size:12px}
 .detail-lnk{color:var(--accent);text-decoration:none}
+button.detail-lnk{padding:0;text-align:left;justify-self:start;font-size:inherit}
 .detail-lnk:hover{text-decoration:underline}
 .detail-lnk.off{color:var(--faint)}
 .board-right .mono,.board-left .mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;overflow-wrap:anywhere;word-break:break-word}

@@ -1,4 +1,4 @@
-import type {BoardSnapshot,InboxItem,Mmf,Ticket} from './board';
+import {validateBoardSnapshot,type BoardSnapshot,type InboxItem,type Mmf,type Ticket} from './board';
 import {copy} from './copy';
 import {shouldRereadBoard} from './guide';
 import {GRAPH_GEOMETRY,applyHoverChain,graphSummary,isSummarizedMmf,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
@@ -9,7 +9,7 @@ export {ticketLayers};
 
 // 看板视图：读取中 → 已渲染 | 读取失败（DD-668 T1–T6）；左右栏各自收起（R15）。
 export type BoardState={kind:'loading'}|{kind:'rendered';board:BoardSnapshot}|{kind:'failed';reason:string};
-export interface BoardHost {read():Promise<unknown>; openSettings():void}
+export interface BoardHost {read():Promise<unknown>; openSettings():void; openLink?(target:string):Promise<void>|void}
 // 左栏一级入口：仓库下的 Epic，或独立的 Inbox。
 type Group=GraphGroup;
 type Pick={group?:string;map?:string;ticket?:string};
@@ -26,7 +26,7 @@ export class BoardView {
  private currentGroup:Group|undefined;
  private lastGroupId:string|undefined;
  private lastGroups:BoardGroups|undefined;
- private hovered:{map:string;ticket:string}|undefined;
+ private hovered:{map:string;ticket?:string}|undefined;
  private scrollRequest:'reset'|'selected'|'summary'|'preserve'='reset';
  private expandedEpics=new Map<string,boolean>();
  private expandedSummaries=new Set<string>();
@@ -43,43 +43,61 @@ export class BoardView {
   this.state={kind:'loading'};this.render();
   let next:BoardState;
   try {
-   const board=await this.host.read() as BoardSnapshot|null;
-   next=board&&typeof board==='object'&&board.schema===1&&Array.isArray(board.repos)&&Array.isArray(board.inbox)?{kind:'rendered',board}:{kind:'failed',reason:copy.看板快照格式不对};
+   const raw=await this.host.read();
+   const invalid=validateBoardSnapshot(raw);
+   next=invalid?{kind:'failed',reason:`${copy.看板快照格式不对}（${invalid}）`}:{kind:'rendered',board:raw as BoardSnapshot};
   }catch(error){next={kind:'failed',reason:error instanceof Error?error.message:String(error)};}
   if(generation!==this.generation)return;
   this.scrollRequest='preserve';
-  this.state=next;this.render();
+  this.state=next;
+  try {
+   this.render();
+  }catch(error){
+   this.state={kind:'failed',reason:error instanceof Error?error.message:String(error)};
+   this.render();
+  }
  }
  rereadOnFocus() {
   if(shouldRereadBoard({visible:this.visible,state:this.state.kind}))void this.load();
  }
  show(visible:boolean) {this.visible=visible;this.root.hidden=!visible;}
- // 所选 Epic 或票消失时退回该 Epic 的第一张票；没有 Epic 时退回第一个入口。
+ // 所选 Epic 或票仍在快照中时保留选中（含已合入归入汇总的 MMF）；对象消失才退回第一张票或入口。
  private settle(all:Group[]):{group?:Group;mmf?:Mmf;ticket?:Ticket} {
   const group=all.find(g=>g.id===this.pick.group)??all[0];
   if(!group){this.pick={};return {};}
+  const pickedMmf=this.pick.map!==undefined?group.mmfs.find(m=>m.map===this.pick.map):undefined;
+  const pickedTicket=pickedMmf?.tickets.find(t=>t.id===this.pick.ticket);
+  if(pickedMmf&&(pickedTicket||this.pick.ticket===undefined)){
+   this.pick={group:group.id,map:pickedMmf.map,ticket:pickedTicket?.id};
+   return {group,mmf:pickedMmf,ticket:pickedTicket};
+  }
   const visible=this.expandedSummaries.has(group.id)?group.mmfs:group.mmfs.filter(m=>!isSummarizedMmf(group,m));
-  const mmf=visible.find(m=>m.map===this.pick.map);
-  const ticket=mmf?.tickets.find(t=>t.id===this.pick.ticket);
-  if(mmf&&(ticket||this.pick.ticket===undefined)){this.pick={group:group.id,map:mmf.map,ticket:ticket?.id};return {group,mmf,ticket};}
   const first=visible.find(m=>m.tickets.length)??visible[0];
   this.pick={group:group.id,map:first?.map,ticket:first?.tickets[0]?.id};
   return {group,mmf:first,ticket:first?.tickets[0]};
  }
+ private hoverTarget(el:Element|null):{map:string;ticket?:string}|undefined {
+  const node=el?.closest<HTMLElement>('.graph-ticket,.graph-mmf[data-map]');
+  if(!node||!node.dataset.map)return undefined;
+  return node.classList.contains('graph-ticket')&&node.dataset.ticket
+   ?{map:node.dataset.map,ticket:node.dataset.ticket}
+   :{map:node.dataset.map};
+ }
  private hover(event:Event) {
-  const el=(event.target as Element|null)?.closest<HTMLElement>('.graph-ticket');
-  if(!el||!el.dataset.map||!el.dataset.ticket)return;
-  if(this.hovered?.map===el.dataset.map&&this.hovered?.ticket===el.dataset.ticket)return;
-  this.hovered={map:el.dataset.map,ticket:el.dataset.ticket};
+  const next=this.hoverTarget(event.target as Element|null);
+  if(!next)return;
+  if(this.hovered?.map===next.map&&this.hovered?.ticket===next.ticket)return;
+  this.hovered=next;
   applyHoverChain(this.root,this.currentGroup,this.hovered);
  }
  private unhover(event:Event) {
-  const from=(event.target as Element|null)?.closest<HTMLElement>('.graph-ticket');
+  const from=(event.target as Element|null)?.closest<HTMLElement>('.graph-ticket,.graph-mmf[data-map]');
   if(!from)return;
-  const related=((event as MouseEvent).relatedTarget as Element|null)?.closest<HTMLElement>('.graph-ticket');
-  if(related===from)return;
-  if(related&&related.dataset.map&&related.dataset.ticket){
-   this.hovered={map:related.dataset.map,ticket:related.dataset.ticket};
+  const relatedEl=((event as MouseEvent).relatedTarget as Element|null)?.closest<HTMLElement>('.graph-ticket,.graph-mmf[data-map]');
+  if(relatedEl===from)return;
+  const next=this.hoverTarget(relatedEl??null);
+  if(next){
+   this.hovered=next;
    applyHoverChain(this.root,this.currentGroup,this.hovered);
    return;
   }
@@ -90,7 +108,8 @@ export class BoardView {
  private click(event:Event) {
   const target=(event.target as Element).closest<HTMLElement>('[data-board]');
   if(!target)return;
-  const {board:action,group,map,ticket}=target.dataset;
+  const {board:action,group,map,ticket,href}=target.dataset;
+  if(action==='open-link'&&href){event.preventDefault();void this.host.openLink?.(href);return;}
   if(action==='settings'){this.host.openSettings();return;}
   if(action==='retry'){void this.load();return;}
   if(action==='left'){this.left=!this.left;this.scrollRequest='preserve';this.render();return;}
@@ -105,8 +124,12 @@ export class BoardView {
    const focused=target===this.root.ownerDocument.activeElement;
    const inHeader=target.matches('.board-summary-toggle');
    const opening=!this.expandedSummaries.has(group);
-   if(!opening)this.expandedSummaries.delete(group);
-   else this.expandedSummaries.add(group);
+   if(!opening){
+    this.expandedSummaries.delete(group);
+    const current=this.lastGroups?.all.find(g=>g.id===group);
+    const picked=current?.mmfs.find(m=>m.map===this.pick.map);
+    if(current&&picked&&isSummarizedMmf(current,picked))this.pick={group};
+   }else this.expandedSummaries.add(group);
    this.hovered=undefined;
    this.scrollRequest=opening&&inHeader?'summary':'preserve';
    this.render();

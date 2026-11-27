@@ -48,7 +48,7 @@ def main():
             '<!-- wayfinder-lane-registry:v2 -->\n```yaml\n'
             'lane_id: bundle-check\nwork_item: DEMO-1\nrole: map\nstate: running\n```\n'
             '<!-- wayfinder-lane-registry:v2 -->\n```yaml\n'
-            'lane_id: check\nwork_item: DEMO-2\nrole: backend\nstate: running\nruntime: herdr-codex-pane\n'
+            'lane_id: check\nwork_item: DEMO-2\nrole: review\nstate: running\nruntime: herdr-codex-pane\n'
             'herdr: {"pane_id":"test-pane","agent_name":"test-agent"}\n```\n',
             encoding='utf-8',
         )

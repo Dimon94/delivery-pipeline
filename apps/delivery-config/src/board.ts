@@ -74,3 +74,69 @@ export type BoardSnapshot = {
   probes: ProbeResult[];
   errors: BoardError[];
 };
+
+const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+function validateMmfShape(raw: unknown, path: string): string | null {
+  if (!isObj(raw)) return `${path}：需要对象`;
+  for (const field of ['map', 'title', 'stage'] as const) {
+    if (typeof raw[field] !== 'string') return `${path}.${field}：需要字符串`;
+  }
+  if (typeof raw.executing !== 'boolean') return `${path}.executing：需要布尔值`;
+  if (!isObj(raw.links)) return `${path}.links：需要对象`;
+  if (!Array.isArray(raw.direct_lanes)) return `${path}.direct_lanes：需要数组`;
+  if (!Array.isArray(raw.tickets)) return `${path}.tickets：需要数组`;
+  for (let i = 0; i < raw.tickets.length; i++) {
+    const t = raw.tickets[i];
+    const tp = `${path}.tickets[${i}]`;
+    if (!isObj(t)) return `${tp}：需要对象`;
+    for (const field of ['id', 'title', 'stage'] as const) {
+      if (typeof t[field] !== 'string') return `${tp}.${field}：需要字符串`;
+    }
+    if (!Array.isArray(t.deps)) return `${tp}.deps：需要数组`;
+    if (typeof t.executing !== 'boolean') return `${tp}.executing：需要布尔值`;
+  }
+  return null;
+}
+
+// 校验 schema 1 内部结构，避免坏快照进入渲染抛异常或停在读取中。
+export function validateBoardSnapshot(raw: unknown): string | null {
+  if (!isObj(raw)) return '$：看板快照必须是 JSON 对象';
+  if (raw.schema !== 1) return '$.schema：看板快照 schema 必须为 1';
+  if (!Array.isArray(raw.repos)) return '$.repos：需要数组';
+  for (let i = 0; i < raw.repos.length; i++) {
+    const repo = raw.repos[i];
+    const rp = `$.repos[${i}]`;
+    if (!isObj(repo)) return `${rp}：需要对象`;
+    if (typeof repo.name !== 'string') return `${rp}.name：需要字符串`;
+    if (!Array.isArray(repo.epics)) return `${rp}.epics：需要数组`;
+    for (let j = 0; j < repo.epics.length; j++) {
+      const epic = repo.epics[j];
+      const ep = `${rp}.epics[${j}]`;
+      if (!isObj(epic)) return `${ep}：需要对象`;
+      if (typeof epic.key !== 'string') return `${ep}.key：需要字符串`;
+      if (typeof epic.title !== 'string') return `${ep}.title：需要字符串`;
+      if (typeof epic.ended !== 'boolean') return `${ep}.ended：需要布尔值`;
+      if (!Array.isArray(epic.mmfs)) return `${ep}.mmfs：需要数组`;
+      for (let k = 0; k < epic.mmfs.length; k++) {
+        const err = validateMmfShape(epic.mmfs[k], `${ep}.mmfs[${k}]`);
+        if (err) return err;
+      }
+    }
+  }
+  if (!Array.isArray(raw.inbox)) return '$.inbox：需要数组';
+  for (let i = 0; i < raw.inbox.length; i++) {
+    const err = validateMmfShape(raw.inbox[i], `$.inbox[${i}]`);
+    if (err) return err;
+  }
+  if (raw.errors !== undefined) {
+    if (!Array.isArray(raw.errors)) return '$.errors：需要数组';
+    for (let i = 0; i < raw.errors.length; i++) {
+      const item = raw.errors[i];
+      if (!isObj(item) || typeof item.map !== 'string' || typeof item.reason !== 'string') {
+        return `$.errors[${i}]：需要包含 map 与 reason`;
+      }
+    }
+  }
+  return null;
+}

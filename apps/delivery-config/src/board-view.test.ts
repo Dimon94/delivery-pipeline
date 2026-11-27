@@ -285,7 +285,7 @@ test('S11 切 Epic/MMF/票时中右栏同步，七步条、现场与链接对应
  expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('implement');
  expect(q('#board-right .detail-links')!.innerHTML).toContain('/fixture/artifacts/plan-review.html');
  expect(q<HTMLDetailsElement>('#board-right details.detail-more')!.open).toBe(false);
- expect([...doc.querySelectorAll('#board-right button:not(.detail-chip)')].map(b=>b.textContent)).toEqual(['收起右栏']);
+ expect([...doc.querySelectorAll('#board-right button:not(.detail-chip):not([data-board="open-link"])')].map(b=>b.textContent)).toEqual(['收起']);
 
  click(q('.graph-ticket[data-ticket="01"]'));
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
@@ -293,7 +293,7 @@ test('S11 切 Epic/MMF/票时中右栏同步，七步条、现场与链接对应
  expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('integrate');
  expect(q('#board-right .detail-links')!.innerHTML).toContain('DEMO-11');
  expect(q<HTMLDetailsElement>('#board-right details.detail-more')!.open).toBe(false);
- expect([...doc.querySelectorAll('#board-right button:not(.detail-chip)')].map(b=>b.textContent)).toEqual(['收起右栏']);
+ expect([...doc.querySelectorAll('#board-right button:not(.detail-chip):not([data-board="open-link"])')].map(b=>b.textContent)).toEqual(['收起']);
 });
 
 test('Inbox 的零散票汇成默认收起的节点，保留正式 Spec 和直接定位',async()=>{
@@ -525,4 +525,68 @@ test('旧快照（无 archived_at 与 kind）兼容旧行为：进行中 Epic �
  expect(q('.graph-mmf.selected')!.dataset.map).toBe('repair-input');
  expect(q('#board-right h2')!.textContent).toBe('条目');
  expect(q('#board-right .stage-bar')).toBeNull();
+});
+
+test('SP-01/SP-02/SP-03/SP-04/SP-10/SP-13 回归：前台刷新保选、本地审阅页走宿主打开、仅已结束组默认折叠、悬停 MMF 突出链路、坏 schema 1 进失败态、返回看板带箭头',async()=>{
+ // SP-13：设置页返回看板按钮文案带冻结箭头
+ expect(doc.querySelector('#btn-back-board')!.textContent).toBe('← 返回看板');
+
+ // SP-01：所选票的 MMF 变为 merged 后前台刷新仍保留原票选中
+ const twoMmf=structuredClone(sample);
+ const sibling=structuredClone(twoMmf.repos[0].epics[0].mmfs[0]);
+ sibling.map='still-active';
+ twoMmf.repos[0].epics[0].mmfs.push(sibling);
+ let current=twoMmf;
+ const opened:string[]=[];
+ const box=doc.createElement('div');
+ doc.body.append(box);
+ const {BoardView}=await import('./board-view');
+ const v=new BoardView(box as unknown as HTMLElement,{
+  read:async()=>current,
+  openSettings(){},
+  openLink(href:string){opened.push(href);},
+ });
+ await v.load();
+ (box.querySelector('.graph-ticket[data-ticket="05"]') as HTMLElement).click();
+ expect(box.querySelector('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 05');
+
+ // SP-02：点击本地 Plan Review 按钮调用 host.openLink
+ (box.querySelector('button[data-board="open-link"]') as HTMLElement).click();
+ expect(opened).toEqual(['/fixture/artifacts/plan-review.html']);
+
+ // SP-04：悬停 MMF 突出该 MMF 及其票，旁支 MMF 与其票加 dimmed
+ const hoveredMmf=box.querySelector('.graph-mmf[data-map="dispatch-rules"]')!;
+ const siblingMmf=box.querySelector('.graph-mmf[data-map="still-active"]')!;
+ const siblingTicket=box.querySelector('.graph-ticket[data-map="still-active"]')!;
+ hoveredMmf.dispatchEvent(new win.MouseEvent('mouseover',{bubbles:true}));
+ expect(siblingMmf.classList.contains('dimmed')).toBe(true);
+ expect(siblingTicket.classList.contains('dimmed')).toBe(true);
+ expect(hoveredMmf.classList.contains('chain')).toBe(true);
+
+ // SP-01 刷新
+ current=structuredClone(twoMmf);
+ current.repos[0].epics[0].mmfs[0].stage='merged';
+ current.repos[0].epics[0].mmfs[0].tickets.find((t:{id:string})=>t.id==='05')!.stage='merged';
+ v.rereadOnFocus();
+ await settle();
+ expect(box.querySelector('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 05');
+
+ // SP-03：仅有已结束 Epic 时，启动不自动展开已结束组
+ const onlyEnded=structuredClone(sample);
+ onlyEnded.repos=onlyEnded.repos.map((r:{name:string;epics:{ended:boolean}[]})=>({...r,epics:r.epics.filter(e=>e.ended)})).filter((r:{epics:unknown[]})=>r.epics.length);
+ onlyEnded.inbox=[];
+ const boxEnded=doc.createElement('div');
+ doc.body.append(boxEnded);
+ const vEnded=new BoardView(boxEnded as unknown as HTMLElement,{read:async()=>onlyEnded,openSettings(){}});
+ await vEnded.load();
+ expect((boxEnded.querySelector('details[data-board-ended]') as HTMLDetailsElement).open).toBe(false);
+
+ // SP-10：坏 schema 1 内部结构进入失败态且不抛异常
+ const boxBad=doc.createElement('div');
+ doc.body.append(boxBad);
+ const vBad=new BoardView(boxBad as unknown as HTMLElement,{read:async()=>({schema:1,repos:[{}],inbox:[]}),openSettings(){}});
+ await vBad.load();
+ expect(vBad.state.kind).toBe('failed');
+ expect(boxBad.querySelector('.board-failed')).not.toBeNull();
+ box.remove();boxEnded.remove();boxBad.remove();
 });

@@ -38,6 +38,7 @@ func TestReadBoard(t *testing.T) {
 		{"非零退出", "sys.stdout.write('{\"schema\":1}')\nsys.exit(7)\n", "退出码 7"},
 		{"坏 JSON", "print('{broken')\n", "JSON"},
 		{"未知版本", "print('{\"schema\":2}')\n", "$.schema"},
+		{"坏 schema 1 结构", "print('{\"schema\":1,\"generated_at\":\"2026-01-01T00:00:00Z\",\"lanes_root\":\"/tmp\",\"repos\":[{}],\"inbox\":[],\"probes\":[],\"errors\":[]}')\n", "$.repos[0].name"},
 		{"超时", "import time\nprint('{\"schema\":1}', flush=True)\ntime.sleep(30)\n", "超时"},
 	}
 	for _, c := range cases {
@@ -376,5 +377,40 @@ print(json.dumps([c,e]))`, tool)
 	after, _ := os.ReadFile(path)
 	if string(after) != "unchanged" {
 		t.Fatal("预览改写配置")
+	}
+}
+
+func TestOpenLocalFile(t *testing.T) {
+	dir := t.TempDir()
+	html := filepath.Join(dir, "plan-review.html")
+	if err := os.WriteFile(html, []byte("<h1>ok</h1>"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	txt := filepath.Join(dir, "note.txt")
+	if err := os.WriteFile(txt, []byte("nope"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var opened []string
+	saved := openLocalPath
+	openLocalPath = func(path string) error {
+		opened = append(opened, path)
+		return nil
+	}
+	defer func() { openLocalPath = saved }()
+
+	h := &Host{}
+	if err := h.OpenLocalFile(html); err != nil {
+		t.Fatalf("打开本地 HTML 应成功：%v", err)
+	}
+	if err := h.OpenLocalFile("file://" + html); err != nil {
+		t.Fatalf("打开 file:// 本地 HTML 应成功：%v", err)
+	}
+	if len(opened) != 2 || opened[0] != html || opened[1] != html {
+		t.Fatalf("期望调用两次本地打开 %q，实际 %v", html, opened)
+	}
+	for _, bad := range []string{"", "relative/plan-review.html", txt, filepath.Join(dir, "missing.html"), "https://example.com/a.html"} {
+		if err := h.OpenLocalFile(bad); err == nil {
+			t.Fatalf("非法路径 %q 应被拒绝", bad)
+		}
 	}
 }

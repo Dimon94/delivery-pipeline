@@ -148,7 +148,7 @@ export const copy = {
   "展开零散票": "展开查看零散票",
   "收起零散票": "收起零散票",
   "设置": "设置",
-  "返回看板": "返回看板",
+  "返回看板": "← 返回看板",
   "读取中": "读取中…",
   "读取失败": "读取失败",
   "重试": "重试",
@@ -163,6 +163,7 @@ export const copy = {
   "收起已结束": "收起已结束的 MMF",
   "待归属": "待归属",
   "未派发": "未派发",
+  "等待人工": "等待人工",
   "执行中": "执行中",
   "现场": "现场",
   "没有进行中的工作": "本机还没有可显示的 Epic 或 Inbox 条目",
@@ -206,22 +207,24 @@ export const stageNames:Record<string,string>={spec:'spec',tickets:'tickets',imp
 export const stageLabel=(stage:string)=>stageNames[stage]??stage;
 // 状态分组沿用 lane_graph 的五组。
 export const laneGroupNames:Record<string,string>={done:'已完成',active:'进行中',review:'待收口',problem:'需处理',void:'作废'};
-// 票卡片状态文字：只有 executing 为真显示“执行中”；running 但 live 为 unknown 显示静态“running · 现场 Unknown”。
+// 票卡片状态文字：只有 executing 为真显示“执行中”；running 且未确认 working 显示静态“running · 现场 Unknown”；awaiting_human 显示等待人工。
 export function ticketStatusText(ticket:Pick<import('./board').Ticket,'lane'|'executing'>):string {
  if(ticket.executing)return copy.执行中;
  if(!ticket.lane)return copy.未派发;
- if(ticket.lane.state==='running'&&ticket.lane.live==='unknown')return `${ticket.lane.state} · ${copy.现场} Unknown`;
+ if(ticket.lane.state==='running'&&ticket.lane.live!=='working')return `${ticket.lane.state} · ${copy.现场} Unknown`;
+ if(ticket.lane.state==='awaiting_human')return `${copy.等待人工} · ${ticket.lane.state}`;
  const group=laneGroupNames[ticket.lane.group]??ticket.lane.group;
  return `${group} · ${ticket.lane.state}`;
 }
-// MMF / Inbox 条目的执行状态摘要；与“待归属”归属标签严格分开。
+// MMF / Inbox 条目的执行状态摘要；MMF 自身执行中只看直属 lane（mmf.executing），不按子票聚合。
 export function mmfStatusText(mmf:Pick<import('./board').Mmf,'executing'|'direct_lanes'|'tickets'|'stage'>):string {
- if(mmf.executing||mmf.tickets.some(t=>t.executing))return copy.执行中;
+ if(mmf.executing)return copy.执行中;
  const lanes=[...mmf.direct_lanes,...mmf.tickets.flatMap(t=>t.lane?[t.lane]:[])];
  const pick=(fn:(l:import('./board').Lane)=>boolean)=>lanes.find(fn);
- const lane=pick(l=>l.group==='problem')??pick(l=>l.group==='review')??pick(l=>l.state==='running'&&l.live==='unknown')??pick(l=>l.group==='active')??pick(l=>l.group==='done')??lanes[0];
+ const lane=pick(l=>l.group==='problem')??pick(l=>l.group==='review')??pick(l=>l.state==='running'&&l.live!=='working')??pick(l=>l.state==='awaiting_human')??pick(l=>l.group==='active')??pick(l=>l.group==='done')??lanes[0];
  if(!lane)return mmf.stage==='merged'?laneGroupNames.done!:copy.未派发;
- if(lane.state==='running'&&lane.live==='unknown')return `${lane.state} · ${copy.现场} Unknown`;
+ if(lane.state==='running'&&lane.live!=='working')return `${lane.state} · ${copy.现场} Unknown`;
+ if(lane.state==='awaiting_human')return `${copy.等待人工} · ${lane.state}`;
  const group=laneGroupNames[lane.group]??lane.group;
  return `${group} · ${lane.state}`;
 }

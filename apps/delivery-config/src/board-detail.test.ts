@@ -37,8 +37,10 @@ test('S11 票详情与 MMF 详情显示对应七步条、现场与链接，“�
  expect(ticketDoc.querySelector('#board-right h2')!.textContent).toBe('dispatch-rules · 01');
  expect(ticketDoc.querySelector('.detail-title')!.textContent).toBe('冻结接口');
  expect(ticketDoc.querySelector('.stage-step.current')!.getAttribute('data-stage')).toBe('integrate');
+ const ticketLocal=[...ticketDoc.querySelectorAll<HTMLButtonElement>('.detail-links button[data-board="open-link"]')];
+ expect(ticketLocal.map(b=>b.dataset.href)).toEqual(['/fixture/artifacts/plan-review.html']);
  const ticketLinks=[...ticketDoc.querySelectorAll<HTMLAnchorElement>('.detail-links a')];
- expect(ticketLinks.map(a=>a.getAttribute('href'))).toEqual(['/fixture/artifacts/plan-review.html','https://linear.app/example/issue/DEMO-11']);
+ expect(ticketLinks.map(a=>a.getAttribute('href'))).toEqual(['https://linear.app/example/issue/DEMO-11']);
  expect(ticketDoc.querySelector('.detail-core')!.textContent).toContain('feat/sample-01');
  const ticketMore=ticketDoc.querySelector<HTMLDetailsElement>('details.detail-more')!;
  expect(ticketMore.open).toBe(false);
@@ -53,17 +55,20 @@ test('S11 票详情与 MMF 详情显示对应七步条、现场与链接，“�
  expect(mmfDoc.querySelector('.stage-step.current')!.getAttribute('data-stage')).toBe('implement');
  expect(mmfDoc.body.textContent).toContain('工作会话待关闭');
  expect(mmfDoc.body.textContent).toContain('等待确认会话上的当前执行者');
+ const mmfLocal=[...mmfDoc.querySelectorAll<HTMLButtonElement>('.detail-links button[data-board="open-link"]')].map(b=>b.dataset.href);
+ expect(mmfLocal).toEqual(['/fixture/artifacts/plan-review.html']);
  const mmfLinks=[...mmfDoc.querySelectorAll<HTMLAnchorElement>('.detail-links a')].map(a=>a.getAttribute('href'));
- expect(mmfLinks).toEqual(['/fixture/artifacts/plan-review.html','https://linear.app/example/issue/DEMO-2']);
+ expect(mmfLinks).toEqual(['https://linear.app/example/issue/DEMO-2']);
  const mmfMore=mmfDoc.querySelector<HTMLDetailsElement>('details.detail-more')!;
  expect(mmfMore.open).toBe(false);
- expect(mmfDoc.querySelector('.detail-core')!.textContent).toContain('dispatch-review');
+ expect(mmfMore.textContent).toContain('dispatch-review');
 
- // 右栏不含写操作按钮（仅收起按钮与上下游只读导航芯片），无回复 Halt / 确认 Merge Review / 触发 Driver 按钮
+ // 右栏不含写操作按钮（仅收起按钮、本地审阅页只读打开按钮与上下游只读导航芯片），无回复 Halt / 确认 Merge Review / 触发 Driver 按钮
  for(const doc of [ticketDoc,mmfDoc]){
-  const buttons=[...doc.querySelectorAll('#board-right button:not(.detail-chip)')];
+  const buttons=[...doc.querySelectorAll('#board-right button:not(.detail-chip):not([data-board="open-link"])')];
   expect(buttons.length).toBe(1);
-  expect(buttons[0]!.textContent).toBe('收起右栏');
+  expect(buttons[0]!.textContent).toBe('收起');
+  expect(buttons[0]!.getAttribute('title')).toBe('收起右栏');
   for(const btn of doc.querySelectorAll('#board-right button')){
    expect(btn.textContent).not.toMatch(/回复 Halt|确认 Merge Review|触发 Driver/);
   }
@@ -266,8 +271,9 @@ test('DD-668 visual-fix-3 项17：链接区固定呈现 Plan Review / Merge Revi
  const links=doc.querySelector('.detail-links')!;
  const items=[...links.children];
  expect(items.length).toBe(3);
- expect(items[0]!.tagName).toBe('A');
- expect(items[0]!.getAttribute('href')).toBe('/fixture/ep-101-m3/plan-review.html');
+ expect(items[0]!.tagName).toBe('BUTTON');
+ expect(items[0]!.getAttribute('data-board')).toBe('open-link');
+ expect(items[0]!.getAttribute('data-href')).toBe('/fixture/ep-101-m3/plan-review.html');
  expect(items[0]!.textContent).toContain('Plan Review');
  expect(items[1]!.classList.contains('off')).toBe(true);
  expect(items[1]!.textContent).toContain('Merge Review');
@@ -290,4 +296,27 @@ test('DD-668 user-local-port：Inbox 零散条目不显示七步条且头部写�
  expect(specDoc.querySelector('#board-right h2')!.textContent).toBe('MMF');
  expect(specDoc.querySelector('.stage-bar')).not.toBeNull();
  expect(specDoc.querySelectorAll('.detail-links > *').length).toBe(3);
+});
+
+test('SP-09/SP-11：blocked 当前步骤保持蓝色外环与「收起」文案；MMF 右栏展示直属 lane 的阻塞原因与现场字段并折叠 lane/registry/工作树',()=>{
+ const badDotRule=cssRules().find(r=>r.selectorText?.split(',').some(s=>s.trim()==='.stage-step.current.bad .step-dot'));
+ expect(badDotRule).toBeDefined();
+ expect(badDotRule!.style.getPropertyValue('box-shadow')).toBe('');
+
+ const mmf={
+  map:'fixture-mmf',title:'Fixture MMF',stage:'implement' as const,halt:null,
+  links:{plan_review:null,merge_review:null,linear:null},updated_at:null,
+  tickets:[],executing:false,
+  direct_lanes:[{lane_id:'testing-fixture',role:'testing',state:'blocked',group:'problem' as const,agent:'codex',model:'fixture-model',branch:'feat/fixture-mmf',worktree:'/tmp/fixture-mmf',blocked_reason:'fixture-specific-blocker',updated_at:'2026-11-26T10:00:00Z',live:'unknown' as const}],
+ };
+ const doc=mount(renderRightColumn({epicKey:'DEMO-1',mmf,inbox:false,open:true}));
+ expect(doc.querySelector('#board-right .col-close')!.textContent).toBe('收起');
+ expect(doc.querySelector('.detail-halt.soft')!.textContent).toContain('fixture-specific-blocker');
+ expect(doc.querySelector('.detail-core')!.textContent).toContain('codex · fixture-model');
+ expect(doc.querySelector('.detail-core')!.textContent).toContain('feat/fixture-mmf');
+ const more=doc.querySelector<HTMLDetailsElement>('details.detail-more')!;
+ expect(more.open).toBe(false);
+ expect(more.textContent).toContain('testing-fixture');
+ expect(more.textContent).toContain('blocked');
+ expect(more.textContent).toContain('/tmp/fixture-mmf');
 });

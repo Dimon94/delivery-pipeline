@@ -266,8 +266,8 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  return `<div class="graph" style="width:${width}px;height:${h}px">${bands.join('')}<svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" style="width:${width}px;height:${h}px" aria-hidden="true">${links.join('')}</svg><div class="graph-root" data-x="0" data-y="${rootY}" data-meta="${esc(rootMeta)}" title="${esc(group.label)} · ${esc(rootMeta)}" style="left:0;top:${rootY}px">${esc(group.label)}</div>${nodes.join('')}</div>`;
 }
 
-// 悬停某张票时只保留其上下游链高亮，其余淡出；离开时恢复。
-export function applyHoverChain(container:Element,group:GraphGroup|undefined,hovered?:{map:string;ticket:string}):void {
+// 悬停某张票或某个 MMF 时只保留其上下游链高亮，其余淡出；离开时恢复。
+export function applyHoverChain(container:Element,group:GraphGroup|undefined,hovered?:{map:string;ticket?:string}):void {
  const graphEl=container.querySelector('.graph');
  if(!graphEl)return;
  const tickets=[...graphEl.querySelectorAll<HTMLElement>('.graph-ticket')];
@@ -284,7 +284,10 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
   for(const el of [...tickets,...mmfs,...paths]){el.classList.remove('chain','dimmed');}
   return;
  }
- const chain=dependencyChain(mmf.tickets,hovered.ticket);
+ const isWholeMmf=hovered.ticket===undefined;
+ const chain=isWholeMmf
+  ?{nodes:new Set(mmf.tickets.map(t=>t.id)),edges:new Set<string>()}
+  :dependencyChain(mmf.tickets,hovered.ticket!);
  const throughSummary=isSummarizedMmf(group,mmf);
  graphEl.classList.add('has-hover');
  for(const el of tickets){
@@ -302,9 +305,9 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
   const rootTo=p.getAttribute('data-root-to');
   let active=false;
   if(dep!==null){
-   active=p.getAttribute('data-map')===hovered.map&&chain.edges.has(dep);
+   active=p.getAttribute('data-map')===hovered.map&&(isWholeMmf||chain.edges.has(dep));
   }else if(rootTo!==null){
-   active=p.getAttribute('data-map')===hovered.map&&chain.nodes.has(rootTo);
+   active=p.getAttribute('data-map')===hovered.map&&(isWholeMmf||chain.nodes.has(rootTo));
   }else if(p.hasAttribute('data-summary-root')){
    active=throughSummary;
   }else{
