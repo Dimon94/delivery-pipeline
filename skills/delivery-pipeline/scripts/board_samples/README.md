@@ -4,7 +4,7 @@
 
 `probed.json` 模拟已取得现场结果的快照。Inbox 的三条 map 来自两个仓库，覆盖运行且现场工作、阻塞、已合入。直挂集成 lane 的 MMF 显示执行中。只有子票在执行的 Inbox 条目自身保持静态。它可以直接用于前端测试。空注册表对这两个样本的所有 running lane 均返回 `unknown`。
 
-快照字段由 `board_snapshot.py` 的 `BoardSnapshot` 与 `validate_snapshot` 定义，前端用 `apps/delivery-config/src/board.ts` 消费。Host 的 `validateBoard` 负责 JSON 与 schema 版本边界，原样传递通过的字节。`LIVE_PROBES` 按 runtime 前缀注册，`probe_lanes` 接受同一前缀的 lane 批次。
+快照字段由 `board_snapshot.py` 的 `BoardSnapshot` 与 `validate_snapshot` 定义，前端用 `apps/delivery-config/src/board.ts` 消费。Host 的 `validateBoard` 校验 schema 1 及已出现的 Linear 字段，原样传递通过的字节。`LIVE_PROBES` 按 runtime 前缀注册，`probe_lanes` 接受同一前缀的 lane 批次。
 
 `board_snapshot.py --lanes-root <dir>` 从该目录读取真实现场。对每个 runtime 前缀，一次批量读取快照所选的 running lane。票按所属 lane 判定执行中，MMF 按直挂 lane 判定。`probes` 记录每个批次的读取状态。缺少记录或读失败时，相应 lane 保持 `unknown`。
 
@@ -27,3 +27,24 @@
 | S16 | DD-674，状态更新后的执行标识；DD-675，真实回前台联动 |
 | S19 | DD-670，Inbox 归组；DD-675，Inbox 展示 |
 | S22 | DD-672，左右栏折叠 |
+
+## DD-676 Linear 缓存与快照合同
+
+`linear-cache-ok.json`、`linear-cache-partial.json`、`linear-cache-failed.json` 是 `validate_linear_cache` 共用的 version 1 样本。缓存约定为 lanes 根下的 `board-linear.json`。缓存条目保留 Linear 原始事实和本次失败原因。
+
+`board-linear.json` 是已接上 Linear 的 schema 1 快照样本，覆盖所有新增可选字段、三类候选、两类边及有无 Linear 信息的票。`board-linear-failed.json` 只有顶层 `linear` 失败摘要和本机数据。M1 的 `board.json`、`probed.json` 仍使用原形状。三层测试可通过 `BOARD_M1_SNAPSHOT` 读取本机留存的 M1 真实快照。
+
+更新入口为 `board_snapshot.py --lanes-root <dir> --refresh-linear` 和 `Host.RefreshBoardLinear(manual bool)`。`--refresh-linear` 随原命令位于 `Contents/Resources/board_snapshot.py`。当前合同桩中，CLI 返回 failed 缓存结果，Host 直接返回 `ReadBoard()`。
+
+| 场景 | 验收票及入口 |
+| --- | --- |
+| S1、S2 | DD-679，M1 输出与渲染；DD-677，三层校验合同 |
+| S3 | DD-679，快照合并；DD-681，候选；DD-682，跨 MMF 边 |
+| S4 | DD-681，表与 Linear 子项映射 |
+| S5 | DD-681，候选解析；DD-682，边解析 |
+| S6、S7 | DD-679，票状态和归属合并 |
+| S8、S9 | DD-678，更新命令 |
+| S10 | DD-678，超时与缓存；DD-680，前端退化 |
+| S11、S12 | DD-680，Host 调度与前端状态 |
+| S13 | DD-680，更新后重读；DD-681，候选卡；DD-682，依赖高亮 |
+| S14 | DD-679，真实快照归属；DD-681，候选；DD-682，打包 App 综合验收 |

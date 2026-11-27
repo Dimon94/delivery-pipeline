@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "status": "failed",
+  "fetched_at": null,
+  "attempted_at": "2026-11-27T04:05:00Z",
+  "reason": "Linear 暂不可用",
+  "issues": {},
+  "failed": {
+    "DEMO-1": "读取失败"
+  }
+}

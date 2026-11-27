@@ -65,6 +65,93 @@ func TestReadBoard(t *testing.T) {
 	}
 }
 
+func TestLinearBoardContract(t *testing.T) {
+	const samples = "../../skills/delivery-pipeline/scripts/board_samples"
+	files := []string{
+		filepath.Join(samples, "board.json"),
+		filepath.Join(samples, "probed.json"),
+		filepath.Join(samples, "board-linear.json"),
+		filepath.Join(samples, "board-linear-failed.json"),
+	}
+	if m1 := os.Getenv("BOARD_M1_SNAPSHOT"); m1 != "" {
+		files = append(files, m1)
+	}
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			want, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := validateBoard(want)
+			if err != nil || !bytes.Equal(output, want) {
+				t.Fatalf("应原样返回快照，错误 %v", err)
+			}
+		})
+	}
+	t.Run("非法候选来源", func(t *testing.T) {
+		sample, err := os.ReadFile(filepath.Join(samples, "board-linear.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := bytes.Replace(sample, []byte(`"epic_table"`), []byte(`"undefined"`), 1)
+		output, err := validateBoard(bad)
+		if err == nil || output != nil || !strings.HasPrefix(err.Error(), "$.repos[0].epics[0].candidates[0].source") {
+			t.Fatalf("应报告非法候选来源的字段路径，错误 %v", err)
+		}
+	})
+}
+
+func TestRefreshBoardLinear(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := filepath.Abs("../../skills/delivery-pipeline/scripts/model_config.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	if err := os.MkdirAll(lanesRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(lanesRoot, "existing.txt")
+	if err := os.WriteFile(marker, []byte("existing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := Host{Python: python, Tool: tool}
+	for _, manual := range []bool{false, true} {
+		output, err := host.RefreshBoardLinear(manual)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var board struct {
+			Schema    int    `json:"schema"`
+			LanesRoot string `json:"lanes_root"`
+		}
+		if err := json.Unmarshal(output, &board); err != nil || board.Schema != 1 || board.LanesRoot != lanesRoot {
+			t.Fatalf("更新桩应返回本机快照，manual=%v，错误 %v", manual, err)
+		}
+	}
+	files, err := os.ReadDir(lanesRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := os.ReadFile(marker)
+	if err != nil || len(files) != 1 || string(value) != "existing" || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("更新桩改动了 lanes 根，错误 %v", err)
+	}
+}
+
 // 用独立 Python 进程穿过桌面公开 Interface，不替换配置 owner。
 func TestReadConfig(t *testing.T) {
 	python, err := exec.LookPath("python3")

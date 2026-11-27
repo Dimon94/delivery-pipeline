@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -102,7 +103,12 @@ func (h *Host) ReadBoard() (json.RawMessage, error) {
 	return validateBoard(output)
 }
 
-// validateBoard 核对 schema 1 必填结构与类型后原样返回。
+// RefreshBoardLinear 预留桌面更新入口，当前返回本机快照。
+func (h *Host) RefreshBoardLinear(manual bool) (json.RawMessage, error) {
+	return h.ReadBoard()
+}
+
+// validateBoard 核对 schema 1 结构与已出现的 Linear 字段后原样返回。
 func validateBoard(output []byte) (json.RawMessage, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(output, &root); err != nil || root == nil {
@@ -150,6 +156,9 @@ func validateBoard(output []byte) (json.RawMessage, error) {
 			if err := requireBoolField(epic, "ended", epicPath); err != nil {
 				return nil, err
 			}
+			if err := validateEpicLinearFields(epic, epicPath); err != nil {
+				return nil, err
+			}
 			mmfs, err := requireArrayField(epic, "mmfs", epicPath)
 			if err != nil {
 				return nil, err
@@ -190,6 +199,11 @@ func validateBoard(output []byte) (json.RawMessage, error) {
 			return nil, err
 		}
 	}
+	if raw, ok := root["linear"]; ok {
+		if err := validateBoardLinear(raw, "$.linear"); err != nil {
+			return nil, err
+		}
+	}
 	return json.RawMessage(output), nil
 }
 
@@ -202,15 +216,20 @@ func requireObject(raw json.RawMessage, path string) (map[string]json.RawMessage
 }
 
 func requireStringField(obj map[string]json.RawMessage, field, parent string) error {
+	_, err := readStringField(obj, field, parent)
+	return err
+}
+
+func readStringField(obj map[string]json.RawMessage, field, parent string) (string, error) {
 	raw, ok := obj[field]
 	if !ok {
-		return fmt.Errorf("%s.%s：缺少必填字段", parent, field)
+		return "", fmt.Errorf("%s.%s：缺少必填字段", parent, field)
 	}
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return fmt.Errorf("%s.%s：需要字符串", parent, field)
+	var value *string
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return "", fmt.Errorf("%s.%s：需要字符串", parent, field)
 	}
-	return nil
+	return *value, nil
 }
 
 func requireBoolField(obj map[string]json.RawMessage, field, parent string) error {
@@ -237,13 +256,120 @@ func requireArrayField(obj map[string]json.RawMessage, field, parent string) ([]
 	return value, nil
 }
 
+func requireStrings(obj map[string]json.RawMessage, path string, fields ...string) error {
+	for _, field := range fields {
+		if err := requireStringField(obj, field, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requireChoice(obj map[string]json.RawMessage, field, path string, choices ...string) error {
+	value, err := readStringField(obj, field, path)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(choices, value) {
+		return fmt.Errorf("%s.%s：取值必须为 %s", path, field, strings.Join(choices, "、"))
+	}
+	return nil
+}
+
+func validateBoardLinear(raw json.RawMessage, path string) error {
+	linear, err := requireObject(raw, path)
+	if err != nil {
+		return err
+	}
+	if err := requireChoice(linear, "status", path, "ok", "partial", "failed"); err != nil {
+		return err
+	}
+	if err := requireStringField(linear, "attempted_at", path); err != nil {
+		return err
+	}
+	for _, field := range []string{"fetched_at", "reason"} {
+		if !bytes.Equal(linear[field], []byte("null")) {
+			if err := requireStringField(linear, field, path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateCandidate(candidate map[string]json.RawMessage, path string) error {
+	if err := requireStrings(candidate, path, "mmf_id", "title"); err != nil {
+		return err
+	}
+	if err := requireChoice(candidate, "source", path, "epic_table", "linear_child"); err != nil {
+		return err
+	}
+	if bytes.Equal(candidate["spec"], []byte("null")) {
+		return nil
+	}
+	spec, err := requireObject(candidate["spec"], path+".spec")
+	if err != nil {
+		return err
+	}
+	return requireStrings(spec, path+".spec", "key", "url", "status")
+}
+
+func validateMmfEdge(edge map[string]json.RawMessage, path string) error {
+	if err := requireStrings(edge, path, "from", "to", "text"); err != nil {
+		return err
+	}
+	return requireChoice(edge, "kind", path, "开工", "上线", "Unknown")
+}
+
+func validateEpicLinearFields(epic map[string]json.RawMessage, path string) error {
+	if _, ok := epic["linear_status"]; ok {
+		if err := requireStringField(epic, "linear_status", path); err != nil {
+			return err
+		}
+	}
+	for _, list := range []struct {
+		field    string
+		validate func(map[string]json.RawMessage, string) error
+	}{
+		{"candidates", validateCandidate},
+		{"mmf_edges", validateMmfEdge},
+	} {
+		if _, ok := epic[list.field]; !ok {
+			continue
+		}
+		items, err := requireArrayField(epic, list.field, path)
+		if err != nil {
+			return err
+		}
+		for i, raw := range items {
+			itemPath := fmt.Sprintf("%s.%s[%d]", path, list.field, i)
+			item, err := requireObject(raw, itemPath)
+			if err != nil {
+				return err
+			}
+			if err := list.validate(item, itemPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func validateMmf(raw json.RawMessage, path string) error {
 	mmf, err := requireObject(raw, path)
 	if err != nil {
 		return err
 	}
-	for _, field := range []string{"map", "title", "stage"} {
-		if err := requireStringField(mmf, field, path); err != nil {
+	if err := requireStrings(mmf, path, "map", "title", "stage"); err != nil {
+		return err
+	}
+	if _, ok := mmf["mmf_id"]; ok {
+		if err := requireStringField(mmf, "mmf_id", path); err != nil {
+			return err
+		}
+	}
+	if _, ok := mmf["attribution_source"]; ok {
+		if err := requireChoice(mmf, "attribution_source", path, "linear"); err != nil {
 			return err
 		}
 	}
@@ -266,16 +392,24 @@ func validateMmf(raw json.RawMessage, path string) error {
 		if err != nil {
 			return err
 		}
-		for _, field := range []string{"id", "title", "stage"} {
-			if err := requireStringField(ticket, field, ticketPath); err != nil {
-				return err
-			}
+		if err := requireStrings(ticket, ticketPath, "id", "title", "stage"); err != nil {
+			return err
 		}
 		if _, err := requireArrayField(ticket, "deps", ticketPath); err != nil {
 			return err
 		}
 		if err := requireBoolField(ticket, "executing", ticketPath); err != nil {
 			return err
+		}
+		if rawIssue, ok := ticket["linear_issue"]; ok {
+			issuePath := ticketPath + ".linear_issue"
+			issue, err := requireObject(rawIssue, issuePath)
+			if err != nil {
+				return err
+			}
+			if err := requireStrings(issue, issuePath, "title", "status"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

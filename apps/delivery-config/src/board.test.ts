@@ -1,7 +1,21 @@
 import { expect, test } from 'bun:test';
-import type { BoardSnapshot } from './board';
+import { validateBoardSnapshot, type BoardSnapshot } from './board';
 
 const samples = new URL('../../../skills/delivery-pipeline/scripts/board_samples/', import.meta.url);
+
+test('快照校验接收 M1 与带 Linear 字段的 schema 1 样本', async () => {
+  for (const name of ['board.json', 'probed.json', 'board-linear.json', 'board-linear-failed.json']) {
+    expect(validateBoardSnapshot(await Bun.file(new URL(name, samples)).json())).toBeNull();
+  }
+  const m1 = Bun.env.BOARD_M1_SNAPSHOT;
+  if (m1) expect(validateBoardSnapshot(await Bun.file(m1).json())).toBeNull();
+});
+
+test('快照校验报告非法候选来源的字段路径', async () => {
+  const board = await Bun.file(new URL('board-linear.json', samples)).json();
+  board.repos[0].epics[0].candidates[0].source = 'undefined';
+  expect(validateBoardSnapshot(board)).toStartWith('$.repos[0].epics[0].candidates[0].source');
+});
 
 test('按看板类型读取 Python 与 Host 共用的快照样本', async () => {
   const board: BoardSnapshot = await Bun.file(new URL('board.json', samples)).json();

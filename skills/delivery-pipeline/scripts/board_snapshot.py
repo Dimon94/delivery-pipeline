@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from functools import cache
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 from runpy import run_path
 import subprocess
@@ -26,6 +27,53 @@ from lane_graph import GH_ISSUE_RE, STATE_GROUP, parse_registry_file  # noqa: E4
 Stage = Literal["spec", "tickets", "implement", "integrate", "review", "merge_review", "merged"]
 LiveStatus = Literal["working", "not_working", "unknown"]
 LaneGroup = Literal["done", "active", "review", "problem", "void"]
+LinearStatus = Literal["ok", "partial", "failed"]
+
+
+class LinearIssue(TypedDict):
+    title: str
+    status: str
+    status_type: str
+    parent: str | None
+    description: str | None
+    children: list[str] | None
+    fetched_at: str
+
+
+class BoardLinear(TypedDict):
+    status: LinearStatus
+    fetched_at: str | None
+    attempted_at: str
+    reason: str | None
+
+
+class LinearCache(BoardLinear):
+    version: Literal[1]
+    issues: dict[str, LinearIssue]
+    failed: dict[str, str]
+
+
+class TicketLinearIssue(TypedDict):
+    title: str
+    status: str
+
+
+class CandidateSpec(TypedDict):
+    key: str
+    url: str
+    status: str
+
+
+class MmfCandidate(TypedDict):
+    mmf_id: str
+    title: str
+    spec: CandidateSpec | None
+    source: Literal["epic_table", "linear_child"]
+
+
+MmfEdge = TypedDict("MmfEdge", {
+    "from": str, "to": str, "kind": Literal["开工", "上线", "Unknown"], "text": str,
+})
 
 
 class ProbeLane(TypedDict):
@@ -72,7 +120,11 @@ class MmfLinks(TypedDict):
     linear: str | None
 
 
-class Ticket(TypedDict):
+class TicketLinearFields(TypedDict, total=False):
+    linear_issue: TicketLinearIssue
+
+
+class Ticket(TicketLinearFields):
     id: str
     title: str
     deps: list[str]
@@ -82,11 +134,13 @@ class Ticket(TypedDict):
     linear: str | None
 
 
-class MmfHistory(TypedDict, total=False):
+class MmfOptionalFields(TypedDict, total=False):
     archived_at: str
+    mmf_id: str
+    attribution_source: Literal["linear"]
 
 
-class Mmf(MmfHistory):
+class Mmf(MmfOptionalFields):
     map: str
     title: str
     stage: Literal[Stage, "Unknown"]
@@ -107,7 +161,13 @@ class InboxItem(Mmf, InboxKind):
     attribution: Literal["unassigned"]
 
 
-class Epic(TypedDict):
+class EpicLinearFields(TypedDict, total=False):
+    linear_status: str
+    candidates: list[MmfCandidate]
+    mmf_edges: list[MmfEdge]
+
+
+class Epic(EpicLinearFields):
     key: str
     url: str | None
     title: str
@@ -131,7 +191,11 @@ class BoardError(TypedDict):
     reason: str
 
 
-class BoardSnapshot(TypedDict):
+class BoardLinearFields(TypedDict, total=False):
+    linear: BoardLinear
+
+
+class BoardSnapshot(BoardLinearFields):
     schema: Literal[1]
     generated_at: str  # ISO 时间
     lanes_root: str
@@ -170,7 +234,7 @@ def _validate(value, field_type, path: str) -> None:
             raise ValueError(f"{path}: 需要数组")
         for index, child in enumerate(value):
             _validate(child, args[0], f"{path}[{index}]")
-    elif origin is UnionType:  # schema 1 的联合类型均为 T | None。
+    elif origin is UnionType:  # JSON 联合类型均为 T | None。
         if value is not None:
             _validate(value, args[0], path)
     elif origin is Literal:
@@ -184,6 +248,12 @@ def validate_snapshot(value: object) -> BoardSnapshot:
     """校验 schema 1 的必填字段与类型，错误包含 JSON 字段路径。"""
     _validate(value, BoardSnapshot, "$")
     return cast(BoardSnapshot, value)
+
+
+def validate_linear_cache(value: object) -> LinearCache:
+    """校验 version 1 的 Linear 缓存，错误包含 JSON 字段路径。"""
+    _validate(value, LinearCache, "$")
+    return cast(LinearCache, value)
 
 
 _BOARD_STAGE: dict[str, Stage] = {"todo": "implement", "started": "implement",
@@ -512,6 +582,12 @@ def refresh_archives(lanes_root: str, call=issue_status.linear_call) -> dict[str
     return archived
 
 
+def refresh_linear(lanes_root: str, call=issue_status.linear_call, deadline_s: float = 120) -> LinearCache:
+    """预留 Linear 更新入口，当前只返回失败结果。"""
+    return {"version": 1, "status": "failed", "attempted_at": datetime.now(timezone.utc).isoformat(),
+            "fetched_at": None, "reason": "Linear 更新尚未启用", "issues": {}, "failed": {}}
+
+
 def _expect_rejection(snapshot: object, path: str) -> None:
     try:
         validate_snapshot(snapshot)
@@ -630,6 +706,11 @@ runpy.run_path(sys.argv[0], run_name='__main__')
         outputs = [subprocess.check_output([sys.executable, "-B", "-c", offline, __file__, "--lanes-root", str(root)],
                                           text=True) for _ in range(2)]
         assert fingerprint() == before  # S2
+        update = subprocess.check_output([sys.executable, "-B", "-c", offline, __file__, "--lanes-root", str(root),
+                                          "--refresh-linear"], text=True)
+        failed = validate_linear_cache(json.loads(update))
+        assert failed["status"] == "failed" and failed["reason"] and failed["fetched_at"] is None
+        assert not failed["issues"] and fingerprint() == before
         snapshots = [validate_snapshot(json.loads(output)) for output in outputs]  # S8
         for snapshot in snapshots:
             del snapshot["generated_at"]
@@ -757,15 +838,32 @@ runpy.run_path(sys.argv[0], run_name='__main__')
 
 def self_test() -> None:
     for path in sorted(SAMPLES.glob("*.json")):
-        snapshot = validate_snapshot(json.loads(path.read_text(encoding="utf-8")))
-        _test_required_fields(snapshot, snapshot)
+        if path.name.startswith("linear-cache-"):
+            sample = validate_linear_cache(json.loads(path.read_text(encoding="utf-8")))
+            assert path.stem == f"linear-cache-{sample['status']}"
+            continue
+
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        snapshot = validate_snapshot(raw)
         _expect_rejection(snapshot | {"schema": 2}, "$.schema")
+        if path.name == "board-linear.json":
+            raw["repos"][0]["epics"][0]["candidates"][0]["source"] = "undefined"
+            _expect_rejection(raw, "$.repos[0].epics[0].candidates[0].source")
+            continue
+        if path.name == "board-linear-failed.json":
+            assert snapshot["linear"]["status"] == "failed"
+            continue
+
+        _test_required_fields(snapshot, snapshot)
 
         running = _running_lanes(snapshot)
         assert running, f"{path.name} 必须含 running lane"
         inputs: list[ProbeLane] = [{"lane_id": lane["lane_id"], "overlay": {}} for lane in running]
         assert not LIVE_PROBES
         assert probe_lanes("fixture", inputs) == {lane["lane_id"]: "unknown" for lane in running}
+
+    if m1 := os.environ.get("BOARD_M1_SNAPSHOT"):
+        validate_snapshot(json.loads(Path(m1).read_text(encoding="utf-8")))
 
     _test_local_snapshot()
     print("board_snapshot self-test ok")
@@ -777,10 +875,15 @@ def main(argv: list[str]) -> int:
         return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lanes-root", required=True)
-    parser.add_argument("--refresh-archives", action="store_true", help="从 Linear 更新本机 Epic Spec 的归档记录")
+    refresh = parser.add_mutually_exclusive_group()
+    refresh.add_argument("--refresh-archives", action="store_true", help="从 Linear 更新本机 Epic Spec 的归档记录")
+    refresh.add_argument("--refresh-linear", action="store_true", help="更新看板的 Linear 缓存")
     args = parser.parse_args(argv)
     if args.refresh_archives:
         print(json.dumps(refresh_archives(args.lanes_root), ensure_ascii=False))
+        return 0
+    if args.refresh_linear:
+        print(json.dumps(refresh_linear(args.lanes_root), ensure_ascii=False))
         return 0
     _load_live_probes()
     print(json.dumps(read_snapshot(args.lanes_root), ensure_ascii=False))

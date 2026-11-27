@@ -32,10 +32,13 @@ export type Ticket = {
   lane: Lane | null;
   executing: boolean;
   linear: string | null;
+  linear_issue?: { title: string; status: string };
 };
 
 export type Mmf = {
   archived_at?: string;
+  mmf_id?: string;
+  attribution_source?: 'linear';
   map: string;
   title: string;
   stage: Stage | 'Unknown';
@@ -53,17 +56,41 @@ export function isFinishedMmf(mmf:Mmf):boolean {
 
 export type InboxItem = Mmf & { repo: string; attribution: 'unassigned'; kind?: 'spec' | 'item' };
 
+export type MmfCandidate = {
+  mmf_id: string;
+  title: string;
+  spec: { key: string; url: string; status: string } | null;
+  source: 'epic_table' | 'linear_child';
+};
+
+export type MmfEdge = {
+  from: string;
+  to: string;
+  kind: '开工' | '上线' | 'Unknown';
+  text: string;
+};
+
 export type Epic = {
   key: string;
   url: string | null;
   title: string;
   ended: boolean;
   mmfs: Mmf[];
+  linear_status?: string;
+  candidates?: MmfCandidate[];
+  mmf_edges?: MmfEdge[];
 };
 
 export type Repo = { name: string; epics: Epic[] };
 export type ProbeResult = { runtime: string; status: 'ok' | 'missing' | 'failed'; reason: string | null };
 export type BoardError = { map: string; reason: string };
+
+export type BoardLinear = {
+  status: 'ok' | 'partial' | 'failed';
+  fetched_at: string | null;
+  attempted_at: string;
+  reason: string | null;
+};
 
 export type BoardSnapshot = {
   schema: 1;
@@ -73,9 +100,59 @@ export type BoardSnapshot = {
   inbox: InboxItem[];
   probes: ProbeResult[];
   errors: BoardError[];
+  linear?: BoardLinear;
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+type FieldCheck = (raw: unknown, path: string) => string | null;
+const stringField: FieldCheck = (raw, path) => typeof raw === 'string' ? null : `${path}：需要字符串`;
+const nullable = (check: FieldCheck): FieldCheck => (raw, path) => raw === null ? null : check(raw, path);
+const choice = (...values: string[]): FieldCheck => (raw, path) =>
+  typeof raw === 'string' && values.includes(raw) ? null : `${path}：取值必须为 ${values.join('、')}`;
+
+function checkFields(raw: Record<string, unknown>, path: string, fields: Record<string, FieldCheck>,
+                     optional = false): string | null {
+  for (const [field, check] of Object.entries(fields)) {
+    if (optional && raw[field] === undefined) continue;
+    const error = check(raw[field], `${path}.${field}`);
+    if (error) return error;
+  }
+  return null;
+}
+
+const objectOf = (fields: Record<string, FieldCheck>): FieldCheck => (raw, path) =>
+  isObj(raw) ? checkFields(raw, path, fields) : `${path}：需要对象`;
+
+const arrayOf = (check: FieldCheck): FieldCheck => (raw, path) => {
+  if (!Array.isArray(raw)) return `${path}：需要数组`;
+  for (let i = 0; i < raw.length; i++) {
+    const error = check(raw[i], `${path}[${i}]`);
+    if (error) return error;
+  }
+  return null;
+};
+
+const epicLinearFields = {
+  linear_status: stringField,
+  candidates: arrayOf(objectOf({
+    mmf_id: stringField,
+    title: stringField,
+    spec: nullable(objectOf({ key: stringField, url: stringField, status: stringField })),
+    source: choice('epic_table', 'linear_child'),
+  })),
+  mmf_edges: arrayOf(objectOf({
+    from: stringField, to: stringField, kind: choice('开工', '上线', 'Unknown'), text: stringField,
+  })),
+};
+const mmfLinearFields = { mmf_id: stringField, attribution_source: choice('linear') };
+const ticketLinearFields = { linear_issue: objectOf({ title: stringField, status: stringField }) };
+const boardLinearFields = {
+  linear: objectOf({
+    status: choice('ok', 'partial', 'failed'), fetched_at: nullable(stringField),
+    attempted_at: stringField, reason: nullable(stringField),
+  }),
+};
 
 function validateMmfShape(raw: unknown, path: string): string | null {
   if (!isObj(raw)) return `${path}：需要对象`;
@@ -95,8 +172,10 @@ function validateMmfShape(raw: unknown, path: string): string | null {
     }
     if (!Array.isArray(t.deps)) return `${tp}.deps：需要数组`;
     if (typeof t.executing !== 'boolean') return `${tp}.executing：需要布尔值`;
+    const err = checkFields(t, tp, ticketLinearFields, true);
+    if (err) return err;
   }
-  return null;
+  return checkFields(raw, path, mmfLinearFields, true);
 }
 
 // 校验 schema 1 内部结构，避免坏快照进入渲染抛异常或停在读取中。
@@ -118,6 +197,8 @@ export function validateBoardSnapshot(raw: unknown): string | null {
       if (typeof epic.title !== 'string') return `${ep}.title：需要字符串`;
       if (typeof epic.ended !== 'boolean') return `${ep}.ended：需要布尔值`;
       if (!Array.isArray(epic.mmfs)) return `${ep}.mmfs：需要数组`;
+      const linearError = checkFields(epic, ep, epicLinearFields, true);
+      if (linearError) return linearError;
       for (let k = 0; k < epic.mmfs.length; k++) {
         const err = validateMmfShape(epic.mmfs[k], `${ep}.mmfs[${k}]`);
         if (err) return err;
@@ -138,5 +219,5 @@ export function validateBoardSnapshot(raw: unknown): string | null {
       }
     }
   }
-  return null;
+  return checkFields(raw, '$', boardLinearFields, true);
 }
