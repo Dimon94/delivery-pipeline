@@ -296,6 +296,35 @@ test('S11 切 Epic/MMF/票时中右栏同步，七步条、现场与链接对应
  expect([...doc.querySelectorAll('#board-right button:not(.detail-chip)')].map(b=>b.textContent)).toEqual(['收起右栏']);
 });
 
+test('Inbox 的零散票汇成默认收起的节点，保留正式 Spec 和直接定位',async()=>{
+ const mixed=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8'));
+ mixed.inbox[0].kind='spec';
+ mixed.inbox[1].kind='item';
+ answer=()=>Promise.resolve(mixed);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+ click(q('.inbox-select[data-map="check-notices"]'));
+ const summary=()=>q('.graph-loose');
+ const toggle=()=>q('.board-col-head .board-summary-toggle');
+ expect(summary()?.textContent).toContain('2 条目');
+ expect(summary()!.getAttribute('aria-expanded')).toBe('false');
+ expect(toggle()!.textContent).toContain('零散票');
+ expect(q('.graph-mmf[data-map="check-notices"]')).not.toBeNull();
+ expect(q('.graph-mmf[data-map="repair-input"]')).toBeNull();
+ click(toggle());
+ expect(summary()!.getAttribute('aria-expanded')).toBe('true');
+ expect(q('.graph-links [data-link$=">repair-input"]')!.getAttribute('d')).toStartWith(`M${parseFloat(summary()!.style.left)+GRAPH_GEOMETRY.mmfW} `);
+ expect(q('.graph-mmf[data-map="repair-input"]')).not.toBeNull();
+ expect(q('.graph-mmf[data-map="reconcile"]')).not.toBeNull();
+ click(q('.graph-mmf[data-map="repair-input"]'));
+ expect(q('#board-right .detail-title')!.textContent).toBe('修复输入');
+ click(summary());
+ expect(q('.graph-mmf[data-map="repair-input"]')).toBeNull();
+ click(q('.inbox-select[data-map="repair-input"]'));
+ expect(summary()!.getAttribute('aria-expanded')).toBe('true');
+ expect(toggle()!.getAttribute('aria-expanded')).toBe('true');
+ expect(q('.graph-mmf.selected')!.getAttribute('data-map')).toBe('repair-input');
+});
+
 test('S19 通过真实入口加载 probed 样本，Inbox 三条展示完整字段且点选同步中右栏',async()=>{
  const probed=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8'));
  answer=()=>Promise.resolve(probed);
@@ -315,6 +344,65 @@ test('S19 通过真实入口加载 probed 样本，Inbox 三条展示完整字�
  expect(q('#board-right .detail-title')!.textContent).toBe('修复输入');
  expect(q('#board-right .detail-sub')!.textContent).toContain('example/publisher');
  expect(q('#board-right .detail-sub')!.textContent).toContain('待归属');
+});
+
+test('Inbox 以条目计数，零散 issue 不显示 MMF 或 Spec 步骤',async()=>{
+ const mixed=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8'));
+ mixed.inbox[0].kind='spec';
+ mixed.inbox[1].kind='item';
+ answer=()=>Promise.resolve(mixed);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+ click(q('.inbox-select[data-map="repair-input"]'));
+ expect(q<HTMLElement>('.graph-root')!.dataset.meta).toBe('3 条目');
+ expect(q('#board-right h2')!.textContent).toBe('条目');
+ expect(q('#board-right .stage-bar')).toBeNull();
+ click(q('.inbox-select[data-map="'+mixed.inbox[0].map+'"]'));
+ expect(q('#board-right h2')!.textContent).toBe('MMF');
+ expect(q('#board-right .stage-bar')).not.toBeNull();
+});
+
+test('同个 Epic 已归档和已合入的 MMF 合成一个默认收起的节点',async()=>{
+ const mixed=structuredClone(sample);
+ const active=mixed.repos[0].epics[0].mmfs[0];
+ mixed.repos[0].epics[0].mmfs=[active,
+  {...structuredClone(active),map:'archived-mmf',title:'归档交付',archived_at:'2026-11-25T00:18:14Z'},
+  {...structuredClone(active),map:'merged-mmf',title:'已合入交付',stage:'merged'}];
+ answer=()=>Promise.resolve(mixed);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+ click(q('.board-entry[data-group$="DEMO-1"]'));
+ const summary=()=>q('.graph-finished');
+ const toggle=()=>q('.board-col-head .board-summary-toggle');
+ const card=(map:string)=>q(`.graph-mmf[data-map="${map}"]`);
+ const pathTo=(map:string)=>q(`.graph-links [data-link$=">${map}"]`)!.getAttribute('d')!;
+ expect(summary()!.textContent).toContain('2 MMF');
+ expect(toggle()!.textContent).toContain('已结束');
+ expect(toggle()!.closest('.board-center')).toBeNull();
+ expect(toggle()!.getAttribute('aria-expanded')).toBe('false');
+ const summaryPosition=summary()!.getAttribute('style');
+ const summaryRight=parseFloat(summary()!.style.left)+GRAPH_GEOMETRY.mmfW;
+ expect(q('.graph-mmf[data-map="archived-mmf"]')).toBeNull();
+ expect(q('.graph-mmf[data-map="merged-mmf"]')).toBeNull();
+ expect(q('.graph-mmf[data-map="'+active.map+'"]')).not.toBeNull();
+ const activePath=pathTo(active.map);
+ click(toggle());
+ expect(toggle()!.getAttribute('aria-expanded')).toBe('true');
+ expect(summary()!.getAttribute('aria-expanded')).toBe('true');
+ expect(summary()!.getAttribute('style')).toBe(summaryPosition);
+ expect(pathTo(active.map)).toBe(activePath);
+ for(const map of ['archived-mmf','merged-mmf']){
+  expect(parseFloat(card(map)!.style.left)).toBeGreaterThan(summaryRight);
+  expect(pathTo(map)).toStartWith(`M${summaryRight} `);
+  const ticketEdge=q(`.e-root[data-map="${map}"]`)!;
+  expect(ticketEdge.getAttribute('d')).toStartWith(`M${parseFloat(card(map)!.style.left)+GRAPH_GEOMETRY.mmfW} `);
+ }
+ click(q('.graph-mmf[data-map="archived-mmf"]'));
+ expect(q('#board-right .detail-title')!.textContent).toBe('归档交付');
+ click(summary());
+ expect(summary()!.getAttribute('aria-expanded')).toBe('false');
+ expect(toggle()!.getAttribute('aria-expanded')).toBe('false');
+ expect(summary()!.getAttribute('style')).toBe(summaryPosition);
+ expect(q('.graph-mmf[data-map="archived-mmf"]')).toBeNull();
+ expect(q('#board-right .detail-title')!.textContent).not.toBe('归档交付');
 });
 
 test('S12/R3 快照 errors 在左栏独立“读取失败”分组显示 map 名与原因原文，正常 map 不受影响；errors 为空时不显示该分组',async()=>{
@@ -415,4 +503,26 @@ test('DD-668 visual-fix-3 项10-17交互：右栏头部路径、上游芯片点�
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
  expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 01');
  expect(doc.querySelectorAll('#board-right .detail-links > *').length).toBe(3);
+});
+
+test('旧快照（无 archived_at 与 kind）兼容旧行为：进行中 Epic 无已结束汇总、保留 fix-3 右栏结构，Inbox 可正常点选',async()=>{
+ const legacy=structuredClone(sample);
+ expect('archived_at' in legacy.repos[0].epics[0].mmfs[0]).toBe(false);
+ expect('kind' in legacy.inbox[0]).toBe(false);
+ answer=()=>Promise.resolve(legacy);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ expect(q('.graph-finished')).toBeNull();
+ expect(q('.board-col-head .board-summary-toggle')).toBeNull();
+ expect(q('.graph-mmf[data-map="dispatch-rules"]')).not.toBeNull();
+ click(q('.graph-ticket[data-ticket="01"]'));
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 01');
+ expect(q('#board-right .stage-bar')).not.toBeNull();
+ expect(doc.querySelectorAll('#board-right .detail-links > *').length).toBe(3);
+
+ click(q('.inbox-select[data-map="repair-input"]'));
+ expect(q('.graph-root')!.textContent).toBe('Inbox');
+ expect(q('.graph-mmf.selected')!.dataset.map).toBe('repair-input');
+ expect(q('#board-right h2')!.textContent).toBe('条目');
+ expect(q('#board-right .stage-bar')).toBeNull();
 });

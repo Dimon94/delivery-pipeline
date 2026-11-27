@@ -276,3 +276,18 @@ test('DD-668 visual-fix-3 项17：链接区固定呈现 Plan Review / Merge Revi
  expect(items[2]!.textContent).toContain('Linear');
  expect(items[2]!.textContent).toContain('尚无');
 });
+
+test('DD-668 user-local-port：Inbox 零散条目不显示七步条且头部写「条目」，Inbox 正式 Spec 保留七步条与 MMF 头部',()=>{
+ const mmf=makeProtoLikeMmf();
+ const looseDoc=mount(renderRightColumn({mmf,ticket:undefined,inbox:true,inboxRepo:'example/publisher',inboxSpec:false,open:true}));
+ expect(looseDoc.querySelector('#board-right h2')!.textContent).toBe('条目');
+ expect(looseDoc.querySelector('.stage-bar')).toBeNull();
+ expect(looseDoc.querySelector('.detail-sub')!.textContent).toContain('example/publisher');
+ expect(looseDoc.querySelector('.detail-sub')!.textContent).toContain('待归属');
+ expect(looseDoc.querySelectorAll('.detail-links > *').length).toBe(3);
+
+ const specDoc=mount(renderRightColumn({mmf,ticket:undefined,inbox:true,inboxRepo:'example/dispatch',inboxSpec:true,open:true}));
+ expect(specDoc.querySelector('#board-right h2')!.textContent).toBe('MMF');
+ expect(specDoc.querySelector('.stage-bar')).not.toBeNull();
+ expect(specDoc.querySelectorAll('.detail-links > *').length).toBe(3);
+});

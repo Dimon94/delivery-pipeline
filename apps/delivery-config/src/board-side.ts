@@ -1,4 +1,4 @@
-import type {BoardError,BoardSnapshot,Epic,InboxItem} from './board';
+import {isFinishedMmf,type BoardError,type BoardSnapshot,type Epic,type InboxItem} from './board';
 import type {GraphGroup} from './board-graph';
 import {copy,issueLinkLabel,mmfStatusText,stageLabel} from './copy';
 
@@ -60,7 +60,7 @@ export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
   }
   if(activeEpics.length)repos.push({name:r.name,epics:activeEpics});
  }
- const inboxGroup:GraphGroup={id:INBOX_GROUP_ID,label:copy.Inbox,url:null,mmfs:board.inbox};
+ const inboxGroup:GraphGroup={id:INBOX_GROUP_ID,label:copy.Inbox,url:null,mmfs:board.inbox,inbox:true};
  const errors=Array.isArray(board.errors)?board.errors:[];
  const all:GraphGroup[]=[
   ...repos.flatMap(r=>r.epics.map(e=>e.group)),
@@ -75,7 +75,7 @@ export function isEpicExpanded(entry:SideEpicEntry,overrides:ReadonlyMap<string,
  return !entry.ended&&entry.hasRunning;
 }
 
-function renderEpicItem(entry:SideEpicEntry,selectedGroupId:string|undefined,selectedMap:string|undefined,overrides:ReadonlyMap<string,boolean>):string {
+function renderEpicItem(entry:SideEpicEntry,selectedGroupId:string|undefined,selectedMap:string|undefined,overrides:ReadonlyMap<string,boolean>,expandedFinished:ReadonlySet<string>):string {
  const g=entry.group;
  const expanded=isEpicExpanded(entry,overrides);
  const selected=g.id===selectedGroupId;
@@ -85,11 +85,16 @@ function renderEpicItem(entry:SideEpicEntry,selectedGroupId:string|undefined,sel
  const activeCount=allTickets.filter(t=>t.lane?.group==='active'||t.lane?.group==='review').length;
  const pct=allTickets.length?Math.round((doneCount/allTickets.length)*100):0;
  const flagsHtml=(problemCount?`<em class="epic-flag problem">${problemCount} 需处理</em>`:'')+(activeCount?`<em class="epic-flag">${activeCount} 进行中</em>`:'');
- const mmfsHtml=g.mmfs.map(m=>{
+ const mmfLink=(m:(typeof g.mmfs)[number])=>{
   const mmfSelected=selected&&m.map===selectedMap;
-  return `<button class="board-mmf-entry${mmfSelected?' selected':''}" data-board="side-mmf" data-group="${esc(g.id)}" data-map="${esc(m.map)}" aria-current="${mmfSelected}" title="${esc(m.title)} · ${esc(stageLabel(m.stage))}"><span class="board-mmf-title">${esc(m.title)}</span><small>${esc(stageLabel(m.stage))}</small></button>`;
- }).join('');
- return `<div class="board-epic${expanded?' is-expanded':''}" data-epic="${esc(g.id)}" data-expanded="${expanded}"><div class="board-epic-row"><button class="epic-toggle" data-board="toggle-epic" data-group="${esc(g.id)}" aria-expanded="${expanded}" aria-label="${esc(expanded?copy.收起Epic:copy.展开Epic)} ${esc(g.label)}">${expanded?'▾':'▸'}</button><button class="board-entry${selected?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${selected}" title="${esc(g.label)}"><span class="epic-top"><span class="board-entry-label">${esc(g.label)}</span><small>${g.mmfs.length} MMF${allTickets.length?` · ${allTickets.length} 票`:''}</small></span><span class="epic-bar"><i style="width:${pct}%"></i></span>${flagsHtml?`<span class="epic-flags">${flagsHtml}</span>`:''}</button></div><div class="epic-mmfs"${expanded?'':' hidden'}>${mmfsHtml}</div></div>`;
+  const stage=m.archived_at?copy.已归档:stageLabel(m.stage);
+  return `<button class="board-mmf-entry${mmfSelected?' selected':''}" data-board="side-mmf" data-group="${esc(g.id)}" data-map="${esc(m.map)}" aria-current="${mmfSelected}" title="${esc(m.title)} · ${esc(stage)}"><span class="board-mmf-title">${esc(m.title)}</span><small>${esc(stage)}</small></button>`;
+ };
+ const finished=g.mmfs.filter(isFinishedMmf);
+ const finishedOpen=expandedFinished.has(g.id);
+ const activeHtml=g.mmfs.filter(m=>!isFinishedMmf(m)).map(mmfLink).join('');
+ const finishedHtml=finished.length?`<button class="board-mmf-entry" data-board="toggle-summary" data-group="${esc(g.id)}" aria-expanded="${finishedOpen}"><span>${finishedOpen?'▾':'▸'} ${copy.已结束}</span><small>${finished.length} MMF</small></button>${finishedOpen?finished.map(mmfLink).join(''):''}`:'';
+ return `<div class="board-epic${expanded?' is-expanded':''}" data-epic="${esc(g.id)}" data-expanded="${expanded}"><div class="board-epic-row"><button class="epic-toggle" data-board="toggle-epic" data-group="${esc(g.id)}" aria-expanded="${expanded}" aria-label="${esc(expanded?copy.收起Epic:copy.展开Epic)} ${esc(g.label)}">${expanded?'▾':'▸'}</button><button class="board-entry${selected?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${selected}" title="${esc(g.label)}"><span class="epic-top"><span class="board-entry-label">${esc(g.label)}</span><small>${g.mmfs.length} MMF${allTickets.length?` · ${allTickets.length} 票`:''}</small></span><span class="epic-bar"><i style="width:${pct}%"></i></span>${flagsHtml?`<span class="epic-flags">${flagsHtml}</span>`:''}</button></div><div class="epic-mmfs"${expanded?'':' hidden'}>${activeHtml}${finishedHtml}</div></div>`;
 }
 
 function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedGroupId:string|undefined,selectedMap:string|undefined,inboxOpen:boolean):string {
@@ -122,6 +127,7 @@ export interface LeftColumnParams {
  endedOpen:boolean;
  inboxOpen?:boolean;
  expandedEpics:ReadonlyMap<string,boolean>;
+ expandedFinished?:ReadonlySet<string>;
  generatedAt?:string;
 }
 
@@ -131,14 +137,14 @@ function formatSnapshotTime(iso?:string):string {
 }
 
 export function renderLeftColumn(params:LeftColumnParams):string {
- const {groups,selectedGroupId,selectedMap,open,endedOpen,inboxOpen=false,expandedEpics,generatedAt}=params;
+ const {groups,selectedGroupId,selectedMap,open,endedOpen,inboxOpen=false,expandedEpics,expandedFinished=new Set<string>(),generatedAt}=params;
  const activeCount=groups.repos.reduce((sum,r)=>sum+r.epics.length,0);
  const activeHtml=groups.repos.map(r=>
-  `<section class="board-repo" data-repo="${esc(r.name)}"><div class="board-repo-head"><h3>${esc(r.name)}</h3><small>${r.epics.length}</small></div>${r.epics.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics)).join('')}</section>`
+  `<section class="board-repo" data-repo="${esc(r.name)}"><div class="board-repo-head"><h3>${esc(r.name)}</h3><small>${r.epics.length}</small></div>${r.epics.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics,expandedFinished)).join('')}</section>`
  ).join('');
  const endedExpanded=endedOpen||groups.ended.some(e=>e.group.id===selectedGroupId);
  const endedHtml=groups.ended.length
-  ?`<details class="board-repo board-ended" data-board-ended="true"${endedExpanded?' open':''}><summary>${copy.已结束} ${groups.ended.length}</summary>${groups.ended.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics)).join('')}</details>`
+  ?`<details class="board-repo board-ended" data-board-ended="true"${endedExpanded?' open':''}><summary>${copy.已结束} ${groups.ended.length}</summary>${groups.ended.map(e=>renderEpicItem(e,selectedGroupId,selectedMap,expandedEpics,expandedFinished)).join('')}</details>`
   :'';
  const inboxHtml=renderInboxSection(groups.inbox,selectedGroupId,selectedMap,inboxOpen);
  const errorsHtml=renderErrorsSection(groups.errors);

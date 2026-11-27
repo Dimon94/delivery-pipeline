@@ -22,6 +22,7 @@ export interface RightColumnParams {
  ticket?:Ticket;
  inbox:boolean;
  inboxRepo?:string;
+ inboxSpec?:boolean;
  open:boolean;
 }
 
@@ -65,11 +66,11 @@ function mmfPathSegment(mmf:Mmf,epicKey?:string):string {
  return mmf.map;
 }
 
-function headerTitle(epicKey:string|undefined,mmf:Mmf|undefined,ticket:Ticket|undefined):string {
+function headerTitle(epicKey:string|undefined,mmf:Mmf|undefined,ticket:Ticket|undefined,showSteps:boolean):string {
  if(!mmf)return '';
  const seg=mmfPathSegment(mmf,epicKey);
  if(ticket)return epicKey?`${epicKey} · ${seg} · ${ticket.id}`:`${seg} · ${ticket.id}`;
- return epicKey?`${epicKey} · ${seg}`:'MMF';
+ return epicKey?`${epicKey} · ${seg}`:(showSteps?'MMF':copy.条目);
 }
 
 function renderRelSection(title:string,mmf:Mmf,tickets:Ticket[]):string {
@@ -147,11 +148,11 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
 }
 
 export function renderRightColumn(params:RightColumnParams):string {
- const {epicKey,mmf,ticket,inbox,inboxRepo,open}=params;
- const showSteps=true;
+ const {epicKey,mmf,ticket,inbox,inboxRepo,inboxSpec,open}=params;
+ const showSteps=!inbox||inboxSpec===true;
  const groupCls=ticket?(ticket.lane?ticket.lane.group:'pending'):undefined;
  const pillHtml=ticket&&groupCls
   ?`<span class="board-pill g-${esc(groupCls)}">${esc(laneGroupNames[groupCls]??copy.未派发)}</span>`
   :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
- return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right">${copy.收起右栏}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps)}</div></aside>`;
+ return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right">${copy.收起右栏}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps)}</div></aside>`;
 }

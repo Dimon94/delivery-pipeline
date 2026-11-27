@@ -1,7 +1,7 @@
-import type {Mmf,Ticket} from './board';
+import {isFinishedMmf,type Mmf,type Ticket} from './board';
 import {copy,stageLabel,ticketStatusText} from './copy';
 
-export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[]};
+export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];inbox?:true};
 export type NodeRect={x:number;y:number;width:number;height:number};
 export type ViewportMetrics={scrollLeft:number;scrollTop:number;clientWidth:number;clientHeight:number;scrollWidth?:number;scrollHeight?:number};
 export type DependencyChain={nodes:Set<string>;edges:Set<string>};
@@ -133,23 +133,38 @@ function ticketStateClass(ticket:Ticket):string {
  return `st-${esc(ticket.lane.state)}`;
 }
 
-export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined):string {
+export function isSummarizedMmf(group:GraphGroup,mmf:Mmf):boolean {
+ return group.inbox?!('kind' in mmf&&mmf.kind==='spec'):isFinishedMmf(mmf);
+}
+
+export function graphSummary(group:GraphGroup,open:boolean) {
+ const items=group.mmfs.filter(m=>isSummarizedMmf(group,m));
+ return {
+  items,
+  label:group.inbox?copy.零散票:copy.已结束,
+  count:`${items.length} ${group.inbox?copy.条目:'MMF'}`,
+  hint:group.inbox?(open?copy.收起零散票:copy.展开零散票):(open?copy.收起已结束:copy.展开已结束),
+ };
+}
+
+export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined,summaryOpen=false):string {
  const G=GRAPH_GEOMETRY;
  const round2=(n:number)=>Number(n.toFixed(2));
  const bands:string[]=[],nodes:string[]=[],links:string[]=[];
  const bandX=G.root+G.rootGap;
  const mmfX=bandX+G.pad;
- const ticketX0=mmfX+G.mmfW+G.mmfGap;
- let y=0,width=mmfX+G.mmfW+G.pad;
+ const summaryRight=mmfX+G.mmfW;
+ let y=0,width=summaryRight+G.pad;
 
  const totalTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.length,0);
  const doneTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.filter(t=>t.lane?.group==='done').length,0);
 
- // 预计算每个 MMF 横带的高度与垂直中心，使 EP 根节点可垂直居中对齐。
- type BandLayout={mmf:Mmf;bandY:number;bandH:number;mmfY:number;pos:Map<string,{x:number;y:number}>;bandW:number};
+ type BandLayout={mmf:Mmf;bandY:number;bandH:number;nodeX:number;mmfY:number;pos:Map<string,{x:number;y:number}>};
  const layouts:BandLayout[]=[];
- let maxBandW=0;
- for(const m of group.mmfs){
+ const summary=graphSummary(group,summaryOpen);
+ const summarized=new Set(summary.items);
+ const placeBand=(m:Mmf,nodeX:number)=>{
+  const ticketX0=nodeX+G.mmfW+G.mmfGap;
   const layer=ticketLayers(m.tickets),rows=new Map<number,number>();
   for(const t of m.tickets){
    const l=layer.get(t.id)!;
@@ -164,7 +179,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
   // 每列在横带内垂直居中，同原型 .layers align-items:center
   const colCursor=new Map<number,number>();
   const pos=new Map<string,{x:number;y:number}>();
-  let bandRight=mmfX+G.mmfW+G.pad;
+  let bandRight=nodeX+G.mmfW+G.pad;
   for(const t of m.tickets){
    const l=layer.get(t.id)!,r=colCursor.get(l)??0;
    colCursor.set(l,r+1);
@@ -177,44 +192,58 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
    bandRight=Math.max(bandRight,tx+G.ticketW+G.pad);
   }
   if(!m.tickets.length)bandRight=Math.max(bandRight,ticketX0+G.ticketW+G.pad);
-  const bandW=bandRight-bandX;
-  maxBandW=Math.max(maxBandW,bandW);
   width=Math.max(width,bandRight);
-  layouts.push({mmf:m,bandY:round2(y),bandH,mmfY,pos,bandW});
+  layouts.push({mmf:m,bandY:y,bandH,nodeX,mmfY,pos});
   y=round2(y+bandH+G.band);
+ };
+
+ for(const m of group.mmfs)if(!summarized.has(m))placeBand(m,mmfX);
+ const summaryY=y+G.pad;
+ const collapsedEnd=summary.items.length?y+G.mmfH+G.pad*2+G.band:y;
+ if(summaryOpen)for(const m of summary.items)placeBand(m,summaryRight+G.mmfGap);
+ const graphHeight=(end:number)=>Math.max(round2(end-G.band),round2(G.mmfH+G.pad*2));
+ const h=graphHeight(Math.max(y,collapsedEnd));
+ const rootH=G.rootH;
+ const rootY=Math.max(0,round2((graphHeight(collapsedEnd)-rootH)/2));
+ const rootMidY=round2(rootY+rootH/2);
+ const summaryMidY=round2(summaryY+G.mmfH/2);
+ const edge=(fromX:number,fromY:number,toX:number,toY:number)=>{
+  const bend=Math.max(16,(toX-fromX)/2);
+  return `M${fromX} ${fromY} C${round2(fromX+bend)} ${fromY},${round2(toX-bend)} ${toY},${toX} ${toY}`;
+ };
+ if(summary.items.length){
+  links.push(`<path class="e-mmf" data-summary-root d="${edge(G.root,rootMidY,mmfX,summaryMidY)}"/>`);
+  nodes.push(`<button class="graph-mmf graph-summary ${group.inbox?'graph-loose':'graph-finished'}" data-board="toggle-summary" data-group="${esc(group.id)}" data-x="${mmfX}" data-y="${summaryY}" aria-expanded="${summaryOpen}" style="left:${mmfX}px;top:${summaryY}px"><span class="mmf-top"><b>${summaryOpen?'▾':'▸'} ${summary.label}</b><span class="mmf-stage">${summary.count}</span></span><small class="mmf-meta">${summary.hint}</small></button>`);
  }
 
- const totalH=layouts.length?round2(y-G.band):round2(G.mmfH+G.pad*2);
- const h=Math.max(totalH,round2(G.mmfH+G.pad*2));
- const rootH=G.rootH;
- const rootY=Math.max(0,round2((h-rootH)/2));
- const rootMidY=round2(rootY+rootH/2);
-
  for(const item of layouts){
-  const {mmf:m,bandY,bandH,mmfY,pos}=item;
+  const {mmf:m,bandY,bandH,nodeX,mmfY,pos}=item;
   const mmfMidY=round2(mmfY+G.mmfH/2);
-  bands.push(`<div class="graph-band" data-band="${esc(m.map)}" style="left:${bandX}px;top:${bandY}px;width:${maxBandW}px;height:${bandH}px"></div>`);
-  const dxRoot=Math.max(16,(mmfX-G.root)/2);
-  links.push(`<path class="e-mmf" data-link="${esc(group.id)}>${esc(m.map)}" d="M${G.root} ${rootMidY} C${round2(G.root+dxRoot)} ${rootMidY},${round2(mmfX-dxRoot)} ${mmfMidY},${mmfX} ${mmfMidY}"/>`);
+  const bandLeft=nodeX-G.pad;
+  bands.push(`<div class="graph-band" data-band="${esc(m.map)}" style="left:${bandLeft}px;top:${bandY}px;width:${width-bandLeft}px;height:${bandH}px"></div>`);
+  const branch=summarized.has(m)
+   ?edge(summaryRight,summaryMidY,nodeX,mmfMidY)
+   :edge(G.root,rootMidY,nodeX,mmfMidY);
+  links.push(`<path class="e-mmf" data-link="${esc(group.id)}>${esc(m.map)}" d="${branch}"/>`);
 
   const mmfSelected=m===mmf&&!ticket;
   const mmfExec=Boolean(m.executing);
   const doneCount=m.tickets.filter(t=>t.lane?.group==='done').length;
   const segHtml=m.tickets.map(t=>`<i class="g-${t.lane?esc(t.lane.group):'pending'}"></i>`).join('');
   const countText=m.tickets.length?`${doneCount}/${m.tickets.length} 已集成`:'尚无票';
-  const mmfTitleAttr=`${m.title} · ${stageLabel(m.stage)} · ${countText}`;
-  nodes.push(`<button class="graph-mmf${mmfExec?' is-executing':''}${mmfSelected?' selected':''}" data-board="mmf" data-map="${esc(m.map)}" data-x="${mmfX}" data-y="${mmfY}" aria-pressed="${mmfSelected}" title="${esc(mmfTitleAttr)}" style="left:${mmfX}px;top:${mmfY}px">${mmfExec?execRing(G.mmfW,G.mmfH):''}<span class="mmf-top"><b class="mmf-key">${esc(m.map)}</b><span class="mmf-stage">${esc(stageLabel(m.stage))}</span></span><span class="mmf-t">${esc(m.title)}</span><span class="mmf-seg">${segHtml}</span><span class="mmf-meta">${esc(countText)}${mmfExec?` · <span class="exec-label">${esc(copy.执行中)}</span>`:''}</span></button>`);
+  const stage=m.archived_at?copy.已归档:stageLabel(m.stage);
+  const mmfTitleAttr=`${m.title} · ${stage} · ${countText}`;
+  nodes.push(`<button class="graph-mmf${mmfExec?' is-executing':''}${mmfSelected?' selected':''}" data-board="mmf" data-map="${esc(m.map)}" data-x="${nodeX}" data-y="${mmfY}" aria-pressed="${mmfSelected}" title="${esc(mmfTitleAttr)}" style="left:${nodeX}px;top:${mmfY}px">${mmfExec?execRing(G.mmfW,G.mmfH):''}<span class="mmf-top"><b class="mmf-key">${esc(m.map)}</b><span class="mmf-stage">${esc(stage)}</span></span><span class="mmf-t">${esc(m.title)}</span><span class="mmf-seg">${segHtml}</span><span class="mmf-meta">${esc(countText)}${mmfExec?` · <span class="exec-label">${esc(copy.执行中)}</span>`:''}</span></button>`);
 
   if(!m.tickets.length){
-   nodes.push(`<div class="graph-band-empty" style="left:${ticketX0}px;top:${round2(bandY+bandH/2-8)}px">尚无票</div>`);
+   nodes.push(`<div class="graph-band-empty" style="left:${nodeX+G.mmfW+G.mmfGap}px;top:${round2(bandY+bandH/2-8)}px">尚无票</div>`);
   }
 
   for(const t of m.tickets){
    const p=pos.get(t.id)!;
    const tMidY=round2(p.y+G.ticketH/2);
    if(!t.deps.length){
-    const dxFirst=Math.max(16,(p.x-(mmfX+G.mmfW))/2);
-    links.push(`<path class="e-root" data-map="${esc(m.map)}" data-root-to="${esc(t.id)}" d="M${mmfX+G.mmfW} ${mmfMidY} C${round2(mmfX+G.mmfW+dxFirst)} ${mmfMidY},${round2(p.x-dxFirst)} ${tMidY},${p.x} ${tMidY}"/>`);
+    links.push(`<path class="e-root" data-map="${esc(m.map)}" data-root-to="${esc(t.id)}" d="${edge(nodeX+G.mmfW,mmfMidY,p.x,tMidY)}"/>`);
    }
    for(const d of t.deps){
     const q=pos.get(d);
@@ -233,7 +262,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
   }
  }
 
- const rootMeta=`${group.mmfs.length} MMF · ${doneTickets}/${totalTickets} 票`;
+ const rootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${group.mmfs.length} MMF · ${doneTickets}/${totalTickets} 票`;
  return `<div class="graph" style="width:${width}px;height:${h}px">${bands.join('')}<svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" style="width:${width}px;height:${h}px" aria-hidden="true">${links.join('')}</svg><div class="graph-root" data-x="0" data-y="${rootY}" data-meta="${esc(rootMeta)}" title="${esc(group.label)} · ${esc(rootMeta)}" style="left:0;top:${rootY}px">${esc(group.label)}</div>${nodes.join('')}</div>`;
 }
 
@@ -256,6 +285,7 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
   return;
  }
  const chain=dependencyChain(mmf.tickets,hovered.ticket);
+ const throughSummary=isSummarizedMmf(group,mmf);
  graphEl.classList.add('has-hover');
  for(const el of tickets){
   const active=el.dataset.map===hovered.map&&chain.nodes.has(el.dataset.ticket??'');
@@ -263,7 +293,7 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
   el.classList.toggle('dimmed',!active);
  }
  for(const el of mmfs){
-  const active=el.dataset.map===hovered.map;
+  const active=el.dataset.map===hovered.map||(throughSummary&&el.classList.contains('graph-summary'));
   el.classList.toggle('chain',active);
   el.classList.toggle('dimmed',!active);
  }
@@ -275,6 +305,8 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
    active=p.getAttribute('data-map')===hovered.map&&chain.edges.has(dep);
   }else if(rootTo!==null){
    active=p.getAttribute('data-map')===hovered.map&&chain.nodes.has(rootTo);
+  }else if(p.hasAttribute('data-summary-root')){
+   active=throughSummary;
   }else{
    const link=p.getAttribute('data-link')??'';
    active=link.endsWith(`>${hovered.map}`);

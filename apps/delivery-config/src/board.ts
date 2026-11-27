@@ -35,6 +35,7 @@ export type Ticket = {
 };
 
 export type Mmf = {
+  archived_at?: string;
   map: string;
   title: string;
   stage: Stage | 'Unknown';
@@ -46,7 +47,11 @@ export type Mmf = {
   tickets: Ticket[];
 };
 
-export type InboxItem = Mmf & { repo: string; attribution: 'unassigned' };
+export function isFinishedMmf(mmf:Mmf):boolean {
+  return mmf.stage==='merged'||Boolean(mmf.archived_at);
+}
+
+export type InboxItem = Mmf & { repo: string; attribution: 'unassigned'; kind?: 'spec' | 'item' };
 
 export type Epic = {
   key: string;

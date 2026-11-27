@@ -20,7 +20,7 @@ from unittest.mock import patch
 sys.dont_write_bytecode = True
 import driver  # noqa: E402
 import issue_status  # noqa: E402
-from lane_graph import STATE_GROUP, parse_registry_file  # noqa: E402
+from lane_graph import GH_ISSUE_RE, STATE_GROUP, parse_registry_file  # noqa: E402
 
 
 Stage = Literal["spec", "tickets", "implement", "integrate", "review", "merge_review", "merged"]
@@ -82,7 +82,11 @@ class Ticket(TypedDict):
     linear: str | None
 
 
-class Mmf(TypedDict):
+class MmfHistory(TypedDict, total=False):
+    archived_at: str
+
+
+class Mmf(MmfHistory):
     map: str
     title: str
     stage: Literal[Stage, "Unknown"]
@@ -94,7 +98,11 @@ class Mmf(TypedDict):
     tickets: list[Ticket]
 
 
-class InboxItem(Mmf):
+class InboxKind(TypedDict, total=False):
+    kind: Literal["spec", "item"]
+
+
+class InboxItem(Mmf, InboxKind):
     repo: str
     attribution: Literal["unassigned"]
 
@@ -134,6 +142,7 @@ class BoardSnapshot(TypedDict):
 
 
 SAMPLES = Path(__file__).resolve().with_name("board_samples")
+SPEC_ARCHIVES = "spec-archives.json"
 _field_types = cache(get_type_hints)
 
 
@@ -146,8 +155,16 @@ def _validate(value, field_type, path: str) -> None:
         for field, child_type in _field_types(field_type).items():
             child_path = f"{path}.{field}"
             if field not in value:
+                if field in field_type.__optional_keys__:
+                    continue
                 raise ValueError(f"{child_path}: 缺少必填字段")
             _validate(value[field], child_type, child_path)
+    elif origin is dict:
+        if not isinstance(value, dict):
+            raise ValueError(f"{path}: 需要对象")
+        for key, child in value.items():
+            _validate(key, args[0], f"{path} 的键")
+            _validate(child, args[1], f"{path}.{key}")
     elif origin is list:
         if not isinstance(value, list):
             raise ValueError(f"{path}: 需要数组")
@@ -221,18 +238,35 @@ def _review_link(path: Path, review: dict | None) -> str | None:
     return str(path / html)
 
 
-def _mmf(path: Path, name: str, d: dict | None, lanes: dict[str, dict]) -> Mmf:
+def _tracker_issue(ref: str | None) -> str | None:
+    if not ref:
+        return None
+    github = GH_ISSUE_RE.fullmatch(ref.split(maxsplit=1)[0])
+    return github[0] if github else issue_status.issue_key(ref)
+
+
+def _spec_ref(data: dict, plan: dict, epic_key: str | None) -> str | None:
+    excluded = {None, epic_key}
+    excluded.update(_tracker_issue(_text(ticket.get("url")) or _text(ticket.get("id")))
+                    for ticket in (plan.get("tickets") or ()))
+    for raw in ((data.get("gates") or {}).get("spec"), plan.get("spec")):
+        ref = _text(raw)
+        if _tracker_issue(ref) not in excluded:
+            return ref
+    return None
+
+
+def _mmf(path: Path, name: str, d: dict | None, lanes: dict[str, dict],
+         map_issue: str | None, spec_ref: str | None) -> Mmf:
     by_item = driver.lanes_by_item(lanes)
-    mrow = driver.map_row(lanes) or {}
     data = d or {}
     plan = data.get("plan") or {}
-    gates = data.get("gates") or {}
     planned = plan.get("tickets") or ()
     ids = {t["id"] for t in planned}
-    spec_refs = [_text(gates.get("spec")), _text(plan.get("spec")), _text(mrow.get("work_item"))]
-    workspace = next((base for ref in [*spec_refs, *(_text(t.get("url")) for t in planned)]
+    refs = [spec_ref, map_issue, _text((data.get("gates") or {}).get("spec")), _text(plan.get("spec"))]
+    workspace = next((base for ref in [*refs, *(_text(t.get("url")) for t in planned)]
                       if (base := _issue_base(ref))), None)
-    linear = next((link for ref in spec_refs if (link := _linear(ref, workspace))), None)
+    linear = next((link for ref in refs if (link := _linear(ref, workspace))), None)
 
     if d is None:
         stage = "Unknown"
@@ -241,7 +275,7 @@ def _mmf(path: Path, name: str, d: dict | None, lanes: dict[str, dict]) -> Mmf:
     elif current := issue_status.spec_stage(data, by_item):
         stage = _BOARD_STAGE[current]
     else:
-        stage = "tickets" if gates.get("spec") or plan.get("spec") else "spec"
+        stage = "tickets" if spec_ref else "Unknown"
 
     tickets = []
     for ticket in planned:
@@ -354,6 +388,15 @@ def _apply_live_probes(maps: list[tuple[Mmf, dict[str, dict]]]) -> list[ProbeRes
 def read_snapshot(lanes_root: str) -> BoardSnapshot:
     root = Path(lanes_root).expanduser().absolute()
     errors: list[BoardError] = []
+    archives: dict[str, str] = {}
+    try:
+        archives = json.loads((root / SPEC_ARCHIVES).read_text(encoding="utf-8"))
+        _validate(archives, dict[str, str], "$.archives")
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as error:
+        errors.append({"map": SPEC_ARCHIVES, "reason": str(error)})
+        archives = {}
     inbox: list[InboxItem] = []
     epics_by_repo: dict[str, dict[str, Epic]] = {}
     repo_at = cache(_read_repo)
@@ -362,26 +405,30 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
     def add(path, name, data, lanes):
         if data is None and not lanes:
             raise ValueError("缺少可读的 driver.json 与 registry")
-        mmf = _mmf(path, name, data, lanes)
-        _validate(mmf, Mmf, "$.mmf")
         plan = (data or {}).get("plan") or {}
         mrow = driver.map_row(lanes) or {}
         source = mrow.get("source_worktree_path")
         repo = (repo_at(source) if source else None) or _text(plan.get("repo")) or "Unknown"
         ref = _text(mrow.get("epic")) or _text(plan.get("epic"))
         key = issue_status.issue_key(ref)
-        if not key:
-            inbox_item: InboxItem = {**mmf, "repo": repo, "attribution": "unassigned"}
+        spec = _spec_ref(data or {}, plan, key)
+        mmf = _mmf(path, name, data, lanes, _text(mrow.get("work_item")), spec)
+        _validate(mmf, Mmf, "$.mmf")
+        if not key or not spec:
+            inbox_item: InboxItem = {**mmf, "repo": repo, "attribution": "unassigned",
+                                     "kind": "spec" if spec else "item"}
             inbox.append(inbox_item)
             mmf = inbox_item
         else:
+            if archived_at := archives.get(issue_status.issue_key(spec) or ""):
+                mmf["archived_at"] = archived_at
             base = _issue_base(ref) or _issue_base(mmf["links"]["linear"])
             url = base + key if base else None
             epic = epics_by_repo.setdefault(repo, {}).setdefault(key, {
                 "key": key, "url": url, "title": "Unknown", "ended": True, "mmfs": []})
             epic["url"] = epic["url"] or url
             epic["mmfs"].append(mmf)
-            epic["ended"] = epic["ended"] and mmf["stage"] == "merged"
+            epic["ended"] = epic["ended"] and (mmf["stage"] == "merged" or bool(mmf.get("archived_at")))
         maps.append((mmf, lanes))
 
     # 根层保留旧布局的 map；同一 map 已迁入目录时，目录现场优先。
@@ -422,6 +469,22 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
     return validate_snapshot({"schema": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
                               "lanes_root": lanes_root, "repos": repos, "inbox": inbox,
                               "probes": _apply_live_probes(maps), "errors": errors})
+
+
+def refresh_archives(lanes_root: str, call=issue_status.linear_call) -> dict[str, str]:
+    root = Path(lanes_root).expanduser().absolute()
+    board = read_snapshot(str(root))
+    keys = {issue_status.issue_key(mmf["links"]["linear"])
+            for repo in board["repos"] for epic in repo["epics"] for mmf in epic["mmfs"]}
+    archived = {}
+    for key in sorted(k for k in keys if k):
+        issue = call("get_issue", {"id": key, "fields": ["id", "archivedAt"]})
+        if issue.get("id") != key or "archivedAt" not in issue:
+            raise ValueError(f"{key} 归档回读不符")
+        if at := _text(issue["archivedAt"]):
+            archived[key] = at
+    driver.write_json(root / SPEC_ARCHIVES, archived)
+    return archived
 
 
 def _expect_rejection(snapshot: object, path: str) -> None:
@@ -505,6 +568,18 @@ def _test_local_snapshot() -> None:
                          status="done" if state == "closed" else None)
             registry(root / name / "registry-01.md",
                      {"lane_id": name + "-01", "work_item": "01", "role": "backend", "state": state})
+        loose = write_driver("direct-issue", {"epic": short, "repo": "source-repo",
+                                             "tickets": [{"id": "DEMO-31"}]})
+        loose["gates"]["spec"] = "https://linear.app/demo/issue/DEMO-31"
+        (root / "direct-issue" / "driver.json").write_text(json.dumps(loose), encoding="utf-8")
+        registry(root / "direct-issue" / "registry.md",
+                 {"lane_id": "direct-issue", "role": "map", "work_item": "DEMO-31", "epic": short})
+        epic_spec = write_driver("epic-as-spec", {"epic": short, "repo": "source-repo",
+                                                  "tickets": [{"id": "01"}]})
+        epic_spec["gates"]["spec"] = short
+        (root / "epic-as-spec" / "driver.json").write_text(json.dumps(epic_spec), encoding="utf-8")
+        registry(root / "epic-as-spec" / "registry.md",
+                 {"lane_id": "epic-as-spec", "role": "map", "work_item": "DEMO-1", "epic": short})
         (root / "broken").mkdir()
         (root / "broken" / "driver.json").write_text("{bad json", encoding="utf-8")
         for folder in (root / "artifacts", root / "active" / "artifacts"):
@@ -556,7 +631,13 @@ runpy.run_path(sys.argv[0], run_name='__main__')
         assert targets(d, rows) == {"DEMO-2": "started", "DEMO-11": "review"}
 
         inbox = {m["map"]: m for m in snapshot["inbox"]}
-        assert set(inbox) == {"inbox-run", "inbox-block", "inbox-merged", "loose-map", "legacy"}
+        assert set(inbox) == {"inbox-run", "inbox-block", "inbox-merged", "loose-map", "legacy", "direct-issue", "epic-as-spec"}
+        assert inbox["direct-issue"]["kind"] == "item"
+        assert inbox["direct-issue"]["links"]["linear"] == "https://linear.app/demo/issue/DEMO-31"
+        assert inbox["epic-as-spec"]["kind"] == "item"
+        assert inbox["epic-as-spec"]["links"]["linear"] == short
+        assert inbox["inbox-run"]["kind"] == "spec"
+        assert inbox["loose-map"]["kind"] == "item"
         assert inbox["loose-map"]["direct_lanes"][0]["lane_id"] == "loose-lane"
         assert inbox["legacy"]["direct_lanes"][0]["lane_id"] == "legacy-worker"
         for name, repo, stage in [("inbox-run", "source-repo", "implement"),
@@ -565,6 +646,20 @@ runpy.run_path(sys.argv[0], run_name='__main__')
             m = inbox[name]
             assert (m["repo"], m["stage"], m["executing"], m["attribution"]) == (repo, stage, False, "unassigned")
             assert m["links"]["linear"] == "https://linear.app/demo/issue/DEMO-2"  # S19
+
+        archived_fixture = write_driver("archived-only", {"repo": "source-repo", "epic": short})
+        archived_fixture["gates"]["spec"] = "https://linear.app/demo/issue/DEMO-42"
+        (root / "archived-only" / "driver.json").write_text(json.dumps(archived_fixture), encoding="utf-8")
+        archived_time = "2026-11-25T00:18:14Z"
+        def archive_lookup(tool, args):
+            assert tool == "get_issue" and args["fields"] == ["id", "archivedAt"]
+            key = args["id"]
+            return {"id": key, "archivedAt": archived_time if key == "DEMO-42" else None}
+        assert refresh_archives(str(root), archive_lookup) == {"DEMO-42": archived_time}
+        refreshed = read_snapshot(str(root))
+        archived_mmf = next(m for r in refreshed["repos"] for e in r["epics"] for m in e["mmfs"]
+                            if m["map"] == "archived-only")
+        assert archived_mmf["stage"] == "implement" and archived_mmf["archived_at"] == archived_time
 
         states = {"A": "running", "Z": "running", "B": "created", "C": "awaiting_human",
                   "D": "blocked", "E": "terminal", "F": "integrated", "H": "unrecognized"}
@@ -616,7 +711,11 @@ def main(argv: list[str]) -> int:
         return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lanes-root", required=True)
+    parser.add_argument("--refresh-archives", action="store_true", help="从 Linear 更新本机 Epic Spec 的归档记录")
     args = parser.parse_args(argv)
+    if args.refresh_archives:
+        print(json.dumps(refresh_archives(args.lanes_root), ensure_ascii=False))
+        return 0
     _load_live_probes()
     print(json.dumps(read_snapshot(args.lanes_root), ensure_ascii=False))
     return 0

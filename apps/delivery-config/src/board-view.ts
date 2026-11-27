@@ -1,7 +1,7 @@
 import type {BoardSnapshot,InboxItem,Mmf,Ticket} from './board';
 import {copy} from './copy';
 import {shouldRereadBoard} from './guide';
-import {GRAPH_GEOMETRY,applyHoverChain,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+import {GRAPH_GEOMETRY,applyHoverChain,graphSummary,isSummarizedMmf,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
 import {INBOX_GROUP_ID,buildBoardGroups,isEpicExpanded,renderLeftColumn,type BoardGroups} from './board-side';
 import {renderRightColumn} from './board-detail';
 
@@ -27,8 +27,9 @@ export class BoardView {
  private lastGroupId:string|undefined;
  private lastGroups:BoardGroups|undefined;
  private hovered:{map:string;ticket:string}|undefined;
- private scrollRequest:'reset'|'selected'|'preserve'='reset';
+ private scrollRequest:'reset'|'selected'|'summary'|'preserve'='reset';
  private expandedEpics=new Map<string,boolean>();
+ private expandedSummaries=new Set<string>();
  private endedOpen=false;
  private inboxOpen=false;
  constructor(private root:HTMLElement,private host:BoardHost) {
@@ -57,10 +58,11 @@ export class BoardView {
  private settle(all:Group[]):{group?:Group;mmf?:Mmf;ticket?:Ticket} {
   const group=all.find(g=>g.id===this.pick.group)??all[0];
   if(!group){this.pick={};return {};}
-  const mmf=group.mmfs.find(m=>m.map===this.pick.map);
+  const visible=this.expandedSummaries.has(group.id)?group.mmfs:group.mmfs.filter(m=>!isSummarizedMmf(group,m));
+  const mmf=visible.find(m=>m.map===this.pick.map);
   const ticket=mmf?.tickets.find(t=>t.id===this.pick.ticket);
   if(mmf&&(ticket||this.pick.ticket===undefined)){this.pick={group:group.id,map:mmf.map,ticket:ticket?.id};return {group,mmf,ticket};}
-  const first=group.mmfs.find(m=>m.tickets.length)??group.mmfs[0];
+  const first=visible.find(m=>m.tickets.length)??visible[0];
   this.pick={group:group.id,map:first?.map,ticket:first?.tickets[0]?.id};
   return {group,mmf:first,ticket:first?.tickets[0]};
  }
@@ -99,6 +101,19 @@ export class BoardView {
    this.render();
    return;
   }
+  if(action==='toggle-summary'&&group){
+   const focused=target===this.root.ownerDocument.activeElement;
+   const inHeader=target.matches('.board-summary-toggle');
+   const opening=!this.expandedSummaries.has(group);
+   if(!opening)this.expandedSummaries.delete(group);
+   else this.expandedSummaries.add(group);
+   this.hovered=undefined;
+   this.scrollRequest=opening&&inHeader?'summary':'preserve';
+   this.render();
+   const selector=inHeader?'.board-summary-toggle':'.graph-summary';
+   if(focused)this.root.querySelector<HTMLElement>(selector)?.focus({preventScroll:true});
+   return;
+  }
   if(action==='toggle-epic'&&group){
    const entry=this.lastGroups?[...this.lastGroups.repos.flatMap(r=>r.epics),...this.lastGroups.ended].find(e=>e.group.id===group):undefined;
    const current=entry?isEpicExpanded(entry,this.expandedEpics):Boolean(this.expandedEpics.get(group));
@@ -109,6 +124,9 @@ export class BoardView {
   }
   if(action==='group'){this.pick={group};this.hovered=undefined;this.scrollRequest='reset';this.render();return;}
   if(action==='side-mmf'){
+   const selectedGroup=this.lastGroups?.all.find(g=>g.id===group);
+   const entry=selectedGroup?.mmfs.find(m=>m.map===map);
+   if(selectedGroup&&entry&&isSummarizedMmf(selectedGroup,entry))this.expandedSummaries.add(selectedGroup.id);
    const sameGroup=group===this.pick.group;
    this.pick={group,map,ticket:undefined};
    this.hovered=undefined;
@@ -135,7 +153,7 @@ export class BoardView {
   this.currentGroup=group;
   this.lastGroupId=group?.id;
   const isInbox=group?.id===INBOX_GROUP_ID;
-  const inboxRepo=isInbox&&mmf?(mmf as InboxItem).repo:undefined;
+  const inboxItem=isInbox&&mmf?mmf as InboxItem:undefined;
   const leftCol=renderLeftColumn({
    groups,
    selectedGroupId:group?.id,
@@ -144,11 +162,16 @@ export class BoardView {
    endedOpen:this.endedOpen,
    inboxOpen:this.inboxOpen,
    expandedEpics:this.expandedEpics,
+   expandedFinished:this.expandedSummaries,
    generatedAt:s.board.generated_at,
   });
   const legend=`<div class="board-subbar"><span class="board-legend"><span><i class="g-done"></i>已完成</span><span><i class="g-active"></i>进行中</span><span><i class="g-review"></i>待收口</span><span><i class="g-problem"></i>需处理</span><span><i class="g-pending"></i>未派发</span><span class="lg-exec"><b class="lg-ring"></b>执行中（running 且现场 working）</span></span></div>`;
-  const center=`<section class="board-center-pane" aria-label="${copy.依赖}"><div class="board-col-head"><h2 title="${esc(group?.label??copy.看板)}">${esc(group?.label??copy.看板)}</h2></div>${legend}<div class="board-col board-center">${group?renderGraph(group,mmf,ticket):`<p class="board-state">${copy.没有进行中的工作}</p>`}</div></section>`;
-  const rightCol=renderRightColumn({epicKey:isInbox?undefined:group?.label,mmf,ticket,inbox:isInbox,inboxRepo,open:this.right});
+  const summaryOpen=Boolean(group&&this.expandedSummaries.has(group.id));
+  const summary=group&&graphSummary(group,summaryOpen);
+  const summaryToggle=group&&summary?.items.length
+   ?`<button class="plain board-summary-toggle" data-board="toggle-summary" data-group="${esc(group.id)}" aria-expanded="${summaryOpen}" title="${summary.hint}"><span aria-hidden="true">${summaryOpen?'▾':'▸'}</span> ${summary.label} <small>${summary.count}</small></button>`:'';
+  const center=`<section class="board-center-pane" aria-label="${copy.依赖}"><div class="board-col-head"><h2 title="${esc(group?.label??copy.看板)}">${esc(group?.label??copy.看板)}</h2>${summaryToggle}</div>${legend}<div class="board-col board-center">${group?renderGraph(group,mmf,ticket,summaryOpen):`<p class="board-state">${copy.没有进行中的工作}</p>`}</div></section>`;
+  const rightCol=renderRightColumn({epicKey:isInbox?undefined:group?.label,mmf,ticket,inbox:isInbox,inboxRepo:inboxItem?.repo,inboxSpec:inboxItem?.kind==='spec',open:this.right});
   this.root.innerHTML=`${bar}<main class="board-grid" data-left="${this.left?'open':'closed'}" data-right="${this.right?'open':'closed'}">${leftCol}${center}${rightCol}</main>`;
   const endedDetails=this.root.querySelector<HTMLDetailsElement>('details[data-board-ended]');
   endedDetails?.addEventListener('toggle',()=>{this.endedOpen=endedDetails.open;});
@@ -162,8 +185,8 @@ export class BoardView {
    }else{
     centerEl.scrollLeft=prevViewport.left;
     centerEl.scrollTop=prevViewport.top;
-    if(mode==='selected'){
-     const selectedEl=centerEl.querySelector<HTMLElement>('.graph-ticket.selected,.graph-mmf.selected');
+    if(mode==='selected'||mode==='summary'){
+     const selectedEl=centerEl.querySelector<HTMLElement>(mode==='summary'?'.graph-summary':'.graph-ticket.selected,.graph-mmf.selected');
      if(selectedEl){
       const graphEl=centerEl.querySelector<HTMLElement>('.graph');
       const graphW=graphEl?parseFloat(graphEl.style.width)||0:0;
