@@ -98,14 +98,16 @@ for line in open(sys.argv[1]):
   fi
   # --source visible 只取当前屏幕，避免匹配到已滚动走的历史回显（packet 指令文本本身含 LANE_DONE 字样，曾致两次误报）
   OUT=$(herdr pane read "$PANE" --source visible 2>/dev/null || true)
-  # 行首锚定匹配单行标记，防止 worker 计划/回显文本中的子串误报（曾致 false-positive WAKE）。
+  # 行首锚定匹配单行标记，防止 worker 计划/回显文本中的子串误报（曾致 false-positive WAKE）；
+  # 放行 Codex (`• `) 与 Claude (`⏺ `) 行首圆点前缀，并在送入 driver_wake 前剥除。
   # 增量检测：首轮轮询只建档不唤醒（重挂时屏上陈旧标记不算新）；之后数量增加才唤醒。
-  VISIBLE_DONE_NOW=$(printf '%s\n' "$OUT" | grep -cE "^[[:space:]]*LANE_DONE ${LANE_ID}([[:space:]]|$)" || true)
+  VISIBLE_DONE_RE="^[[:space:]]*((•|⏺)[[:space:]]+)?LANE_DONE ${LANE_ID}([[:space:]]|$)"
+  VISIBLE_DONE_NOW=$(printf '%s\n' "$OUT" | grep -cE "$VISIBLE_DONE_RE" || true)
   VISIBLE_DONE_NOW=${VISIBLE_DONE_NOW:-0}
   if [ -z "$VISIBLE_DONE_LAST" ]; then
     VISIBLE_DONE_LAST=$VISIBLE_DONE_NOW
   elif [ "$VISIBLE_DONE_NOW" -gt "$VISIBLE_DONE_LAST" ]; then
-    driver_wake "$(printf '%s\n' "$OUT" | grep -E "^[[:space:]]*LANE_DONE ${LANE_ID}([[:space:]]|$)" | tail -1 | sed 's/^[[:space:]]*//')" && exit 0
+    driver_wake "$(printf '%s\n' "$OUT" | grep -E "$VISIBLE_DONE_RE" | tail -1 | sed -E 's/^[[:space:]]*((•|⏺)[[:space:]]+)?//')" && exit 0
     herdr agent prompt "$COORD" "WAKE: $LABEL 已完成(pane $PANE 输出新增 LANE_DONE $LANE_ID 标记)。按 delivery-pipeline terminal fan-in:把 lane $LANE_ID 交给 integration lane(merger)收口;merger 自身终态则重算 ready frontier 并派发下一批。" >/dev/null 2>&1
     exit 0
   fi

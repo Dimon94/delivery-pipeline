@@ -62,7 +62,9 @@ def load_model_config():
 
 
 def agent_name(lane: str) -> str:
-    return re.sub(r"[^a-z0-9-]+", "-", lane.lower()).strip("-") or "lane"
+    name = re.sub(r"[^a-z0-9-]+", "-", lane.lower()).strip("-") or "lane"
+    # Herdr agent 名须以小写字母开头；"01" 这类数字票号补 lane- 前缀，超长留给 preflight 拒绝。
+    return name if name[0].isalpha() else f"lane-{name}"
 
 
 def display_width(text: str) -> int:
