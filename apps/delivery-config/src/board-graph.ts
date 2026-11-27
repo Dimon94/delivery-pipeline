@@ -1,7 +1,7 @@
-import {isFinishedMmf,type Mmf,type Ticket} from './board';
+import {isFinishedMmf,type Mmf,type MmfCandidate,type Ticket} from './board';
 import {copy,stageLabel,ticketStatusText} from './copy';
 
-export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];inbox?:true;linearStatus?:string;hasLinear?:boolean};
+export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];candidates?:MmfCandidate[];inbox?:true;linearStatus?:string;hasLinear?:boolean};
 export type NodeRect={x:number;y:number;width:number;height:number};
 export type ViewportMetrics={scrollLeft:number;scrollTop:number;clientWidth:number;clientHeight:number;scrollWidth?:number;scrollHeight?:number};
 export type DependencyChain={nodes:Set<string>;edges:Set<string>};
@@ -147,7 +147,12 @@ export function graphSummary(group:GraphGroup,open:boolean) {
  };
 }
 
-export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined,summaryOpen=false):string {
+export function candidateKey(candidate:MmfCandidate,index:number):string {
+ if(candidate.mmf_id!=='Unknown')return candidate.mmf_id;
+ return candidate.spec?.key??`unknown-${index}`;
+}
+
+export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined,summaryOpen=false,selectedCandidate?:MmfCandidate):string {
  const G=GRAPH_GEOMETRY;
  const round2=(n:number)=>Number(n.toFixed(2));
  const bands:string[]=[],nodes:string[]=[],links:string[]=[];
@@ -156,12 +161,17 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  const summaryRight=mmfX+G.mmfW;
  let y=0,width=summaryRight+G.pad;
 
+ const candidates=group.candidates??[];
  const showLinear=Boolean(group.hasLinear)||group.mmfs.some(m=>m.tickets.some(t=>Boolean(t.linear_issue)));
  const totalTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.length,0);
  const doneTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.filter(t=>t.lane?.group==='done').length,0);
+ const knownCandidateCount=candidates.filter(c=>c.mmf_id!=='Unknown').length;
+ const mmfCount=group.mmfs.length+knownCandidateCount;
 
  type BandLayout={mmf:Mmf;bandY:number;bandH:number;nodeX:number;mmfY:number;pos:Map<string,{x:number;y:number}>};
+ type CandidateLayout={candidate:MmfCandidate;index:number;candY:number};
  const layouts:BandLayout[]=[];
+ const candidateLayouts:CandidateLayout[]=[];
  const summary=graphSummary(group,summaryOpen);
  const summarized=new Set(summary.items);
  const placeBand=(m:Mmf,nodeX:number)=>{
@@ -199,6 +209,11 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  };
 
  for(const m of group.mmfs)if(!summarized.has(m))placeBand(m,mmfX);
+ for(let i=0;i<candidates.length;i++){
+  const bandH=round2(G.mmfH+G.pad*2);
+  candidateLayouts.push({candidate:candidates[i]!,index:i,candY:round2(y+G.pad)});
+  y=round2(y+bandH+G.band);
+ }
  const summaryY=y+G.pad;
  const collapsedEnd=summary.items.length?y+G.mmfH+G.pad*2+G.band:y;
  if(summaryOpen)for(const m of summary.items)placeBand(m,summaryRight+G.mmfGap);
@@ -217,6 +232,19 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
   nodes.push(`<button class="graph-mmf graph-summary ${group.inbox?'graph-loose':'graph-finished'}" data-board="toggle-summary" data-group="${esc(group.id)}" data-x="${mmfX}" data-y="${summaryY}" aria-expanded="${summaryOpen}" style="left:${mmfX}px;top:${summaryY}px"><span class="mmf-top"><b>${summaryOpen?'▾':'▸'} ${summary.label}</b><span class="mmf-stage">${summary.count}</span></span><small class="mmf-meta">${summary.hint}</small></button>`);
  }
 
+ for(const {candidate:c,index,candY} of candidateLayouts){
+  const key=candidateKey(c,index);
+  const candMidY=round2(candY+G.mmfH/2);
+  links.push(`<path class="e-mmf e-candidate" data-candidate-link="${esc(key)}" d="${edge(G.root,rootMidY,mmfX,candMidY)}"/>`);
+  const selected=selectedCandidate===c;
+  const specText=c.spec?`${c.spec.key} · ${c.spec.status}`:'尚无 Spec';
+  const specHtml=c.spec
+   ?`<span class="cand-spec-key">${esc(c.spec.key)}</span> · <span class="cand-spec-status">${esc(c.spec.status)}</span>`
+   :'尚无 Spec';
+  const titleAttr=`${c.mmf_id} ${c.title} · 未开工 · ${specText}`;
+  nodes.push(`<button class="graph-mmf graph-candidate${selected?' selected':''}" data-board="candidate" data-candidate="${esc(key)}" data-mmf-id="${esc(c.mmf_id)}" data-candidate-source="${esc(c.source)}" data-x="${mmfX}" data-y="${candY}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${mmfX}px;top:${candY}px;border-style:dashed"><span class="mmf-top"><b class="mmf-key">${esc(c.mmf_id)}</b><span class="mmf-stage">未开工</span></span><span class="mmf-t">${esc(c.title)}</span><span class="mmf-meta">${specHtml}</span></button>`);
+ }
+
  for(const item of layouts){
   const {mmf:m,bandY,bandH,nodeX,mmfY,pos}=item;
   const mmfMidY=round2(mmfY+G.mmfH/2);
@@ -227,7 +255,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
    :edge(G.root,rootMidY,nodeX,mmfMidY);
   links.push(`<path class="e-mmf" data-link="${esc(group.id)}>${esc(m.map)}" d="${branch}"/>`);
 
-  const mmfSelected=m===mmf&&!ticket;
+  const mmfSelected=m===mmf&&!ticket&&!selectedCandidate;
   const mmfExec=Boolean(m.executing);
   const doneCount=m.tickets.filter(t=>t.lane?.group==='done').length;
   const segHtml=m.tickets.map(t=>`<i class="g-${t.lane?esc(t.lane.group):'pending'}"></i>`).join('');
@@ -253,7 +281,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
      links.push(`<path class="e-dep" data-map="${esc(m.map)}" data-dep="${esc(d)}>${esc(t.id)}" d="M${q.x+G.ticketW} ${qMidY} C${round2(q.x+G.ticketW+G.gx/2)} ${qMidY},${round2(p.x-G.gx/2)} ${tMidY},${p.x} ${tMidY}"/>`);
     }
    }
-   const selected=m===mmf&&t===ticket;
+   const selected=m===mmf&&t===ticket&&!selectedCandidate;
    const executing=Boolean(t.executing);
    const halted=ticketMatchesHalt(m,t);
    const status=ticketStatusText(t);
@@ -266,7 +294,7 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
   }
  }
 
- const baseRootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${group.mmfs.length} MMF · ${doneTickets}/${totalTickets} 票`;
+ const baseRootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${mmfCount} MMF · ${doneTickets}/${totalTickets} 票`;
  const rootMeta=group.linearStatus?`${baseRootMeta} · ${group.linearStatus}`:baseRootMeta;
  return `<div class="graph" style="width:${width}px;height:${h}px">${bands.join('')}<svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" style="width:${width}px;height:${h}px" aria-hidden="true">${links.join('')}</svg><div class="graph-root" data-x="0" data-y="${rootY}" data-meta="${esc(rootMeta)}" title="${esc(group.label)} · ${esc(rootMeta)}" style="left:0;top:${rootY}px">${esc(group.label)}</div>${nodes.join('')}</div>`;
 }

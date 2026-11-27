@@ -13,6 +13,7 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import re
 from runpy import run_path
 import subprocess
 import sys
@@ -477,6 +478,158 @@ def _load_linear_cache(root: Path, errors: list[BoardError]) -> LinearCache | No
         return None
 
 
+_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+_SEP_CELL_RE = re.compile(r"^:?-{2,}:?$")
+_MMF_ID_RE = re.compile(r"^(MMF\d+[a-z]?|M\d+)(?![A-Za-z0-9])")
+_MMF_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+)?(?:\*\*)?MMF(?:\*\*)?\s*[:：]\s*(.+?)\s*$")
+_TITLE_SEP_CHARS = " \t：:·—–-"
+
+
+def _strip_bold(text: str) -> str:
+    return _BOLD_RE.sub(r"\1", text).replace("**", "").strip()
+
+
+def _split_md_row(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if "|" not in stripped:
+        return None
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _parse_mmf_table(description: str | None) -> tuple[list[tuple[str, str, str]], str | None]:
+    """纯函数解析 Epic 正文里表头首格为 MMF 的 Markdown 表，返回 (行列表, 重复标识错误)。"""
+    if not description:
+        return [], None
+    lines = description.splitlines()
+    for index in range(len(lines) - 1):
+        header = _split_md_row(lines[index])
+        if not header or _strip_bold(header[0]) != "MMF":
+            continue
+        sep = _split_md_row(lines[index + 1])
+        if not sep or not all(_SEP_CELL_RE.fullmatch(cell) for cell in sep):
+            continue
+        dep_col = next((i for i, col in enumerate(header)
+                        if _strip_bold(col).lower() in {"blocked by", "前置"}), None)
+        rows: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for data_line in lines[index + 2:]:
+            if not data_line.strip():
+                break
+            cells = _split_md_row(data_line)
+            if not cells:
+                break
+            first = _strip_bold(cells[0])
+            match = _MMF_ID_RE.match(first)
+            if not match:
+                continue
+            mmf_id = match.group(1)
+            if mmf_id in seen:
+                return [], f"MMF 表存在重复标识：{mmf_id}"
+            seen.add(mmf_id)
+            rest = first[match.end():].lstrip(_TITLE_SEP_CHARS).strip()
+            fallback = _strip_bold(cells[1]) if len(cells) > 1 else ""
+            title = rest or fallback or mmf_id
+            dep_text = cells[dep_col] if dep_col is not None and dep_col < len(cells) else ""
+            rows.append((mmf_id, title, dep_text))
+        return rows, None
+    return [], None
+
+
+def _extract_child_mmf_id(issue: LinearIssue) -> str | None:
+    """按 Spec 正文 MMF: 行优先、标题开头 MMF 标识其次提取标识。"""
+    for line in (issue.get("description") or "").splitlines():
+        line_match = _MMF_LINE_RE.match(line)
+        if line_match:
+            val = _strip_bold(line_match.group(1))
+            id_match = _MMF_ID_RE.match(val)
+            if id_match:
+                return id_match.group(1)
+    title = _strip_bold(issue.get("title") or "")
+    id_match = _MMF_ID_RE.match(title)
+    return id_match.group(1) if id_match else None
+
+
+def _child_candidate_title(issue: LinearIssue, mmf_id: str | None) -> str:
+    title = (issue.get("title") or "").strip()
+    if mmf_id:
+        stripped = _strip_bold(title)
+        if stripped.startswith(mmf_id):
+            rest = stripped[len(mmf_id):].lstrip(_TITLE_SEP_CHARS).strip()
+            if rest:
+                return rest
+    return title or mmf_id or "Unknown"
+
+
+def _apply_epic_candidates(epic: Epic, epic_issue: LinearIssue,
+                           linear_issues: dict[str, LinearIssue],
+                           errors: list[BoardError]) -> None:
+    table_rows, dup_error = _parse_mmf_table(epic_issue.get("description"))
+    if dup_error:
+        errors.append({"map": epic["key"], "reason": dup_error})
+        return
+
+    children = [key for key in (epic_issue.get("children") or ()) if key in linear_issues]
+    child_set = set(children)
+    child_mmf_by_key: dict[str, str | None] = {}
+    child_by_mmf_id: dict[str, str] = {}
+    for child_key in children:
+        mid = _extract_child_mmf_id(linear_issues[child_key])
+        child_mmf_by_key[child_key] = mid
+        if mid and mid not in child_by_mmf_id:
+            child_by_mmf_id[mid] = child_key
+
+    matched_spec_keys: set[str] = set()
+    matched_mmf_ids: set[str] = set()
+    for mmf in epic["mmfs"]:
+        spec_key = issue_status.issue_key(mmf["links"]["linear"])
+        if spec_key and spec_key in child_set:
+            matched_spec_keys.add(spec_key)
+            if mid := child_mmf_by_key.get(spec_key):
+                mmf["mmf_id"] = mid
+                matched_mmf_ids.add(mid)
+
+    base = _issue_base(epic["url"]) or next(
+        (b for m in epic["mmfs"] if (b := _issue_base(m["links"]["linear"]))), None)
+
+    def make_spec(child_key: str) -> CandidateSpec:
+        return {"key": child_key, "url": (base + child_key) if base else "",
+                "status": linear_issues[child_key]["status"]}
+
+    emitted_children = set(matched_spec_keys)
+    candidates: list[MmfCandidate] = []
+    for row_mmf_id, row_title, _ in table_rows:
+        if row_mmf_id in matched_mmf_ids:
+            continue
+        child_key = child_by_mmf_id.get(row_mmf_id)
+        if child_key and child_key not in emitted_children:
+            emitted_children.add(child_key)
+            spec: CandidateSpec | None = make_spec(child_key)
+        else:
+            spec = None
+        candidates.append({"mmf_id": row_mmf_id, "title": row_title, "spec": spec, "source": "epic_table"})
+
+    for child_key in children:
+        if child_key in emitted_children:
+            continue
+        mid = child_mmf_by_key.get(child_key)
+        if mid and mid in matched_mmf_ids:
+            continue
+        child_issue = linear_issues[child_key]
+        candidates.append({
+            "mmf_id": mid or "Unknown",
+            "title": _child_candidate_title(child_issue, mid),
+            "spec": make_spec(child_key),
+            "source": "linear_child",
+        })
+
+    if candidates:
+        epic["candidates"] = candidates
+
+
 def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[BoardSnapshot, set[str], set[str]]:
     root = Path(lanes_root).expanduser().absolute()
     errors: list[BoardError] = []
@@ -595,6 +748,7 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
                         epic["title"] = title
                     if status := _text(epic_issue.get("status")):
                         epic["linear_status"] = status
+                    _apply_epic_candidates(epic, epic_issue, linear_issues, errors)
     repos = [{"name": name, "epics": sorted(epics.values(), key=lambda epic: epic["key"])}
              for name, epics in sorted(epics_by_repo.items())]
     raw_snapshot: dict[str, object] = {
@@ -1328,6 +1482,103 @@ def _test_linear_merge() -> None:
         assert any(e["map"] == LINEAR_CACHE for e in broken["errors"])
 
 
+def _test_linear_candidates() -> None:
+    with TemporaryDirectory() as temp:
+        root = Path(temp) / "lanes"
+        url = "https://linear.app/demo/issue/"
+
+        def write_map(name: str, epic_key: str, spec_key: str) -> None:
+            folder = root / name
+            folder.mkdir(parents=True, exist_ok=True)
+            data = {"grant": {"plan_sha": "fixture"}, "published": "fixture",
+                    "gates": {"spec": url + spec_key},
+                    "plan": {"repo": "demo", "epic": url + epic_key, "mmf": name, "tickets": []}}
+            (folder / "driver.json").write_text(json.dumps(data), encoding="utf-8")
+            (folder / "registry.md").write_text(
+                f"<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: map-{name}\n"
+                f"role: map\nwork_item: {spec_key}\nepic: {url}{epic_key}\n```\n", encoding="utf-8")
+
+        write_map("map-m1", "DEMO-1", "DEMO-11")
+        write_map("map-s4", "DEMO-4", "DEMO-40")
+        write_map("map-s5", "DEMO-5", "DEMO-50")
+
+        fetched_at = "2026-11-27T04:00:00Z"
+        table_s3 = (
+            "## MMF 候选\n"
+            "| MMF | 用户结果 | Blocked by |\n"
+            "| -- | -- | -- |\n"
+            "| **M1 本地看板** | 基础看板 | 无 |\n"
+            "| **M2 接上 Linear** | 候选与边 | 开工 · 依赖 M1 |\n"
+            "| M3 交付汇总 | 汇总视图 | M1，可与 M2 并行 |\n"
+        )
+        table_s4 = (
+            "| MMF | 用户结果 | 前置 |\n"
+            "| --- | --- | --- |\n"
+            "| **MMF1** 卡片墙 | 异常出卡 | 无 |\n"
+        )
+        table_s5 = (
+            "| MMF | 用户结果 | 前置 |\n"
+            "| --- | --- | --- |\n"
+            "| M1 第一项 | A | 无 |\n"
+            "| M2 重复一 | B | M1 |\n"
+            "| M2 重复二 | C | M1 |\n"
+        )
+        cache_data: LinearCache = {
+            "version": 1, "status": "ok", "fetched_at": fetched_at, "attempted_at": fetched_at, "reason": None,
+            "issues": {
+                "DEMO-1": {"title": "Epic E", "status": "In Progress", "status_type": "started", "parent": None,
+                           "description": table_s3, "children": ["DEMO-11", "DEMO-12"], "fetched_at": fetched_at},
+                "DEMO-11": {"title": "M1 Spec", "status": "Done", "status_type": "completed", "parent": "DEMO-1",
+                            "description": "* MMF: M1 本地看板", "children": [], "fetched_at": fetched_at},
+                "DEMO-12": {"title": "M2 Spec", "status": "Todo", "status_type": "unstarted", "parent": "DEMO-1",
+                            "description": "MMF: M2", "children": [], "fetched_at": fetched_at},
+                "DEMO-4": {"title": "Epic S4", "status": "In Progress", "status_type": "started", "parent": None,
+                           "description": table_s4, "children": ["DEMO-40", "DEMO-41", "DEMO-42"], "fetched_at": fetched_at},
+                "DEMO-40": {"title": "MMF1：卡片墙", "status": "Done", "status_type": "completed", "parent": "DEMO-4",
+                            "description": "无 MMF 行", "children": [], "fetched_at": fetched_at},
+                "DEMO-41": {"title": "MMF8a：系列级 CPM 升高预警", "status": "In Progress", "status_type": "started",
+                            "parent": "DEMO-4", "description": "正文没有 MMF 行", "children": [], "fetched_at": fetched_at},
+                "DEMO-42": {"title": "修复无关的既有失败", "status": "Todo", "status_type": "unstarted",
+                            "parent": "DEMO-4", "description": "没有标识", "children": [], "fetched_at": fetched_at},
+                "DEMO-5": {"title": "Epic S5", "status": "In Progress", "status_type": "started", "parent": None,
+                           "description": table_s5, "children": ["DEMO-50", "DEMO-51"], "fetched_at": fetched_at},
+                "DEMO-50": {"title": "M1 Spec", "status": "Done", "status_type": "completed", "parent": "DEMO-5",
+                            "description": "MMF: M1", "children": [], "fetched_at": fetched_at},
+                "DEMO-51": {"title": "M2 Spec", "status": "Todo", "status_type": "unstarted", "parent": "DEMO-5",
+                            "description": "MMF: M2", "children": [], "fetched_at": fetched_at},
+            },
+            "failed": {},
+        }
+        driver.write_json(root / LINEAR_CACHE, cache_data)
+        snap = read_snapshot(str(root))
+        epics = {e["key"]: e for r in snap["repos"] for e in r["epics"]}
+
+        # S3：M1 对上本地 map 带 mmf_id 不出候选；候选只有 M2（带 Spec）与 M3（spec 为 null）
+        epic_e = epics["DEMO-1"]
+        assert epic_e["mmfs"][0]["mmf_id"] == "M1"
+        assert epic_e["candidates"] == [
+            {"mmf_id": "M2", "title": "接上 Linear", "source": "epic_table",
+             "spec": {"key": "DEMO-12", "url": url + "DEMO-12", "status": "Todo"}},
+            {"mmf_id": "M3", "title": "交付汇总", "source": "epic_table", "spec": None},
+        ]
+
+        # S4：MMF8a 按标题匹配为 linear_child，无标识子项为 Unknown 候选，无凭空候选
+        epic_s4 = epics["DEMO-4"]
+        assert epic_s4["mmfs"][0]["mmf_id"] == "MMF1"
+        assert epic_s4["candidates"] == [
+            {"mmf_id": "MMF8a", "title": "系列级 CPM 升高预警", "source": "linear_child",
+             "spec": {"key": "DEMO-41", "url": url + "DEMO-41", "status": "In Progress"}},
+            {"mmf_id": "Unknown", "title": "修复无关的既有失败", "source": "linear_child",
+             "spec": {"key": "DEMO-42", "url": url + "DEMO-42", "status": "Todo"}},
+        ]
+
+        # S5：重复 M2 的 Epic 无候选，errors 记下该 Epic 与原因，其余 Epic 正常
+        epic_s5 = epics["DEMO-5"]
+        assert "candidates" not in epic_s5
+        s5_errors = [err for err in snap["errors"] if err["map"] == "DEMO-5"]
+        assert len(s5_errors) == 1 and "M2" in s5_errors[0]["reason"]
+
+
 def self_test() -> None:
     for path in sorted(SAMPLES.glob("*.json")):
         if path.name.startswith("linear-cache-"):
@@ -1360,6 +1611,7 @@ def self_test() -> None:
     _test_local_snapshot()
     _test_linear_refresh()
     _test_linear_merge()
+    _test_linear_candidates()
     print("board_snapshot self-test ok")
 
 

@@ -280,4 +280,7 @@ test('S2/S3 M1 样本左栏不显示 Linear 状态标签；带成功 Linear 缓�
  }));
  expect(linearDoc.querySelector('.board-entry-label')!.textContent).toBe('DEMO-1 · 交付看板');
  expect(linearDoc.querySelector('.epic-linear-status')!.textContent).toBe('In Progress');
+ // S4：board-linear.json 有 1 个本地 MMF、2 个有标识候选（M2/M3）与 1 个 Unknown 候选，Unknown 不计入 Epic 的 MMF 数
+ expect(linearGroups.repos[0]!.epics[0]!.group.candidates?.length).toBe(3);
+ expect(linearDoc.querySelector('.epic-top small')!.textContent).toContain('3 MMF');
 });

@@ -1,4 +1,4 @@
-import type {Halt,Lane,Mmf,Stage,Ticket} from './board';
+import type {Halt,Lane,Mmf,MmfCandidate,Stage,Ticket} from './board';
 import {ticketMatchesHalt} from './board-graph';
 import {STAGE_ORDER,copy,laneGroupNames,liveStatusLabel,mmfStatusText,stageLabel,ticketStatusText} from './copy';
 
@@ -20,6 +20,7 @@ export interface RightColumnParams {
  epicKey?:string;
  mmf?:Mmf;
  ticket?:Ticket;
+ candidate?:MmfCandidate;
  inbox:boolean;
  inboxRepo?:string;
  inboxSpec?:boolean;
@@ -69,11 +70,26 @@ function mmfPathSegment(mmf:Mmf,epicKey?:string):string {
  return mmf.map;
 }
 
-function headerTitle(epicKey:string|undefined,mmf:Mmf|undefined,ticket:Ticket|undefined,showSteps:boolean):string {
+function headerTitle(epicKey:string|undefined,mmf:Mmf|undefined,ticket:Ticket|undefined,showSteps:boolean,candidate?:MmfCandidate):string {
+ if(candidate)return epicKey?`${epicKey} · ${candidate.mmf_id}`:candidate.mmf_id;
  if(!mmf)return '';
  const seg=mmfPathSegment(mmf,epicKey);
  if(ticket)return epicKey?`${epicKey} · ${seg} · ${ticket.id}`:`${seg} · ${ticket.id}`;
  return epicKey?`${epicKey} · ${seg}`:(showSteps?'MMF':copy.条目);
+}
+
+function renderCandidateBody(candidate:MmfCandidate):string {
+ const sourceText=candidate.source==='epic_table'?'Epic 正文':'Linear 子项';
+ const coreHtml=[
+  kvRow('标识',`<span class="detail-candidate-id mono">${esc(candidate.mmf_id)}</span>`),
+  kvRow(copy.状态,'未开工'),
+  kvRow('来源',`<span class="detail-candidate-source">${esc(sourceText)}</span>`),
+  ...(candidate.spec?[kvRow('Spec',`<span class="detail-candidate-spec">${esc(candidate.spec.key)} · ${esc(candidate.spec.status)}</span>`)]:[]),
+ ].join('');
+ const specLink=candidate.spec&&candidate.spec.url
+  ?`<div class="detail-links">${renderLinkRow(candidate.spec.url,`${candidate.spec.key} · ${copy.LinearIssue}`)}</div>`
+  :`<div class="detail-links">${renderLinkRow(null,'Spec')}</div>`;
+ return `<h3 class="detail-title">${esc(candidate.title)}</h3><dl class="detail-core">${coreHtml}</dl>${specLink}`;
 }
 
 function renderRelSection(title:string,mmf:Mmf,tickets:Ticket[]):string {
@@ -172,11 +188,16 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
 }
 
 export function renderRightColumn(params:RightColumnParams):string {
- const {epicKey,mmf,ticket,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
+ const {epicKey,mmf,ticket,candidate,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
  const showSteps=!inbox||inboxSpec===true;
  const groupCls=ticket?(ticket.lane?ticket.lane.group:'pending'):undefined;
- const pillHtml=ticket&&groupCls
-  ?`<span class="board-pill g-${esc(groupCls)}">${esc(laneGroupNames[groupCls]??copy.未派发)}</span>`
-  :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
- return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps,hasLinear)}</div></aside>`;
+ const pillHtml=candidate
+  ?'<span class="muted small">未开工</span>'
+  :ticket&&groupCls
+   ?`<span class="board-pill g-${esc(groupCls)}">${esc(laneGroupNames[groupCls]??copy.未派发)}</span>`
+   :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
+ const bodyHtml=candidate
+  ?renderCandidateBody(candidate)
+  :renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps,hasLinear);
+ return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps,candidate))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${bodyHtml}</div></aside>`;
 }

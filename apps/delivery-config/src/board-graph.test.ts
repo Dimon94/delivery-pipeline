@@ -384,3 +384,38 @@ test('S6 票 01 显示 Linear 标题与状态，票 02 无 key、票 03 缓存�
  expect(box.querySelector('.graph-root')!.textContent).toBe('DEMO-E · Epic E 标题');
  expect(box.querySelector('.graph-root')!.getAttribute('data-meta')).toContain('In Progress');
 });
+
+test('S3/S4 候选卡以虚线框未开工出现在 MMF 列，有 Spec 显示标识与状态、无 Spec 标尚无 Spec，Unknown 候选不计入 Epic 的 MMF 数',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const group=buildBoardGroups(linearSample).repos[0]!.epics[0]!.group;
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph(group,group.mmfs[0],undefined,false,group.candidates![1]);
+
+ const cards=[...box.querySelectorAll<HTMLElement>('.graph-candidate[data-candidate]')];
+ expect(cards.length).toBe(3);
+ // 位于 MMF 同一列（x 与本地 MMF 相同）且为虚线框未开工
+ const mmfX=Number(box.querySelector<HTMLElement>('.graph-mmf[data-map="demo-m1"]')!.dataset.x);
+ for(const c of cards){
+  expect(Number(c.dataset.x)).toBe(mmfX);
+  expect(c.style.borderStyle).toBe('dashed');
+  expect(c.textContent).toContain('未开工');
+ }
+
+ // M2 有 Spec：显示 Spec 标识和 Linear 状态
+ const m2=box.querySelector<HTMLElement>('.graph-candidate[data-candidate="M2"]')!;
+ expect(m2.querySelector('.mmf-key')!.textContent).toBe('M2');
+ expect(m2.querySelector('.cand-spec-key')!.textContent).toBe('DEMO-3');
+ expect(m2.querySelector('.cand-spec-status')!.textContent).toBe('Todo');
+
+ // M3 无 Spec 且当前选中
+ const m3=box.querySelector<HTMLElement>('.graph-candidate[data-candidate="M3"]')!;
+ expect(m3.classList.contains('selected')).toBe(true);
+ expect(m3.querySelector('.cand-spec-key')).toBeNull();
+ expect(m3.textContent).toContain('尚无 Spec');
+
+ // Unknown 候选出现，但不计入 Epic 根节点的 MMF 数（1 本地 + M2 + M3 = 3 MMF）
+ const unk=box.querySelector<HTMLElement>('.graph-candidate[data-mmf-id="Unknown"]')!;
+ expect(unk.dataset.candidateSource).toBe('linear_child');
+ expect(unk.querySelector('.cand-spec-key')!.textContent).toBe('DEMO-4');
+ expect(box.querySelector('.graph-root')!.getAttribute('data-meta')).toContain('3 MMF');
+});

@@ -358,3 +358,28 @@ test('S2/S6/S7 M1 样本右栏无 Linear 状态与归属说明；有 Linear 缓�
  expect(doc03.querySelector('.detail-title')!.textContent).toBe('本地 03');
  expect(doc03.querySelector('.detail-linear-status')!.textContent).toBe('Unknown');
 });
+
+test('S13 点击 M3 候选卡右栏显示标识、标题、来源为 Epic 正文且无 Spec 链接；有 Spec 的候选显示 Spec 链接与状态',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const [m2,m3,unk]=linearSample.repos[0]!.epics[0]!.candidates!;
+
+ const docM3=mount(renderRightColumn({epicKey:'DEMO-1',candidate:m3,inbox:false,open:true}));
+ expect(docM3.querySelector('#board-right h2')!.textContent).toBe('DEMO-1 · M3');
+ expect(docM3.querySelector('.detail-title')!.textContent).toBe('交付汇总');
+ expect(docM3.querySelector('.detail-candidate-id')!.textContent).toBe('M3');
+ expect(docM3.querySelector('.detail-candidate-source')!.textContent).toBe('Epic 正文');
+ expect(docM3.querySelector('.detail-links a')).toBeNull();
+ expect(docM3.querySelector('.stage-bar')).toBeNull();
+
+ const docM2=mount(renderRightColumn({epicKey:'DEMO-1',candidate:m2,inbox:false,open:true}));
+ expect(docM2.querySelector('.detail-candidate-id')!.textContent).toBe('M2');
+ expect(docM2.querySelector('.detail-candidate-source')!.textContent).toBe('Epic 正文');
+ expect(docM2.querySelector('.detail-candidate-spec')!.textContent).toBe('DEMO-3 · Todo');
+ const m2Link=docM2.querySelector<HTMLAnchorElement>('.detail-links a')!;
+ expect(m2Link).not.toBeNull();
+ expect(m2Link.getAttribute('href')).toBe('https://linear.app/demo/issue/DEMO-3');
+
+ const docUnk=mount(renderRightColumn({epicKey:'DEMO-1',candidate:unk,inbox:false,open:true}));
+ expect(docUnk.querySelector('.detail-candidate-id')!.textContent).toBe('Unknown');
+ expect(docUnk.querySelector('.detail-candidate-source')!.textContent).toBe('Linear 子项');
+});
