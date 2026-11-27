@@ -23,8 +23,9 @@ import (
 // 构建时绑定；运行时不搜索 shell PATH。
 var pythonPath string
 
-// 构建时可选绑定 mcporter 路径，桌面端启动时补充子进程 PATH。
+// 构建时可选绑定 mcporter 与 node 路径，桌面端启动时补充子进程 PATH。
 var mcporterPath string
+var nodePath string
 
 // 构建号三段由 build.py 经 MYGO_LDFLAGS 注入（-X main.buildCommit 等）；开发运行时为空。
 var buildCommit, buildDirty, builtAt string
@@ -160,8 +161,9 @@ func (h *Host) runRefreshBoardLinear(manual bool) (json.RawMessage, error) {
 		return h.ReadBoard()
 	}
 
-	subPath := linearSubprocessPath(os.Getenv("PATH"), home, mcporterPath)
+	subPath := linearSubprocessPath(os.Getenv("PATH"), home, mcporterPath, nodePath)
 	hasMcporter := lookPathInDirs("mcporter", subPath) != ""
+	hasNode := lookPathInDirs("node", subPath) != ""
 	timeout := h.linearTimeout
 	if timeout <= 0 {
 		timeout = 125 * time.Second
@@ -197,6 +199,8 @@ func (h *Host) runRefreshBoardLinear(manual bool) (json.RawMessage, error) {
 		}
 		if !hasMcporter || strings.Contains(reason, "No such file or directory: 'mcporter'") {
 			patchLinearCacheReason(lanesRoot, "找不到 mcporter，无法从 Linear 更新")
+		} else if isMissingNodeReason(reason, hasNode) {
+			patchLinearCacheReason(lanesRoot, "找不到 node，无法从 Linear 更新")
 		}
 	}
 	return h.ReadBoard()
@@ -222,7 +226,17 @@ func isLinearCacheFresh(lanesRoot string, now time.Time) bool {
 	return age >= 0 && age < linearRefreshCooldown
 }
 
-func linearSubprocessPath(currentPath, home, boundMcporter string) string {
+func isMissingNodeReason(reason string, hasNode bool) bool {
+	if strings.Contains(reason, "env: node:") ||
+		strings.Contains(reason, "node: No such file or directory") ||
+		strings.Contains(reason, "No such file or directory: 'node'") ||
+		strings.Contains(reason, "node: not found") {
+		return true
+	}
+	return !hasNode && strings.Contains(reason, "node") && strings.Contains(reason, "No such file or directory")
+}
+
+func linearSubprocessPath(currentPath, home, boundMcporter, boundNode string) string {
 	seen := map[string]bool{}
 	var dirs []string
 	add := func(dir string) {
@@ -238,6 +252,9 @@ func linearSubprocessPath(currentPath, home, boundMcporter string) string {
 	}
 	if boundMcporter != "" {
 		add(filepath.Dir(boundMcporter))
+	}
+	if boundNode != "" {
+		add(filepath.Dir(boundNode))
 	}
 	if home != "" {
 		for _, rel := range []string{filepath.Join(".bun", "bin"), filepath.Join(".local", "bin")} {

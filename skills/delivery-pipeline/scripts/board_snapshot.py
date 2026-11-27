@@ -392,6 +392,61 @@ def _read_repo(source: str) -> str | None:
     return Path(result.stdout.strip()).name if result.returncode == 0 else None
 
 
+_REMOTE_SCP_RE = re.compile(r"^(?:[^@\s]+@)?([^:/\s]+):([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
+_REMOTE_URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^@/\s]+@)?([^:/\s]+)(?::\d+)?/([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
+
+
+def _read_repo_origin(source: str) -> tuple[str, str] | None:
+    result = driver.run_git(source, "remote", "get-url", "origin")
+    if result.returncode != 0:
+        return None
+    url = result.stdout.strip()
+    match = _REMOTE_URL_RE.match(url) or _REMOTE_SCP_RE.match(url)
+    if not match:
+        return None
+    return match.group(1).lower(), match.group(2).lower()
+
+
+def _normalize_repo_groups(epics_by_repo: dict[str, dict[str, Epic]],
+                           repo_sources: dict[str, list[str | None]]) -> None:
+    """仅在肯定 remote 证据下将裸仓名 name 归一到唯一匹配的 owner/name 组；无 remote、多 owner 或不同 host 时不合并。"""
+    by_tail: dict[str, list[str]] = {}
+    for repo_name in epics_by_repo:
+        if "/" in repo_name:
+            tail = repo_name.rsplit("/", 1)[-1].lower()
+            by_tail.setdefault(tail, []).append(repo_name)
+    if not by_tail:
+        return
+    for bare in [name for name in epics_by_repo if "/" not in name and name != "Unknown"]:
+        targets = by_tail.get(bare.lower(), [])
+        if len(targets) != 1:
+            continue
+        target = targets[0]
+        sources = repo_sources.get(bare, [])
+        if not sources or any(src is None for src in sources):
+            continue
+        origins = [_read_repo_origin(src) for src in sources if src is not None]
+        if any(origin is None for origin in origins):
+            continue
+        bare_hosts = {origin[0] for origin in origins if origin is not None}
+        bare_slugs = {origin[1] for origin in origins if origin is not None}
+        if len(bare_hosts) != 1 or bare_slugs != {target.lower()}:
+            continue
+        target_origins = [_read_repo_origin(src) for src in repo_sources.get(target, []) if src is not None]
+        target_hosts = {origin[0] for origin in target_origins if origin is not None}
+        if target_hosts and target_hosts != bare_hosts:
+            continue
+        bare_epics = epics_by_repo.pop(bare)
+        target_epics = epics_by_repo[target]
+        for epic_key, epic in bare_epics.items():
+            if existing := target_epics.get(epic_key):
+                existing["url"] = existing["url"] or epic["url"]
+                existing["mmfs"].extend(epic["mmfs"])
+                existing["ended"] = existing["ended"] and epic["ended"]
+            else:
+                target_epics[epic_key] = epic
+
+
 def _load_live_probes() -> None:
     scripts = Path(__file__).resolve().parent
     if scripts.name == "scripts":
@@ -603,7 +658,9 @@ def _parse_mmf_edges(table_rows: list[tuple[str, str, str]]) -> list[MmfEdge]:
 
 def _apply_epic_candidates(epic: Epic, epic_issue: LinearIssue,
                            linear_issues: dict[str, LinearIssue],
-                           errors: list[BoardError]) -> None:
+                           errors: list[BoardError],
+                           extra_matched_specs: set[str] | None = None,
+                           extra_matched_mmfs: set[str] | None = None) -> None:
     table_rows, dup_error = _parse_mmf_table(epic_issue.get("description"))
     if dup_error:
         errors.append({"map": epic["key"], "reason": dup_error})
@@ -623,8 +680,8 @@ def _apply_epic_candidates(epic: Epic, epic_issue: LinearIssue,
         if mid and mid not in child_by_mmf_id:
             child_by_mmf_id[mid] = child_key
 
-    matched_spec_keys: set[str] = set()
-    matched_mmf_ids: set[str] = set()
+    matched_spec_keys: set[str] = set(extra_matched_specs or ())
+    matched_mmf_ids: set[str] = set(extra_matched_mmfs or ())
     for mmf in epic["mmfs"]:
         spec_key = issue_status.issue_key(mmf["links"]["linear"])
         if spec_key and spec_key in child_set:
@@ -689,6 +746,7 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
     spec_keys: set[str] = set()
     inbox_spec_keys: set[str] = set()
     epics_by_repo: dict[str, dict[str, Epic]] = {}
+    repo_sources: dict[str, list[str | None]] = {}
     repo_at = cache(_read_repo)
     maps: list[tuple[Mmf, dict[str, dict]]] = []
 
@@ -698,7 +756,8 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
         plan = (data or {}).get("plan") or {}
         mrow = driver.map_row(lanes) or {}
         source = mrow.get("source_worktree_path")
-        repo = (repo_at(source) if source else None) or _text(plan.get("repo")) or "Unknown"
+        source_repo = repo_at(source) if source else None
+        repo = source_repo or _text(plan.get("repo")) or "Unknown"
         ref = _text(mrow.get("epic")) or _text(plan.get("epic"))
         local_key = issue_status.issue_key(ref)
         key = local_key
@@ -735,6 +794,7 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
             epic["url"] = epic["url"] or url
             epic["mmfs"].append(mmf)
             epic["ended"] = epic["ended"] and (mmf["stage"] == "merged" or bool(mmf.get("archived_at")))
+            repo_sources.setdefault(repo, []).append(source if (source and source_repo) else None)
         maps.append((mmf, lanes))
 
     # 根层保留旧布局的 map；同一 map 已迁入目录时，目录现场优先。单份根层 registry 不可读只记错误。
@@ -782,6 +842,19 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
         except (OSError, ValueError) as error:
             errors.append({"map": name, "reason": str(error)})
     if linear_cache is not None:
+        _normalize_repo_groups(epics_by_repo, repo_sources)
+        epic_matched_specs: dict[str, set[str]] = {}
+        epic_matched_mmfs: dict[str, set[str]] = {}
+        for epics in epics_by_repo.values():
+            for epic in epics.values():
+                if epic_issue := linear_issues.get(epic["key"]):
+                    child_set = {k for k in (epic_issue.get("children") or ()) if k in linear_issues}
+                    for mmf in epic["mmfs"]:
+                        spec_key = issue_status.issue_key(mmf["links"]["linear"])
+                        if spec_key and spec_key in child_set:
+                            epic_matched_specs.setdefault(epic["key"], set()).add(spec_key)
+                            if mid := _extract_child_mmf_id(linear_issues[spec_key]):
+                                epic_matched_mmfs.setdefault(epic["key"], set()).add(mid)
         for epics in epics_by_repo.values():
             for epic in epics.values():
                 if epic_issue := linear_issues.get(epic["key"]):
@@ -789,7 +862,11 @@ def _read_snapshot(lanes_root: str, *, apply_linear: bool = True) -> tuple[Board
                         epic["title"] = title
                     if status := _text(epic_issue.get("status")):
                         epic["linear_status"] = status
-                    _apply_epic_candidates(epic, epic_issue, linear_issues, errors)
+                    _apply_epic_candidates(
+                        epic, epic_issue, linear_issues, errors,
+                        extra_matched_specs=epic_matched_specs.get(epic["key"]),
+                        extra_matched_mmfs=epic_matched_mmfs.get(epic["key"]),
+                    )
     repos = [{"name": name, "epics": sorted(epics.values(), key=lambda epic: epic["key"])}
              for name, epics in sorted(epics_by_repo.items())]
     raw_snapshot: dict[str, object] = {
@@ -1638,6 +1715,136 @@ def _test_linear_candidates() -> None:
         ]
 
 
+def _test_linear_repo_dedup() -> None:
+    """R2（S14）：有肯定 remote 证据时才归一仓库组；无 remote、不同 owner/host 或无缓存时不合并；跨组同 Epic 候选仍去重。"""
+    with TemporaryDirectory() as temp:
+        root = Path(temp) / "lanes"
+        repo_a = Path(temp) / "repo-a"
+        subprocess.run(["git", "init", "-q", str(repo_a)], check=True)
+        subprocess.run(["git", "-C", str(repo_a), "remote", "add", "origin", "git@github.com:Owner/repo-a.git"],
+                       check=True)
+        url = "https://linear.app/demo/issue/"
+
+        def write_map(name: str, epic_key: str, spec_key: str, *,
+                      repo: str | None = None, source_path: Path | None = None) -> None:
+            folder = root / name
+            folder.mkdir(parents=True, exist_ok=True)
+            plan: dict[str, object] = {"epic": url + epic_key, "mmf": name, "tickets": []}
+            if repo:
+                plan["repo"] = repo
+            data = {"grant": {"plan_sha": "fixture"}, "published": "fixture",
+                    "gates": {"spec": url + spec_key}, "plan": plan}
+            (folder / "driver.json").write_text(json.dumps(data), encoding="utf-8")
+            row = [f"lane_id: map-{name}", "role: map", f"work_item: {spec_key}", f"epic: {url}{epic_key}"]
+            if source_path:
+                row.append(f"source_worktree_path: {source_path}")
+            (folder / "registry.md").write_text(
+                "<!-- wayfinder-lane-registry:v2 -->\n```yaml\n" + "\n".join(row) + "\n```\n",
+                encoding="utf-8",
+            )
+
+        # a) 同 repo 两种写法且有肯定 remote 证据：map X plan.repo="Owner/repo-a" 无 source，map Y source worktree 名 "repo-a"（origin 指向 Owner/repo-a）
+        write_map("map-x", "DEMO-60", "DEMO-61", repo="Owner/repo-a")
+        write_map("map-y", "DEMO-60", "DEMO-62", source_path=repo_a)
+        # b) 真跨 repo 负例：map Z 在 "repo-b"、同 Epic E
+        write_map("map-z", "DEMO-60", "DEMO-63", repo="repo-b")
+
+        # 反例 c)：无 Linear 缓存时含 owner/name 与裸名两组（即使有 origin remote），必须保持各自原仓库组，与 25e5240 逐字段一致
+        no_cache = read_snapshot(str(root))
+        assert "linear" not in no_cache
+        no_cache_repos = {r["name"]: [m["map"] for e in r["epics"] for m in e["mmfs"]] for r in no_cache["repos"]}
+        assert no_cache_repos == {"Owner/repo-a": ["map-x"], "repo-a": ["map-y"], "repo-b": ["map-z"]}, (
+            f"无 Linear 缓存时不得合并仓库组：{no_cache_repos}"
+        )
+
+        fetched_at = "2026-11-27T04:00:00Z"
+        table = (
+            "| MMF | 用户结果 | Blocked by |\n"
+            "| --- | --- | --- |\n"
+            "| **M1 第一阶段** | 基础 | 无 |\n"
+            "| **M2 第二阶段** | 扩展 | 开工 · 依赖 M1 |\n"
+            "| **M3 跨仓阶段** | 协作 | 无 |\n"
+            "| **M4 未开工** | 后续 | 开工 · 依赖 M2 |\n"
+        )
+        cache_data: LinearCache = {
+            "version": 1, "status": "ok", "fetched_at": fetched_at, "attempted_at": fetched_at, "reason": None,
+            "issues": {
+                "DEMO-60": {"title": "Epic E", "status": "In Progress", "status_type": "started", "parent": None,
+                            "description": table, "children": ["DEMO-61", "DEMO-62", "DEMO-63"], "fetched_at": fetched_at},
+                "DEMO-61": {"title": "M1 Spec", "status": "Done", "status_type": "completed", "parent": "DEMO-60",
+                            "description": "MMF: M1", "children": [], "fetched_at": fetched_at},
+                "DEMO-62": {"title": "M2 Spec", "status": "In Progress", "status_type": "started", "parent": "DEMO-60",
+                            "description": "MMF: M2", "children": [], "fetched_at": fetched_at},
+                "DEMO-63": {"title": "M3 Spec", "status": "Todo", "status_type": "unstarted", "parent": "DEMO-60",
+                            "description": "MMF: M3", "children": [], "fetched_at": fetched_at},
+            },
+            "failed": {},
+        }
+        driver.write_json(root / LINEAR_CACHE, cache_data)
+
+        snap = read_snapshot(str(root))
+        repos = {r["name"]: {e["key"]: e for e in r["epics"]} for r in snap["repos"]}
+        # a) 有肯定 remote 证据时，Owner/repo-a 与 repo-a 归一为一组，且 M1/M2 只以 Spec map 出现，不互为重复候选
+        assert set(repos) == {"Owner/repo-a", "repo-b"}, f"期望归一为 Owner/repo-a 与独立 repo-b，实际 {set(repos)}"
+        epic_a = repos["Owner/repo-a"]["DEMO-60"]
+        assert [(m["map"], m.get("mmf_id")) for m in epic_a["mmfs"]] == [("map-x", "M1"), ("map-y", "M2")]
+        assert [c["mmf_id"] for c in epic_a.get("candidates", [])] == ["M4"]
+        # b) 真跨 repo 保持独立仓库组与正常视图，不并入 repo-a，且不把已认出的 M1/M2 重复画成候选
+        epic_b = repos["repo-b"]["DEMO-60"]
+        assert [(m["map"], m.get("mmf_id")) for m in epic_b["mmfs"]] == [("map-z", "M3")]
+        assert [c["mmf_id"] for c in epic_b.get("candidates", [])] == ["M4"]
+
+        # 反例 a)：同名无 remote 的裸名组 + owner/name 组 → 不合并（跨组同 Epic 候选仍去重）
+        repo_nr = Path(temp) / "repo-noremote"
+        subprocess.run(["git", "init", "-q", str(repo_nr)], check=True)
+        write_map("map-nr1", "DEMO-80", "DEMO-81", repo="Owner/repo-noremote")
+        write_map("map-nr2", "DEMO-80", "DEMO-82", source_path=repo_nr)
+        cache_data["issues"].update({
+            "DEMO-80": {"title": "Epic NR", "status": "In Progress", "status_type": "started", "parent": None,
+                        "description": "| MMF | 说明 |\n| --- | --- |\n| M1 一 |\n| M2 二 |\n| M3 三 |\n",
+                        "children": ["DEMO-81", "DEMO-82"], "fetched_at": fetched_at},
+            "DEMO-81": {"title": "M1 Spec", "status": "Done", "status_type": "completed", "parent": "DEMO-80",
+                        "description": "MMF: M1", "children": [], "fetched_at": fetched_at},
+            "DEMO-82": {"title": "M2 Spec", "status": "In Progress", "status_type": "started", "parent": "DEMO-80",
+                        "description": "MMF: M2", "children": [], "fetched_at": fetched_at},
+        })
+        driver.write_json(root / LINEAR_CACHE, cache_data)
+        snap_nr = read_snapshot(str(root))
+        repos_nr = {r["name"]: {e["key"]: e for e in r["epics"]} for r in snap_nr["repos"]}
+        assert {"Owner/repo-noremote", "repo-noremote"} <= set(repos_nr), (
+            f"无 remote 证据时不得合并裸名组：{set(repos_nr)}"
+        )
+        assert [c["mmf_id"] for c in repos_nr["Owner/repo-noremote"]["DEMO-80"].get("candidates", [])] == ["M3"]
+        assert [c["mmf_id"] for c in repos_nr["repo-noremote"]["DEMO-80"].get("candidates", [])] == ["M3"]
+
+        # 反例 b)：remote 为不同 owner 或不同 host → 不合并
+        repo_d = Path(temp) / "repo-d"
+        subprocess.run(["git", "init", "-q", str(repo_d)], check=True)
+        subprocess.run(["git", "-C", str(repo_d), "remote", "add", "origin", "git@github.com:OtherOwner/repo-d.git"],
+                       check=True)
+        write_map("map-d1", "DEMO-70", "DEMO-71", repo="Owner/repo-d")
+        write_map("map-d2", "DEMO-70", "DEMO-72", source_path=repo_d)
+
+        repo_h1 = Path(temp) / "h1" / "repo-h"
+        repo_h2 = Path(temp) / "h2" / "repo-h"
+        repo_h1.mkdir(parents=True)
+        repo_h2.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(repo_h1)], check=True)
+        subprocess.run(["git", "-C", str(repo_h1), "remote", "add", "origin", "git@github.com:Owner/repo-h.git"],
+                       check=True)
+        subprocess.run(["git", "init", "-q", str(repo_h2)], check=True)
+        subprocess.run(["git", "-C", str(repo_h2), "remote", "add", "origin", "git@gitlab.com:Owner/repo-h.git"],
+                       check=True)
+        write_map("map-h0", "DEMO-75", "DEMO-76", repo="Owner/repo-h")
+        write_map("map-h1", "DEMO-75", "DEMO-77", source_path=repo_h1)
+        write_map("map-h2", "DEMO-75", "DEMO-78", source_path=repo_h2)
+
+        snap2 = read_snapshot(str(root))
+        repos2 = {r["name"] for r in snap2["repos"]}
+        assert {"Owner/repo-d", "repo-d"} <= repos2, f"不同 owner 的 remote 不应合并：{repos2}"
+        assert {"Owner/repo-h", "repo-h"} <= repos2, f"不同 host 的 remote 不应合并：{repos2}"
+
+
 def self_test() -> None:
     for path in sorted(SAMPLES.glob("*.json")):
         if path.name.startswith("linear-cache-"):
@@ -1671,6 +1878,7 @@ def self_test() -> None:
     _test_linear_refresh()
     _test_linear_merge()
     _test_linear_candidates()
+    _test_linear_repo_dedup()
     print("board_snapshot self-test ok")
 
 

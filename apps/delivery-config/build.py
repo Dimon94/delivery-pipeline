@@ -35,13 +35,16 @@ def build_label(info):
     return info['commit'] + ('+未提交' if info['dirty'] else '') + ' · ' + info['built_at'][:16].replace('T', ' ') + 'Z'
 
 
-def ldflags(python, info, mcporter=None):
+def ldflags(python, info, mcporter=None, node=None):
     """二进制注入：与既有 main.pythonPath 并列。"""
     flags = ['-X main.pythonPath='+str(python), '-X main.buildCommit='+info['commit'],
              '-X main.buildDirty='+('true' if info['dirty'] else 'false'), '-X main.builtAt='+info['built_at']]
     mcporter = shutil.which('mcporter') if mcporter is None else mcporter
     if mcporter:
         flags.append('-X main.mcporterPath='+str(mcporter))
+    node = shutil.which('node') if node is None else node
+    if node:
+        flags.append('-X main.nodePath='+str(node))
     return ' '.join(flags)
 
 

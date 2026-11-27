@@ -39,6 +39,15 @@ def main():
     build = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(build)
 
+    # 核对 build.ldflags 对 mcporter 与 node 路径的绑定（有值注入，空值不注入）。
+    info = {'commit': 'deadbee', 'dirty': False, 'built_at': '2026-11-27T00:00:00Z'}
+    bound = build.ldflags('/usr/bin/python3', info, mcporter='/opt/bin/mcporter', node='/opt/node/bin/node').split()
+    assert '-X' in bound and 'main.mcporterPath=/opt/bin/mcporter' in bound, f'ldflags 应绑定 mcporterPath：{bound}'
+    assert 'main.nodePath=/opt/node/bin/node' in bound, f'ldflags 应绑定 nodePath：{bound}'
+    unbound = build.ldflags('/usr/bin/python3', info, mcporter='', node='').split()
+    assert all(not flag.startswith('main.mcporterPath=') for flag in unbound), f'空 mcporter 不应注入：{unbound}'
+    assert all(not flag.startswith('main.nodePath=') for flag in unbound), f'空 node 不应注入：{unbound}'
+
     with tempfile.TemporaryDirectory(prefix='board-bundle-') as tmp:
         directory = Path(tmp).resolve()
         fake = directory / 'herdr'
