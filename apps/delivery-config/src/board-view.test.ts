@@ -41,7 +41,7 @@ test('S8 启动先显示读取中，随后三栏：左栏按仓库列 Epic，中
  const first=sample.repos[0].epics[0].mmfs[0];
  expect(center.querySelector('.graph-mmf')!.textContent).toContain(first.title);
  expect(center.querySelectorAll('.graph-ticket').length).toBe(first.tickets.length);
- expect(q('#board-right')!.querySelector('h2')!.textContent).toBe(first.tickets[0].id);
+ expect(q('#board-right')!.querySelector('h2')!.textContent).toBe(`DEMO-1 · ${first.map} · ${first.tickets[0].id}`);
  expect(q('#board-right')!.textContent).toContain(first.tickets[0].title);
 });
 
@@ -58,7 +58,7 @@ test('S8 设置进原配置页，返回看板保留选择',async()=>{
  expect(boardCalls).toBe(before+1);
  expect(board().hidden).toBe(false);
  expect(settings().hidden).toBe(true);
- expect(q('#board-right')!.querySelector('h2')!.textContent).toBe(pickId);
+ expect(q('#board-right')!.querySelector('h2')!.textContent).toBe(`DEMO-1 · dispatch-rules · ${pickId}`);
  expect(q(`[data-ticket="${pickId}"]`)!.classList.contains('selected')).toBe(true);
 });
 
@@ -116,7 +116,7 @@ function linksAligned() {
 test('S22 1440 宽：收起左栏中栏变宽；收起右栏中栏占满、选择保持、连线对齐；右栏收起时点票自动展开；展开左栏复原',()=>{
  expect(win.innerWidth).toBe(1440);
  const grid=()=>q('.board-grid')!;
- const selected=q('#board-right h2')!.textContent;
+ const selected=q<HTMLElement>('.graph-ticket.selected')!.dataset.ticket!;
  expect(columns(grid())).toBe('260px minmax(0,1fr) 320px');
  click(button('收起左栏'));
  expect(q('#board-left')!.hidden).toBe(true);
@@ -124,18 +124,18 @@ test('S22 1440 宽：收起左栏中栏变宽；收起右栏中栏占满、选�
  click(button('收起右栏'));
  expect(q('#board-right')!.hidden).toBe(true);
  expect(columns(grid())).toBe('minmax(0,1fr)');
- expect(q('.graph-ticket.selected')!.dataset.ticket).toBe(selected!);
+ expect(q<HTMLElement>('.graph-ticket.selected')!.dataset.ticket).toBe(selected);
  linksAligned();
  const other=[...doc.querySelectorAll<HTMLElement>('.graph-ticket')].find(c=>c.dataset.ticket!==selected)!;
  const id=other.dataset.ticket!;
  click(other);
  expect(q('#board-right')!.hidden).toBe(false);
- expect(q('#board-right h2')!.textContent).toBe(id);
+ expect(q('#board-right h2')!.textContent).toBe(`DEMO-1 · dispatch-rules · ${id}`);
  expect(columns(grid())).toBe('minmax(0,1fr) 320px');
  click(button('展开左栏'));
  expect(q('#board-left')!.hidden).toBe(false);
  expect(columns(grid())).toBe('260px minmax(0,1fr) 320px');
- expect(q('.graph-ticket.selected')!.dataset.ticket).toBe(id);
+ expect(q<HTMLElement>('.graph-ticket.selected')!.dataset.ticket).toBe(id);
  linksAligned();
 });
 
@@ -248,7 +248,7 @@ test('S10 选中某票后快照变更，失焦再 focus/visibilitychange 重读�
  window.dispatchEvent(new win.Event('focus'));await settle();
 
  click(q('.graph-ticket[data-ticket="05"]'));
- expect(q('#board-right h2')!.textContent).toBe('05');
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 05');
  expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('implement');
 
  const updated=structuredClone(base);
@@ -264,7 +264,7 @@ test('S10 选中某票后快照变更，失焦再 focus/visibilitychange 重读�
  doc.dispatchEvent(new win.Event('visibilitychange'));
  await settle();
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('05');
- expect(q('#board-right h2')!.textContent).toBe('05');
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 05');
  expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('integrate');
 
  const removed=structuredClone(updated);
@@ -272,7 +272,7 @@ test('S10 选中某票后快照变更，失焦再 focus/visibilitychange 重读�
  answer=()=>Promise.resolve(removed);
  window.dispatchEvent(new win.Event('focus'));await settle();
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
- expect(q('#board-right h2')!.textContent).toBe('01');
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 01');
 });
 
 test('S11 切 Epic/MMF/票时中右栏同步，七步条、现场与链接对应所选对象，“更多现场信息”默认折叠且无写按钮',async()=>{
@@ -281,19 +281,19 @@ test('S11 切 Epic/MMF/票时中右栏同步，七步条、现场与链接对应
 
  click(q('.board-mmf-entry[data-map="dispatch-rules"]'));
  expect(q('.graph-mmf.selected')!.dataset.map).toBe('dispatch-rules');
- expect(q('#board-right h2')!.textContent).toBe('MMF');
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules');
  expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('implement');
  expect(q('#board-right .detail-links')!.innerHTML).toContain('/fixture/artifacts/plan-review.html');
  expect(q<HTMLDetailsElement>('#board-right details.detail-more')!.open).toBe(false);
- expect([...doc.querySelectorAll('#board-right button')].map(b=>b.textContent)).toEqual(['收起右栏']);
+ expect([...doc.querySelectorAll('#board-right button:not(.detail-chip)')].map(b=>b.textContent)).toEqual(['收起右栏']);
 
  click(q('.graph-ticket[data-ticket="01"]'));
  expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
- expect(q('#board-right h2')!.textContent).toBe('01');
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 01');
  expect(q('#board-right .stage-step.current')!.getAttribute('data-stage')).toBe('integrate');
  expect(q('#board-right .detail-links')!.innerHTML).toContain('DEMO-11');
  expect(q<HTMLDetailsElement>('#board-right details.detail-more')!.open).toBe(false);
- expect([...doc.querySelectorAll('#board-right button')].map(b=>b.textContent)).toEqual(['收起右栏']);
+ expect([...doc.querySelectorAll('#board-right button:not(.detail-chip)')].map(b=>b.textContent)).toEqual(['收起右栏']);
 });
 
 test('S19 通过真实入口加载 probed 样本，Inbox 三条展示完整字段且点选同步中右栏',async()=>{
@@ -400,4 +400,19 @@ test('DD-668 visual-fix-2 项1交互：Inbox 在左栏顶部默认折叠，点�
  click(q('#board-left [data-board="toggle-inbox"]'));
  expect(q<HTMLButtonElement>('#board-left [data-board="toggle-inbox"]')!.getAttribute('aria-expanded')).toBe('false');
  expect(q<HTMLElement>('#board-left .board-inbox .inbox-list')!.hidden).toBe(true);
+});
+
+test('DD-668 visual-fix-3 项10-17交互：右栏头部路径、上游芯片点击切换选中票与三行链接区',async()=>{
+ answer=()=>Promise.resolve(sample);
+ window.dispatchEvent(new win.Event('focus'));await settle();
+
+ click(q('.graph-ticket[data-ticket="04"]'));
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 04');
+ expect(q('#board-right .detail-sub')).toBeNull();
+ const upChip=q<HTMLButtonElement>('#board-right .detail-rel button.detail-chip[data-ticket="01"]');
+ expect(upChip).not.toBeNull();
+ click(upChip);
+ expect(q('.graph-ticket.selected')!.dataset.ticket).toBe('01');
+ expect(q('#board-right h2')!.textContent).toBe('DEMO-1 · dispatch-rules · 01');
+ expect(doc.querySelectorAll('#board-right .detail-links > *').length).toBe(3);
 });

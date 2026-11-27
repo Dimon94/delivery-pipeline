@@ -180,7 +180,18 @@ export const copy = {
   "编号": "编号",
   "展开Epic": "展开",
   "收起Epic": "收起",
-  "非活跃": "未活跃"
+  "非活跃": "未活跃",
+  "状态": "状态",
+  "工作树": "工作树",
+  "上游": "上游",
+  "下游": "下游",
+  "尚无": "尚无",
+  "无lane": "无 lane",
+  "PlanReview页": "Plan Review 页",
+  "MergeReview页": "Merge Review 页",
+  "LinearIssue": "Linear issue",
+  "可选": "可选：",
+  "回复Halt说明": "回复 Halt 不在本看板（链接到 Driver 现场）"
 };
 export const STAGE_ORDER:readonly import('./board').Stage[]=['spec','tickets','implement','integrate','review','merge_review','merged'];
 // 阶段全称对齐锁定原型 v4；读不出的阶段原样显示数据值。
