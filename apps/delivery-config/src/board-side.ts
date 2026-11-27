@@ -60,6 +60,7 @@ export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
      url:e.url,
      mmfs:e.mmfs,
      ...(e.candidates?.length?{candidates:e.candidates}:{}),
+     ...(e.mmf_edges?.length?{mmfEdges:e.mmf_edges}:{}),
      ...(e.linear_status?{linearStatus:e.linear_status}:{}),
      ...(hasLinear?{hasLinear:true}:{}),
     },

@@ -2,7 +2,7 @@ import {test,expect} from 'bun:test';
 import {Window} from 'happy-dom';
 import {readFileSync} from 'node:fs';
 import type {BoardSnapshot,Lane,Mmf,Ticket} from './board';
-import {GRAPH_GEOMETRY,applyHoverChain,dependencyChain,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+import {GRAPH_GEOMETRY,applyHoverChain,dependencyChain,missingMmfEdges,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
 import {buildBoardGroups} from './board-side';
 
 const sample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board.json',import.meta.url),'utf8')) as BoardSnapshot;
@@ -418,4 +418,48 @@ test('S3/S4 候选卡以虚线框未开工出现在 MMF 列，有 Spec 显示标
  expect(unk.dataset.candidateSource).toBe('linear_child');
  expect(unk.querySelector('.cand-spec-key')!.textContent).toBe('DEMO-4');
  expect(box.querySelector('.graph-root')!.getAttribute('data-meta')).toContain('3 MMF');
+});
+
+test('S13（R5）跨 MMF 边按类型画出；悬停 M2 卡片时 M1→M2 边与两端高亮并显示“开工”与依赖原文；端点缺失的边不画由 missingMmfEdges 返回',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const group=buildBoardGroups(linearSample).repos[0]!.epics[0]!.group;
+ // 追加一条端点 M9 缺失的边，验证图上不画、missingMmfEdges 返回
+ const groupWithMissing:GraphGroup={
+  ...group,
+  mmfEdges:[
+   {from:'M1',to:'M2',kind:'开工',text:'开工 · 依赖 M1 定下的快照 JSON 结构'},
+   {from:'M1',to:'M3',kind:'Unknown',text:'M1，可与 M2 并行'},
+   {from:'M1',to:'M9',kind:'上线',text:'上线依赖 M1'},
+  ],
+ };
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph(groupWithMissing,groupWithMissing.mmfs[0],undefined,false);
+
+ const drawnEdges=[...box.querySelectorAll('path[data-mmf-edge]')].map(p=>p.getAttribute('data-mmf-edge'));
+ expect(drawnEdges).toEqual(['M1>M2','M1>M3']);
+ expect(box.querySelector('path[data-mmf-edge="M2>M3"]')).toBeNull();
+ expect(box.querySelector('path[data-mmf-edge="M1>M9"]')).toBeNull();
+ expect(missingMmfEdges(groupWithMissing)).toEqual([
+  {from:'M1',to:'M9',kind:'上线',text:'上线依赖 M1'},
+ ]);
+
+ // 悬停 M2 卡片：M1→M2 边、标签、M1 与 M2 卡片保持高亮；M1→M3 与 M3 淡出
+ applyHoverChain(box,groupWithMissing,{candidate:'M2'});
+ expect(box.querySelector('.graph')!.classList.contains('has-hover')).toBe(true);
+ const edgePath=box.querySelector('path[data-mmf-edge="M1>M2"]')!;
+ const edgeLabel=box.querySelector<HTMLElement>('.mmf-edge-label[data-mmf-edge-label="M1>M2"]')!;
+ expect(edgePath.classList.contains('chain')).toBe(true);
+ expect(edgeLabel.classList.contains('chain')).toBe(true);
+ expect(edgeLabel.querySelector('.mmf-edge-kind')!.textContent).toBe('开工');
+ expect(edgeLabel.querySelector('.mmf-edge-text')!.textContent).toBe('开工 · 依赖 M1 定下的快照 JSON 结构');
+
+ expect(box.querySelector('.graph-mmf[data-mmf-id="M1"]')!.classList.contains('chain')).toBe(true);
+ expect(box.querySelector('.graph-candidate[data-candidate="M2"]')!.classList.contains('chain')).toBe(true);
+ expect(box.querySelector('.graph-candidate[data-candidate="M3"]')!.classList.contains('dimmed')).toBe(true);
+ expect(box.querySelector('path[data-mmf-edge="M1>M3"]')!.classList.contains('dimmed')).toBe(true);
+
+ // 离开后恢复
+ applyHoverChain(box,groupWithMissing,undefined);
+ expect(box.querySelector('.graph')!.classList.contains('has-hover')).toBe(false);
+ expect(box.querySelectorAll('.chain,.dimmed').length).toBe(0);
 });

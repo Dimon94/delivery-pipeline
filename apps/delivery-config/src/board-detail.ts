@@ -1,4 +1,4 @@
-import type {Halt,Lane,Mmf,MmfCandidate,Stage,Ticket} from './board';
+import type {Halt,Lane,Mmf,MmfCandidate,MmfEdge,Stage,Ticket} from './board';
 import {ticketMatchesHalt} from './board-graph';
 import {STAGE_ORDER,copy,laneGroupNames,liveStatusLabel,mmfStatusText,stageLabel,ticketStatusText} from './copy';
 
@@ -21,6 +21,7 @@ export interface RightColumnParams {
  mmf?:Mmf;
  ticket?:Ticket;
  candidate?:MmfCandidate;
+ missingEdges?:MmfEdge[];
  inbox:boolean;
  inboxRepo?:string;
  inboxSpec?:boolean;
@@ -187,8 +188,16 @@ function renderDetailBody(mmf:Mmf|undefined,ticket:Ticket|undefined,inbox:boolea
  return `<h3 class="detail-title">${esc(mmf.title)}</h3>${inboxSub}${attributionSub}${stepsHtml}${alertCard}<dl class="detail-core">${coreHtml}</dl><details class="detail-more"><summary>${copy.更多现场信息}</summary><dl class="detail-extra">${extraHtml}</dl></details><div class="detail-links">${linksHtml}</div>`;
 }
 
+function renderMissingEdges(edges?:MmfEdge[]):string {
+ if(!edges?.length)return '';
+ const items=edges.map(e=>
+  `<li class="missing-edge-item" data-missing-edge="${esc(e.from)}>${esc(e.to)}"><div class="missing-edge-head"><span class="missing-edge-pair mono">${esc(e.from)} → ${esc(e.to)}</span><span class="missing-edge-kind">${esc(e.kind)}</span></div><p class="missing-edge-text">${esc(e.text)}</p></li>`
+ ).join('');
+ return `<section class="detail-missing-edges" aria-label="未画出的跨 MMF 依赖"><div class="muted small">未画出的跨 MMF 依赖</div><ul class="missing-edge-list">${items}</ul></section>`;
+}
+
 export function renderRightColumn(params:RightColumnParams):string {
- const {epicKey,mmf,ticket,candidate,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
+ const {epicKey,mmf,ticket,candidate,missingEdges,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
  const showSteps=!inbox||inboxSpec===true;
  const groupCls=ticket?(ticket.lane?ticket.lane.group:'pending'):undefined;
  const pillHtml=candidate
@@ -196,8 +205,9 @@ export function renderRightColumn(params:RightColumnParams):string {
   :ticket&&groupCls
    ?`<span class="board-pill g-${esc(groupCls)}">${esc(laneGroupNames[groupCls]??copy.未派发)}</span>`
    :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
- const bodyHtml=candidate
+ const missingHtml=!ticket&&!inbox?renderMissingEdges(missingEdges):'';
+ const bodyHtml=(candidate
   ?renderCandidateBody(candidate)
-  :renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps,hasLinear);
+  :renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps,hasLinear))+missingHtml;
  return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps,candidate))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${bodyHtml}</div></aside>`;
 }

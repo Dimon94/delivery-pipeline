@@ -383,3 +383,19 @@ test('S13 点击 M3 候选卡右栏显示标识、标题、来源为 Epic 正文
  expect(docUnk.querySelector('.detail-candidate-id')!.textContent).toBe('Unknown');
  expect(docUnk.querySelector('.detail-candidate-source')!.textContent).toBe('Linear 子项');
 });
+
+test('R5 端点找不到的跨 MMF 边列在右栏 Epic 详情中，包含起止标识、类型与原文',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const mmf=linearSample.repos[0]!.epics[0]!.mmfs[0]!;
+ const missing=[{from:'M1',to:'M9',kind:'开工' as const,text:'开工 · 依赖 M1 接口'}];
+
+ const doc=mount(renderRightColumn({epicKey:'DEMO-1',mmf,missingEdges:missing,inbox:false,open:true}));
+ const sec=doc.querySelector('.detail-missing-edges')!;
+ expect(sec).not.toBeNull();
+ expect(sec.querySelector('.missing-edge-pair')!.textContent).toBe('M1 → M9');
+ expect(sec.querySelector('.missing-edge-kind')!.textContent).toBe('开工');
+ expect(sec.querySelector('.missing-edge-text')!.textContent).toBe('开工 · 依赖 M1 接口');
+
+ const emptyDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf,missingEdges:[],inbox:false,open:true}));
+ expect(emptyDoc.querySelector('.detail-missing-edges')).toBeNull();
+});

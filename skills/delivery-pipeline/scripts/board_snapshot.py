@@ -482,6 +482,11 @@ _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
 _SEP_CELL_RE = re.compile(r"^:?-{2,}:?$")
 _MMF_ID_RE = re.compile(r"^(MMF\d+[a-z]?|M\d+)(?![A-Za-z0-9])")
 _MMF_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+)?(?:\*\*)?MMF(?:\*\*)?\s*[:：]\s*(.+?)\s*$")
+_DEP_SPLIT_RE = re.compile(r"[，,；;。]")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_MD_LINK_URL_RE = re.compile(r"\]\([^)]*\)")
+_PAREN_IGNORE_RE = re.compile(r"[（(][^）)]*(?:并行|不依赖)[^）)]*[）)]")
+_MMF_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(MMF\d+[a-z]?|M\d+)(?![A-Za-z0-9])")
 _TITLE_SEP_CHARS = " \t：:·—–-"
 
 
@@ -564,6 +569,38 @@ def _child_candidate_title(issue: LinearIssue, mmf_id: str | None) -> str:
     return title or mmf_id or "Unknown"
 
 
+def _parse_mmf_edges(table_rows: list[tuple[str, str, str]]) -> list[MmfEdge]:
+    """从 MMF 表依赖列解析跨 MMF 依赖边；过滤含“并行”或“不依赖”的子句，保留原文。"""
+    valid_ids = {mmf_id for mmf_id, _, _ in table_rows}
+    edges: list[MmfEdge] = []
+    seen: set[tuple[str, str]] = set()
+    for target_id, _, raw_dep in table_rows:
+        text = _strip_bold(raw_dep).strip()
+        if not text:
+            continue
+        if text.startswith("开工"):
+            kind: Literal["开工", "上线", "Unknown"] = "开工"
+        elif text.startswith("上线"):
+            kind = "上线"
+        else:
+            kind = "Unknown"
+        cleaned = _MD_LINK_URL_RE.sub("]", _HTML_TAG_RE.sub(" ", text))
+        cleaned = _PAREN_IGNORE_RE.sub(" ", cleaned)
+        for clause in _DEP_SPLIT_RE.split(cleaned):
+            if "并行" in clause or "不依赖" in clause:
+                continue
+            for match in _MMF_TOKEN_RE.finditer(clause):
+                source_id = match.group(1)
+                if source_id not in valid_ids or source_id == target_id:
+                    continue
+                pair = (source_id, target_id)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                edges.append({"from": source_id, "to": target_id, "kind": kind, "text": text})
+    return edges
+
+
 def _apply_epic_candidates(epic: Epic, epic_issue: LinearIssue,
                            linear_issues: dict[str, LinearIssue],
                            errors: list[BoardError]) -> None:
@@ -571,6 +608,10 @@ def _apply_epic_candidates(epic: Epic, epic_issue: LinearIssue,
     if dup_error:
         errors.append({"map": epic["key"], "reason": dup_error})
         return
+
+    edges = _parse_mmf_edges(table_rows)
+    if edges:
+        epic["mmf_edges"] = edges
 
     children = [key for key in (epic_issue.get("children") or ()) if key in linear_issues]
     child_set = set(children)
@@ -1554,6 +1595,7 @@ def _test_linear_candidates() -> None:
         epics = {e["key"]: e for r in snap["repos"] for e in r["epics"]}
 
         # S3：M1 对上本地 map 带 mmf_id 不出候选；候选只有 M2（带 Spec）与 M3（spec 为 null）
+        # S3（R5）：M2 依赖格“开工 · 依赖 M1”、M3 依赖格“M1，可与 M2 并行”→ 只有 M1→M2（开工）与 M1→M3（Unknown），无 M2→M3
         epic_e = epics["DEMO-1"]
         assert epic_e["mmfs"][0]["mmf_id"] == "M1"
         assert epic_e["candidates"] == [
@@ -1561,8 +1603,12 @@ def _test_linear_candidates() -> None:
              "spec": {"key": "DEMO-12", "url": url + "DEMO-12", "status": "Todo"}},
             {"mmf_id": "M3", "title": "交付汇总", "source": "epic_table", "spec": None},
         ]
+        assert epic_e["mmf_edges"] == [
+            {"from": "M1", "to": "M2", "kind": "开工", "text": "开工 · 依赖 M1"},
+            {"from": "M1", "to": "M3", "kind": "Unknown", "text": "M1，可与 M2 并行"},
+        ]
 
-        # S4：MMF8a 按标题匹配为 linear_child，无标识子项为 Unknown 候选，无凭空候选
+        # S4：MMF8a 按标题匹配为 linear_child，无标识子项为 Unknown 候选，无凭空候选，且无跨 MMF 边
         epic_s4 = epics["DEMO-4"]
         assert epic_s4["mmfs"][0]["mmf_id"] == "MMF1"
         assert epic_s4["candidates"] == [
@@ -1571,12 +1617,25 @@ def _test_linear_candidates() -> None:
             {"mmf_id": "Unknown", "title": "修复无关的既有失败", "source": "linear_child",
              "spec": {"key": "DEMO-42", "url": url + "DEMO-42", "status": "Todo"}},
         ]
+        assert "mmf_edges" not in epic_s4
 
-        # S5：重复 M2 的 Epic 无候选，errors 记下该 Epic 与原因，其余 Epic 正常
+        # S5：重复 M2 的 Epic 无候选也无跨 MMF 边，errors 记下该 Epic 与原因，其余 Epic 正常
         epic_s5 = epics["DEMO-5"]
         assert "candidates" not in epic_s5
+        assert "mmf_edges" not in epic_s5
         s5_errors = [err for err in snap["errors"] if err["map"] == "DEMO-5"]
         assert len(s5_errors) == 1 and "M2" in s5_errors[0]["reason"]
+
+        # 额外覆盖：上线类型、“不依赖”子句、括号内并行与 HTML/URL 里的标识不误成边
+        extra_rows = [
+            ("MMF1", "一", "不依赖 MMF2；基础"),
+            ("MMF2", "二", "上线 · 依赖 MMF1（可与 MMF3 并行）"),
+            ("MMF3", "三", "MMF1；<issue href=\"https://linear.app/x/MMF2\">说明</issue>"),
+        ]
+        assert _parse_mmf_edges(extra_rows) == [
+            {"from": "MMF1", "to": "MMF2", "kind": "上线", "text": "上线 · 依赖 MMF1（可与 MMF3 并行）"},
+            {"from": "MMF1", "to": "MMF3", "kind": "Unknown", "text": "MMF1；<issue href=\"https://linear.app/x/MMF2\">说明</issue>"},
+        ]
 
 
 def self_test() -> None:
