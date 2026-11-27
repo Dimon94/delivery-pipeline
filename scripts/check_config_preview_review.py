@@ -21,7 +21,7 @@ def identity(model):
 def fixture():
     c = m.migrate_document(m.valid_fixture())[0]
     for task in c['work']:
-        c['work'][task] = {**identity('gpt-6.1-sol'), 'fallbacks': []}
+        c['work'][task] = {**c['work'][task], **identity('gpt-6.1-sol'), 'fallbacks': []}
     for scope in c['review'].values():
         for axis in scope:
             scope[axis] = {**identity('gpt-6.1-sol'), 'candidates': []}

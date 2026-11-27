@@ -104,8 +104,9 @@ def check_candidate_family():
         raw=path.read_bytes()
         assert cli('show')[1]['file_state']=='ready' and path.read_bytes()==raw
         assert cli('migrate')[0]==0
-        expected = {**old, 'version': 8, 'model_families': {}, 'dispatch': {'parallel': 4, 'max_turns': 100}}
-        assert json.loads(path.read_text()) == expected, '显式 v6→v8 应补空声明与默认派发预算'
+        expected = {**old, 'version': 9, 'model_families': {}, 'dispatch': {'parallel': 4, 'max_turns': 100},
+                    'work': m.normalize_work_entries(old)}
+        assert json.loads(path.read_text()) == expected, '显式 v6→v9 应补空声明、默认派发预算与内置任务元信息'
         assert m.resolve_plan(old,'planning')==m.resolve_plan(expected,'planning')
         ev={'request_id':'save','observed_at':'now','sources':{'pi':{'status':'ok'}},'capabilities':{'pi':{'binary':True,'models':{'provider/model':['high','low']}}}}
         evpath.write_text(json.dumps(ev))

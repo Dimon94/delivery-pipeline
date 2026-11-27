@@ -24,8 +24,10 @@ def check():
         assert path.read_bytes()==raw
         assert run('migrate')[0]==0
         migrated=json.loads(path.read_text())
-        expected=copy.deepcopy(old);expected.update(version=8, model_families={}, dispatch={'parallel':4,'max_turns':100})
-        for c in expected['work'].values():c['fallbacks']=[]
+        expected=copy.deepcopy(old);expected.update(version=9, model_families={}, dispatch={'parallel':4,'max_turns':100})
+        for task, c in expected['work'].items():
+            c['fallbacks']=[]
+            c.update(m.DEFAULT_TASK_META[task])
         for axes in expected['review'].values():
             for c in axes.values():c['candidates']=[]
         assert migrated==expected
