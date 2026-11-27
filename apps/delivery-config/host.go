@@ -16,20 +16,38 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
 // 构建时绑定；运行时不搜索 shell PATH。
 var pythonPath string
 
+// 构建时可选绑定 mcporter 路径，桌面端启动时补充子进程 PATH。
+var mcporterPath string
+
 // 构建号三段由 build.py 经 MYGO_LDFLAGS 注入（-X main.buildCommit 等）；开发运行时为空。
 var buildCommit, buildDirty, builtAt string
+
+const linearRefreshCooldown = 5 * time.Minute
+
+type linearRefreshCall struct {
+	done chan struct{}
+	out  json.RawMessage
+	err  error
+}
 
 type Host struct {
 	Python string
 	Tool   string
 	Config string
 	kind   string // "formal" | "test"；空等同 formal
+
+	linearTimeout time.Duration
+	linearNow     func() time.Time
+
+	linearMu     sync.Mutex
+	linearFlight *linearRefreshCall
 }
 
 // AppInfo 是页面标签的数据源。Build 与 build.py 的 build_label 同格式；
@@ -103,9 +121,198 @@ func (h *Host) ReadBoard() (json.RawMessage, error) {
 	return validateBoard(output)
 }
 
-// RefreshBoardLinear 预留桌面更新入口，当前返回本机快照。
+// RefreshBoardLinear 触发 Linear 缓存更新并返回最新看板快照。
+// manual 为 false 时在冷却期内且上次成功则直接返回本机快照，不启动子进程；
+// 并发调用共享同一次在途更新，只启动一个子进程并返回同一结果。
 func (h *Host) RefreshBoardLinear(manual bool) (json.RawMessage, error) {
+	h.linearMu.Lock()
+	if flight := h.linearFlight; flight != nil {
+		h.linearMu.Unlock()
+		<-flight.done
+		return flight.out, flight.err
+	}
+	flight := &linearRefreshCall{done: make(chan struct{})}
+	h.linearFlight = flight
+	h.linearMu.Unlock()
+
+	defer func() {
+		h.linearMu.Lock()
+		h.linearFlight = nil
+		h.linearMu.Unlock()
+		close(flight.done)
+	}()
+
+	flight.out, flight.err = h.runRefreshBoardLinear(manual)
+	return flight.out, flight.err
+}
+
+func (h *Host) runRefreshBoardLinear(manual bool) (json.RawMessage, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, errors.New("更新 Linear 失败：无法定位用户目录")
+	}
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	now := time.Now()
+	if h.linearNow != nil {
+		now = h.linearNow()
+	}
+	if !manual && isLinearCacheFresh(lanesRoot, now) {
+		return h.ReadBoard()
+	}
+
+	subPath := linearSubprocessPath(os.Getenv("PATH"), home, mcporterPath)
+	hasMcporter := lookPathInDirs("mcporter", subPath) != ""
+	timeout := h.linearTimeout
+	if timeout <= 0 {
+		timeout = 125 * time.Second
+	}
+	path := filepath.Join(filepath.Dir(h.Tool), "board_snapshot.py")
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, h.Python, "-E", "-B", "-S", path, "--lanes-root", lanesRoot, "--refresh-linear")
+	cmd.Env = withEnvVar(os.Environ(), "PATH", subPath)
+	cmd.WaitDelay = 250 * time.Millisecond
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("Linear 更新超时（%g 秒）", timeout.Seconds())
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, fmt.Errorf("Linear 更新命令执行失败（退出码 %d）", exit.ExitCode())
+		}
+		return nil, fmt.Errorf("无法运行 Linear 更新命令：%w", err)
+	}
+	var summary struct {
+		Status string  `json:"status"`
+		Reason *string `json:"reason"`
+	}
+	if err := json.Unmarshal(output, &summary); err != nil {
+		return nil, errors.New("Linear 更新命令返回了无法识别的结果")
+	}
+	if summary.Status == "failed" {
+		reason := ""
+		if summary.Reason != nil {
+			reason = *summary.Reason
+		}
+		if !hasMcporter || strings.Contains(reason, "No such file or directory: 'mcporter'") {
+			patchLinearCacheReason(lanesRoot, "找不到 mcporter，无法从 Linear 更新")
+		}
+	}
 	return h.ReadBoard()
+}
+
+func isLinearCacheFresh(lanesRoot string, now time.Time) bool {
+	raw, err := os.ReadFile(filepath.Join(lanesRoot, "board-linear.json"))
+	if err != nil {
+		return false
+	}
+	var cache struct {
+		Status      string `json:"status"`
+		AttemptedAt string `json:"attempted_at"`
+	}
+	if err := json.Unmarshal(raw, &cache); err != nil || cache.Status != "ok" {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339Nano, cache.AttemptedAt)
+	if err != nil {
+		return false
+	}
+	age := now.Sub(at)
+	return age >= 0 && age < linearRefreshCooldown
+}
+
+func linearSubprocessPath(currentPath, home, boundMcporter string) string {
+	seen := map[string]bool{}
+	var dirs []string
+	add := func(dir string) {
+		dir = strings.TrimSpace(dir)
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+	for _, dir := range filepath.SplitList(currentPath) {
+		add(dir)
+	}
+	if boundMcporter != "" {
+		add(filepath.Dir(boundMcporter))
+	}
+	if home != "" {
+		for _, rel := range []string{filepath.Join(".bun", "bin"), filepath.Join(".local", "bin")} {
+			candidate := filepath.Join(home, rel)
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				add(candidate)
+			}
+		}
+	}
+	return strings.Join(dirs, string(os.PathListSeparator))
+}
+
+func lookPathInDirs(binary, pathEnv string) string {
+	for _, dir := range filepath.SplitList(pathEnv) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, binary)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func withEnvVar(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	replaced := false
+	for _, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			out = append(out, prefix+value)
+			replaced = true
+		} else {
+			out = append(out, item)
+		}
+	}
+	if !replaced {
+		out = append(out, prefix+value)
+	}
+	return out
+}
+
+func patchLinearCacheReason(lanesRoot, reason string) {
+	cachePath := filepath.Join(lanesRoot, "board-linear.json")
+	raw, err := os.ReadFile(cachePath)
+	if err != nil {
+		return
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil || doc == nil {
+		return
+	}
+	doc["reason"] = reason
+	encoded, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(lanesRoot, ".board-linear-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(encoded); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return
+	}
+	if err := os.Rename(tmpName, cachePath); err != nil {
+		os.Remove(tmpName)
+	}
 }
 
 // validateBoard 核对 schema 1 结构与已出现的 Linear 字段后原样返回。

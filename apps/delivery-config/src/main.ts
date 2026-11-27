@@ -26,6 +26,7 @@ shell.innerHTML='<div id="settings-view" hidden></div><div id="board-view"></div
 const app = shell.querySelector<HTMLDivElement>('#settings-view')!;
 const board = new BoardView(shell.querySelector<HTMLDivElement>('#board-view')!,{
  read:()=>mygo.call<unknown>('Host.ReadBoard'),
+ refreshLinear:(manual:boolean)=>mygo.call<unknown>('Host.RefreshBoardLinear',manual),
  openSettings:()=>{board.show(false);app.hidden=false;},
  openLink:(target:string)=>mygo.call<void>('Host.OpenLocalFile',target),
 });

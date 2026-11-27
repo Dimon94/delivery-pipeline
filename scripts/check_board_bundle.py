@@ -22,6 +22,15 @@ def read_bundle_snapshot(resources, lanes_root, env):
     return json.loads(result.stdout)
 
 
+def refresh_bundle_linear(resources, lanes_root, env):
+    result = subprocess.run(
+        [sys.executable, '-E', '-B', '-S', str(resources / 'board_snapshot.py'),
+         '--lanes-root', str(lanes_root), '--refresh-linear'],
+        cwd=lanes_root.parent, env=env, capture_output=True, check=True, timeout=10,
+    )
+    return json.loads(result.stdout)
+
+
 def main():
     sys.path.insert(0, str(SCRIPTS))
     from board_snapshot import validate_snapshot
@@ -64,6 +73,19 @@ def main():
         assert snapshot['lanes_root'] == str(lanes_root), '快照应使用传入的 lanes 根'
         [mmf] = snapshot['inbox']
         assert mmf['executing'] and mmf['direct_lanes'][0]['live'] == 'working', '随包探针应被快照实际加载'
+
+        # 核对随包资源的 --refresh-linear：在隔离 PATH 下用假 mcporter 写出并合并缓存。
+        fake_mcporter = directory / 'mcporter'
+        fake_mcporter.write_text(
+            '#!/bin/sh\n'
+            'echo \'{"id":"DEMO-1","title":"随包 Linear 标题","status":"In Progress","statusType":"started","parentId":null,"issues":[],"hasNextPage":false}\'\n',
+            encoding='utf-8',
+        )
+        fake_mcporter.chmod(0o755)
+        summary = refresh_bundle_linear(resources, lanes_root, env)
+        assert summary['status'] == 'ok', f'随包 --refresh-linear 应成功：{summary}'
+        merged = validate_snapshot(read_bundle_snapshot(resources, lanes_root, env))
+        assert merged.get('linear', {}).get('status') == 'ok', f'随包快照应合并 Linear 缓存：{merged.get("linear")}'
 
         # 模拟打包只带入口，漏掉快照命令的所有随包依赖。
         incomplete = directory / 'Incomplete.app/Contents/Resources'
