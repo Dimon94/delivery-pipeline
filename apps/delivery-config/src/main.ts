@@ -1,12 +1,12 @@
 import {reviewPreviewText} from './copy';
 import type {ReviewPreview} from './preview';
 import {pickerView,moveActive} from './picker';
-import {agentLabel,effortChangedText,modelSummary,modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts,applyTargetText,applyRefusalText,applyTriggerLabel} from './copy';
+import {agentLabel,effortChangedText,modelSummary,modelLabel,toolOffText,bannerText,diffVerdict,effortLabel,copy,pickerCount,pickerUnavailable,pickerEfforts,applyTargetText,applyRefusalText,applyTriggerLabel,purposeLabel,lastRequiredPurposeText,taskTypeErrorText} from './copy';
 import './style.css';
 import {guide,shouldRereadOnFocus,type GuideInput} from './guide';
 import {BoardView} from './board-view';
 
-import {budgetKeys,defaultBudget,type BudgetKey,Draft,settleProbe,cell,paths,work,agentIds,type EffortChange,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus,type ApplyRefusal} from './draft';
+import {budgetKeys,defaultBudget,type BudgetKey,Draft,settleProbe,cell,agentIds,TASK_PURPOSES,type TaskPurpose,type TaskTypeValidationError,type EffortChange,type Cell,type ModelTriple,type Config,type Evidence,type ItemStatus,type ApplyRefusal} from './draft';
 import {Editor,type Snapshot,type Outcome} from './editor';
 import {instanceLabel,instanceTitle,isTestConfig,loadAppInfo,type AppInfo} from './appinfo';
 let appInfo:AppInfo|undefined;
@@ -19,6 +19,10 @@ let picker:{path:string;query:string;source?:string;active?:string}|undefined;
 
 let applyNotice:{from:string;reason:ApplyRefusal}|undefined;
 let applying:{from:string;selected:Set<string>}|undefined;
+type TaskDialogState =
+ | {mode:'add';id:string;label:string;hint:string;purpose:TaskPurpose;agent:string;model:string;effort:string;error?:TaskTypeValidationError;errorPurpose?:TaskPurpose}
+ | {mode:'edit';id:string;label:string;hint:string;purpose:TaskPurpose;error?:TaskTypeValidationError;errorPurpose?:TaskPurpose};
+let taskDialog:TaskDialogState|undefined;
 let probeCounter=0;
 // 设置页与看板各占一个容器；启动先进看板（DD-668 T1），设置页照常读取，只是先隐藏。
 const shell = document.querySelector<HTMLDivElement>('#app')!;
@@ -43,10 +47,8 @@ const openQueues=new Set<string>();
 const loadedMessage=bannerText({kind:'loaded'});
 // 保存成功确认独立于 message：核对期间与核对完成后都保留，直到下一次编辑或读取。
 let saved='';
-const workNames: Record<string,string> = {planning:copy.规划,design:copy.设计,frontend:copy.前端开发,backend:copy.后端开发,testing:copy.测试,coordinator:copy.协调,research:copy.调研,prototype:copy.原型,integration:copy.集成,assistance:copy.协助, 'second-opinion':copy.第二意见};
 
 const escape = (s: string) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const workHints: Record<string,string> = {planning:copy.拆需求定方案,design:copy.界面与交互,frontend:copy.写页面代码,backend:copy.写服务端代码,testing:copy.写测试并验证};
 const toolLabel=(agent:string)=>agentLabel(agent,draft?.evidence?.sources[agent]?.route);
 const summary=(c:ModelTriple)=>modelSummary(c,draft?.evidence?.sources[c.agent]?.route);
 function fields(c: Cell, path?:string) {
@@ -117,9 +119,30 @@ function budgetSection(config: Config, disabled: boolean) {
    <div class="section-label"><h2 id="budget-heading">${copy.执行预算}</h2><p>${copy.预算生效说明}</p></div>
    <div class="card budget-fields">${fields.join('')}</div></section>`;
 }
-function pathLabel(path:string) {if(path.startsWith("dispatch."))return budgetLabels[path.slice(9) as BudgetKey];const p=path.split('.');return p[0]==='work'?workNames[p[1]!]!+(p[2]==='fallbacks'?` · ${copy.备用} ${Number(p[3])+1}`:''): `${p[1]==='implementation'?copy.实施结果:copy.整体交付} · ${p[2]==='standards'?copy.代码规范:copy.需求符合度}${p[3]==='candidates'?` · ${copy.候选2} ${Number(p[4])+1}`:''}`;}
+function taskName(id:string, source?:Config):string {
+ if(draft){
+  if(source&&Object.hasOwn(source.work,id))return draft.taskMeta(id,source).label;
+  if(Object.hasOwn(draft.config.work,id))return draft.taskMeta(id,draft.config).label;
+  if(Object.hasOwn(draft.snapshot.work,id))return draft.taskMeta(id,draft.snapshot).label;
+ }
+ return id;
+}
+function pathLabel(path:string) {if(path.startsWith("dispatch."))return budgetLabels[path.slice(9) as BudgetKey];const p=path.split('.');return p[0]==='work'?taskName(p[1]!)+(p[2]==='fallbacks'?` · ${copy.备用} ${Number(p[3])+1}`:''): `${p[1]==='implementation'?copy.实施结果:copy.整体交付} · ${p[2]==='standards'?copy.代码规范:copy.需求符合度}${p[3]==='candidates'?` · ${copy.候选2} ${Number(p[4])+1}`:''}`;}
 function ordered(c:Cell) {if(c.candidates)return summary(c)+`；${copy.候选}${c.candidates.length?c.candidates.map((v,i)=>`${i+1}. ${summary(v)}`).join(' → '):copy.空}`;return summary(c)+(c.fallbacks?`；${copy.备用2}${c.fallbacks.length?c.fallbacks.map((v,i)=>`${i+1}. ${summary(v)}`).join(' → '):copy.空}`:'');}
-function changeSummary(config:Config,path:string) {if(path.startsWith("dispatch."))return String((config.dispatch??defaultBudget)[path.slice(9) as BudgetKey]);return ordered(cell(config,path));}
+function changeSummary(config:Config,path:string) {
+ if(path.startsWith("dispatch."))return String((config.dispatch??defaultBudget)[path.slice(9) as BudgetKey]);
+ if(path.startsWith("work.")){
+  const id=path.slice(5);
+  if(!Object.hasOwn(config.work,id))return config===draft?.snapshot?copy.无:copy.已删除;
+  const meta=draft?draft.taskMeta(id,config):undefined;
+  const metaChanged=draft&&Object.hasOwn(draft.snapshot.work,id)&&Object.hasOwn(draft.config.work,id)&&JSON.stringify(draft.taskMeta(id,draft.snapshot))!==JSON.stringify(draft.taskMeta(id,draft.config));
+  const addedOrRemoved=draft&&(!Object.hasOwn(draft.snapshot.work,id)||!Object.hasOwn(draft.config.work,id));
+  const prefix=meta&&(metaChanged||addedOrRemoved)?`${meta.label}${meta.hint?`（${meta.hint}）`:''} · ${purposeLabel(meta.purpose)}；`:'';
+  const addedTag=draft&&config===draft.config&&!Object.hasOwn(draft.snapshot.work,id)?`${copy.已新增} · `:'';
+  return addedTag+prefix+ordered(cell(config,path));
+ }
+ return ordered(cell(config,path));
+}
 function queueFields(config:Config,path:string) {
  if(!openQueues.has(path))return '';
  const isWork=path.startsWith('work.');
@@ -173,6 +196,24 @@ function guideCard() {
  const g=guide(guideInput,appInfo);
  return `<section class="card guide-card" aria-label="${copy.配置处理引导}"><h2>${escape(g.title)}</h2><p class="guide-detail">${escape(g.detail)}</p><h3>${copy.影响}</h3><p>${escape(g.impact)}</p><h3>${copy.下一步}</h3><p>${escape(g.next)}</p>${g.instruction?`<label for="guide-instruction">${copy.给AI助手的指令}</label><textarea id="guide-instruction" readonly>${escape(g.instruction)}</textarea>`:''}<div class="guide-actions">${g.instruction?`<button class="primary" id="copy-guide">${copy.复制指令}</button>`:''}<button class="plain" id="guide-reload" ${reading?'disabled':''}>${copy.重新读取}</button>${g.instruction?'<span id="copy-status" role="status"></span>':''}</div></section>`;
 }
+function taskDialogMarkup(locked:boolean) {
+ if(!taskDialog||!draft||locked||reading)return '';
+ const dialog=taskDialog;
+ const isAdd=dialog.mode==='add';
+ const title=isAdd?copy.新增任务类型:copy.编辑任务类型;
+ const purposeOptions=TASK_PURPOSES.map(p=>`<option value="${p}" ${dialog.purpose===p?'selected':''}>${escape(purposeLabel(p))}</option>`).join('');
+ let tripleFields='';
+ if(dialog.mode==='add'){
+  const choices=draft.agentChoices();
+  const enabledAgents=choices.filter(a=>a.enabled).map(a=>a.agent);
+  const models=dialog.agent&&draft.evidence?.sources[dialog.agent]?.status==='ok'?Object.keys(draft.evidence.capabilities[dialog.agent]?.models||{}):[];
+  const efforts=dialog.agent&&dialog.model&&draft.evidence?.sources[dialog.agent]?.status==='ok'?(draft.evidence.capabilities[dialog.agent]?.models[dialog.model]||[]):[];
+  const canPick=draft.canEdit().select;
+  tripleFields=`<label class="task-dialog-field"><span>${copy.运行工具}</span><select data-task-field="agent" ${canPick?'':'disabled'}><option value="" ${!dialog.agent?'selected':''}>${copy.请选择}</option>${agentIds.map(a=>`<option value="${a}" ${dialog.agent===a?'selected':''} ${!enabledAgents.includes(a)?'disabled':''}>${escape(toolLabel(a))}</option>`).join('')}</select></label><label class="task-dialog-field"><span>${copy.模型}</span><select data-task-field="model" ${canPick&&models.length?'':'disabled'}><option value="" ${!dialog.model?'selected':''}>${copy.请选择}</option>${models.map(m=>`<option value="${escape(m)}" ${dialog.model===m?'selected':''}>${escape(modelLabel(m))}</option>`).join('')}</select></label><label class="task-dialog-field"><span>${copy.思考程度}</span><select data-task-field="effort" ${canPick&&efforts.length?'':'disabled'}><option value="" ${!dialog.effort?'selected':''}>${copy.请选择}</option>${efforts.map(e=>`<option value="${escape(e)}" ${dialog.effort===e?'selected':''}>${escape(effortLabel(e))}</option>`).join('')}</select></label>`;
+ }
+ const err=dialog.error?`<p class="task-dialog-error" role="alert">${escape(taskTypeErrorText(dialog.error,dialog.errorPurpose))}</p>`:'';
+ return `<section class="task-dialog" role="dialog" aria-label="${escape(title)}"><h2>${escape(title)}</h2><div class="task-dialog-fields"><label class="task-dialog-field"><span>${copy.任务类型ID}</span><input data-task-field="id" value="${escape(dialog.id)}" placeholder="${escape(copy.任务类型ID示例)}" ${isAdd?'':'disabled'}></label><label class="task-dialog-field"><span>${copy.显示名称}</span><input data-task-field="label" value="${escape(dialog.label)}"></label><label class="task-dialog-field"><span>${copy.说明}</span><input data-task-field="hint" value="${escape(dialog.hint)}"></label><label class="task-dialog-field"><span>${copy.用途}</span><select data-task-field="purpose">${purposeOptions}</select></label>${tripleFields}</div>${err}<div class="task-dialog-actions"><button class="plain" id="cancel-task-dialog">${copy.取消}</button><button class="primary" id="submit-task-dialog">${isAdd?copy.添加:copy.保存}</button></div></section>`;
+}
 function render() {
  schedulePreview();
  const kind=editor?.state.kind;
@@ -180,8 +221,74 @@ function render() {
  const reviewing=kind==='preview';
  const config = draft?.config || null;
  if(diagnosing){app.innerHTML=`<main class="frame"><h1>${copy.独立诊断}</h1><p>${copy.此页包含配置工具的机器结果不会修改配置}</p><pre>${escape(JSON.stringify(diagnostic??snapshot,null,2))}</pre><button id="close-diagnostic">${copy.返回设置}</button></main>`;document.querySelector('#close-diagnostic')!.addEventListener('click',()=>{diagnosing=false;render();});return;}
+ const workIds=draft?.workIds()||[];
+ const totalPaths=draft?.allPaths().length||0;
+ const workRows=config?workIds.map(name=>{
+  const meta=draft!.taskMeta(name);
+  const removeCheck=draft!.canRemoveTaskType(name);
+  const removeDisabled=locked||reading||!removeCheck.ok;
+  const removeTitle=!removeCheck.ok&&removeCheck.reason==='last_required_purpose'?lastRequiredPurposeText(removeCheck.purpose):'';
+  const entry=config.work[name]!;
+  return `<div class="task-row ${rowClass(`work.${name}`)}" data-task-row="${escape(name)}"><span class="task-label"><span>${escape(meta.label)}${meta.hint?`<small class="task-hint">${escape(meta.hint)}</small>`:''}<span class="purpose-badge" data-purpose="${meta.purpose}">${escape(purposeLabel(meta.purpose))}</span>${queueChip(`work.${name}`)}<button class="plain task-action" data-edit-task="${escape(name)}" ${locked||reading?'disabled':''}>${copy.编辑}</button><button class="plain task-action task-remove" data-remove-task="${escape(name)}" ${removeDisabled?'disabled':''} ${removeTitle?`title="${escape(removeTitle)}"`:''}>${copy.删除}</button>${entry.agent&&entry.model&&entry.effort&&workIds.length>1?`<button class="plain apply-trigger" aria-label="${escape(applyTriggerLabel(meta.label))}" aria-haspopup="dialog" aria-expanded="false" data-apply-from="work.${escape(name)}">${copy.复制到其他工作}</button>`:''}</span></span>${fields(entry,`work.${name}`)}${foot(`work.${name}`,entry,takeoverText(`work.${name}`))}</div>${queueFields(config,`work.${name}`)}`;
+ }).join(''):'';
+ const modeKeys=config?Object.keys(config.modes):[];
 
- app.innerHTML = `<header class="app-bar"><div class="app-brand">Delivery Pipeline</div><div class="app-location">${copy.设置模型设置}</div><div class="right"><button class="plain" id="btn-back-board">${copy.返回看板}</button><button class="plain" id="help">${copy.使用说明}</button></div></header><main class="frame"><div class="page-title"><div><h1>${copy.模型设置}</h1><p>${copy.调整每种工作使用的AI核对差异后保存}</p></div>${appInfoLoaded?`<span class="instance${isTestConfig(appInfo)?' test-config':''}" title="${escape(instanceTitle(appInfo))}">${escape(instanceLabel(appInfo))}</span>`:''}</div>${help?`<aside class="help-panel"><h2>${copy.使用说明}</h2><p>${copy.每行是一种工作依次显示运行工具模型和思考程度}</p><p>${copy.点模型格搜索或按来源选择备用会在主模型启动失败时依次接替}</p><p>${copy.改好后点击查看差异确认后保存新任务会使用新设置指定预设的任务和正}</p><p>${copy.遇到问题先按页面提示处理也可点击重新核对或打开诊断把结果交给AI}</p></aside>`:''}${guideCard()}${(!guideInput||reading)&&banner()?`<div class="notice${draft?.check.kind==='checked'||draft?.check.kind==='checking'||reading||kind==='saving'?' calm':''}" role="status">${escape(banner())}</div>`:''}${saved?`<div class="notice success" role="status">${escape(saved)}</div>`:''}${draft&&draft.attention()?`<div class="notice attention" role="status">${draft.attention()} ${copy.项设置需要处理其余} ${paths.length-draft.attention()} ${copy.项可以正常使用}</div>`:''}${editor&&'retained' in editor.state&&editor.state.retained?`<aside class="notice"><h2>${copy.请人工核对后重新选择}</h2><p>${copy.当前页面以最新设置为起点上次修改仅供参考请逐项重新选择再查看差异}</p>${(editor.state.retained.changes()).map(p=>`<p>${escape(pathLabel(p))}：${copy.上次修改} ${escape(changeSummary((editor!.state as Extract<import('./editor').State,{kind:'draft'|'preview'}>).retained!.config,p))}；${copy.最新} ${escape(changeSummary(draft!.snapshot,p))}</p>`).join('')}</aside>`:''}${kind==='conflict'||kind==='uncertain'?`<aside class="notice"><h2>${kind==='conflict'?copy.设置已在别处更新:copy.保存结果待确认}</h2><p>${copy.修改还在请检查当前设置并人工核对不会自动重试或回滚}</p><button id="recover" ${reading?'disabled':''}>${kind==='conflict'?copy.读取最新设置并核对:copy.检查当前保存结果}</button></aside>`:''}${config?`<section class="work-section"><div class="section-label"><h2>${copy.工作模型}</h2><p>${copy.每种工作的当前设置}</p></div><div class="card"><div class="table-head"><span>${copy.工作}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${work.map(name=>`<div class="task-row ${rowClass(`work.${name}`)}"><span class="task-label"><span>${workNames[name]}<small class="task-hint">${workHints[name]}</small>${queueChip(`work.${name}`)}${config.work[name]!.agent&&config.work[name]!.model&&config.work[name]!.effort?`<button class="plain apply-trigger" aria-label="${escape(applyTriggerLabel(workNames[name]!))}" aria-haspopup="dialog" aria-expanded="false" data-apply-from="work.${name}">${copy.复制到其他工作}</button>`:''}</span></span>${fields(config.work[name]!,`work.${name}`)}${foot(`work.${name}`,config.work[name]!,takeoverText(`work.${name}`))}</div>${queueFields(config,`work.${name}`)}`).join('')}</div></section><section class="review-section"><div class="section-label"><h2>${copy.结果检查}</h2><p>${copy.分别检查代码写法和需求完成情况}</p></div><div class="card"><div class="table-head"><span>${copy.检查}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${['implementation','whole-change'].map((scope,i)=>`<section class="review-stage"><h3>${i?copy.整体交付:copy.实施结果} · ${i?copy.合并前看整体:copy.每张票写完后}</h3>${['standards','spec'].map(axis=>{const path=`review.${scope}.${axis}`;return `<div class="task-row ${rowClass(path)}"><span class="task-label"><span>${axis==='standards'?copy.代码规范:copy.需求符合度}<small class="task-hint">${axis==='standards'?copy.写法是否合规:copy.是否做到Spec的要求}</small>${queueChip(path)}</span></span>${fields(config.review[scope]![axis]!,path)}${foot(path,config.review[scope]![axis]!,takeoverText(path))}</div>${previewField(path)}${queueFields(config,path)}`;}).join('')}</section>`).join('')}</div></section>${budgetSection(config, Boolean(locked || reading || draft?.check.kind === 'checking'))}<details class="card read-only"><summary>${copy.其他设置仅查看}</summary><div class="readonly-body"><p class="compact-note">${copy.由初始化助手维护}${Object.keys(config.modes).length} ${copy.组预设仅在任务明确指定时使用}</p><div class="readonly-grid">${Object.entries(config.work).filter(([key])=>!work.includes(key)).map(([key,cell])=>`<div class="readonly-item">${workNames[key] || copy.其他工作}<span>${escape(modelLabel(cell.model))}</span><small>${toolLabel(cell.agent)} · ${effortLabel(cell.effort)}</small></div>`).join('') || `<p class="compact-note">${copy.没有其他工作设置}</p>`}</div></div></details>`:''}<footer class="footer"><span class="footer-status">${config?`${draft!.changes().length} ${copy.项修改待确认}`:copy.请按页面提示完成设置}</span>${config?`<button class="plain" id="refresh" ${draft!.check.kind==='checking'?'disabled':''}>${copy.重新核对}</button><button class="plain" id="undo" ${!draft!.changes().length?'disabled':''}>${copy.撤销修改}</button><button class="primary" id="diff" ${!draft!.changes().length?'disabled':''}>${copy.查看差异}</button>`:''}<button class="plain" id="reload" ${reading?'disabled':''}>${copy.重新读取}</button><button class="text-button" id="diagnostic">${copy.打开诊断}</button></footer>${reviewing&&draft?`<section class="diff-panel" role="dialog" aria-label="${copy.查看差异}"><h2>${copy.核对修改}</h2>${draft.changes().map(p=>`<article><h3>${escape(pathLabel(p))}</h3><p>${copy.原来}${escape(changeSummary(draft!.snapshot,p))}</p><p>${copy.现在}${escape(changeSummary(draft!.config,p))}</p></article>`).join('')}<p>${diffVerdict(draft.valid())}。${copy.确认后保存保存期间不能继续修改}</p><button class="plain" id="back">${copy.返回继续修改}</button><button class="primary" id="save" ${draft.valid()?'':'disabled'}>${copy.确认保存设置}</button></section>`:''}</main>`;
+ app.innerHTML = `<header class="app-bar"><div class="app-brand">Delivery Pipeline</div><div class="app-location">${copy.设置模型设置}</div><div class="right"><button class="plain" id="btn-back-board">${copy.返回看板}</button><button class="plain" id="help">${copy.使用说明}</button></div></header><main class="frame"><div class="page-title"><div><h1>${copy.模型设置}</h1><p>${copy.调整每种工作使用的AI核对差异后保存}</p></div>${appInfoLoaded?`<span class="instance${isTestConfig(appInfo)?' test-config':''}" title="${escape(instanceTitle(appInfo))}">${escape(instanceLabel(appInfo))}</span>`:''}</div>${help?`<aside class="help-panel"><h2>${copy.使用说明}</h2><p>${copy.每行是一种工作依次显示运行工具模型和思考程度}</p><p>${copy.点模型格搜索或按来源选择备用会在主模型启动失败时依次接替}</p><p>${copy.改好后点击查看差异确认后保存新任务会使用新设置指定预设的任务和正}</p><p>${copy.遇到问题先按页面提示处理也可点击重新核对或打开诊断把结果交给AI}</p></aside>`:''}${guideCard()}${(!guideInput||reading)&&banner()?`<div class="notice${draft?.check.kind==='checked'||draft?.check.kind==='checking'||reading||kind==='saving'?' calm':''}" role="status">${escape(banner())}</div>`:''}${saved?`<div class="notice success" role="status">${escape(saved)}</div>`:''}${draft&&draft.attention()?`<div class="notice attention" role="status">${draft.attention()} ${copy.项设置需要处理其余} ${totalPaths-draft.attention()} ${copy.项可以正常使用}</div>`:''}${editor&&'retained' in editor.state&&editor.state.retained?`<aside class="notice"><h2>${copy.请人工核对后重新选择}</h2><p>${copy.当前页面以最新设置为起点上次修改仅供参考请逐项重新选择再查看差异}</p>${(editor.state.retained.changes()).map(p=>`<p>${escape(pathLabel(p))}：${copy.上次修改} ${escape(changeSummary((editor!.state as Extract<import('./editor').State,{kind:'draft'|'preview'}>).retained!.config,p))}；${copy.最新} ${escape(changeSummary(draft!.snapshot,p))}</p>`).join('')}</aside>`:''}${kind==='conflict'||kind==='uncertain'?`<aside class="notice"><h2>${kind==='conflict'?copy.设置已在别处更新:copy.保存结果待确认}</h2><p>${copy.修改还在请检查当前设置并人工核对不会自动重试或回滚}</p><button id="recover" ${reading?'disabled':''}>${kind==='conflict'?copy.读取最新设置并核对:copy.检查当前保存结果}</button></aside>`:''}${config?`<section class="work-section"><div class="section-label"><div><h2>${copy.工作模型}</h2><p>${copy.每种工作的当前设置}</p></div><button class="plain" id="add-task-type" ${locked||reading?'disabled':''}>＋ ${copy.新增任务类型}</button></div><div class="card"><div class="table-head"><span>${copy.工作}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${workRows}</div></section><section class="review-section"><div class="section-label"><h2>${copy.结果检查}</h2><p>${copy.分别检查代码写法和需求完成情况}</p></div><div class="card"><div class="table-head"><span>${copy.检查}</span><div class="fields"><span>${copy.运行工具}</span><span>${copy.模型}</span><span>${copy.思考程度}</span></div></div>${['implementation','whole-change'].map((scope,i)=>`<section class="review-stage"><h3>${i?copy.整体交付:copy.实施结果} · ${i?copy.合并前看整体:copy.每张票写完后}</h3>${['standards','spec'].map(axis=>{const path=`review.${scope}.${axis}`;return `<div class="task-row ${rowClass(path)}"><span class="task-label"><span>${axis==='standards'?copy.代码规范:copy.需求符合度}<small class="task-hint">${axis==='standards'?copy.写法是否合规:copy.是否做到Spec的要求}</small>${queueChip(path)}</span></span>${fields(config.review[scope]![axis]!,path)}${foot(path,config.review[scope]![axis]!,takeoverText(path))}</div>${previewField(path)}${queueFields(config,path)}`;}).join('')}</section>`).join('')}</div></section>${budgetSection(config, Boolean(locked || reading || draft?.check.kind === 'checking'))}<details class="card read-only"><summary>${copy.其他设置仅查看}</summary><div class="readonly-body"><p class="compact-note">${copy.由初始化助手维护}${modeKeys.length} ${copy.组预设仅在任务明确指定时使用}</p>${modeKeys.length?`<div class="readonly-presets">${modeKeys.map(name=>`<div class="readonly-preset"><span class="preset-name">${escape(name)}</span></div>`).join('')}</div>`:`<p class="compact-note">${copy.没有命名预设}</p>`}</div></details>`:''}<footer class="footer"><span class="footer-status">${config?`${draft!.changes().length} ${copy.项修改待确认}`:copy.请按页面提示完成设置}</span>${config?`<button class="plain" id="refresh" ${draft!.check.kind==='checking'?'disabled':''}>${copy.重新核对}</button><button class="plain" id="undo" ${!draft!.changes().length?'disabled':''}>${copy.撤销修改}</button><button class="primary" id="diff" ${!draft!.changes().length?'disabled':''}>${copy.查看差异}</button>`:''}<button class="plain" id="reload" ${reading?'disabled':''}>${copy.重新读取}</button><button class="text-button" id="diagnostic">${copy.打开诊断}</button></footer>${taskDialogMarkup(locked)}${reviewing&&draft?`<section class="diff-panel" role="dialog" aria-label="${copy.查看差异}"><h2>${copy.核对修改}</h2>${draft.changes().map(p=>`<article><h3>${escape(pathLabel(p))}</h3><p>${copy.原来}${escape(changeSummary(draft!.snapshot,p))}</p><p>${copy.现在}${escape(changeSummary(draft!.config,p))}</p></article>`).join('')}<p>${diffVerdict(draft.valid())}。${copy.确认后保存保存期间不能继续修改}</p><button class="plain" id="back">${copy.返回继续修改}</button><button class="primary" id="save" ${draft.valid()?'':'disabled'}>${copy.确认保存设置}</button></section>`:''}</main>`;
+ document.querySelector('#add-task-type')?.addEventListener('click',()=>{
+  closePicker();closeApply();
+  taskDialog={mode:'add',id:'',label:'',hint:'',purpose:'artifact',agent:'',model:'',effort:''};
+  render();
+ });
+ document.querySelectorAll<HTMLButtonElement>('button[data-edit-task]').forEach(button=>button.addEventListener('click',()=>{
+  closePicker();closeApply();
+  const id=button.dataset.editTask!,meta=draft!.taskMeta(id);
+  taskDialog={mode:'edit',id,label:meta.label,hint:meta.hint,purpose:meta.purpose};
+  render();
+ }));
+ document.querySelectorAll<HTMLButtonElement>('button[data-remove-task]').forEach(button=>button.addEventListener('click',()=>{
+  const id=button.dataset.removeTask!;
+  const res=draft!.removeTaskType(id);
+  if(res.ok){saved='';effortNote=undefined;openQueues.delete(`work.${id}`);render();}
+ }));
+ document.querySelector('#cancel-task-dialog')?.addEventListener('click',()=>{taskDialog=undefined;render();});
+ document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-task-field]').forEach(el=>{
+  const field=el.dataset.taskField!;
+  if(el.tagName==='INPUT'){
+   el.addEventListener('input',()=>{
+    if(!taskDialog)return;
+    if(field==='id'&&taskDialog.mode==='add')taskDialog.id=el.value;
+    else if(field==='label')taskDialog.label=el.value;
+    else if(field==='hint')taskDialog.hint=el.value;
+   });
+  } else {
+   el.addEventListener('change',()=>{
+    if(!taskDialog)return;
+    if(field==='purpose'){taskDialog.purpose=el.value as TaskPurpose;return;}
+    if(taskDialog.mode==='add'){
+     if(field==='agent'){taskDialog.agent=el.value;taskDialog.model='';taskDialog.effort='';render();}
+     else if(field==='model'){
+      taskDialog.model=el.value;
+      const efforts=draft?.evidence?.capabilities[taskDialog.agent]?.models[taskDialog.model]||[];
+      taskDialog.effort=efforts[0]||'';
+      render();
+     } else if(field==='effort'){taskDialog.effort=el.value;}
+    }
+   });
+  }
+ });
+ document.querySelector('#submit-task-dialog')?.addEventListener('click',()=>{
+  if(!taskDialog||!draft)return;
+  if(taskDialog.mode==='add'){
+   const res=draft.addTaskType({id:taskDialog.id,label:taskDialog.label,hint:taskDialog.hint,purpose:taskDialog.purpose,agent:taskDialog.agent,model:taskDialog.model,effort:taskDialog.effort});
+   if(!res.ok){taskDialog.error=res.error;taskDialog.errorPurpose=undefined;render();return;}
+   saved='';effortNote=undefined;taskDialog=undefined;render();
+  } else {
+   const currentPurpose=draft.taskMeta(taskDialog.id).purpose;
+   const res=draft.updateTaskTypeMeta(taskDialog.id,{label:taskDialog.label,hint:taskDialog.hint,purpose:taskDialog.purpose});
+   if(!res.ok){taskDialog.error=res.error;taskDialog.errorPurpose=res.error==='last_required_purpose'?currentPurpose:undefined;render();return;}
+   saved='';effortNote=undefined;taskDialog=undefined;render();
+  }
+ });
  document.querySelectorAll<HTMLInputElement>('input[data-budget]').forEach(input=>input.addEventListener('input',()=>{
  draft!.setBudget(input.dataset.budget as BudgetKey,input.valueAsNumber);
  const changed=draft!.changes().length;
@@ -210,8 +317,8 @@ function render() {
  const target=document.querySelector<HTMLButtonElement|HTMLSelectElement>(`[data-path="${button.dataset.focus}"][data-field="${button.dataset.field}"]`);
  if(target&&!target.disabled){target.focus();if(target.tagName==='BUTTON')target.click();else try{(target as HTMLSelectElement).showPicker();}catch{}}
  }));
- document.querySelector('#undo')?.addEventListener('click',()=>{saved='';effortNote=undefined;draft!.undo();editor?.back();message=copy.修改已撤销已恢复读取时的设置;render();});
- document.querySelector('#diff')?.addEventListener('click',()=>{editor?.preview();render();});
+ document.querySelector('#undo')?.addEventListener('click',()=>{saved='';effortNote=undefined;taskDialog=undefined;draft!.undo();editor?.back();message=copy.修改已撤销已恢复读取时的设置;render();});
+ document.querySelector('#diff')?.addEventListener('click',()=>{taskDialog=undefined;editor?.preview();render();});
  document.querySelector('#back')?.addEventListener('click',()=>{editor?.back();render();});
  document.querySelector('#save')?.addEventListener('click',save);
  document.querySelector('#recover')?.addEventListener('click',recover);
@@ -245,7 +352,7 @@ function render() {
  renderApply();
  renderPicker();
  const checking=draft?.check.kind==='checking';
- if(locked||reading||!draft?.canEdit().select)document.querySelectorAll<HTMLSelectElement>('select').forEach(el=>el.disabled=true);
+ if(locked||reading||!draft?.canEdit().select)document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(el=>el.disabled=true);
  if(locked||checking||reading){for(const id of ['refresh','undo','diff','reload']){const el=document.querySelector<HTMLButtonElement>('#'+id);if(el)el.disabled=true;}}
  document.querySelectorAll<HTMLSelectElement>('select[data-path]').forEach(select=>select.addEventListener('change',()=>{saved='';effortNote=draft!.select(select.dataset.path!,select.dataset.field as keyof ModelTriple,select.value);render();}));
 }
@@ -390,7 +497,7 @@ function disableReload(disabled:boolean) {
 }
 async function read(automatic=false) {
  const previous=guideInput&&appInfoLoaded?guide(guideInput,appInfo):undefined;
- reading=true; saved='';effortNote=undefined;
+ reading=true; saved='';effortNote=undefined;taskDialog=undefined;
  // 自动读取保留卡片 DOM，复制提示、焦点和文字选区不受影响。
  if(automatic)disableReload(true);
  else {message=copy.正在读取本机设置;render();}

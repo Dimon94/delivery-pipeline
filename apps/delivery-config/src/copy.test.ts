@@ -9,7 +9,8 @@ import {instanceLabel} from './appinfo';
 import {pickerCount} from './copy';
 import {pickerView} from './picker';
 import {applyTargetText} from './copy';
-import {applyRefusalText,applyTriggerLabel,ticketStatusText,mmfStatusText,issueLinkLabel,liveStatusLabel,STAGE_ORDER} from './copy';
+import {applyRefusalText,applyTriggerLabel,ticketStatusText,mmfStatusText,issueLinkLabel,liveStatusLabel,STAGE_ORDER,purposeLabel,lastRequiredPurposeText,taskTypeErrorText} from './copy';
+import {TASK_PURPOSES,REQUIRED_PURPOSES,type TaskTypeValidationError} from './draft';
 // DD-595 的确定示例，预期独立于实现。
 test('模型名称按家族与后缀规范显示，陌生名称保留',()=>{
  expect(modelLabel('gpt-6.1-sol')).toBe('GPT 6.1 Sol');
@@ -159,4 +160,19 @@ test('DD-675 MMF 执行状态、实时状态、七步顺序与 Linear 链接标�
  expect(mmfStatusText({stage:'implement',executing:false,direct_lanes:[],tickets:[{id:'01',title:'a',deps:[],stage:'implement',executing:false,linear:null,lane:{...baseLane,state:'blocked',group:'problem',live:'unknown'}}]})).toBe('需处理 · blocked');
  expect(mmfStatusText({stage:'merged',executing:false,direct_lanes:[],tickets:[]})).toBe('已完成');
  expect(mmfStatusText({stage:'tickets',executing:false,direct_lanes:[],tickets:[]})).toBe('未派发');
+});
+
+test('DD-686 任务类型用途、删除提示与错误文案通过禁词扫描',()=>{
+ expect(TASK_PURPOSES.map(purposeLabel)).toEqual(['规划','写代码并提交','产出文档','测试验证','只读咨询']);
+ for(const p of TASK_PURPOSES)clean(purposeLabel(p));
+ for(const p of REQUIRED_PURPOSES){
+  const text=lastRequiredPurposeText(p);
+  expect(text).toBe(`至少需保留一个「${purposeLabel(p)}」类型`);
+  clean(text);
+ }
+ const errors:TaskTypeValidationError[]=['invalid_id','reserved_id','duplicate_id','empty_label','invalid_purpose','last_required_purpose'];
+ for(const err of errors){
+  clean(taskTypeErrorText(err));
+  clean(taskTypeErrorText(err,'code'));
+ }
 });

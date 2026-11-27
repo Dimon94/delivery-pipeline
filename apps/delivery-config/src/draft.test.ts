@@ -54,3 +54,166 @@ test('备用与主模型可随时互换或提为主用，离线置换已有项�
  online.editFallbacks('design',{kind:'promote',index:0}); // m2 可用
  expect(online.config.work.design!.model).toBe('m2');
 });
+
+function v9Base():Config {
+ const ok={agent:'pi',model:'m1',effort:'high'};
+ return {
+  version:9,
+  dispatch:{parallel:4,max_turns:100},
+  model_families:{},
+  work:{
+   planning:{...ok,fallbacks:[],label:'规划',hint:'拆需求、定方案',purpose:'planning'},
+   design:{...ok,fallbacks:[],label:'设计',hint:'界面与交互',purpose:'code'},
+   frontend:{...ok,fallbacks:[],label:'前端开发',hint:'写页面代码',purpose:'code'},
+   backend:{...ok,fallbacks:[],label:'后端开发',hint:'写服务端代码',purpose:'code'},
+   testing:{...ok,fallbacks:[],label:'测试',hint:'写测试并验证',purpose:'checks'},
+  },
+  review:{
+   implementation:{standards:{...ok,candidates:[]},spec:{...ok,candidates:[]}},
+   'whole-change':{standards:{...ok,candidates:[]},spec:{...ok,candidates:[]}},
+  },
+  modes:{fast:{kind:'direct',agents:{pi:{starting:{model:'m1',effort:'low'},execution:{model:'m1',effort:'low'},direct:{model:'m1',effort:'low'}}}}},
+ };
+}
+
+function v8Base():Config {
+ const ok={agent:'pi',model:'m1',effort:'high'};
+ return {
+  version:8,
+  dispatch:{parallel:4,max_turns:100},
+  model_families:{},
+  work:{
+   planning:{...ok,fallbacks:[]},
+   design:{...ok,fallbacks:[]},
+   frontend:{...ok,fallbacks:[]},
+   backend:{...ok,fallbacks:[]},
+   testing:{...ok,fallbacks:[]},
+  },
+  review:{
+   implementation:{standards:{...ok,candidates:[]},spec:{...ok,candidates:[]}},
+   'whole-change':{standards:{...ok,candidates:[]},spec:{...ok,candidates:[]}},
+  },
+  modes:{keep:{kind:'direct'}},
+ };
+}
+
+const okEvidence:Evidence={
+ request_id:'req-1',
+ observed_at:'now',
+ gateway:{status:'ok'},
+ sources:{pi:{status:'ok',next_step:''}},
+ capabilities:{pi:{binary:true,models:{m1:['low','high'],m2:['medium','high']}}},
+};
+
+test('DD-686 S2：新增 advisory-doc 后 candidate 为 version 9 含全部字段且 modes 不变',()=>{
+ const base=v9Base();
+ const d=new Draft(base);
+ d.beginProbe('req-1');
+ d.acceptProbe(okEvidence);
+ expect(d.addTaskType({
+  id:'advisory-doc',
+  label:'咨询建议',
+  hint:'提供架构与方案建议',
+  purpose:'artifact',
+  agent:'pi',
+  model:'m2',
+  effort:'medium',
+ })).toEqual({ok:true});
+ expect(d.workIds()).toContain('advisory-doc');
+ expect(d.taskMeta('advisory-doc')).toEqual({label:'咨询建议',hint:'提供架构与方案建议',purpose:'artifact'});
+ expect(d.changes()).toEqual(['work.advisory-doc']);
+ expect(d.valid()).toBe(true);
+ const cand=d.candidate();
+ expect(cand.version).toBe(9);
+ expect(cand.work['advisory-doc']).toEqual({
+  agent:'pi',
+  model:'m2',
+  effort:'medium',
+  fallbacks:[],
+  label:'咨询建议',
+  hint:'提供架构与方案建议',
+  purpose:'artifact',
+ });
+ expect(cand.modes).toEqual(base.modes);
+});
+
+test('DD-686 S3：删 frontend/design 成功，删最后一个 code/planning/checks 或改其用途返回 last_required_purpose',()=>{
+ const d=new Draft(v9Base());
+ expect(d.removeTaskType('frontend')).toEqual({ok:true});
+ expect(d.removeTaskType('design')).toEqual({ok:true});
+ expect(d.changes()).toEqual(['work.design','work.frontend']);
+ const remaining=d.workIds();
+ expect(remaining).toEqual(['planning','backend','testing']);
+ for(const [id,purpose] of [['backend','code'],['planning','planning'],['testing','checks']] as const){
+  expect(d.canRemoveTaskType(id)).toEqual({ok:false,reason:'last_required_purpose',purpose});
+  expect(d.removeTaskType(id)).toEqual({ok:false,error:'last_required_purpose'});
+  expect(d.workIds()).toEqual(remaining);
+ }
+ // 把最后一个 code 类型的用途改为其他值同样被拒
+ expect(d.updateTaskTypeMeta('backend',{purpose:'artifact'})).toEqual({ok:false,error:'last_required_purpose'});
+ expect(d.taskMeta('backend').purpose).toBe('code');
+ // 只改最后一个必需用途的 label/hint 允许
+ expect(d.updateTaskTypeMeta('backend',{label:'服务端',hint:'API 实现'})).toEqual({ok:true});
+ expect(d.taskMeta('backend')).toEqual({label:'服务端',hint:'API 实现',purpose:'code'});
+});
+
+test('DD-686 S4：非法 id、保留词、重复 id、空 label 均被拒绝且草稿不变',()=>{
+ const d=new Draft(v9Base());
+ const beforeIds=d.workIds();
+ expect(d.addTaskType({id:'Advisory-Doc',label:'咨询',purpose:'artifact'})).toEqual({ok:false,error:'invalid_id'});
+ expect(d.addTaskType({id:'advisory doc',label:'咨询',purpose:'artifact'})).toEqual({ok:false,error:'invalid_id'});
+ expect(d.addTaskType({id:'',label:'咨询',purpose:'artifact'})).toEqual({ok:false,error:'invalid_id'});
+ for(const reserved of ['review','map','all']){
+  expect(d.addTaskType({id:reserved,label:'保留',purpose:'artifact'})).toEqual({ok:false,error:'reserved_id'});
+ }
+ expect(d.addTaskType({id:'planning',label:'重复',purpose:'planning'})).toEqual({ok:false,error:'duplicate_id'});
+ expect(d.addTaskType({id:'new-doc',label:'   ',purpose:'artifact'})).toEqual({ok:false,error:'empty_label'});
+ expect(d.addTaskType({id:'new-doc',label:'Unknown',purpose:'artifact'})).toEqual({ok:false,error:'empty_label'});
+ expect(d.workIds()).toEqual(beforeIds);
+ expect(d.changes()).toEqual([]);
+});
+
+test('DD-686 S5：能力不可用但三元组未改时改元信息或删可选类型 valid 为真；新增或改模型无证据时 valid 为假',()=>{
+ const base=v9Base();
+ base.work.backend!.model='gone-model';
+ const d=new Draft(base);
+ d.beginProbe('req-1');
+ d.acceptProbe(okEvidence);
+ // 原模型不可用、三元组未改，只改 label/hint 和删除可选类型 frontend → valid 为真
+ expect(d.updateTaskTypeMeta('backend',{label:'核心后端',hint:'新说明'})).toEqual({ok:true});
+ expect(d.removeTaskType('frontend')).toEqual({ok:true});
+ expect(d.valid()).toBe(true);
+ // 离线/未核对时同样成立
+ const offline=new Draft(base);
+ expect(offline.updateTaskTypeMeta('backend',{label:'核心后端'})).toEqual({ok:true});
+ expect(offline.removeTaskType('design')).toEqual({ok:true});
+ expect(offline.valid()).toBe(true);
+ // 新增类型而所选三元组不在能力证据中 → valid 为假
+ expect(d.addTaskType({id:'advisory-doc',label:'咨询建议',purpose:'artifact',agent:'pi',model:'missing',effort:'high'})).toEqual({ok:true});
+ expect(d.valid()).toBe(false);
+ // 改现有类型模型到不在能力证据中的值 → valid 为假
+ const d2=new Draft(base);
+ d2.beginProbe('req-1');
+ d2.acceptProbe(okEvidence);
+ d2.select('work.planning','model','missing');
+ expect(d2.valid()).toBe(false);
+});
+
+test('DD-686 S8：v8 加载后 changes 为空；改一格模型后 candidate 为 version 9 且补齐 taskMeta 默认元信息，modes 不变',()=>{
+ const base=v8Base();
+ const d=new Draft(base);
+ expect(d.changes()).toEqual([]);
+ d.beginProbe('req-1');
+ d.acceptProbe(okEvidence);
+ d.select('work.planning','model','m2');
+ expect(d.changes()).toEqual(['work.planning']);
+ expect(d.valid()).toBe(true);
+ const cand=d.candidate();
+ expect(cand.version).toBe(9);
+ expect(cand.modes).toEqual(base.modes);
+ expect(cand.work.planning).toMatchObject({label:'规划',hint:'拆需求、定方案',purpose:'planning',model:'m2'});
+ expect(cand.work.design).toMatchObject({label:'设计',hint:'界面与交互',purpose:'code'});
+ expect(cand.work.frontend).toMatchObject({label:'前端开发',hint:'写页面代码',purpose:'code'});
+ expect(cand.work.backend).toMatchObject({label:'后端开发',hint:'写服务端代码',purpose:'code'});
+ expect(cand.work.testing).toMatchObject({label:'测试',hint:'写测试并验证',purpose:'checks'});
+});

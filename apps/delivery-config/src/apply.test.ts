@@ -9,11 +9,11 @@ function setup(){
  const evidence:Evidence={request_id:'1',observed_at:'now',gateway:{status:'ok'},sources:{pi:{status:'ok',next_step:''}},capabilities:{pi:{binary:true,models:{alpha:['high']}}}};
  d.beginProbe('1');d.acceptProbe(evidence);return d;
 }
-const targets=['work.design','work.frontend','work.backend','work.testing'];
+const targets=['work.design','work.frontend','work.backend','work.testing','work.research'];
 test('R1 只复制选中主模型三项，整行覆盖会破坏备用',()=>{
  const d=setup(),expected=structuredClone(d.config);
  for(const p of targets)Object.assign(cell(expected,p),a);
- expect(d.applyPrimary('work.planning',[...targets,'work.planning','review.implementation.standards','work.research','work.design','work.design.fallbacks.0'])).toEqual({kind:'applied',changed:targets});
+ expect(d.applyPrimary('work.planning',[...targets,'work.planning','review.implementation.standards','work.nonexistent','work.design','work.design.fallbacks.0'])).toEqual({kind:'applied',changed:targets});
  expect(d.config).toEqual(expected);
 });
 test('R2 未核对与来源不可用均拒绝，拒绝前后一字不改',()=>{
@@ -27,14 +27,14 @@ test('R2 未核对与来源不可用均拒绝，拒绝前后一字不改',()=>{
  if(kind==='effort_gone')d.config.work.planning!.effort='ultra';
  if(kind==='incomplete')d.config.work.planning!.effort='';
  const before=JSON.stringify(d.config);
- const result=d.applyPrimary('work.planning',kind==='no_target'?['work.planning','work.research','review.implementation.standards']:targets);
+ const result=d.applyPrimary('work.planning',kind==='no_target'?['work.planning','work.nonexistent','review.implementation.standards']:targets);
  const reason=['idle','checking','unreachable'].includes(kind)?{kind:'not_checked'}:kind==='no_target'?{kind:'no_target'}:{kind:'source',status:kind==='tool_off'?{kind,reason:'没有该工具的核对结果'}:{kind}};
  expect(result).toEqual({kind:'refused',reason});expect(JSON.stringify(d.config)).toBe(before);
  }
 });
-test('R4 按页面顺序列四项，已相同不计数',()=>{
+test('R4 按页面顺序列所有其他工作项，已相同不计数',()=>{
  const d=setup();Object.assign(d.config.work.design!,a);
- expect(d.applyTargets('work.planning')).toEqual([{path:'work.design',same:true},{path:'work.frontend',same:false},{path:'work.backend',same:false},{path:'work.testing',same:false}]);
+ expect(d.applyTargets('work.planning')).toEqual([{path:'work.design',same:true},{path:'work.frontend',same:false},{path:'work.backend',same:false},{path:'work.testing',same:false},{path:'work.research',same:false}]);
  expect(d.applyPrimary('work.planning',targets)).toEqual({kind:'applied',changed:targets.slice(1)});
  expect(d.applyPrimary('work.planning',targets)).toEqual({kind:'applied',changed:[]});
 });
