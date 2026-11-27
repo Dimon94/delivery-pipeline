@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""从本机 Driver 与 lane registry 只读生成 schema 1 看板快照。"""
+"""生成本机看板快照，或单独更新看板的 Linear 缓存。"""
 from __future__ import annotations
 
 import argparse
 from collections import Counter
+from concurrent.futures import Future
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from functools import cache
 from hashlib import sha256
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -14,6 +17,8 @@ from runpy import run_path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+from threading import Event, Thread
+from time import monotonic
 from types import UnionType
 from typing import Callable, Literal, TypedDict, cast, get_args, get_origin, get_type_hints, is_typeddict
 from unittest.mock import patch
@@ -207,6 +212,8 @@ class BoardSnapshot(BoardLinearFields):
 
 SAMPLES = Path(__file__).resolve().with_name("board_samples")
 SPEC_ARCHIVES = "spec-archives.json"
+LINEAR_CACHE = "board-linear.json"
+LINEAR_FIELDS = ["id", "title", "status", "statusType", "parentId"]
 _field_types = cache(get_type_hints)
 
 
@@ -459,7 +466,7 @@ def _apply_live_probes(maps: list[tuple[Mmf, dict[str, dict]]]) -> list[ProbeRes
     return results
 
 
-def read_snapshot(lanes_root: str) -> BoardSnapshot:
+def _read_snapshot(lanes_root: str) -> tuple[BoardSnapshot, set[str], set[str]]:
     root = Path(lanes_root).expanduser().absolute()
     errors: list[BoardError] = []
     archives: dict[str, str] = {}
@@ -472,6 +479,8 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
         errors.append({"map": SPEC_ARCHIVES, "reason": str(error)})
         archives = {}
     inbox: list[InboxItem] = []
+    spec_keys: set[str] = set()
+    inbox_spec_keys: set[str] = set()
     epics_by_repo: dict[str, dict[str, Epic]] = {}
     repo_at = cache(_read_repo)
     maps: list[tuple[Mmf, dict[str, dict]]] = []
@@ -488,6 +497,10 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
         spec = _spec_ref(data or {}, plan, key)
         mmf = _mmf(path, name, data, lanes, _text(mrow.get("work_item")), spec)
         _validate(mmf, Mmf, "$.mmf")
+        if spec_key := issue_status.issue_key(spec):
+            spec_keys.add(spec_key)
+            if not key:
+                inbox_spec_keys.add(spec_key)
         if not key or not spec:
             inbox_item: InboxItem = {**mmf, "repo": repo, "attribution": "unassigned",
                                      "kind": "spec" if spec else "item"}
@@ -551,9 +564,14 @@ def read_snapshot(lanes_root: str) -> BoardSnapshot:
             errors.append({"map": name, "reason": str(error)})
     repos = [{"name": name, "epics": sorted(epics.values(), key=lambda epic: epic["key"])}
              for name, epics in sorted(epics_by_repo.items())]
-    return validate_snapshot({"schema": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
-                              "lanes_root": lanes_root, "repos": repos, "inbox": inbox,
-                              "probes": _apply_live_probes(maps), "errors": errors})
+    snapshot = validate_snapshot({"schema": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
+                                  "lanes_root": lanes_root, "repos": repos, "inbox": inbox,
+                                  "probes": _apply_live_probes(maps), "errors": errors})
+    return snapshot, spec_keys, inbox_spec_keys
+
+
+def read_snapshot(lanes_root: str) -> BoardSnapshot:
+    return _read_snapshot(lanes_root)[0]
 
 
 def refresh_archives(lanes_root: str, call=issue_status.linear_call) -> dict[str, str]:
@@ -582,10 +600,164 @@ def refresh_archives(lanes_root: str, call=issue_status.linear_call) -> dict[str
     return archived
 
 
+def _linear_rows(call: Callable, parent: str) -> dict[str, dict]:
+    args = {"parentId": parent, "includeArchived": True, "fields": LINEAR_FIELDS}
+    rows: dict[str, dict] = {}
+    while True:
+        page = call("list_issues", args)
+        for row in page if isinstance(page, list) else page["issues"]:
+            key = issue_status.issue_key(row["id"])
+            if key is None:
+                raise ValueError(f"{parent} 子项缺少 Linear issue key")
+            rows[key] = row
+        if isinstance(page, list) or not page.get("hasNextPage"):
+            return rows
+        cursor = page.get("cursor")
+        if not cursor or cursor == args.get("cursor"):
+            raise ValueError(f"{parent} 子项列表缺少下一页游标")
+        args = {**args, "cursor": cursor}
+
+
+def _linear_fact(raw: dict, parent: str | None, children: list[str] | None, at: str) -> LinearIssue:
+    fact: LinearIssue = {"title": raw["title"], "status": raw["status"], "status_type": raw["statusType"],
+                         "parent": parent, "children": children, "fetched_at": at,
+                         "description": raw.get("description") if children is not None else None}
+    _validate(fact, LinearIssue, "$.issue")
+    return fact
+
+
+class _LinearDeadline(TimeoutError):
+    pass
+
+
+def _collect_linear(root: Path, call: Callable, at: str) -> tuple[dict[str, LinearIssue], dict[str, str]]:
+    board, specs, inbox = _read_snapshot(str(root))
+    epics = {epic["key"] for repo in board["repos"] for epic in repo["epics"]}
+    details: dict[str, dict] = {}
+    aliases: dict[str, str] = {}
+    parents: dict[str, str] = {}
+    issues: dict[str, LinearIssue] = {}
+    failed: dict[str, str] = {}
+    linear_errors = (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.SubprocessError)
+
+    def lookup(ref):
+        if ref in aliases:
+            return aliases[ref]
+        raw = call("get_issue", {"id": ref, "fields": [*LINEAR_FIELDS, "uuid", "description"]})
+        key = issue_status.issue_key(raw["id"])
+        if key is None or issue_status.issue_key(ref) not in (None, key):
+            raise ValueError(f"{ref} issue 回读不符")
+        details[key] = raw
+        aliases.update({ref: key, key: key})
+        if uuid := _text(raw.get("uuid")):
+            aliases[uuid] = key
+        return key
+
+    def record(ref, error):
+        if isinstance(error, _LinearDeadline):
+            raise error
+        failed[ref] = str(error) or type(error).__name__
+
+    def read_group(ref, *, epic):
+        key = aliases.get(ref, ref)
+        if key in failed or (key in issues and issues[key]["children"] is not None):
+            return
+        try:
+            key = lookup(ref)
+            rows = _linear_rows(call, key)
+            issues[key] = _linear_fact(details[key], None, list(rows), at)
+        except linear_errors as error:
+            record(key, error)
+            return
+        if epic:
+            parents.update(dict.fromkeys(rows, key))
+            specs.update(rows)
+            return
+        for child, raw in rows.items():
+            if child in issues and issues[child]["children"] is not None:
+                continue
+            try:
+                issues[child] = _linear_fact(raw, key, None, at)
+            except linear_errors as error:
+                record(child, error)
+
+    for key in sorted(epics):
+        read_group(key, epic=True)
+    for key in sorted(inbox):
+        try:
+            raw = details[lookup(key)]
+        except linear_errors as error:
+            record(key, error)
+            continue
+        if parent := _text(raw.get("parentId")):
+            read_group(parent, epic=True)
+    for key in sorted(specs):
+        read_group(key, epic=False)
+    for key, raw in details.items():
+        if key in issues and issues[key]["children"] is not None:
+            ref = _text(raw.get("parentId"))
+            issues[key]["parent"] = aliases.get(ref) or issue_status.issue_key(ref) or parents.get(key)
+    return issues, failed
+
+
 def refresh_linear(lanes_root: str, call=issue_status.linear_call, deadline_s: float = 120) -> LinearCache:
-    """预留 Linear 更新入口，当前只返回失败结果。"""
-    return {"version": 1, "status": "failed", "attempted_at": datetime.now(timezone.utc).isoformat(),
-            "fetched_at": None, "reason": "Linear 更新尚未启用", "issues": {}, "failed": {}}
+    """通过只读 Linear 通道刷新缓存，失败时保留上次读回的事实。"""
+    deadline = monotonic() + deadline_s
+    at = datetime.now(timezone.utc).isoformat()
+    root = Path(lanes_root).expanduser().absolute()
+    path = root / LINEAR_CACHE
+    result: LinearCache = {"version": 1, "attempted_at": at, "fetched_at": None,
+                           "status": "failed", "reason": None, "issues": {}, "failed": {}}
+    try:
+        previous = validate_linear_cache(json.loads(path.read_text(encoding="utf-8")))
+        result.update(fetched_at=previous["fetched_at"], issues=previous["issues"])
+    except (OSError, ValueError):
+        pass
+
+    # 有界等待包含采集本机坐标及所有 Linear 调用。只由调用方提交缓存。
+    future: Future[tuple[dict[str, LinearIssue], dict[str, str]]] = Future()
+
+    def remaining():
+        seconds = deadline - monotonic()
+        if seconds <= 0:
+            raise _LinearDeadline
+        return seconds
+
+    def read(tool, args):
+        remaining()
+        return call(tool, args)
+
+    def collect():
+        try:
+            remaining()
+            future.set_result(_collect_linear(root, read, at))
+        except Exception as error:
+            future.set_exception(error)
+
+    try:
+        Thread(target=collect, daemon=True).start()
+        fresh, failed = future.result(timeout=remaining())
+        remaining()
+    except TimeoutError:
+        result["reason"] = f"Linear 更新超过 {deadline_s:g} 秒时限"
+    else:
+        result["failed"] = failed
+        if failed and not fresh:
+            result["reason"] = f"Linear 更新全部失败：{next(iter(failed.values()))}"
+        else:
+            # 失败节点及其旧子项仍可用。同一子项本次有新回读时以新值为准。
+            old = result["issues"]
+            retained: dict[str, LinearIssue] = {}
+            pending = list(failed)
+            while pending:
+                key = pending.pop()
+                if key in old and key not in retained:
+                    retained[key] = old[key]
+                    pending.extend(old[key]["children"] or ())
+            result.update(status="partial" if failed else "ok", fetched_at=at,
+                          reason="部分 Linear 条目读取失败" if failed else None, issues=retained | fresh)
+    driver.write_json(path, result)
+    return result
 
 
 def _expect_rejection(snapshot: object, path: str) -> None:
@@ -706,11 +878,6 @@ runpy.run_path(sys.argv[0], run_name='__main__')
         outputs = [subprocess.check_output([sys.executable, "-B", "-c", offline, __file__, "--lanes-root", str(root)],
                                           text=True) for _ in range(2)]
         assert fingerprint() == before  # S2
-        update = subprocess.check_output([sys.executable, "-B", "-c", offline, __file__, "--lanes-root", str(root),
-                                          "--refresh-linear"], text=True)
-        failed = validate_linear_cache(json.loads(update))
-        assert failed["status"] == "failed" and failed["reason"] and failed["fetched_at"] is None
-        assert not failed["issues"] and fingerprint() == before
         snapshots = [validate_snapshot(json.loads(output)) for output in outputs]  # S8
         for snapshot in snapshots:
             del snapshot["generated_at"]
@@ -836,6 +1003,114 @@ runpy.run_path(sys.argv[0], run_name='__main__')
             unreadable.unlink()
 
 
+def _test_linear_refresh() -> None:
+    def issue(key, title, parent=None):
+        return {"id": key, "title": title, "status": "Todo", "statusType": "unstarted",
+                "parentId": parent, "description": f"正文 {key}"}
+
+    with TemporaryDirectory() as temp:
+        root = Path(temp)
+        cache_path = root / LINEAR_CACHE
+        url = "https://linear.app/demo/issue/"
+        for spec, epic, ticket in [("DEMO-2", "DEMO-1", "DEMO-12"), ("DEMO-3", "DEMO-1", "DEMO-13"),
+                                   ("DEMO-5", None, "DEMO-15")]:
+            folder = root / spec
+            folder.mkdir()
+            (folder / "driver.json").write_text(json.dumps({"gates": {"spec": url + spec if epic else spec}, "plan": {
+                "repo": "fixture", "epic": url + epic if epic else None, "tickets": [{"id": ticket}],
+            }}))
+            (folder / "registry.md").write_text(
+                f"<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: map-{spec}\n"
+                f"role: map\nwork_item: {spec}\n```\n")
+
+        native_children = {"DEMO-1": ["DEMO-2", "DEMO-3"], "DEMO-2": ["DEMO-12"], "DEMO-3": ["DEMO-13"],
+                           "DEMO-4": ["DEMO-5", "DEMO-6"], "DEMO-5": ["DEMO-15"], "DEMO-6": []}
+        parents = {child: key for key, children in native_children.items() for child in children}
+        original = {key: issue(key, f"旧 {key}", parents.get(key)) for key in set(native_children) | parents.keys()}
+        # Inbox Spec 返回父项 UUID。缓存里仍然使用 issue key。
+        original["DEMO-4"]["uuid"] = "6f63519f-4802-4038-a26c-b8ac847f1d07"
+        original["DEMO-5"]["parentId"] = original["DEMO-4"]["uuid"]
+        calls = []
+
+        def linear(tool, args):
+            assert tool in {"get_issue", "list_issues"}, tool
+            ident = args["id"] if tool == "get_issue" else args["parentId"]
+            key = "DEMO-4" if ident == original["DEMO-4"]["uuid"] else ident
+            calls.append((tool, key))
+            if tool == "get_issue":
+                return data[key]
+            if key == fail_list:
+                raise RuntimeError("子项列表读取失败")
+            return {"issues": [data[child] for child in native_children[key]], "hasNextPage": False}
+
+        def fingerprints():
+            return {path.relative_to(root): sha256(path.read_bytes()).hexdigest()
+                    for path in root.rglob("*") if path.is_file() and path != cache_path}
+
+        def update(call=linear):
+            with patch.object(issue_status, "linear_call", call), redirect_stdout(StringIO()) as stdout:
+                assert main(["--lanes-root", temp, "--refresh-linear"]) == 0
+            summary = json.loads(stdout.getvalue())
+            assert summary["status"] == (saved := read_cache())["status"]
+            return saved
+
+        def read_cache():
+            return validate_linear_cache(json.loads(cache_path.read_text()))
+
+        before = fingerprints()
+        data, fail_list = original, None
+        ok = update()  # S8
+        assert ok["status"] == "ok" and ok["failed"] == {} and ok["fetched_at"]
+        assert ok["issues"].keys() == original.keys()
+        assert Counter(calls) == Counter((tool, key) for key in native_children for tool in ("get_issue", "list_issues"))
+        assert ok["issues"]["DEMO-1"]["children"] == ["DEMO-2", "DEMO-3"]
+        assert ok["issues"]["DEMO-6"]["children"] == []  # 尚无本机 map 的原生子项
+        assert ok["issues"]["DEMO-5"]["parent"] == "DEMO-4"
+        assert ok["issues"]["DEMO-13"]["parent"] == "DEMO-3"
+        assert ok["issues"]["DEMO-13"]["description"] is None
+        assert fingerprints() == before
+
+        data = {key: {**row, "title": f"新 {key}", "status": "In Progress", "statusType": "started"}
+                for key, row in original.items()}
+        fail_list = "DEMO-3"
+        partial = update()  # S9
+        assert partial["status"] == "partial" and partial["fetched_at"] == partial["attempted_at"]
+        assert partial["failed"] == {"DEMO-3": "子项列表读取失败"}
+        assert partial["issues"].keys() == original.keys()
+        for key, row in partial["issues"].items():
+            if key in {"DEMO-3", "DEMO-13"}:
+                assert row == ok["issues"][key]
+            else:
+                assert (row["title"], row["status"]) == (f"新 {key}", "In Progress")
+
+        cache_path.unlink()
+
+        def unavailable(tool, args):
+            raise RuntimeError("Linear 暂不可用")
+
+        failed = update(unavailable)  # S10，无旧缓存
+        assert failed["status"] == "failed" and failed["fetched_at"] is None and not failed["issues"]
+        assert set(failed["failed"].values()) == {"Linear 暂不可用"}
+
+        driver.write_json(cache_path, ok)
+        entered, release = Event(), Event()
+
+        def slow(tool, args):
+            entered.set()
+            release.wait(5)
+            return linear(tool, args)
+
+        try:
+            timed_out = refresh_linear(temp, slow, deadline_s=0.2)  # S10，旧成功缓存
+            assert entered.is_set() and not release.is_set()
+            assert timed_out == read_cache()
+            assert timed_out["status"] == "failed" and timed_out["reason"]
+            assert timed_out["fetched_at"] == ok["fetched_at"] and timed_out["issues"] == ok["issues"]
+            assert fingerprints() == before
+        finally:
+            release.set()
+
+
 def self_test() -> None:
     for path in sorted(SAMPLES.glob("*.json")):
         if path.name.startswith("linear-cache-"):
@@ -866,6 +1141,7 @@ def self_test() -> None:
         validate_snapshot(json.loads(Path(m1).read_text(encoding="utf-8")))
 
     _test_local_snapshot()
+    _test_linear_refresh()
     print("board_snapshot self-test ok")
 
 
@@ -883,7 +1159,9 @@ def main(argv: list[str]) -> int:
         print(json.dumps(refresh_archives(args.lanes_root), ensure_ascii=False))
         return 0
     if args.refresh_linear:
-        print(json.dumps(refresh_linear(args.lanes_root), ensure_ascii=False))
+        result = refresh_linear(args.lanes_root, call=issue_status.linear_call)
+        summary = {key: result[key] for key in ("status", "fetched_at", "attempted_at", "reason", "failed")}
+        print(json.dumps(summary, ensure_ascii=False))
         return 0
     _load_live_probes()
     print(json.dumps(read_snapshot(args.lanes_root), ensure_ascii=False))
