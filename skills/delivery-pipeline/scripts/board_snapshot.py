@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from functools import cache
@@ -1114,7 +1114,7 @@ def refresh_linear(lanes_root: str, call=issue_status.linear_call, deadline_s: f
         Thread(target=collect, daemon=True).start()
         fresh, failed = future.result(timeout=remaining())
         remaining()
-    except TimeoutError:
+    except (TimeoutError, FutureTimeoutError):
         result["reason"] = f"Linear 更新超过 {deadline_s:g} 秒时限"
     else:
         result["failed"] = failed
@@ -1497,6 +1497,19 @@ def _test_linear_refresh() -> None:
             assert fingerprints() == before
         finally:
             release.set()
+
+        # S-1：模拟 Python 3.10 中 concurrent.futures.TimeoutError 不是内建 TimeoutError 子类的语义
+        class _LegacyFutureTimeout(Exception):
+            pass
+
+        driver.write_json(cache_path, ok)
+        with patch.object(Future, "result", side_effect=_LegacyFutureTimeout("py310 future timeout")):
+            with patch.dict(globals(), {"FutureTimeoutError": _LegacyFutureTimeout}):
+                legacy_timed_out = refresh_linear(temp, linear, deadline_s=0.2)
+        assert legacy_timed_out == read_cache()
+        assert legacy_timed_out["status"] == "failed" and "0.2" in (legacy_timed_out["reason"] or "")
+        assert legacy_timed_out["fetched_at"] == ok["fetched_at"] and legacy_timed_out["issues"] == ok["issues"]
+        assert fingerprints() == before
 
 
 def _test_linear_merge() -> None:

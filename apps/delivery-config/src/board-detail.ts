@@ -21,6 +21,7 @@ export interface RightColumnParams {
  mmf?:Mmf;
  ticket?:Ticket;
  candidate?:MmfCandidate;
+ mmfEdges?:MmfEdge[];
  missingEdges?:MmfEdge[];
  inbox:boolean;
  inboxRepo?:string;
@@ -79,7 +80,7 @@ function headerTitle(epicKey:string|undefined,mmf:Mmf|undefined,ticket:Ticket|un
  return epicKey?`${epicKey} · ${seg}`:(showSteps?'MMF':copy.条目);
 }
 
-function renderCandidateBody(candidate:MmfCandidate):string {
+function renderCandidateBody(candidate:MmfCandidate,mmfEdges?:MmfEdge[]):string {
  const sourceText=candidate.source==='epic_table'?'Epic 正文':'Linear 子项';
  const coreHtml=[
   kvRow('标识',`<span class="detail-candidate-id mono">${esc(candidate.mmf_id)}</span>`),
@@ -87,10 +88,18 @@ function renderCandidateBody(candidate:MmfCandidate):string {
   kvRow('来源',`<span class="detail-candidate-source">${esc(sourceText)}</span>`),
   ...(candidate.spec?[kvRow('Spec',`<span class="detail-candidate-spec">${esc(candidate.spec.key)} · ${esc(candidate.spec.status)}</span>`)]:[]),
  ].join('');
+ const relatedEdges=candidate.mmf_id!=='Unknown'
+  ?(mmfEdges??[]).filter(e=>e.to===candidate.mmf_id||e.from===candidate.mmf_id)
+  :[];
+ const depsBody=relatedEdges.length
+  ?`<ul class="cand-dep-list">${relatedEdges.map(e=>`<li class="cand-dep-item"><span class="mono">${esc(e.from)} ──${esc(e.kind)}──▶ ${esc(e.to)}</span><span class="cand-dep-text"> · ${esc(e.text)}</span></li>`).join('')}</ul>`
+  :`<span class="muted small">${copy.无}</span>`;
+ const depsHtml=`<section class="detail-cand-deps" aria-label="${copy.依赖}"><div class="muted small">${copy.依赖}</div>${depsBody}</section>`;
  const specLink=candidate.spec&&candidate.spec.url
   ?`<div class="detail-links">${renderLinkRow(candidate.spec.url,`${candidate.spec.key} · ${copy.LinearIssue}`)}</div>`
   :`<div class="detail-links">${renderLinkRow(null,'Spec')}</div>`;
- return `<h3 class="detail-title">${esc(candidate.title)}</h3><dl class="detail-core">${coreHtml}</dl>${specLink}`;
+ const noactionHtml=`<p class="detail-cand-noaction muted small">${copy.候选只读说明}</p>`;
+ return `<h3 class="detail-title">${esc(candidate.title)}</h3><dl class="detail-core">${coreHtml}</dl>${depsHtml}${specLink}${noactionHtml}`;
 }
 
 function renderRelSection(title:string,mmf:Mmf,tickets:Ticket[]):string {
@@ -197,7 +206,7 @@ function renderMissingEdges(edges?:MmfEdge[]):string {
 }
 
 export function renderRightColumn(params:RightColumnParams):string {
- const {epicKey,mmf,ticket,candidate,missingEdges,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
+ const {epicKey,mmf,ticket,candidate,mmfEdges,missingEdges,inbox,inboxRepo,inboxSpec,hasLinear,open}=params;
  const showSteps=!inbox||inboxSpec===true;
  const groupCls=ticket?(ticket.lane?ticket.lane.group:'pending'):undefined;
  const pillHtml=candidate
@@ -207,7 +216,7 @@ export function renderRightColumn(params:RightColumnParams):string {
    :mmf&&epicKey?'<span class="muted small">MMF</span>':'';
  const missingHtml=!ticket&&!inbox?renderMissingEdges(missingEdges):'';
  const bodyHtml=(candidate
-  ?renderCandidateBody(candidate)
+  ?renderCandidateBody(candidate,mmfEdges)
   :renderDetailBody(mmf,ticket,inbox,inboxRepo,showSteps,hasLinear))+missingHtml;
  return `<aside class="board-col board-right" id="board-right" aria-label="${copy.选择一张票查看详情}" ${open?'':'hidden'}><div class="board-col-head"><h2>${esc(headerTitle(epicKey,mmf,ticket,showSteps,candidate))}</h2><span class="board-head-acts">${pillHtml}<button class="quiet col-close" data-board="right" title="${copy.收起右栏}" aria-label="${copy.收起右栏}">${copy.收起Epic}</button></span></div><div class="board-scroll detail-body">${bodyHtml}</div></aside>`;
 }

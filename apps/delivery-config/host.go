@@ -30,7 +30,7 @@ var nodePath string
 // 构建号三段由 build.py 经 MYGO_LDFLAGS 注入（-X main.buildCommit 等）；开发运行时为空。
 var buildCommit, buildDirty, builtAt string
 
-const linearRefreshCooldown = 5 * time.Minute
+const linearRefreshCooldown = 60 * time.Second
 
 type linearRefreshCall struct {
 	done chan struct{}
@@ -123,7 +123,7 @@ func (h *Host) ReadBoard() (json.RawMessage, error) {
 }
 
 // RefreshBoardLinear 触发 Linear 缓存更新并返回最新看板快照。
-// manual 为 false 时在冷却期内且上次成功则直接返回本机快照，不启动子进程；
+// manual 为 false 时在冷却期内（按缓存 attempted_at 计 60 秒，含 failed/partial/ok）直接返回本机快照，不启动子进程；
 // 并发调用共享同一次在途更新，只启动一个子进程并返回同一结果。
 func (h *Host) RefreshBoardLinear(manual bool) (json.RawMessage, error) {
 	h.linearMu.Lock()
@@ -212,10 +212,9 @@ func isLinearCacheFresh(lanesRoot string, now time.Time) bool {
 		return false
 	}
 	var cache struct {
-		Status      string `json:"status"`
 		AttemptedAt string `json:"attempted_at"`
 	}
-	if err := json.Unmarshal(raw, &cache); err != nil || cache.Status != "ok" {
+	if err := json.Unmarshal(raw, &cache); err != nil {
 		return false
 	}
 	at, err := time.Parse(time.RFC3339Nano, cache.AttemptedAt)

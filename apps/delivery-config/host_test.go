@@ -451,6 +451,115 @@ esac
 	})
 }
 
+func TestSpecR10Throttle(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sample, err := os.ReadFile("../../skills/delivery-pipeline/scripts/board_samples/board-linear.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 27, 4, 10, 0, 0, time.UTC)
+
+	setupHost := func(t *testing.T, status string, ago time.Duration, sleepS string) (*Host, string) {
+		t.Helper()
+		resources := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		lanes := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+		if err := os.MkdirAll(lanes, 0700); err != nil {
+			t.Fatal(err)
+		}
+		at := now.Add(-ago).Format(time.RFC3339)
+		cache := `{"version":1,"status":"` + status + `","fetched_at":"` + at + `","attempted_at":"` + at + `","reason":null,"issues":{},"failed":{}}`
+		if err := os.WriteFile(filepath.Join(lanes, "board-linear.json"), []byte(cache), 0600); err != nil {
+			t.Fatal(err)
+		}
+		count := filepath.Join(resources, "count")
+		sampleFile := filepath.Join(resources, "s.json")
+		if err := os.WriteFile(sampleFile, sample, 0600); err != nil {
+			t.Fatal(err)
+		}
+		script := `import json, pathlib, sys, time
+if '--refresh-linear' in sys.argv:
+    p = pathlib.Path(` + strconv.Quote(count) + `)
+    n = int(p.read_text()) if p.exists() else 0
+    p.write_text(str(n + 1))
+    time.sleep(` + sleepS + `)
+    print(json.dumps({'status': 'ok', 'reason': None}))
+else:
+    sys.stdout.buffer.write(pathlib.Path(` + strconv.Quote(sampleFile) + `).read_bytes())
+`
+		if err := os.WriteFile(filepath.Join(resources, "board_snapshot.py"), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return &Host{
+			Python:    python,
+			Tool:      filepath.Join(resources, "model_config.py"),
+			linearNow: func() time.Time { return now },
+		}, count
+	}
+
+	readCount := func(path string) int {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return 0
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+		return n
+	}
+
+	t.Run("ok缓存90秒前非手动应启动", func(t *testing.T) {
+		h, count := setupHost(t, "ok", 90*time.Second, "0")
+		if _, err := h.RefreshBoardLinear(false); err != nil {
+			t.Fatal(err)
+		}
+		if got := readCount(count); got != 1 {
+			t.Fatalf("ok 缓存 attempted_at 90 秒前、非手动刷新应启动子进程，实际启动次数=%d", got)
+		}
+	})
+
+	for _, status := range []string{"failed", "partial"} {
+		t.Run(status+"缓存30秒前非手动应不启动", func(t *testing.T) {
+			h, count := setupHost(t, status, 30*time.Second, "0")
+			if _, err := h.RefreshBoardLinear(false); err != nil {
+				t.Fatal(err)
+			}
+			if got := readCount(count); got != 0 {
+				t.Fatalf("%s 缓存 attempted_at 30 秒前、非手动刷新不应启动子进程，实际启动次数=%d", status, got)
+			}
+		})
+	}
+
+	t.Run("failed缓存30秒内手动仍启动且在途时复用", func(t *testing.T) {
+		h, count := setupHost(t, "failed", 30*time.Second, "0.25")
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		outs := make([]json.RawMessage, 2)
+		for i, manual := range []bool{true, false} {
+			wg.Add(1)
+			go func(idx int, m bool) {
+				defer wg.Done()
+				if idx == 1 {
+					time.Sleep(50 * time.Millisecond)
+				}
+				outs[idx], errs[idx] = h.RefreshBoardLinear(m)
+			}(i, manual)
+		}
+		wg.Wait()
+		if errs[0] != nil || errs[1] != nil {
+			t.Fatalf("手动刷新及在途复用失败：%v / %v", errs[0], errs[1])
+		}
+		if !bytes.Equal(outs[0], outs[1]) || !bytes.Equal(outs[0], sample) {
+			t.Fatal("在途并发调用应复用同一快照结果")
+		}
+		if got := readCount(count); got != 1 {
+			t.Fatalf("手动刷新在 30 秒内应启动且并发只启动一次，实际启动次数=%d", got)
+		}
+	})
+}
+
 // 用独立 Python 进程穿过桌面公开 Interface，不替换配置 owner。
 func TestReadConfig(t *testing.T) {
 	python, err := exec.LookPath("python3")

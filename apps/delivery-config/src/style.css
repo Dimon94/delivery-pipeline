@@ -328,6 +328,11 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .detail-chip{font-size:11.5px;line-height:1.4;padding:2px 8px;border-radius:6px;background:var(--pill);border-left:3px solid var(--c);color:var(--ink);text-align:left;max-width:100%;overflow-wrap:anywhere}
 .detail-chip:hover{background:var(--pill-hover)}
 .detail-links{display:grid;gap:6px;margin-top:16px;font-size:12px}
+.detail-cand-deps{margin-top:12px;display:grid;gap:5px;font-size:12px}
+.cand-dep-list{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.cand-dep-item{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:11.5px;line-height:1.45;overflow-wrap:anywhere}
+.cand-dep-text{color:var(--fg-2)}
+.detail-cand-noaction{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line-soft);line-height:1.45}
 .detail-missing-edges{margin-top:14px;padding-top:10px;border-top:1px solid var(--line-soft);display:grid;gap:6px}
 .missing-edge-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .missing-edge-item{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:11.5px}

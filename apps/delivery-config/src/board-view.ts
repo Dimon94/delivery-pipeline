@@ -7,10 +7,10 @@ import {renderRightColumn} from './board-detail';
 
 export {ticketLayers};
 
-const LINEAR_COOLDOWN_MS=5*60*1000;
+const LINEAR_COOLDOWN_MS=60*1000;
 
 export function isLinearFresh(linear:BoardLinear|undefined,nowMs=Date.now()):boolean {
- if(!linear||linear.status!=='ok')return false;
+ if(!linear)return false;
  const attempted=Date.parse(linear.attempted_at);
  if(Number.isNaN(attempted))return false;
  const age=nowMs-attempted;
@@ -303,7 +303,7 @@ export class BoardView {
   const summaryToggle=group&&summary?.items.length
    ?`<button class="plain board-summary-toggle" data-board="toggle-summary" data-group="${esc(group.id)}" aria-expanded="${summaryOpen}" title="${summary.hint}"><span aria-hidden="true">${summaryOpen?'▾':'▸'}</span> ${summary.label} <small>${summary.count}</small></button>`:'';
   const center=`<section class="board-center-pane" aria-label="${copy.依赖}"><div class="board-col-head"><h2 title="${esc(group?.label??copy.看板)}">${esc(group?.label??copy.看板)}</h2>${summaryToggle}</div>${legend}<div class="board-col board-center">${group?renderGraph(group,mmf,ticket,summaryOpen,candidate):`<p class="board-state">${copy.没有进行中的工作}</p>`}</div></section>`;
-  const rightCol=renderRightColumn({epicKey:isInbox?undefined:group?.label,mmf,ticket,candidate,missingEdges:group&&!isInbox?missingMmfEdges(group,summaryOpen):undefined,inbox:isInbox,inboxRepo:inboxItem?.repo,inboxSpec:inboxItem?.kind==='spec',hasLinear,open:this.right});
+  const rightCol=renderRightColumn({epicKey:isInbox?undefined:group?.label,mmf,ticket,candidate,mmfEdges:group&&!isInbox?group.mmfEdges:undefined,missingEdges:group&&!isInbox?missingMmfEdges(group,summaryOpen):undefined,inbox:isInbox,inboxRepo:inboxItem?.repo,inboxSpec:inboxItem?.kind==='spec',hasLinear,open:this.right});
   this.root.innerHTML=`${bar}<main class="board-grid" data-left="${this.left?'open':'closed'}" data-right="${this.right?'open':'closed'}">${leftCol}${center}${rightCol}</main>`;
   const endedDetails=this.root.querySelector<HTMLDetailsElement>('details[data-board-ended]');
   endedDetails?.addEventListener('toggle',()=>{this.endedOpen=endedDetails.open;});

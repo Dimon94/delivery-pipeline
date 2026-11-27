@@ -730,3 +730,66 @@ test('DD-676 S10/S11/S12/S13 与缺少 mcporter：无缓存先按 M1 渲染并�
 
  box10.remove();box10b.remove();box11.remove();box12.remove();boxMc.remove();boxMcOld.remove();
 });
+
+test('P-1 R10 前端节流 60 秒按 attempted_at（含 failed/partial），手动不受冷却且在途复用',async()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8'));
+ const {BoardView,isLinearFresh}=await import('./board-view');
+ const now=Date.parse('2026-11-27T12:00:00Z');
+ const ago=(sec:number)=>new Date(now-sec*1000).toISOString();
+
+ // ok 缓存 90 秒前不再新鲜，应允许自动更新；failed/partial 缓存 30 秒前视为在冷却期内
+ expect(isLinearFresh({status:'ok',fetched_at:ago(90),attempted_at:ago(90),reason:null},now)).toBe(false);
+ expect(isLinearFresh({status:'ok',fetched_at:ago(30),attempted_at:ago(30),reason:null},now)).toBe(true);
+ expect(isLinearFresh({status:'failed',fetched_at:null,attempted_at:ago(30),reason:'网络错误'},now)).toBe(true);
+ expect(isLinearFresh({status:'partial',fetched_at:ago(30),attempted_at:ago(30),reason:'部分失败'},now)).toBe(true);
+ expect(isLinearFresh({status:'failed',fetched_at:null,attempted_at:ago(90),reason:'网络错误'},now)).toBe(false);
+
+ // ok 缓存 90 秒前：load() 自动触发 refreshLinear(false)
+ const ok90=structuredClone(linearSample);
+ ok90.linear.status='ok';
+ ok90.linear.attempted_at=new Date(Date.now()-90*1000).toISOString();
+ let ok90Calls=0;
+ const boxOk90=doc.createElement('div');
+ doc.body.append(boxOk90);
+ const vOk90=new BoardView(boxOk90 as unknown as HTMLElement,{
+  read:async()=>ok90,
+  refreshLinear:async()=>{ok90Calls++;return ok90;},
+  openSettings(){},
+ });
+ await vOk90.load();
+ await settle();
+ expect(ok90Calls).toBe(1);
+
+ // failed 缓存 30 秒前：自动刷新跳过；手动触发仍发起，在途时自动/手动并发复用
+ const fail30=structuredClone(linearSample);
+ fail30.linear.status='failed';
+ fail30.linear.attempted_at=new Date(Date.now()-30*1000).toISOString();
+ fail30.linear.reason='暂不可用';
+ let fail30Calls=0;
+ let releaseFail30!:()=>void;
+ const boxFail30=doc.createElement('div');
+ doc.body.append(boxFail30);
+ const vFail30=new BoardView(boxFail30 as unknown as HTMLElement,{
+  read:async()=>fail30,
+  refreshLinear:()=>{fail30Calls++;return new Promise(r=>{releaseFail30=()=>r(fail30);});},
+  openSettings(){},
+ });
+ await vFail30.load();
+ await settle();
+ expect(fail30Calls).toBe(0);
+ const pManual=vFail30.refreshLinear(true);
+ const pAuto=vFail30.refreshLinear(false);
+ expect(pManual).toBe(pAuto);
+ expect(fail30Calls).toBe(1);
+ releaseFail30();
+ await Promise.all([pManual,pAuto]);
+
+ // P-2：从 BoardView 点击候选卡，右栏展示依赖列表与只读说明
+ const candBtn=boxOk90.querySelector<HTMLElement>('.graph-candidate[data-candidate="M2"]');
+ expect(candBtn).not.toBeNull();
+ candBtn!.click();
+ expect(boxOk90.querySelector('#board-right .detail-cand-deps')!.textContent).toContain('M1 ──开工──▶ M2');
+ expect(boxOk90.querySelector('#board-right .detail-cand-noaction')!.textContent).toContain('只读：不在这里开 map 或派票');
+
+ boxOk90.remove();boxFail30.remove();
+});

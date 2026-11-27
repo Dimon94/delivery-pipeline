@@ -399,3 +399,36 @@ test('R5 端点找不到的跨 MMF 边列在右栏 Epic 详情中，包含起止
  const emptyDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf,missingEdges:[],inbox:false,open:true}));
  expect(emptyDoc.querySelector('.detail-missing-edges')).toBeNull();
 });
+
+test('P-2 Preview r-cand：候选详情展示依赖列表（含空态）与只读说明',()=>{
+ const m4={mmf_id:'M4',title:'导出报表',source:'epic_table' as const,spec:{key:'DD-702',url:'https://linear.app/x/issue/DD-702',status:'Todo'}};
+
+ // 复现 rcand.ts 反例：无 mmfEdges 时仍显示「依赖」空态与只读说明
+ const emptyDepsDoc=mount(renderRightColumn({epicKey:'EP-101',candidate:m4,missingEdges:[],inbox:false,hasLinear:true,open:true}));
+ const emptyDeps=emptyDepsDoc.querySelector('.detail-cand-deps');
+ expect(emptyDeps).not.toBeNull();
+ expect(emptyDeps!.textContent).toContain('依赖');
+ expect(emptyDeps!.textContent).toContain('无');
+ const noaction=emptyDepsDoc.querySelector('.detail-cand-noaction');
+ expect(noaction).not.toBeNull();
+ expect(noaction!.textContent).toBe('只读：不在这里开 map 或派票');
+
+ // 有相关依赖边时展示 M3 ──开工──▶ M4 · 原文，不混入无关边
+ const edges=[
+  {from:'M3',to:'M4',kind:'开工' as const,text:'开工 · 依赖 M3 导出字段'},
+  {from:'M1',to:'M2',kind:'上线' as const,text:'上线 · 无关边'},
+ ];
+ const withDepsDoc=mount(renderRightColumn({epicKey:'EP-101',candidate:m4,mmfEdges:edges,missingEdges:[],inbox:false,hasLinear:true,open:true}));
+ const items=[...withDepsDoc.querySelectorAll('.detail-cand-deps .cand-dep-item')];
+ expect(items.length).toBe(1);
+ expect(items[0]!.textContent).toContain('M3 ──开工──▶ M4');
+ expect(items[0]!.textContent).toContain('开工 · 依赖 M3 导出字段');
+ expect(withDepsDoc.querySelector('.detail-cand-deps')!.textContent).not.toContain('无关边');
+ expect(withDepsDoc.querySelector('.detail-cand-noaction')!.textContent).toBe('只读：不在这里开 map 或派票');
+
+ // Unknown 候选不匹配跨 MMF 边，依赖显示「无」
+ const unk={mmf_id:'Unknown',title:'未归类子项',source:'linear_child' as const,spec:{key:'DD-799',url:'https://linear.app/x/issue/DD-799',status:'Todo'}};
+ const unkDoc=mount(renderRightColumn({epicKey:'EP-101',candidate:unk,mmfEdges:edges,missingEdges:[],inbox:false,hasLinear:true,open:true}));
+ expect(unkDoc.querySelector('.detail-cand-deps')!.textContent).toContain('无');
+ expect(unkDoc.querySelector('.detail-cand-noaction')!.textContent).toBe('只读：不在这里开 map 或派票');
+});

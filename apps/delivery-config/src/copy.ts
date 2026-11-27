@@ -199,7 +199,8 @@ export const copy = {
   "MergeReview页": "Merge Review 页",
   "LinearIssue": "Linear issue",
   "可选": "可选：",
-  "回复Halt说明": "回复 Halt 不在本看板（链接到 Driver 现场）"
+  "回复Halt说明": "回复 Halt 不在本看板（链接到 Driver 现场）",
+  "候选只读说明": "只读：不在这里开 map 或派票"
 };
 export const STAGE_ORDER:readonly import('./board').Stage[]=['spec','tickets','implement','integrate','review','merge_review','merged'];
 // 阶段全称对齐锁定原型 v4；读不出的阶段原样显示数据值。
