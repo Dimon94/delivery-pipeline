@@ -1,7 +1,7 @@
 import {pickerUnavailable} from './copy';
 export type ModelTriple = {agent: string; model: string; effort: string};
 export type Cell = ModelTriple & {fallbacks?:ModelTriple[]; candidates?:ModelTriple[]};
-export type FallbackEdit = {kind:"add";item:ModelTriple}|{kind:"set";index:number;item:ModelTriple}|{kind:"move";index:number;to:number}|{kind:"remove";index:number};
+export type FallbackEdit = {kind:"add";item:ModelTriple}|{kind:"set";index:number;item:ModelTriple}|{kind:"move";index:number;to:number}|{kind:"promote";index:number}|{kind:"remove";index:number};
 export const budgetKeys = ["parallel", "max_turns"] as const;
 export type BudgetKey = typeof budgetKeys[number];
 export const defaultBudget = {parallel:4, max_turns:100};
@@ -91,19 +91,29 @@ export class Draft {
  if(result.version===6||result.version===7){result.version=8;result.model_families??={};result.dispatch??={...defaultBudget};}
  return result;
  }
+ editQueue(path:string,edit:FallbackEdit) {
+  const parent=cell(this.config,path);
+  const key=path.startsWith('review.')?'candidates':'fallbacks';
+  const items=(parent[key]??=[]);
+  if(edit.kind==='add')items.push(structuredClone(edit.item));
+  else if(edit.kind==='set')items[edit.index]=structuredClone(edit.item);
+  else if(edit.kind==='remove')items.splice(edit.index,1);
+  else if(edit.kind==='promote'||(edit.kind==='move'&&edit.to<0)) {
+   if(edit.index<0||edit.index>=items.length)return;
+   const prev:ModelTriple={agent:parent.agent,model:parent.model,effort:parent.effort};
+   const [picked]=items.splice(edit.index,1);
+   if(!picked)return;
+   parent.agent=picked.agent;parent.model=picked.model;parent.effort=picked.effort;
+   items.unshift(prev);
+  } else {
+   items.splice(edit.to,0,items.splice(edit.index,1)[0]!);
+  }
+ }
  editCandidates(path:string,edit:FallbackEdit) {
- const items=cell(this.config,path).candidates!;
- if(edit.kind==='add')items.push(structuredClone(edit.item));
- else if(edit.kind==='set')items[edit.index]=structuredClone(edit.item);
- else if(edit.kind==='remove')items.splice(edit.index,1);
- else items.splice(edit.to,0,items.splice(edit.index,1)[0]!);
+  this.editQueue(path,edit);
  }
  editFallbacks(name:string,edit:FallbackEdit) {
- const items=this.config.work[name]!.fallbacks!;
- if(edit.kind==='add')items.push(structuredClone(edit.item));
- else if(edit.kind==='set')items[edit.index]=structuredClone(edit.item);
- else if(edit.kind==='remove')items.splice(edit.index,1);
- else items.splice(edit.to,0,items.splice(edit.index,1)[0]!);
+  this.editQueue(`work.${name}`,edit);
  }
  // 核对只改 check，不碰 config（R1、R3）。只有最新请求的结果生效（R2）。
  beginProbe(id:string) {this.check={kind:'checking',request:id};}
@@ -160,11 +170,18 @@ export class Draft {
  return this.changes().every(p=>{
  if(p.startsWith("dispatch.")){const value=this.config.dispatch![p.slice(9) as BudgetKey];return Number.isSafeInteger(value)&&value>0;}
  const c=cell(this.config,p),old=cell(this.snapshot,p);
- if(key(c)!==key(old)&&!this.options(c).includes(c.effort))return false;
- const remaining=new Map<string,number>();
  const list=p.startsWith("review.")?"candidates":"fallbacks";
- for(const item of old[list]||[])remaining.set(key(item),(remaining.get(key(item))||0)+1);
- return (c[list]||[]).every(item=>{const k=key(item),n=remaining.get(k)||0;if(n){remaining.set(k,n-1);return true;}return this.options(item).includes(item.effort);});
+ const remaining=new Map<string,number>();
+ for(const item of [old,...(old[list]||[])])remaining.set(key(item),(remaining.get(key(item))||0)+1);
+ const consume=(item:ModelTriple)=>{const k=key(item),n=remaining.get(k)||0;if(n){remaining.set(k,n-1);return true;}return false;};
+ if(key(c)!==key(old)){
+ const reused=consume(c);
+ if(this.check.kind==='checked'){if(!this.options(c).includes(c.effort))return false;}
+ else if(!reused)return false;
+ } else {
+ consume(c);
+ }
+ return (c[list]||[]).every(item=>consume(item)||this.options(item).includes(item.effort));
  });
  }
  undo() {this.config=structuredClone(this.snapshot);}

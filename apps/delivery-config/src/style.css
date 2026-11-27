@@ -17,8 +17,21 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 
 .plain{background:var(--pill);color:var(--ink)}
 
-.fallbacks{padding:0 14px 12px 28px;border-bottom:1px solid var(--line-soft)}.fallbacks .task-row{grid-template-columns:minmax(70px,1fr) 445px;padding-left:0;padding-right:0}.fallback-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.fallback-actions button,.fallbacks>button{padding:6px 10px;border-radius:6px;background:var(--pill)}
-@media (max-width:760px){.fallbacks .task-row{grid-template-columns:1fr}.fallbacks .fields{width:100%}}
+.fallbacks{padding:0;border-bottom:1px solid var(--line-soft);background:var(--card-2)}
+.fallback-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.fallback-index{font-size:12px;color:var(--fg-2);font-weight:500;white-space:nowrap}
+.fallback-actions{display:inline-flex;align-items:center;gap:4px;flex:none}
+.fallback-actions button{height:24px;padding:0 8px;border-radius:6px;font-size:11.5px;line-height:1;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+.fallback-actions .promote-btn{background:var(--card);border:1px solid var(--line);color:var(--fg-2)}
+.fallback-actions .promote-btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent) 55%,var(--line));color:var(--accent);background:var(--accent-bg)}
+.fallback-actions .order-btn{width:24px;padding:0;background:var(--card);border:1px solid var(--line);color:var(--fg-2);font-size:12px}
+.fallback-actions .order-btn:hover:not(:disabled){background:var(--pill-hover);color:var(--ink)}
+.fallback-actions .order-btn:disabled{opacity:.4;background:transparent;border-color:var(--line-soft)}
+.fallback-actions .remove-btn{color:var(--muted);background:transparent}
+.fallback-actions .remove-btn:hover:not(:disabled){color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
+.fallbacks-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:6px 14px 10px 28px}
+.fallbacks-hint{font-size:11.5px;color:var(--muted)}
+@media (max-width:760px){.fallbacks .task-row{grid-template-columns:1fr}.fallbacks .fields{width:100%}.fallbacks-foot{padding-left:14px}}
 
 /* DD-578：行内状态（方案 A）。行紧凑；可用行安静；问题行黄框，提示横跨整行；核对中轻微脉动。 */
 .task-row{padding:7px 14px;min-height:0}
@@ -27,8 +40,7 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .row-foot .inline-action{padding:0;font-size:12px;height:auto}
 .row-foot .inline-action:disabled{color:var(--faint)}
 .task-row.flag{background:color-mix(in srgb,var(--amber) 6%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--amber) 45%,transparent)}
-.fallbacks{padding:0 6px 8px 20px}
-.fallbacks .task-row{padding:7px 8px;border-radius:7px}
+.fallbacks .task-row{padding:7px 14px 7px 28px;border-radius:0}
 @keyframes check-pulse{50%{opacity:.45}}
 .task-row.checking .fields{animation:check-pulse 1.2s ease-in-out infinite}
 .notice.attention{margin-top:0}
@@ -44,8 +56,6 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 @media(min-width:1001px){
  .task-row{grid-template-columns:minmax(0,1fr) 540px}
  .fields{width:540px;grid-template-columns:190px minmax(0,1fr) 96px}
- .fallbacks .task-row{grid-template-columns:minmax(40px,1fr) 540px auto}
- .fallback-actions{grid-column:auto;margin-top:0}
 }
 @media(prefers-reduced-motion:reduce){.task-row.checking .fields{animation:none}}
 
@@ -70,9 +80,9 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
 .work-section .table-head,.review-section .table-head,.work-section .task-row,.review-section .task-row{min-width:940px}
 .work-section .task-row,.review-section .task-row{grid-template-columns:minmax(0,1fr) 600px}
 .work-section .fields,.review-section .fields{width:600px;grid-template-columns:210px minmax(0,1fr) 96px}
-.work-section .fallbacks,.review-section .fallbacks{padding:0;background:var(--card-2)}
-.work-section .fallbacks .task-row,.review-section .fallbacks .task-row{padding-left:28px;padding-right:14px}
-.work-section .fallback-actions,.review-section .fallback-actions{grid-column:2;margin-top:8px}
+.work-section .fallbacks,.review-section .fallbacks{padding:0;background:var(--card-2);border-top:1px solid var(--line-soft)}
+.work-section .fallbacks .task-row,.review-section .fallbacks .task-row{padding-left:28px;padding-right:14px;position:relative}
+.work-section .fallbacks .task-row::before,.review-section .fallbacks .task-row::before{content:"";position:absolute;left:16px;top:0;bottom:0;width:2px;background:var(--line)}
 
 .footer .text-button{padding:0 4px;color:var(--muted);font-size:12px;background:transparent}.footer .text-button:hover{color:var(--ink);text-decoration:underline}
 
@@ -82,7 +92,8 @@ select.pill{border:0;color:var(--ink);font:inherit;width:100%;height:32px;appear
  .work-section .table-head,.review-section .table-head{display:none}
  .work-section .task-row,.review-section .task-row{min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
  .work-section .fields,.review-section .fields{width:100%;grid-template-columns:150px minmax(0,1fr) 96px}
- .work-section .fallback-actions,.review-section .fallback-actions{grid-column:1}
+ .work-section .fallbacks .task-row,.review-section .fallbacks .task-row{padding-left:20px;padding-right:11px}
+ .work-section .fallbacks .task-row::before,.review-section .fallbacks .task-row::before{left:10px}
  .task-label{margin-bottom:0}
 }
 @media (max-width:560px){
