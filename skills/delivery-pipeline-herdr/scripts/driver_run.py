@@ -36,7 +36,9 @@ def exec_dispatch(map_dir: Path, state, action):
     mrow = driver.map_row(state["lanes"]) or {}
     integration = mrow.get("integration_worktree_path")
     a = dict(action["args"])
-    title = ROLE_LABELS.get(a["task"]) or (herdr_cfg.get("labels") or {}).get(a["work_item"])
+    title = (ROLE_LABELS.get(a["task"])
+             or ("测试" if str(a.get("work_item") or "").endswith("#testing") else None)
+             or (herdr_cfg.get("labels") or {}).get(a["work_item"]))
     if not (cfg.get("evidence") and root and integration and title and herdr_cfg.get("tab_prefix")):
         return None  # 缺配置或中文短名：交回 coordinator 按壳合同派发
     lane = a["lane_id"]
@@ -61,6 +63,10 @@ def exec_dispatch(map_dir: Path, state, action):
            "--tab-prefix", str(herdr_cfg["tab_prefix"])]
     if a.get("merges"):
         cmd.extend(["--merges", str(a["merges"])])
+    if a.get("ticket_mode"):
+        cmd.extend(["--ticket-mode", str(a["ticket_mode"])])
+    if a.get("map_mode"):
+        cmd.extend(["--map-mode", str(a["map_mode"])])
     if herdr_cfg.get("workspace_label"):
         cmd.extend(["--workspace-label", str(herdr_cfg["workspace_label"])])
     out = subprocess.run(cmd, capture_output=True, text=True)

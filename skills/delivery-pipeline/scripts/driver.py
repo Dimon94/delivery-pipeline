@@ -64,6 +64,39 @@ FAILED = {"blocked", "integration_checks_failed"}
 MAX_REPAIRS = 2  # ADR-0012：两轮修复后重拆
 PLANNING_OWNERS = (("discovery", "wayfinder"), ("spec", "to-spec"), ("tickets", "to-tickets"))
 REMOTE_STEPS = ("push", "open_pr", "wait_ci", "merge", "finalize")
+PURPOSE_OUTPUT_MODE = {
+    "planning": "artifact",
+    "code": "commit",
+    "artifact": "artifact",
+    "checks": "checks",
+    "advisory": "artifact",
+}
+
+
+def resolve_ticket_output_mode(ticket, work_types) -> tuple[str | None, str | None]:
+    """按配置任务类型的用途推导未显式填写的 output_mode；配置中已删除该类型时返回 (None, error)。"""
+    task = ticket.get("task", "backend")
+    if work_types is not None:
+        if task not in work_types:
+            return None, f"task type not defined in config: {task}"
+        explicit = ticket.get("output_mode")
+        if explicit:
+            return explicit, None
+        return PURPOSE_OUTPUT_MODE[work_types[task]], None
+    return ticket.get("output_mode", "commit"), None
+
+
+def resolve_checks_task(work_types) -> str | None:
+    """解析 whole-change testing 使用的任务类型：优先同名 testing（checks），否则取首个 checks 类型。"""
+    if work_types is None:
+        return "testing"
+    if work_types.get("testing") == "checks":
+        return "testing"
+    return next((task for task, purpose in work_types.items() if purpose == "checks"), None)
+
+
+def is_whole_change_testing(row, map_id: str) -> bool:
+    return row.get("role") == "testing" or row.get("work_item") == f"{map_id}#testing"
 
 
 def act(action: str, ident: str, **args) -> dict:
@@ -152,7 +185,7 @@ def deviations(state) -> list[str]:
             if role == "integration" and row.get("merges"):
                 out.append(f"merger {row['lane_id']} 处理 {row['merges']} 的收口失败")
             continue
-        if role == "testing":
+        if is_whole_change_testing(row, d["map"]):
             if int(row.get("repairs") or 0):
                 suffix = f"（{row['repair_lane']}）" if row.get("repair_lane") else ""
                 out.append(f"整体检查 {row['lane_id']} 修复 {row['repairs']} 轮{suffix}")
@@ -203,7 +236,8 @@ def detect_halt(state):
             candidates.append(halt("resplit_failed", lid, f"重拆自 {row['resplit_of']} 后仍失败",
                                    [lid, row["resplit_of"]], ["人工接手", "改计划", "放弃该票"]))
         item = row.get("work_item")
-        if row.get("role") not in ("map", "testing", "review", "integration") and item not in planned:
+        if (row.get("role") not in ("map", "testing", "review", "integration")
+                and not is_whole_change_testing(row, d["map"]) and item not in planned):
             if int(row.get("wave") or 1) > max_wave or row.get("contract_change") == "true":
                 candidates.append(halt("extra_ticket", lid, f"补票 {item} 超出已批准波次或改动合同票",
                                        [lid], ["批准补票", "拒绝补票"]))
@@ -228,6 +262,7 @@ def detect_halt(state):
 def driver_owns_head(lanes) -> bool:
     """票实施阶段集成 HEAD 只由 Driver 移动；merger 在途或进入整体测试、评审后，别的 lane 也会合法地动它。"""
     return not any(r.get("role") in ("testing", "review")
+                   or str(r.get("work_item") or "").endswith("#testing")
                    or (r.get("role") == "integration" and r.get("state") in ACTIVE | {"terminal"})
                    for r in lanes.values())
 
@@ -374,7 +409,15 @@ def decide(state) -> dict:
                            note="ADR-0013：两轮修复仍失败，波次内重拆")
 
     # 3. frontier
+    work_types = state.get("work_types")
     task, jobs = brief_delivery.batch(tickets, by_item, done, d.get('answers', {}))
+    if jobs and work_types is not None and task not in work_types:
+        hid = f"halt:plan_change:missing-task:{task}"
+        if hid not in set(d.get("resolved_halts", ())):
+            return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
+                       reason=f"task type not defined in config: {task}",
+                       evidence=[f"{DRIVER_FILE}#plan"],
+                       options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
     if jobs and any(row.get('role') != 'map' and row.get('state') in ACTIVE for row in lanes.values()):
         return act('wait', 'wait', lanes=sorted(row['lane_id'] for row in lanes.values()
                    if row.get('state') in ACTIVE and row.get('role') != 'map'))
@@ -391,14 +434,30 @@ def decide(state) -> dict:
             continue
         if ticket['id'] in managed:
             continue
-        mode, brief = ticket.get("output_mode", "commit"), thaw(d.get("contracts", {}).get(ticket["id"]))
+        task_name = ticket.get("task", "backend")
+        mode, task_err = resolve_ticket_output_mode(ticket, work_types)
+        if task_err:
+            hid = f"halt:plan_change:missing-task:{ticket['id']}:{task_name}"
+            if hid not in set(d.get("resolved_halts", ())):
+                return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
+                           reason=task_err, evidence=[f"{DRIVER_FILE}#plan", f"ticket:{ticket['id']}"],
+                           options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
+            mode = ticket.get("output_mode", "commit")
+        brief = thaw(d.get("contracts", {}).get(ticket["id"]))
         if mode == "commit" and not brief:  # ADR-0028：没有合同不派发
             return act("prepare_contract", f"contract:{ticket['id']}", owner="delegate-ticket",
                        work_item=ticket["id"], base=state.get("integration_head"))
-        return act("dispatch", f"dispatch:{ticket['id']}", task=ticket.get("task", "backend"),
+        extra = {}
+        if ticket.get("ticket_mode"):
+            extra["ticket_mode"] = ticket["ticket_mode"]
+        if d["plan"].get("map_mode"):
+            extra["map_mode"] = d["plan"]["map_mode"]
+        if brief:
+            extra.update(contract=brief, **brief_delivery.packet(brief))
+        return act("dispatch", f"dispatch:{ticket['id']}", task=task_name,
                    output_mode=mode, work_item=ticket["id"],
                    lane_id=ticket.get("lane_id", ticket["id"]), answer=d.get("answers", {}).get(ticket["id"]),
-                   **(dict(contract=brief, **brief_delivery.packet(brief)) if brief else {}))
+                   **extra)
     if pending_hitl:
         ids = ",".join(t["id"] for t in pending_hitl)
         return act("ask_human", f"hitl:{ids}", kind="hitl",
@@ -411,21 +470,36 @@ def decide(state) -> dict:
         return act("wait", "wait", lanes=sorted(active))
 
     # 4. whole-change testing → review
-    for role, mode in (("testing", "checks"), ("review", "verdict")):
-        rows = [r for r in lanes.values() if r.get("role") == role]
-        if not rows:
-            return act("dispatch", f"dispatch:{role}", task=role, output_mode=mode, lane_id=f"{d['map']}-{role}",
-                       work_item=f"{d['map']}#{role}", strategy=thaw(d.get("test_strategy")))
-        latest = max(rows, key=lambda r: r["lane_id"])
-        if role == "review" and latest.get("verdict") == "FIX":
-            rnd = int(latest.get("round") or 1)
-            fix_id = f"judge:review_fix:{rnd}"
-            if latest.get("state") == "superseded" or fix_id in receipts:
-                continue
+    testing_rows = [r for r in lanes.values() if is_whole_change_testing(r, d["map"])]
+    if not testing_rows:
+        checks_task = resolve_checks_task(work_types)
+        if checks_task is None:
+            return act("halt", "halt:plan_change:missing-task:testing", kind="plan_change",
+                       label=HALT_CLASSES["plan_change"],
+                       reason="task type not defined in config: testing",
+                       evidence=[f"{DRIVER_FILE}#plan"],
+                       options=["在配置中补回 checks 用途任务类型后重新 run"])
+        return act("dispatch", "dispatch:testing", task=checks_task, output_mode="checks",
+                   lane_id=f"{d['map']}-testing", work_item=f"{d['map']}#testing",
+                   strategy=thaw(d.get("test_strategy")))
+    latest_testing = max(testing_rows, key=lambda r: r["lane_id"])
+    if latest_testing.get("state") not in closeout.DONE:
+        return act("wait", "wait", lanes=[latest_testing["lane_id"]])
+
+    review_rows = [r for r in lanes.values() if r.get("role") == "review"]
+    if not review_rows:
+        return act("dispatch", "dispatch:review", task="review", output_mode="verdict",
+                   lane_id=f"{d['map']}-review", work_item=f"{d['map']}#review",
+                   strategy=thaw(d.get("test_strategy")))
+    latest_review = max(review_rows, key=lambda r: r["lane_id"])
+    if latest_review.get("verdict") == "FIX":
+        rnd = int(latest_review.get("round") or 1)
+        fix_id = f"judge:review_fix:{rnd}"
+        if latest_review.get("state") != "superseded" and fix_id not in receipts:
             return act("judge", fix_id, weight="heavy", kind="review-fix",
-                       lane_id=latest["lane_id"], note="FIX findings 交同一 implementer lane 修复；反例变绿加完整测试即关闭，不开下一轮（ADR-0027）")
-        if latest.get("state") not in closeout.DONE:
-            return act("wait", "wait", lanes=[latest["lane_id"]])
+                       lane_id=latest_review["lane_id"], note="FIX findings 交同一 implementer lane 修复；反例变绿加完整测试即关闭，不开下一轮（ADR-0027）")
+    elif latest_review.get("state") not in closeout.DONE:
+        return act("wait", "wait", lanes=[latest_review["lane_id"]])
 
     # 5. Merge Review → remote
     review = (d.get("reviews") or {}).get("merge") or {}
@@ -678,11 +752,28 @@ def render(state, kind: str, preflight: str = '') -> str:
 
 # ---------- IO ----------
 
+def load_work_types() -> dict[str, str] | None:
+    """只读 CLI 配置的 task_id -> purpose 映射；配置缺失时返回 None（兼容无配置单测）。"""
+    setup_scripts = str(SCRIPTS.parents[1] / "delivery-pipeline-setup" / "scripts")
+    if setup_scripts not in sys.path:
+        sys.path.insert(0, setup_scripts)
+    import model_config
+    path = model_config.cli_config_path()
+    if not path.exists():
+        return None
+    doc = model_config.load_document(path)
+    work = model_config.normalize_work_entries(doc)
+    return {task: entry["purpose"] for task, entry in work.items()}
+
+
 def load(map_dir: Path) -> dict:
     path = map_dir / DRIVER_FILE
     driver = json.loads(path.read_text()) if path.exists() else None
     lanes = closeout.latest_rows(map_dir) if map_dir.exists() else {}
     state = {'driver': driver, 'lanes': lanes}
+    work_types = load_work_types()
+    if work_types is not None:
+        state['work_types'] = work_types
     mrow = map_row(lanes)
     if driver and mrow:
         wt = mrow.get('integration_worktree_path')

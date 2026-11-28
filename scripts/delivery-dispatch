@@ -144,7 +144,7 @@ def worker_plan(task, mode, config, turns):
         raise Failure('Claude 不支持所选 effort：' + plan['effort'])
     argv = ['claude', '-p', '--model', model, '--effort', plan['effort'], '--max-turns', str(turns),
             '--permission-mode', 'bypassPermissions', '--no-session-persistence', '--output-format', 'json']
-    return argv, env, {key: plan[key] for key in ('agent', 'model', 'effort', 'recovery_plan') if key in plan} | {'max_turns': turns}
+    return argv, env, {key: plan[key] for key in ('agent', 'model', 'effort', 'purpose', 'recovery_plan') if key in plan} | {'max_turns': turns}
 
 
 INSTRUCTION = ('先读 read_first，只改 writable 所列文件，按 check 的 argv 验收。'

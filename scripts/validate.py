@@ -961,7 +961,8 @@ def check_driver() -> None:
     for cmd in ([sys.executable, str(core), "self-test"],
                 [sys.executable, str(CORE / "scripts" / "issue_status.py"), "self-test"],
                 [sys.executable, str(HERDR / "scripts" / "driver_run_check.py")],
-                [sys.executable, str(ROOT / 'scripts/check_delivery_dispatch.py')]):
+                [sys.executable, str(ROOT / 'scripts/check_delivery_dispatch.py')],
+                [sys.executable, str(ROOT / 'scripts/check_dispatch_task_purpose.py')]):
         result = subprocess.run(cmd, text=True, capture_output=True)
         if result.returncode != 0:
             record(f"Driver check failed: {' '.join(cmd[1:])}: {(result.stdout + result.stderr).strip()[-400:]}")

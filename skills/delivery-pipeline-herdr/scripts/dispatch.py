@@ -383,7 +383,12 @@ def main() -> int:
             if args.preflight_only:
                 raise DispatchError("preflight-only requires whole-change review")
             document = mc.load_document(config)
-            config_task = "backend" if args.task == "integration" and args.task not in document["work"] else args.task
+            work = mc.normalize_work_entries(document)
+            config_task = args.task
+            if args.task == "integration" and args.output_mode == "integration" and "integration" not in work:
+                config_task = "backend" if "backend" in work else next(
+                    (t for t, entry in work.items() if entry["purpose"] == "code"), args.task
+                )
             plan = mc.resolve_plan(document, config_task,
                                    ticket_mode=args.ticket_mode, map_mode=args.map_mode,
                                    evidence=evidence, output_mode=args.output_mode)
