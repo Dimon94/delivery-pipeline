@@ -74,7 +74,7 @@ TAB = "#1 实施"
 
 
 def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", map_text=GOOD_MAP,
-        extra=(), config_document=None, probe_evidence=None):
+        extra=(), config_document=None, probe_evidence=None, task="backend", output_mode="commit"):
     (root / "state.json").write_text(json.dumps(state))
     (root / "calls.jsonl").write_text("")
     config, evidence = fixture_config(root)
@@ -91,7 +91,7 @@ def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", 
            "DP_LANE_WATCH": str(root / "watch"), **(env_extra or {})}
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--evidence", str(evidence),
-         "--task", "backend", "--output-mode", "commit", "--lane", lane, "--work-item", "https://x/1",
+         "--task", task, "--output-mode", output_mode, "--lane", lane, "--work-item", "https://x/1",
          "--title", "#1 演示", "--tab-prefix", TAB, "--worktree", str(root), "--branch", "b", "--base", "abc",
          "--packet", str(root / "packet.md"), "--registry", str(registry),
          "--map-registry", str(map_registry), *extra],
@@ -274,6 +274,31 @@ def main() -> int:
             result, registry, calls = run(root, lane, json.loads(json.dumps(base)), extra=flags)
             if result.returncode == 0 or calls or registry.exists() or "中文简写" not in result.stdout:
                 failures.append(f"label without CJK short name not rejected before herdr {flags}: {result.stdout}")
+
+        # 13. DD-691：task=integration 且 work 未定义 integration 时回退到 backend；显式定义时仍用 integration。
+        fb_doc = mc.valid_fixture()
+        fb_doc["work"].pop("integration", None)
+        result, registry, _ = run(
+            root, "lane-int-fb", json.loads(json.dumps(base)),
+            task="integration", output_mode="integration", config_document=fb_doc,
+        )
+        fb_row, _ = lane_registry.read(registry, "lane-int-fb") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or fb_row.get("state") != "running" or fb_row.get("role") != "integration"
+                or fb_row.get("model") != fb_doc["work"]["backend"]["model"]
+                or fb_row.get("effort") != fb_doc["work"]["backend"]["effort"]):
+            failures.append(f"integration fallback to backend failed: rc={result.returncode} out={result.stdout} row={fb_row}")
+
+        ex_doc = mc.valid_fixture()
+        ex_doc["work"]["backend"] = {"agent": "pi", "model": "provider/model", "effort": "high", "fallbacks": []}
+        ex_doc["work"]["integration"] = {"agent": "pi", "model": "provider/model", "effort": "low"}
+        result, registry, _ = run(
+            root, "lane-int-ex", json.loads(json.dumps(base)),
+            task="integration", output_mode="integration", config_document=ex_doc,
+        )
+        ex_row, _ = lane_registry.read(registry, "lane-int-ex") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or ex_row.get("state") != "running" or ex_row.get("role") != "integration"
+                or ex_row.get("effort") != "low"):
+            failures.append(f"explicit integration config was not used: rc={result.returncode} out={result.stdout} row={ex_row}")
 
     for failure in failures:
         print(f"FAIL {failure}")

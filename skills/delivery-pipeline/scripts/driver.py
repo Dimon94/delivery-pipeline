@@ -796,7 +796,13 @@ def exec_fan_in(map_dir: Path, state, action) -> dict:
         return {"state": "blocked", "blocked_reason": why}
     drift = {"scope_drift": "、".join(outside)} if outside else {}  # 越界只记偏差，合并评审页显示
     if run_git(wt, "cherry-pick", commit).returncode != 0:
+        empty = (run_git(wt, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").returncode == 0
+                 and not run_git(wt, "diff", "--name-only", "--diff-filter=U").stdout.strip()
+                 and run_git(wt, "diff", "--cached", "--quiet").returncode == 0)
         run_git(wt, "cherry-pick", "--abort")
+        if empty:
+            head = run_git(wt, "rev-parse", "HEAD").stdout.strip()
+            return {"state": "integrated", "integrated_commit": head, **drift}
         return {"state": "integration_conflict", "blocked_reason": "cherry-pick 冲突"}
     head = run_git(wt, "rev-parse", "HEAD").stdout.strip()
     same = run_git(wt, "rev-parse", "HEAD^{tree}").stdout.strip() == run_git(wt, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
@@ -1136,6 +1142,7 @@ def self_test() -> int:
     failures += _io_self_test()
     failures += _issue_sync_self_test()
     failures += _contract_self_test()
+    failures += _idempotent_fan_in_self_test()
     failures += _repair_fan_in_self_test()
     failures += _head_guard_self_test()
     failures += _planning_self_test()
@@ -1291,6 +1298,67 @@ def _contract_self_test() -> list[str]:
         blocked = _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="合同违约：验收命令退出 1"))
         if decide(blocked)["id"] != "judge:diagnose:T1:1":
             failures.append("合同违约应进既有诊断修复链")
+    return failures
+
+
+def _idempotent_fan_in_self_test() -> list[str]:
+    """DD-691：待集成提交的改动已完全在集成 HEAD 中（空 cherry-pick / 相同 tree）应幂等收口，真实冲突仍判 integration_conflict。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, tree = str(Path(tmp, "repo")), str(Path(tmp, "lane"))
+        git = brief_delivery.git
+        subprocess.run(["git", "init", "-qb", "integration", repo], check=True)
+        for kv in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+            git(repo, "config", *kv)
+        Path(repo, "README.md").write_text("base\n")
+        git(repo, "add", "--", "README.md")
+        git(repo, "commit", "-qm", "base")
+        base = git(repo, "rev-parse", "HEAD")
+        git(repo, "worktree", "add", "-qb", "lane", tree)
+        Path(tree, "a.txt").write_text("ok\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "-qm", "work")
+        c1 = git(tree, "rev-parse", "HEAD")
+
+        def fan_in(commit, contract):
+            row = _lane("T1", "terminal", head_commit=commit, worktree=tree)
+            state = _state(_granted(contracts={"T1": contract}), dict(MAP, integration_worktree_path=repo), row)
+            return exec_fan_in(Path(tmp), state, decide(state))
+
+        # 先在集成树落入相同改动（不同 commit SHA，相同 tree），模拟已集成后重复 fan-in。
+        Path(repo, "a.txt").write_text("ok\n")
+        git(repo, "add", "--", "a.txt")
+        git(repo, "commit", "-qm", "integrated")
+        head1 = git(repo, "rev-parse", "HEAD")
+
+        # 1. 相同 tree 重复集成（空 cherry-pick）→ 幂等收口，不得误判 integration_conflict。
+        dup = fan_in(c1, _brief("T1"))
+        if (dup.get("state") != "integrated" or dup.get("integrated_commit") != head1
+                or git(repo, "rev-parse", "HEAD") != head1 or git(repo, "status", "--porcelain")
+                or run_git(repo, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").returncode == 0):
+            failures.append(f"相同 tree 重复 fan-in 应幂等 integrated，got {dup}")
+
+        # 2. 集成 HEAD 另有其他提交（tree 不同，但 c1 改动已全部在 HEAD 中）→ 同样按已集成幂等收口。
+        Path(repo, "extra.txt").write_text("extra\n")
+        git(repo, "add", "--", "extra.txt")
+        git(repo, "commit", "-qm", "extra")
+        head2 = git(repo, "rev-parse", "HEAD")
+        subset = fan_in(c1, _brief("T1"))
+        if (subset.get("state") != "integrated" or subset.get("integrated_commit") != head2
+                or git(repo, "rev-parse", "HEAD") != head2 or git(repo, "status", "--porcelain")):
+            failures.append(f"改动已在集成 HEAD 中的空 cherry-pick 应幂等 integrated，got {subset}")
+
+        # 3. 真实冲突仍应返回 integration_conflict 并清理 CHERRY_PICK_HEAD。
+        git(tree, "reset", "-q", "--hard", base)
+        Path(tree, "a.txt").write_text("conflict\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "-qm", "conflict")
+        c2 = git(tree, "rev-parse", "HEAD")
+        conflict = fan_in(c2, _brief("T1", check=["git", "grep", "-q", "conflict", "HEAD", "--", "a.txt"], expected="a.txt 含 conflict"))
+        if (conflict.get("state") != "integration_conflict"
+                or git(repo, "rev-parse", "HEAD") != head2 or git(repo, "status", "--porcelain")
+                or run_git(repo, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").returncode == 0):
+            failures.append(f"真实冲突应仍判 integration_conflict，got {conflict}")
     return failures
 
 

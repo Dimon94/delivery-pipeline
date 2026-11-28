@@ -381,7 +381,9 @@ def main() -> int:
         else:
             if args.preflight_only:
                 raise DispatchError("preflight-only requires whole-change review")
-            plan = mc.resolve_plan(mc.load_document(config), args.task,
+            document = mc.load_document(config)
+            config_task = "backend" if args.task == "integration" and args.task not in document["work"] else args.task
+            plan = mc.resolve_plan(document, config_task,
                                    ticket_mode=args.ticket_mode, map_mode=args.map_mode,
                                    evidence=evidence, output_mode=args.output_mode)
         frozen = mc.freeze_overlay(plan)
