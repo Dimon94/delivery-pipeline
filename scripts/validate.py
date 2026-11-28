@@ -336,7 +336,7 @@ def check_model_contract() -> None:
             record(
                 f"model config fixture self-test failed: {result.stdout}{result.stderr}"
             )
-    for check in ("check_r1_replacement.py", "check_lody_native_replacement.py", "check_orca_native_replacement.py", "check_t3_native_replacement.py", "check_herdr_native_replacement.py", "check_replacement.py", "check_replacement_branches.py", "replacement_model.py", "check_frozen_lane.py", "check_config_fallbacks.py", "check_config_task_types.py", "check_config_lane.py", "check_config_apply.py", "check_config_probe.py", "check_config_install.py", "check_config_toml.py", "check_config_transaction.py", "model_config_transaction_model.py"):
+    for check in ("check_r1_replacement.py", "check_lody_native_replacement.py", "check_orca_native_replacement.py", "check_t3_native_replacement.py", "check_herdr_native_replacement.py", "check_replacement.py", "check_replacement_branches.py", "replacement_model.py", "check_frozen_lane.py", "check_config_fallbacks.py", "check_config_task_types.py", "check_config_task_purpose.py", "check_config_lane.py", "check_config_apply.py", "check_config_probe.py", "check_config_install.py", "check_config_toml.py", "check_config_transaction.py", "model_config_transaction_model.py"):
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / check)],
                                 text=True, capture_output=True)
         if result.returncode != 0:

@@ -243,15 +243,13 @@ def choose_review_candidate(pool: list[dict], runnable: list[bool],
 
 
 def preview_review_choice(document: dict, evidence: dict) -> dict:
-    """按当前草稿的设计/前端/后端主模型预计；不探测、不修改输入。"""
-    errors = validate_document(document)
-    if errors:
-        raise ValueError('; '.join(errors))
+    """按当前草稿 purpose 为 code 的任务类型主模型预计；不探测、不修改输入。"""
+    work = normalize_work_entries(document)
     if (not isinstance(evidence, dict) or not evidence.get('request_id')
             or not evidence.get('observed_at') or not isinstance(evidence.get('sources'), dict)
             or not isinstance(evidence.get('capabilities'), dict)):
         raise ValueError('preview-review requires complete current probe evidence')
-    implementations = [triple(document['work'][task]) for task in ('design', 'frontend', 'backend')]
+    implementations = [triple(entry) for entry in work.values() if entry['purpose'] == 'code']
     axes = {axis: [triple(cell), *cell['candidates']]
             for axis, cell in document['review']['whole-change'].items() if cell['candidates']}
     for identity in [*implementations, *(item for pool in axes.values() for item in pool)]:
@@ -1476,17 +1474,15 @@ def resolve_plan(
     output_mode: str | None = None,
 ) -> dict:
     """解析并冻结一条 lane 的 mode 与模型选择，不修改配置。"""
-    errors = validate_document(document)
-    if errors:
-        raise ValueError("; ".join(errors))
-    if task not in TASK_TYPES:
-        raise ValueError(f"unknown task type: {task}")
-    if task not in document["work"]:
+    work = normalize_work_entries(document)
+    if task not in work:
         raise ValueError(f"task type not defined in config: {task}")
-    entry = document["work"][task]
+    entry = work[task]
+    purpose = entry["purpose"]
+    is_code = purpose == "code"
     recovery = {}
-    if document.get("version") in (6, 7, 8, 9) and task in CLI_REQUIRED_WORK:
-        explicit = task in IMPLEMENTATION_TASKS and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
+    if document.get("version") == 9 or task in CLI_REQUIRED_WORK:
+        explicit = is_code and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
         recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
                     "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
                     "recovery_progress": {"current_index": None, "next_cursor": 0}}
@@ -1494,11 +1490,12 @@ def resolve_plan(
         **recovery,
         "version": 5,
         "task": task,
+        "purpose": purpose,
         "agent": entry["agent"],
         "model": entry["model"],
         "effort": entry["effort"],
     }
-    if task not in IMPLEMENTATION_TASKS or output_mode != "commit":
+    if not is_code or output_mode != "commit":
         if evidence is None:
             capability = "unknown"
         else:
@@ -2402,11 +2399,42 @@ def self_test() -> list[str]:
         failures.append("normalize_work_entries did not match v9 migrated work entries")
     v9_custom = copy.deepcopy(v9)
     v9_custom["work"]["advisory-doc"] = {
-        "agent": "pi", "model": "provider/model", "effort": "high", "fallbacks": [],
+        "agent": "pi", "model": "provider/model", "effort": "high",
+        "fallbacks": [{"agent": "pi", "model": "provider/model", "effort": "low"}],
         "label": "咨询建议", "hint": "输出调研与方案建议文档", "purpose": "artifact",
+    }
+    v9_custom["work"]["rust-service"] = {
+        "agent": "pi", "model": "provider/model", "effort": "high", "fallbacks": [],
+        "label": "Rust 服务", "hint": "写 Rust 后端代码", "purpose": "code",
     }
     if validate_document(v9_custom):
         failures.append("valid v9 config with custom task type was rejected")
+    advisory_plan = resolve_plan(v9_custom, "advisory-doc", ticket_mode="standard", output_mode="artifact")
+    if (
+        advisory_plan["purpose"] != "artifact"
+        or advisory_plan["mode"] != "none"
+        or advisory_plan["effort"] != "high"
+        or advisory_plan["recovery_plan"]["source"] != "work"
+        or len(advisory_plan["recovery_plan"]["fallbacks"]) != 1
+    ):
+        failures.append("v9 artifact task type did not resolve without modes and with fallbacks")
+    rust_plan = resolve_plan(v9_custom, "rust-service", ticket_mode="standard", output_mode="commit")
+    if (
+        rust_plan["purpose"] != "code"
+        or rust_plan["mode"] != "direct"
+        or rust_plan["mode_name"] != "standard"
+        or rust_plan["effort"] != "low"
+    ):
+        failures.append("v9 code task type did not apply explicit mode on commit")
+    v9_removed = copy.deepcopy(v9_custom)
+    del v9_removed["work"]["advisory-doc"]
+    try:
+        resolve_plan(v9_removed, "advisory-doc", output_mode="artifact")
+    except ValueError as err:
+        if str(err) != "task type not defined in config: advisory-doc":
+            failures.append(f"unexpected error for removed task type: {err}")
+    else:
+        failures.append("removed v9 task type was resolved instead of rejected")
     v9_min = copy.deepcopy(v9)
     del v9_min["work"]["frontend"]
     del v9_min["work"]["design"]

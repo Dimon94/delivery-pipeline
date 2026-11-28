@@ -143,7 +143,7 @@ AI setup 显式 migrate 将 CLI v5 升 v6，仅补空列表；更旧版本先沿
 `request_id`、`observed_at`、`sources`、`capabilities`；缺完整核对证据时报错。
 仅返回整体交付检查中有候选的轴，每轴含 `selected`、`selected_index`、`outcome`、`unrecognized`。
 `outcome` 为 `different`、`no_different_family`、`unrecognized` 或 `none_runnable`；
-无可运行模型时选择与索引均为 null。写代码一方取设计、前端、后端主模型，运行时则取实际执行身份，
+无可运行模型时选择与索引均为 null。写代码一方取 `purpose == "code"` 的任务类型主模型（内置即设计、前端、后端），运行时则取实际执行身份，
 所以预览按当前设置推算，可能与备用接替后的结果不同。预览与运行时共用同一选择规则。
 
 ## v9：任务类型目录与用途约束（DD-684）
@@ -160,3 +160,4 @@ CLI v9 将 `work` 改为用户可维护的任务类型目录，每个 key 即任
   - `backend`：显示名 `后端开发`，说明 `写服务端代码`，用途 `code`
   - `testing`：显示名 `测试`，说明 `写测试并验证`，用途 `checks`
 - **只读兼容与原子升级**：CLI v6–v8 仍通过 `validate_document`，内存经 `normalize_work_entries` 补齐默认元信息；`show` 只读不改字节与 hash，v9 时 `cells` 按当前 `work` 键动态生成；`migrate` 与 `apply` 经同一 sidecar 锁/hash/replace/readback 原子事务升级到 v9，重复迁移返回 `changed: false` 且零写入。App 配置保持 v5 不变。
+- **按用途解析与已删除类型阻断（DD-688）**：`resolve_plan` 经 `normalize_work_entries` 按配置中定义的任务类型解析，返回 `purpose` 字段；仅 `purpose == "code"` 且 `output_mode == "commit"` 时允许显式 `modes` 覆盖，其余用途或非 `commit` 均直接走该任务类型的主三元组与 `fallbacks` 且不套 `modes`。`preview_review_choice` 将所有 `purpose == "code"` 任务类型的主模型计入写代码一方厂商，不计非 `code` 用途。配置删除某任务类型后，`resolve_plan` 及 CLI `resolve` / `start` 均报错 `task type not defined in config: <task>` 且不返回任何回落模型；已在 registry 冻结 `recovery_plan` 的 lane 仍经 `recover_registry` 返回原冻结计划。
