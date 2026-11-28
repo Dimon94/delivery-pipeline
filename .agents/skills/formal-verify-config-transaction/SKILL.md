@@ -31,3 +31,5 @@ DD-411：CLI v6 的 fallbacks 与主配置共用原 prepare/锁/hash/replace/rea
 DD-511：CLI v7 的有序 review candidates 与 model_families 进入既有 apply/configure prepare；锁、hash、replace、精确读回、崩溃与失败分类均不改变。check_config_review.py --case candidate-family-transaction 补四格保序/重复计数/仅声明/no-op/stale/pre/post 与真实双进程同基线竞争；原模型与进程检查继续覆盖同一事务，不新增 owner。同步代码坐标由 DD-511/result.md 与 git log 定位。
 
 DD-685：CLI v9 的任务类型目录校验与 v6–v8→v9 升级复用既有 `configuration_transaction`（migrate 与 apply 的 prepare 内执行确定性转换与结构校验）；锁、hash、replace、精确读回、崩溃与失败分类均不改变。`scripts/check_config_task_types.py` 补 v8→v9 迁移幂等（第二次 `changed=false` 零写入）、`show` 只读、必需用途底线拒绝与 v8→v9 原子 `apply` 回归；原 75 状态模型与真实进程检查继续覆盖同一事务，不新增 formal owner。
+
+DD-687：v9 `apply` 的 `prepare` 放开 `work` 任务类型目录增删改（保持 `modes` 只读）并沿用 `validate_selection` 按三元组变更放行能力证据，完全位于锁内核对基线之后、`os.replace` 之前；锁、hash、replace、精确读回、崩溃与失败分类均不改变。`scripts/check_config_apply.py` 与 `scripts/check_config_task_types.py` 补 S2（新增自定义任务类型与 `modes` 只读保护）与 S5（原模型不可用时仅改元数据/删可选类型放行，新增或改模型缺证据返 `capability_unavailable`）回归；原 75 状态模型与真实进程检查继续覆盖同一事务，不新增 formal owner。

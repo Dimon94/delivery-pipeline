@@ -94,9 +94,9 @@ def check() -> None:
         assert app_path.read_bytes() == app_before
         assert json.loads(app_path.read_text(encoding="utf-8"))["version"] == 5
 
-        # S2（R1）：含自定义 work.advisory-doc 的 v9 文档校验通过，show.cells 出现 work.advisory-doc。
-        custom = copy.deepcopy(migrated)
-        custom["work"]["advisory-doc"] = {
+        # S2（R1/DD-687）：v9 候选新增 work.advisory-doc（purpose artifact，三元组在本次 request_id 证据内），
+        # apply 返回 applied，show 读回含全部字段且 modes 字节级不变；同一候选改 modes 被拒且原字节不变。
+        advisory_entry = {
             "agent": "pi",
             "model": "provider/model",
             "effort": "high",
@@ -105,14 +105,163 @@ def check() -> None:
             "hint": "输出调研与方案建议文档",
             "purpose": "artifact",
         }
+        custom = copy.deepcopy(migrated)
+        custom["work"]["advisory-doc"] = copy.deepcopy(advisory_entry)
         assert m.validate_document(custom) == []
-        cli_path.write_text(json.dumps(custom, indent=2) + "\n", encoding="utf-8")
+
+        v9_before_s2 = cli_path.read_bytes()
+        v9_hash_s2 = hashlib.sha256(v9_before_s2).hexdigest()
+        modes_bytes = json.dumps(migrated["modes"], ensure_ascii=False, indent=2).encode("utf-8")
+
+        custom_tampered_modes = copy.deepcopy(custom)
+        custom_tampered_modes["modes"] = {}
+        code, rej_modes = _run(
+            cli_path,
+            "apply",
+            custom_tampered_modes,
+            "--base-hash",
+            v9_hash_s2,
+            "--request-id",
+            "req-v9",
+            "--evidence",
+            str(ev_path),
+        )
+        assert code == 1 and rej_modes["status"] == "rejected", rej_modes
+        assert cli_path.read_bytes() == v9_before_s2
+
+        code, applied_s2 = _run(
+            cli_path,
+            "apply",
+            custom,
+            "--base-hash",
+            v9_hash_s2,
+            "--request-id",
+            "req-v9",
+            "--evidence",
+            str(ev_path),
+        )
+        assert code == 0 and applied_s2["status"] == "applied" and applied_s2["changed"] is True, applied_s2
         custom_raw = cli_path.read_bytes()
         code, shown = _run(cli_path, "show")
         assert code == 0 and shown["file_state"] == "ready" and shown["validation"]["valid"] is True, shown
+        assert shown["config"]["work"]["advisory-doc"] == advisory_entry
+        assert json.dumps(shown["config"]["modes"], ensure_ascii=False, indent=2).encode("utf-8") == modes_bytes
         assert "work.advisory-doc" in shown["cells"]
         assert shown["cells"]["work.advisory-doc"] == {"status": "unknown"}
         assert cli_path.read_bytes() == custom_raw
+
+        # S5（DD-687）：原模型能力不可用且三元组未改时，改 label/hint 或删另一可选类型不带新证据也 applied；
+        # 新增类型或改该类型模型缺本次证据时返回 capability_unavailable 且磁盘原字节不变。
+        s5_base = copy.deepcopy(migrated)
+        s5_base["work"]["backend"]["model"] = "provider/unavailable-model"
+        cli_path.write_text(json.dumps(s5_base, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        unavail_ev_path = root / "evidence-unavailable.json"
+        unavail_ev_path.write_text(
+            json.dumps(
+                {
+                    "request_id": "req-s5",
+                    "observed_at": "2026-11-27T12:10:00Z",
+                    "sources": {a: {"status": "unknown"} for a in ("pi", "codex", "claude", "antigravity")},
+                    "capabilities": {a: {"binary": True, "models": {}} for a in ("pi", "codex", "claude", "antigravity")},
+                }
+            ),
+            encoding="utf-8",
+        )
+        s5_hash = hashlib.sha256(cli_path.read_bytes()).hexdigest()
+        s5_meta = copy.deepcopy(s5_base)
+        s5_meta["work"]["backend"]["label"] = "服务端"
+        s5_meta["work"]["backend"]["hint"] = "只改描述不改模型"
+        code, res_s5_meta = _run(
+            cli_path,
+            "apply",
+            s5_meta,
+            "--base-hash",
+            s5_hash,
+            "--request-id",
+            "req-s5",
+            "--evidence",
+            str(unavail_ev_path),
+        )
+        assert code == 0 and res_s5_meta["status"] == "applied" and res_s5_meta["changed"] is True, res_s5_meta
+        assert res_s5_meta["config"]["work"]["backend"]["label"] == "服务端"
+        assert res_s5_meta["config"]["work"]["backend"]["model"] == "provider/unavailable-model"
+
+        s5_hash = res_s5_meta["base_hash"]
+        s5_del = copy.deepcopy(s5_meta)
+        del s5_del["work"]["design"]
+        code, res_s5_del = _run(
+            cli_path,
+            "apply",
+            s5_del,
+            "--base-hash",
+            s5_hash,
+            "--request-id",
+            "req-s5",
+            "--evidence",
+            str(unavail_ev_path),
+        )
+        assert code == 0 and res_s5_del["status"] == "applied" and res_s5_del["changed"] is True, res_s5_del
+        assert "design" not in res_s5_del["config"]["work"]
+
+        # 不传证据对象（evidence=None）时，仅改 hint 也 applied。
+        s5_hash = res_s5_del["base_hash"]
+        s5_hint = copy.deepcopy(s5_del)
+        s5_hint["work"]["backend"]["hint"] = "无证据更新说明"
+        res_s5_none = m.apply(cli_path, s5_hint, s5_hash, None, "req-s5-none")
+        assert res_s5_none["status"] == "applied" and res_s5_none["changed"] is True, res_s5_none
+
+        s5_raw = cli_path.read_bytes()
+        s5_hash = hashlib.sha256(s5_raw).hexdigest()
+        s5_add = copy.deepcopy(s5_hint)
+        s5_add["work"]["advisory-doc"] = copy.deepcopy(advisory_entry)
+        code, res_s5_add = _run(
+            cli_path,
+            "apply",
+            s5_add,
+            "--base-hash",
+            s5_hash,
+            "--request-id",
+            "req-s5",
+            "--evidence",
+            str(unavail_ev_path),
+        )
+        assert code == 1 and res_s5_add["status"] == "rejected" and res_s5_add["error"]["code"] == "capability_unavailable", res_s5_add
+        assert cli_path.read_bytes() == s5_raw
+
+        s5_change = copy.deepcopy(s5_hint)
+        s5_change["work"]["backend"]["model"] = "provider/model"
+        code, res_s5_change = _run(
+            cli_path,
+            "apply",
+            s5_change,
+            "--base-hash",
+            s5_hash,
+            "--request-id",
+            "req-s5",
+            "--evidence",
+            str(unavail_ev_path),
+        )
+        assert code == 1 and res_s5_change["status"] == "rejected" and res_s5_change["error"]["code"] == "capability_unavailable", res_s5_change
+        assert cli_path.read_bytes() == s5_raw
+
+        # 旧 request_id 证据与 evidence=None 均拒绝改动模型并保持原字节。
+        code, res_s5_stale = _run(
+            cli_path,
+            "apply",
+            s5_change,
+            "--base-hash",
+            s5_hash,
+            "--request-id",
+            "req-s5-new",
+            "--evidence",
+            str(ev_path),
+        )
+        assert code == 1 and res_s5_stale["status"] == "rejected" and res_s5_stale["error"]["code"] == "capability_unavailable", res_s5_stale
+        assert cli_path.read_bytes() == s5_raw
+
+        res_s5_none_rej = m.apply(cli_path, s5_add, s5_hash, None, "req-s5-none")
+        assert res_s5_none_rej["status"] == "rejected" and res_s5_none_rej["error"]["code"] == "capability_unavailable", res_s5_none_rej
+        assert cli_path.read_bytes() == s5_raw
 
         # S3（R2）：删 frontend/design 通过；删最后一个 code/planning/checks 报错且 apply 拒绝不改字节。
         minimal = copy.deepcopy(migrated)

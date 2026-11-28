@@ -993,17 +993,13 @@ def apply(path: Path, candidate: dict, base_hash: str,
         errors = validate_document(candidate)
         if errors:
             raise ConfigRejected("invalid_candidate", "; ".join(errors))
-        # 仅替换九格的三元组；同一格的其他合法字段也属于只读区。
+        # v6–v8 仅替换九格的三元组与有序列表；v9 允许维护整个 work 任务类型目录，
+        # modes 等只读区始终保持原值。
         permitted = copy.deepcopy(previous)
         if candidate["version"] == 9 and permitted["version"] in (6, 7, 8):
             permitted, _ = migrate_document(permitted)
         if permitted["version"] == 9:
-            for task, old in permitted["work"].items():
-                if task in candidate["work"]:
-                    new = candidate["work"][task]
-                    for field in ("agent", "model", "effort"):
-                        old[field] = new[field]
-                    old["fallbacks"] = copy.deepcopy(new["fallbacks"])
+            permitted["work"] = copy.deepcopy(candidate["work"])
             for scope in REVIEW_SCOPES:
                 for axis in REVIEW_AXES:
                     old = permitted["review"][scope][axis]
@@ -2456,6 +2452,32 @@ def self_test() -> list[str]:
         second = migrate_path(path)
         if second["changed"] is not False:
             failures.append("repeated migrate_path did not report changed=False")
+        v9_path = Path(directory) / "v9.json"
+        v9_path.write_text(json.dumps(v9, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        v9_hash = hashlib.sha256(v9_path.read_bytes()).hexdigest()
+        v9_ev = {
+            "request_id": "self-test-v9",
+            "observed_at": "2026-11-27T12:00:00Z",
+            "sources": {agent: {"status": "ok"} for agent in sorted(CLI_AGENTS)},
+            "capabilities": evidence,
+        }
+        res_add = apply(v9_path, v9_custom, v9_hash, v9_ev, "self-test-v9")
+        if res_add["status"] != "applied" or "advisory-doc" not in res_add["config"]["work"]:
+            failures.append("v9 apply did not save added custom task type")
+        v9_hash = res_add["base_hash"]
+        meta_edit = copy.deepcopy(res_add["config"])
+        meta_edit["work"]["backend"]["label"] = "服务端"
+        meta_edit["work"]["backend"]["hint"] = "维护后端接口"
+        del meta_edit["work"]["design"]
+        res_meta = apply(v9_path, meta_edit, v9_hash, None, "self-test-meta")
+        if res_meta["status"] != "applied" or "design" in res_meta["config"]["work"]:
+            failures.append("v9 apply rejected metadata edit or optional delete without new evidence")
+        v9_hash = res_meta["base_hash"]
+        changed_model = copy.deepcopy(res_meta["config"])
+        changed_model["work"]["backend"]["effort"] = "low"
+        res_no_ev = apply(v9_path, changed_model, v9_hash, None, "self-test-no-ev")
+        if res_no_ev["status"] != "rejected" or res_no_ev["error"]["code"] != "capability_unavailable":
+            failures.append("v9 apply allowed model change without capability evidence")
     return failures
 
 
