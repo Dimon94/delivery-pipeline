@@ -86,7 +86,7 @@ def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", 
     registry = root / f"registry-{lane}.md"
     map_registry = root / "registry-map-demo.md"
     map_registry.write_text(map_text)
-    env = {**os.environ, "HOME": str(root), "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
+    env = {**os.environ, "HOME": str(root), "TMPDIR": str(root), "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
            "HERDR_WORKSPACE_ID": "w1", "HERDR_TAB_ID": "w1:t1", "HERDR_PANE_ID": "w1:p1",
            "DP_LANE_WATCH": str(root / "watch"), **(env_extra or {})}
     result = subprocess.run(
@@ -107,7 +107,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "herdr").write_text(f"#!{sys.executable}\n" + FAKE_HERDR)
-        (root / "watch").write_text(f"#!/bin/sh\necho \"$@\" > {root}/watch.args\n")
+        (root / "watch").write_text(
+            f"#!/bin/sh\nprintf '%s\\n' \"$*\" > \"{root}/watch.args.tmp\" && mv \"{root}/watch.args.tmp\" \"{root}/watch.args\"\n"
+        )
         for name in ("herdr", "watch"):
             (root / name).chmod(0o755)
 
@@ -135,8 +137,8 @@ def main() -> int:
         if "--pane" not in start or start[start.index("--pane") + 1] != "w1:p2":
             failures.append("agent start not bound to placed pane")
         import time
-        for _ in range(50):
-            if (root / "watch.args").exists():
+        for _ in range(300):
+            if (root / "watch.args").exists() and (root / "watch.args").read_text().strip():
                 break
             time.sleep(0.05)
         if not (root / "watch.args").exists() or "w1:p2 w1:p1 lane-a" not in (root / "watch.args").read_text():

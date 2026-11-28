@@ -436,7 +436,7 @@ def main() -> int:
             if not wait_working(name):
                 subprocess.run(["herdr", "pane", "close", pane["pane_id"]], capture_output=True)
                 raise DispatchError("agent did not reach working after one re-prompt")
-        log = open(f"/tmp/lane-watch-{name}.log", "ab")
+        log = open(Path(os.environ.get("TMPDIR", "/tmp")) / f"lane-watch-{name}.log", "ab")
         watch_env = dict(os.environ)
         if args.map_registry != "none" and (Path(args.map_registry).parent / "driver.json").exists():
             watch_env["LANE_WATCH_MAP_DIR"] = str(Path(args.map_registry).parent)  # ADR-0026：终态先交 Driver

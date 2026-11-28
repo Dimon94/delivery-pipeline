@@ -237,6 +237,11 @@ def owner_action_id(d, gate, prefix):
     return f"{prefix}:{attempt}" if attempt else prefix
 
 
+def lane_attempt_id(prefix: str, row) -> str:
+    repairs = int(row.get("repairs") or 0)
+    return f"{prefix}:{row['lane_id']}:{repairs}" if repairs else f"{prefix}:{row['lane_id']}"
+
+
 def decide_planning(state):
     """无 Autonomy Grant：沿 owner 链完成计划检查或转 Epic。"""
     d = state["driver"]
@@ -331,9 +336,9 @@ def decide(state) -> dict:
             continue
         if st == "terminal":
             if row.get("output_mode") == "commit":
-                return act("fan_in", f"fan_in:{lid}", lane_id=lid, commit=row.get("head_commit"),
+                return act("fan_in", lane_attempt_id("fan_in", row), lane_id=lid, commit=row.get("head_commit"),
                            integration=mrow.get("integration_worktree_path"))
-            return act("consume", f"consume:{lid}", lane_id=lid, output_mode=row.get("output_mode"),
+            return act("consume", lane_attempt_id("consume", row), lane_id=lid, output_mode=row.get("output_mode"),
                        verdict=row.get("verdict"))
         if row.get('work_item') in managed and not done(row['work_item']):
             continue
@@ -1042,7 +1047,9 @@ def _cases():
         ("dispatch-frontier", _state(_granted(), MAP), "dispatch", "dispatch:T1"),
         ("dep-wait", _state(_granted(), MAP, _lane("T1", "running")), "wait", "wait"),
         ("fan-in", _state(_granted(), MAP, _lane("T1", "terminal", head_commit="c")), "fan_in", "fan_in:T1"),
+        ("fan-in-repaired", _state(_granted(), MAP, _lane("T1", "terminal", head_commit="c2", repairs="1")), "fan_in", "fan_in:T1:1"),
         ("consume", _state(_granted(), MAP, _lane("T1", "terminal", output_mode="artifact")), "consume", "consume:T1"),
+        ("consume-repaired", _state(_granted(), MAP, _lane("T1", "terminal", output_mode="checks", repairs="1")), "consume", "consume:T1:1"),
         ("closeout", _state(_granted(), MAP, _lane("T1", "integrated")), "closeout", "closeout:T1"),
         ("merger", _state(_granted(), MAP, _lane("T1", "integration_conflict")), "dispatch", "dispatch:merger:T1"),
         ("foreign-head", _moved(_state(_granted(integration_seen="a"), MAP, _lane("T1", "integration_conflict"))),
@@ -1129,6 +1136,7 @@ def self_test() -> int:
     failures += _io_self_test()
     failures += _issue_sync_self_test()
     failures += _contract_self_test()
+    failures += _repair_fan_in_self_test()
     failures += _head_guard_self_test()
     failures += _planning_self_test()
     failures += _review_html_self_test()
@@ -1283,6 +1291,77 @@ def _contract_self_test() -> list[str]:
         blocked = _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="合同违约：验收命令退出 1"))
         if decide(blocked)["id"] != "judge:diagnose:T1:1":
             failures.append("合同违约应进既有诊断修复链")
+    return failures
+
+
+def _repair_fan_in_self_test() -> list[str]:
+    """DD-690：blocked → repair → 再次 fan-in / consume 必须推进状态，不得当成重复回执死循环。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        md, repo, tree = Path(tmp, "map"), str(Path(tmp, "repo")), str(Path(tmp, "lane"))
+        md.mkdir()
+        git = brief_delivery.git
+        subprocess.run(["git", "init", "-qb", "integration", repo], check=True)
+        for kv in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+            git(repo, "config", *kv)
+        Path(repo, "README.md").write_text("base\n")
+        git(repo, "add", "--", "README.md")
+        git(repo, "commit", "-qm", "base")
+        git(repo, "worktree", "add", "-qb", "lane", tree)
+        Path(tree, "a.txt").write_text("no\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "-qm", "bad")
+        bad_commit = git(tree, "rev-parse", "HEAD")
+
+        registry = str(md / "registry.md")
+        write_json(md / DRIVER_FILE, _granted())
+        persist_lanes(md, [
+            dict(MAP, integration_worktree_path=repo, _file=registry),
+            dict(_lane("T1", "terminal", head_commit=bad_commit, worktree=tree), _file=registry),
+        ])
+        first = run(md, limit=20)
+        if first["id"] != "judge:diagnose:T1:1":
+            return [f"首次合同违约应交回验收诊断，got {first}"]
+        record(md, "judge:diagnose:T1:1", {"lane_id": "T1"})
+        Path(tree, "a.txt").write_text("ok\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "--amend", "-qm", "fix")
+        good_commit = git(tree, "rev-parse", "HEAD")
+        if signal(md, f"LANE_DONE T1 {good_commit}")["signal"] != "recorded":
+            return ["修复后终态行应写入 terminal"]
+        try:
+            after = run(md, executors={"closeout": lambda *_: {"result": "closed"}}, limit=20)
+        except RuntimeError as exc:
+            return [f"修复后再次 fan-in 死循环：{exc}"]
+        t1 = load(md)["lanes"]["T1"]
+        if after["id"] != "dispatch:T2" or t1["state"] != "closed" or Path(repo, "a.txt").read_text() != "ok\n":
+            failures.append(f"修复后再次 fan-in 应集成、收口并推进到 T2，got after={after} lane={t1}")
+        if record(md, "fan_in:T1:1", {"state": "integrated"}).get("duplicate") is not True:
+            failures.append("新轮次 fan_in:T1:1 的重复回执仍应幂等")
+
+        # 同类路径：consume（checks 失败 → blocked → repair → 再次 consume）
+        md2 = Path(tmp, "map2")
+        md2.mkdir()
+        reg2 = str(md2 / "registry.md")
+        write_json(md2 / DRIVER_FILE, _granted())
+        persist_lanes(md2, [
+            dict(MAP, _file=reg2),
+            *[dict(_lane(i, "closed"), _file=reg2) for i in ("T1", "T2", "T3", "T4")],
+            dict(_lane("m1-testing", "terminal", role="testing", work_item="m1#testing",
+                       output_mode="checks", checks="fail"), _file=reg2),
+        ])
+        if run(md2, limit=20)["id"] != "judge:diagnose:m1-testing:1":
+            failures.append("testing checks 失败应进入诊断修复")
+        else:
+            record(md2, "judge:diagnose:m1-testing:1", {"lane_id": "m1-testing"})
+            persist_lanes(md2, [{**load(md2)["lanes"]["m1-testing"], "state": "terminal", "checks": "pass"}])
+            try:
+                nxt = run(md2, executors={"closeout": lambda *_: {"result": "closed"}}, limit=20)
+            except RuntimeError as exc:
+                failures.append(f"修复后再次 consume 死循环：{exc}")
+            else:
+                if nxt["id"] != "dispatch:review" or load(md2)["lanes"]["m1-testing"]["state"] != "closed":
+                    failures.append(f"修复后再次 consume 应推进到 review，got {nxt}")
     return failures
 
 

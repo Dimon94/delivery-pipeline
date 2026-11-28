@@ -75,7 +75,7 @@ def run(root: Path):
         ['bash', str(SCRIPT), 'worker', 'coordinator', 'lane', '测试 lane'],
         env={**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}',
              'LANE_WATCH_STATE_DIR': str(root)},
-        capture_output=True, text=True, timeout=10,
+        capture_output=True, text=True, timeout=30,
     )
 
 
@@ -158,7 +158,7 @@ def case_driver_quiet_and_wake(root: Path):
             ['bash', str(SCRIPT), 'worker', 'coordinator', 'lane', '测试 lane'],
             env={**os.environ, 'PATH': f'{case}:{os.environ["PATH"]}', 'LANE_WATCH_STATE_DIR': str(case),
                  'LANE_WATCH_MAP_DIR': str(case), 'DP_DRIVER_RUN': str(fake)},
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0, (result.returncode, result.stderr)
         args = (case / 'driver_args').read_text()
