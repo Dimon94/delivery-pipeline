@@ -2,9 +2,11 @@ import {test,expect} from 'bun:test';
 import {Window} from 'happy-dom';
 import {readFileSync} from 'node:fs';
 import type {BoardSnapshot,Lane,Mmf,Ticket} from './board';
-import {GRAPH_GEOMETRY,applyHoverChain,dependencyChain,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+import {GRAPH_GEOMETRY,applyHoverChain,dependencyChain,missingMmfEdges,renderGraph,scrollTargetForNode,ticketLayers,type GraphGroup} from './board-graph';
+import {buildBoardGroups} from './board-side';
 
 const sample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board.json',import.meta.url),'utf8')) as BoardSnapshot;
+const probedSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/probed.json',import.meta.url),'utf8')) as BoardSnapshot;
 const cssText=readFileSync(new URL('./style.css',import.meta.url),'utf8');
 const win=new Window({width:1440,height:900});
 const doc=win.document;
@@ -343,4 +345,121 @@ test('DD-668 visual-fix-2 项9：MMF 快照 halt 非空且命中该票时卡片�
  expect(tkHRule!.style.getPropertyValue('border-radius')).toBe('4px');
  expect(tkHRule!.style.getPropertyValue('background')||tkHRule!.style.getPropertyValue('background-color')).toContain('var(--red)');
  expect(tkHRule!.style.getPropertyValue('color')).toMatch(/#fff|rgb\(255,\s*255,\s*255\)/i);
+});
+
+test('S2 M1 样本渲染不含候选卡、跨 MMF 边与 Linear 状态标签',()=>{
+ for(const snap of [sample,probedSample]){
+  const groups=buildBoardGroups(snap);
+  for(const group of groups.all){
+   const box=doc.createElement('div');
+   box.innerHTML=renderGraph(group,group.mmfs[0],group.mmfs[0]?.tickets[0]);
+   expect(box.querySelector('.tk-linear-status')).toBeNull();
+   expect(box.querySelector('[data-candidate]')).toBeNull();
+   expect(box.querySelector('[data-mmf-edge]')).toBeNull();
+  }
+ }
+});
+
+test('S6 票 01 显示 Linear 标题与状态，票 02 无 key、票 03 缓存无记录的状态标签均为 Unknown',()=>{
+ const t01=makeTicket('01',{
+  title:'本地 01',
+  stage:'implement',
+  linear:'https://linear.app/demo/issue/DEMO-101',
+  linear_issue:{title:'Linear 票 01',status:'In Review'},
+ });
+ const t02=makeTicket('02',{title:'本地 02',deps:['01'],stage:'implement',linear:null});
+ const t03=makeTicket('03',{title:'本地 03',deps:['02'],stage:'implement',linear:'https://linear.app/demo/issue/DEMO-103'});
+ const mmf=makeMmf([t01,t02,t03]);
+ const group:GraphGroup={id:'demo|DEMO-E',label:'DEMO-E · Epic E 标题',url:null,mmfs:[mmf],linearStatus:'In Progress',hasLinear:true};
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph(group,mmf,t01);
+
+ const card=(id:string)=>box.querySelector<HTMLElement>(`.graph-ticket[data-ticket="${id}"]`)!;
+ expect(card('01').querySelector('.tk-t')!.textContent).toBe('Linear 票 01');
+ expect(card('01').querySelector('.tk-linear-status')!.textContent).toBe('In Review');
+ expect(card('02').querySelector('.tk-t')!.textContent).toBe('本地 02');
+ expect(card('02').querySelector('.tk-linear-status')!.textContent).toBe('Unknown');
+ expect(card('03').querySelector('.tk-t')!.textContent).toBe('本地 03');
+ expect(card('03').querySelector('.tk-linear-status')!.textContent).toBe('Unknown');
+ expect(box.querySelector('.graph-root')!.textContent).toBe('DEMO-E · Epic E 标题');
+ expect(box.querySelector('.graph-root')!.getAttribute('data-meta')).toContain('In Progress');
+});
+
+test('S3/S4 候选卡以虚线框未开工出现在 MMF 列，有 Spec 显示标识与状态、无 Spec 标尚无 Spec，Unknown 候选不计入 Epic 的 MMF 数',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const group=buildBoardGroups(linearSample).repos[0]!.epics[0]!.group;
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph(group,group.mmfs[0],undefined,false,group.candidates![1]);
+
+ const cards=[...box.querySelectorAll<HTMLElement>('.graph-candidate[data-candidate]')];
+ expect(cards.length).toBe(3);
+ // 位于 MMF 同一列（x 与本地 MMF 相同）且为虚线框未开工
+ const mmfX=Number(box.querySelector<HTMLElement>('.graph-mmf[data-map="demo-m1"]')!.dataset.x);
+ for(const c of cards){
+  expect(Number(c.dataset.x)).toBe(mmfX);
+  expect(c.style.borderStyle).toBe('dashed');
+  expect(c.textContent).toContain('未开工');
+ }
+
+ // M2 有 Spec：显示 Spec 标识和 Linear 状态
+ const m2=box.querySelector<HTMLElement>('.graph-candidate[data-candidate="M2"]')!;
+ expect(m2.querySelector('.mmf-key')!.textContent).toBe('M2');
+ expect(m2.querySelector('.cand-spec-key')!.textContent).toBe('DEMO-3');
+ expect(m2.querySelector('.cand-spec-status')!.textContent).toBe('Todo');
+
+ // M3 无 Spec 且当前选中
+ const m3=box.querySelector<HTMLElement>('.graph-candidate[data-candidate="M3"]')!;
+ expect(m3.classList.contains('selected')).toBe(true);
+ expect(m3.querySelector('.cand-spec-key')).toBeNull();
+ expect(m3.textContent).toContain('尚无 Spec');
+
+ // Unknown 候选出现，但不计入 Epic 根节点的 MMF 数（1 本地 + M2 + M3 = 3 MMF）
+ const unk=box.querySelector<HTMLElement>('.graph-candidate[data-mmf-id="Unknown"]')!;
+ expect(unk.dataset.candidateSource).toBe('linear_child');
+ expect(unk.querySelector('.cand-spec-key')!.textContent).toBe('DEMO-4');
+ expect(box.querySelector('.graph-root')!.getAttribute('data-meta')).toContain('3 MMF');
+});
+
+test('S13（R5）跨 MMF 边按类型画出；悬停 M2 卡片时 M1→M2 边与两端高亮并显示“开工”与依赖原文；端点缺失的边不画由 missingMmfEdges 返回',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const group=buildBoardGroups(linearSample).repos[0]!.epics[0]!.group;
+ // 追加一条端点 M9 缺失的边，验证图上不画、missingMmfEdges 返回
+ const groupWithMissing:GraphGroup={
+  ...group,
+  mmfEdges:[
+   {from:'M1',to:'M2',kind:'开工',text:'开工 · 依赖 M1 定下的快照 JSON 结构'},
+   {from:'M1',to:'M3',kind:'Unknown',text:'M1，可与 M2 并行'},
+   {from:'M1',to:'M9',kind:'上线',text:'上线依赖 M1'},
+  ],
+ };
+ const box=doc.createElement('div');
+ box.innerHTML=renderGraph(groupWithMissing,groupWithMissing.mmfs[0],undefined,false);
+
+ const drawnEdges=[...box.querySelectorAll('path[data-mmf-edge]')].map(p=>p.getAttribute('data-mmf-edge'));
+ expect(drawnEdges).toEqual(['M1>M2','M1>M3']);
+ expect(box.querySelector('path[data-mmf-edge="M2>M3"]')).toBeNull();
+ expect(box.querySelector('path[data-mmf-edge="M1>M9"]')).toBeNull();
+ expect(missingMmfEdges(groupWithMissing)).toEqual([
+  {from:'M1',to:'M9',kind:'上线',text:'上线依赖 M1'},
+ ]);
+
+ // 悬停 M2 卡片：M1→M2 边、标签、M1 与 M2 卡片保持高亮；M1→M3 与 M3 淡出
+ applyHoverChain(box,groupWithMissing,{candidate:'M2'});
+ expect(box.querySelector('.graph')!.classList.contains('has-hover')).toBe(true);
+ const edgePath=box.querySelector('path[data-mmf-edge="M1>M2"]')!;
+ const edgeLabel=box.querySelector<HTMLElement>('.mmf-edge-label[data-mmf-edge-label="M1>M2"]')!;
+ expect(edgePath.classList.contains('chain')).toBe(true);
+ expect(edgeLabel.classList.contains('chain')).toBe(true);
+ expect(edgeLabel.querySelector('.mmf-edge-kind')!.textContent).toBe('开工');
+ expect(edgeLabel.querySelector('.mmf-edge-text')!.textContent).toBe('开工 · 依赖 M1 定下的快照 JSON 结构');
+
+ expect(box.querySelector('.graph-mmf[data-mmf-id="M1"]')!.classList.contains('chain')).toBe(true);
+ expect(box.querySelector('.graph-candidate[data-candidate="M2"]')!.classList.contains('chain')).toBe(true);
+ expect(box.querySelector('.graph-candidate[data-candidate="M3"]')!.classList.contains('dimmed')).toBe(true);
+ expect(box.querySelector('path[data-mmf-edge="M1>M3"]')!.classList.contains('dimmed')).toBe(true);
+
+ // 离开后恢复
+ applyHoverChain(box,groupWithMissing,undefined);
+ expect(box.querySelector('.graph')!.classList.contains('has-hover')).toBe(false);
+ expect(box.querySelectorAll('.chain,.dimmed').length).toBe(0);
 });

@@ -14,21 +14,41 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
 // 构建时绑定；运行时不搜索 shell PATH。
 var pythonPath string
 
+// 构建时可选绑定 mcporter 与 node 路径，桌面端启动时补充子进程 PATH。
+var mcporterPath string
+var nodePath string
+
 // 构建号三段由 build.py 经 MYGO_LDFLAGS 注入（-X main.buildCommit 等）；开发运行时为空。
 var buildCommit, buildDirty, builtAt string
+
+const linearRefreshCooldown = 60 * time.Second
+
+type linearRefreshCall struct {
+	done chan struct{}
+	out  json.RawMessage
+	err  error
+}
 
 type Host struct {
 	Python string
 	Tool   string
 	Config string
 	kind   string // "formal" | "test"；空等同 formal
+
+	linearTimeout time.Duration
+	linearNow     func() time.Time
+
+	linearMu     sync.Mutex
+	linearFlight *linearRefreshCall
 }
 
 // AppInfo 是页面标签的数据源。Build 与 build.py 的 build_label 同格式；
@@ -102,7 +122,216 @@ func (h *Host) ReadBoard() (json.RawMessage, error) {
 	return validateBoard(output)
 }
 
-// validateBoard 核对 schema 1 必填结构与类型后原样返回。
+// RefreshBoardLinear 触发 Linear 缓存更新并返回最新看板快照。
+// manual 为 false 时在冷却期内（按缓存 attempted_at 计 60 秒，含 failed/partial/ok）直接返回本机快照，不启动子进程；
+// 并发调用共享同一次在途更新，只启动一个子进程并返回同一结果。
+func (h *Host) RefreshBoardLinear(manual bool) (json.RawMessage, error) {
+	h.linearMu.Lock()
+	if flight := h.linearFlight; flight != nil {
+		h.linearMu.Unlock()
+		<-flight.done
+		return flight.out, flight.err
+	}
+	flight := &linearRefreshCall{done: make(chan struct{})}
+	h.linearFlight = flight
+	h.linearMu.Unlock()
+
+	defer func() {
+		h.linearMu.Lock()
+		h.linearFlight = nil
+		h.linearMu.Unlock()
+		close(flight.done)
+	}()
+
+	flight.out, flight.err = h.runRefreshBoardLinear(manual)
+	return flight.out, flight.err
+}
+
+func (h *Host) runRefreshBoardLinear(manual bool) (json.RawMessage, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, errors.New("更新 Linear 失败：无法定位用户目录")
+	}
+	lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+	now := time.Now()
+	if h.linearNow != nil {
+		now = h.linearNow()
+	}
+	if !manual && isLinearCacheFresh(lanesRoot, now) {
+		return h.ReadBoard()
+	}
+
+	subPath := linearSubprocessPath(os.Getenv("PATH"), home, mcporterPath, nodePath)
+	hasMcporter := lookPathInDirs("mcporter", subPath) != ""
+	hasNode := lookPathInDirs("node", subPath) != ""
+	timeout := h.linearTimeout
+	if timeout <= 0 {
+		timeout = 125 * time.Second
+	}
+	path := filepath.Join(filepath.Dir(h.Tool), "board_snapshot.py")
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, h.Python, "-E", "-B", "-S", path, "--lanes-root", lanesRoot, "--refresh-linear")
+	cmd.Env = withEnvVar(os.Environ(), "PATH", subPath)
+	cmd.WaitDelay = 250 * time.Millisecond
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("Linear 更新超时（%g 秒）", timeout.Seconds())
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, fmt.Errorf("Linear 更新命令执行失败（退出码 %d）", exit.ExitCode())
+		}
+		return nil, fmt.Errorf("无法运行 Linear 更新命令：%w", err)
+	}
+	var summary struct {
+		Status string  `json:"status"`
+		Reason *string `json:"reason"`
+	}
+	if err := json.Unmarshal(output, &summary); err != nil {
+		return nil, errors.New("Linear 更新命令返回了无法识别的结果")
+	}
+	if summary.Status == "failed" {
+		reason := ""
+		if summary.Reason != nil {
+			reason = *summary.Reason
+		}
+		if !hasMcporter || strings.Contains(reason, "No such file or directory: 'mcporter'") {
+			patchLinearCacheReason(lanesRoot, "找不到 mcporter，无法从 Linear 更新")
+		} else if isMissingNodeReason(reason, hasNode) {
+			patchLinearCacheReason(lanesRoot, "找不到 node，无法从 Linear 更新")
+		}
+	}
+	return h.ReadBoard()
+}
+
+func isLinearCacheFresh(lanesRoot string, now time.Time) bool {
+	raw, err := os.ReadFile(filepath.Join(lanesRoot, "board-linear.json"))
+	if err != nil {
+		return false
+	}
+	var cache struct {
+		AttemptedAt string `json:"attempted_at"`
+	}
+	if err := json.Unmarshal(raw, &cache); err != nil {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339Nano, cache.AttemptedAt)
+	if err != nil {
+		return false
+	}
+	age := now.Sub(at)
+	return age >= 0 && age < linearRefreshCooldown
+}
+
+func isMissingNodeReason(reason string, hasNode bool) bool {
+	if strings.Contains(reason, "env: node:") ||
+		strings.Contains(reason, "node: No such file or directory") ||
+		strings.Contains(reason, "No such file or directory: 'node'") ||
+		strings.Contains(reason, "node: not found") {
+		return true
+	}
+	return !hasNode && strings.Contains(reason, "node") && strings.Contains(reason, "No such file or directory")
+}
+
+func linearSubprocessPath(currentPath, home, boundMcporter, boundNode string) string {
+	seen := map[string]bool{}
+	var dirs []string
+	add := func(dir string) {
+		dir = strings.TrimSpace(dir)
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+	for _, dir := range filepath.SplitList(currentPath) {
+		add(dir)
+	}
+	if boundMcporter != "" {
+		add(filepath.Dir(boundMcporter))
+	}
+	if boundNode != "" {
+		add(filepath.Dir(boundNode))
+	}
+	if home != "" {
+		for _, rel := range []string{filepath.Join(".bun", "bin"), filepath.Join(".local", "bin")} {
+			candidate := filepath.Join(home, rel)
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				add(candidate)
+			}
+		}
+	}
+	return strings.Join(dirs, string(os.PathListSeparator))
+}
+
+func lookPathInDirs(binary, pathEnv string) string {
+	for _, dir := range filepath.SplitList(pathEnv) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, binary)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func withEnvVar(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	replaced := false
+	for _, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			out = append(out, prefix+value)
+			replaced = true
+		} else {
+			out = append(out, item)
+		}
+	}
+	if !replaced {
+		out = append(out, prefix+value)
+	}
+	return out
+}
+
+func patchLinearCacheReason(lanesRoot, reason string) {
+	cachePath := filepath.Join(lanesRoot, "board-linear.json")
+	raw, err := os.ReadFile(cachePath)
+	if err != nil {
+		return
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil || doc == nil {
+		return
+	}
+	doc["reason"] = reason
+	encoded, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(lanesRoot, ".board-linear-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(encoded); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return
+	}
+	if err := os.Rename(tmpName, cachePath); err != nil {
+		os.Remove(tmpName)
+	}
+}
+
+// validateBoard 核对 schema 1 结构与已出现的 Linear 字段后原样返回。
 func validateBoard(output []byte) (json.RawMessage, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(output, &root); err != nil || root == nil {
@@ -150,6 +379,9 @@ func validateBoard(output []byte) (json.RawMessage, error) {
 			if err := requireBoolField(epic, "ended", epicPath); err != nil {
 				return nil, err
 			}
+			if err := validateEpicLinearFields(epic, epicPath); err != nil {
+				return nil, err
+			}
 			mmfs, err := requireArrayField(epic, "mmfs", epicPath)
 			if err != nil {
 				return nil, err
@@ -190,6 +422,11 @@ func validateBoard(output []byte) (json.RawMessage, error) {
 			return nil, err
 		}
 	}
+	if raw, ok := root["linear"]; ok {
+		if err := validateBoardLinear(raw, "$.linear"); err != nil {
+			return nil, err
+		}
+	}
 	return json.RawMessage(output), nil
 }
 
@@ -202,15 +439,20 @@ func requireObject(raw json.RawMessage, path string) (map[string]json.RawMessage
 }
 
 func requireStringField(obj map[string]json.RawMessage, field, parent string) error {
+	_, err := readStringField(obj, field, parent)
+	return err
+}
+
+func readStringField(obj map[string]json.RawMessage, field, parent string) (string, error) {
 	raw, ok := obj[field]
 	if !ok {
-		return fmt.Errorf("%s.%s：缺少必填字段", parent, field)
+		return "", fmt.Errorf("%s.%s：缺少必填字段", parent, field)
 	}
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return fmt.Errorf("%s.%s：需要字符串", parent, field)
+	var value *string
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return "", fmt.Errorf("%s.%s：需要字符串", parent, field)
 	}
-	return nil
+	return *value, nil
 }
 
 func requireBoolField(obj map[string]json.RawMessage, field, parent string) error {
@@ -237,13 +479,120 @@ func requireArrayField(obj map[string]json.RawMessage, field, parent string) ([]
 	return value, nil
 }
 
+func requireStrings(obj map[string]json.RawMessage, path string, fields ...string) error {
+	for _, field := range fields {
+		if err := requireStringField(obj, field, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requireChoice(obj map[string]json.RawMessage, field, path string, choices ...string) error {
+	value, err := readStringField(obj, field, path)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(choices, value) {
+		return fmt.Errorf("%s.%s：取值必须为 %s", path, field, strings.Join(choices, "、"))
+	}
+	return nil
+}
+
+func validateBoardLinear(raw json.RawMessage, path string) error {
+	linear, err := requireObject(raw, path)
+	if err != nil {
+		return err
+	}
+	if err := requireChoice(linear, "status", path, "ok", "partial", "failed"); err != nil {
+		return err
+	}
+	if err := requireStringField(linear, "attempted_at", path); err != nil {
+		return err
+	}
+	for _, field := range []string{"fetched_at", "reason"} {
+		if !bytes.Equal(linear[field], []byte("null")) {
+			if err := requireStringField(linear, field, path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateCandidate(candidate map[string]json.RawMessage, path string) error {
+	if err := requireStrings(candidate, path, "mmf_id", "title"); err != nil {
+		return err
+	}
+	if err := requireChoice(candidate, "source", path, "epic_table", "linear_child"); err != nil {
+		return err
+	}
+	if bytes.Equal(candidate["spec"], []byte("null")) {
+		return nil
+	}
+	spec, err := requireObject(candidate["spec"], path+".spec")
+	if err != nil {
+		return err
+	}
+	return requireStrings(spec, path+".spec", "key", "url", "status")
+}
+
+func validateMmfEdge(edge map[string]json.RawMessage, path string) error {
+	if err := requireStrings(edge, path, "from", "to", "text"); err != nil {
+		return err
+	}
+	return requireChoice(edge, "kind", path, "开工", "上线", "Unknown")
+}
+
+func validateEpicLinearFields(epic map[string]json.RawMessage, path string) error {
+	if _, ok := epic["linear_status"]; ok {
+		if err := requireStringField(epic, "linear_status", path); err != nil {
+			return err
+		}
+	}
+	for _, list := range []struct {
+		field    string
+		validate func(map[string]json.RawMessage, string) error
+	}{
+		{"candidates", validateCandidate},
+		{"mmf_edges", validateMmfEdge},
+	} {
+		if _, ok := epic[list.field]; !ok {
+			continue
+		}
+		items, err := requireArrayField(epic, list.field, path)
+		if err != nil {
+			return err
+		}
+		for i, raw := range items {
+			itemPath := fmt.Sprintf("%s.%s[%d]", path, list.field, i)
+			item, err := requireObject(raw, itemPath)
+			if err != nil {
+				return err
+			}
+			if err := list.validate(item, itemPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func validateMmf(raw json.RawMessage, path string) error {
 	mmf, err := requireObject(raw, path)
 	if err != nil {
 		return err
 	}
-	for _, field := range []string{"map", "title", "stage"} {
-		if err := requireStringField(mmf, field, path); err != nil {
+	if err := requireStrings(mmf, path, "map", "title", "stage"); err != nil {
+		return err
+	}
+	if _, ok := mmf["mmf_id"]; ok {
+		if err := requireStringField(mmf, "mmf_id", path); err != nil {
+			return err
+		}
+	}
+	if _, ok := mmf["attribution_source"]; ok {
+		if err := requireChoice(mmf, "attribution_source", path, "linear"); err != nil {
 			return err
 		}
 	}
@@ -266,16 +615,24 @@ func validateMmf(raw json.RawMessage, path string) error {
 		if err != nil {
 			return err
 		}
-		for _, field := range []string{"id", "title", "stage"} {
-			if err := requireStringField(ticket, field, ticketPath); err != nil {
-				return err
-			}
+		if err := requireStrings(ticket, ticketPath, "id", "title", "stage"); err != nil {
+			return err
 		}
 		if _, err := requireArrayField(ticket, "deps", ticketPath); err != nil {
 			return err
 		}
 		if err := requireBoolField(ticket, "executing", ticketPath); err != nil {
 			return err
+		}
+		if rawIssue, ok := ticket["linear_issue"]; ok {
+			issuePath := ticketPath + ".linear_issue"
+			issue, err := requireObject(rawIssue, issuePath)
+			if err != nil {
+				return err
+			}
+			if err := requireStrings(issue, issuePath, "title", "status"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

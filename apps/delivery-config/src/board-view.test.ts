@@ -7,11 +7,14 @@ import {GRAPH_GEOMETRY} from './board-graph';
 const sample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board.json',import.meta.url),'utf8'));
 const config={version:7,work:Object.fromEntries(['planning','design','frontend','backend','testing','research','coordinator'].map(n=>[n,{agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high',fallbacks:[]}])),review:Object.fromEntries(['implementation','whole-change'].map(s=>[s,Object.fromEntries(['standards','spec'].map(a=>[a,{agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high',candidates:[]}]))])),modes:{}};
 let boardCalls=0;
+let linearCalls=0;
 let answer:()=>Promise<unknown>=()=>Promise.resolve(sample);
+let linearAnswer:(manual:boolean)=>Promise<unknown>=()=>answer();
 let release:()=>void=()=>{};
 const win=new Window({width:1440,height:900}),doc=win.document;
-Object.assign(globalThis,{window:win,document:doc,navigator:win.navigator,mygo:{call:async(name:string)=>{
+Object.assign(globalThis,{window:win,document:doc,navigator:win.navigator,mygo:{call:async(name:string,...args:unknown[])=>{
  if(name==='Host.ReadBoard'){boardCalls++;return answer();}
+ if(name==='Host.RefreshBoardLinear'){linearCalls++;return linearAnswer(Boolean(args[0]));}
  if(name==='Host.AppInfo')return {config_path:'/tmp/dd672/model-roles.json'};
  if(name==='Host.ReadConfig')return {file_state:'ready',config,base_hash:'hash',cells:{}};
  throw Error(name);
@@ -589,4 +592,204 @@ test('SP-01/SP-02/SP-03/SP-04/SP-10/SP-13 回归：前台刷新保选、本地�
  expect(vBad.state.kind).toBe('failed');
  expect(boxBad.querySelector('.board-failed')).not.toBeNull();
  box.remove();boxEnded.remove();boxBad.remove();
+});
+
+test('DD-676 S10/S11/S12/S13 与缺少 mcporter：无缓存先按 M1 渲染并更新、失败降级/沿用旧缓存、冷却跳过与并发去重、更新后悬停点选保选',async()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8'));
+ const linearFailed=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear-failed.json',import.meta.url),'utf8'));
+ const {BoardView}=await import('./board-view');
+
+ // S10：无缓存且更新失败 → 显示“未接上 Linear，显示本机数据”，Linear 字段 Unknown，图与 M1 相同
+ const m1Base=structuredClone(sample);
+ const box10=doc.createElement('div');
+ doc.body.append(box10);
+ const v10=new BoardView(box10 as unknown as HTMLElement,{
+  read:async()=>m1Base,
+  refreshLinear:async()=>linearFailed,
+  openSettings(){},
+ });
+ await v10.load();
+ await settle();
+ expect(box10.querySelector('.board-linear-status')!.textContent).toContain('未接上 Linear，显示本机数据');
+ expect(box10.querySelector('.board-linear-status')!.textContent).toContain('Linear 暂不可用');
+ expect(box10.querySelector('.graph-root')!.textContent).toBe('DEMO-1');
+ expect(box10.querySelector('.detail-linear-status')).toBeNull();
+
+ // S10b：已有成功缓存且更新超时 → 显示失败原因与上次获取时间，继续显示上次的 Linear 标题
+ const cachedWithTimeout=structuredClone(linearSample);
+ const box10b=doc.createElement('div');
+ doc.body.append(box10b);
+ const v10b=new BoardView(box10b as unknown as HTMLElement,{
+  read:async()=>cachedWithTimeout,
+  refreshLinear:async()=>{throw new Error('Linear 更新超时（125 秒）');},
+  openSettings(){},
+ });
+ await v10b.load();
+ await settle();
+ await v10b.refreshLinear(true);
+ expect(box10b.querySelector('.board-linear-status')!.textContent).toContain('Linear 更新超时（125 秒）');
+ expect(box10b.querySelector('.board-linear-status')!.textContent).toContain('2026-11-27 04:00:00');
+ expect(box10b.querySelector('.graph-root')!.textContent).toContain('交付看板');
+ expect(box10b.querySelector('#board-right .detail-title')!.textContent).toBe('Linear 实施票');
+
+ // S11 + S13：无缓存打开先按 M1 渲染并显示“未接上 Linear”，随即更新中，完成后出现 Linear 标题与“Linear 数据 <时间>”，保持选择且悬停点选按 M1 规则工作
+ const box11=doc.createElement('div');
+ doc.body.append(box11);
+ const m1ForS11=structuredClone(linearFailed);
+ delete m1ForS11.linear;
+ let finishRefresh!:()=>void;
+ const v11=new BoardView(box11 as unknown as HTMLElement,{
+  read:async()=>m1ForS11,
+  refreshLinear:()=>new Promise(r=>{finishRefresh=()=>r(linearSample);}),
+  openSettings(){},
+ });
+ await v11.load();
+ expect(box11.querySelector('.graph-root')!.textContent).toBe('DEMO-1');
+ expect(box11.querySelector('.board-linear-status')!.textContent).toContain('未接上 Linear');
+ expect(box11.querySelector('.board-linear-status')!.textContent).toContain('正在从 Linear 更新');
+ expect(box11.querySelector<HTMLButtonElement>('.board-linear-btn')!.disabled).toBe(true);
+ (box11.querySelector('.graph-ticket[data-ticket="02"]') as HTMLElement).click();
+ expect(box11.querySelector('#board-right h2')!.textContent).toContain('02');
+ finishRefresh();
+ await settle();
+ expect(box11.querySelector('.board-linear-status')!.textContent).toContain('Linear 数据 2026-11-27 04:00:00');
+ expect(box11.querySelector<HTMLButtonElement>('.board-linear-btn')!.disabled).toBe(false);
+ expect(box11.querySelector('.graph-root')!.textContent).toContain('交付看板');
+ expect(box11.querySelector('.graph-ticket.selected')!.getAttribute('data-ticket')).toBe('02');
+ // S13：更新成功后悬停与点击按 M1 规则工作、选择保持
+ const t01=box11.querySelector<HTMLElement>('.graph-ticket[data-ticket="01"]')!;
+ t01.dispatchEvent(new win.MouseEvent('mouseover',{bubbles:true}));
+ expect(box11.querySelector('.graph')!.classList.contains('has-hover')).toBe(true);
+ t01.dispatchEvent(new win.MouseEvent('mouseout',{bubbles:true,relatedTarget:box11.querySelector('.board-center')}));
+ expect(box11.querySelector('.graph')!.classList.contains('has-hover')).toBe(false);
+ t01.click();
+ expect(box11.querySelector('.graph-ticket.selected')!.getAttribute('data-ticket')).toBe('01');
+ expect(box11.querySelector('#board-right .detail-title')!.textContent).toBe('Linear 实施票');
+
+ // S12：缓存 attempted_at 为 30 秒前、status=ok → 窗口回前台不启动更新；连点两次“从 Linear 更新”只启动一次、按钮置灰
+ const freshSnap=structuredClone(linearSample);
+ freshSnap.linear.attempted_at=new Date(Date.now()-30*1000).toISOString();
+ freshSnap.linear.status='ok';
+ let calls12=0;
+ let release12!:()=>void;
+ const box12=doc.createElement('div');
+ doc.body.append(box12);
+ const v12=new BoardView(box12 as unknown as HTMLElement,{
+  read:async()=>freshSnap,
+  refreshLinear:()=>{calls12++;return new Promise(r=>{release12=()=>r(freshSnap);});},
+  openSettings(){},
+ });
+ await v12.load();
+ await settle();
+ expect(calls12).toBe(0);
+ v12.rereadOnFocus();
+ await settle();
+ expect(calls12).toBe(0);
+ const btn12=box12.querySelector<HTMLButtonElement>('.board-linear-btn')!;
+ expect(btn12.disabled).toBe(false);
+ btn12.click();
+ expect(box12.querySelector<HTMLButtonElement>('.board-linear-btn')!.disabled).toBe(true);
+ const p1=v12.refreshLinear(true);
+ const p2=v12.refreshLinear(true);
+ expect(p1).toBe(p2);
+ expect(calls12).toBe(1);
+ release12();
+ await Promise.all([p1,p2]);
+ expect(box12.querySelector<HTMLButtonElement>('.board-linear-btn')!.disabled).toBe(false);
+
+ // 找不到 mcporter：显示原因，分别进入仅本地与沿用旧数据
+ const missingLocal=structuredClone(linearFailed);
+ missingLocal.linear.reason='找不到 mcporter，无法从 Linear 更新';
+ const boxMc=doc.createElement('div');
+ doc.body.append(boxMc);
+ const vMc=new BoardView(boxMc as unknown as HTMLElement,{
+  read:async()=>missingLocal,
+  refreshLinear:async()=>missingLocal,
+  openSettings(){},
+ });
+ await vMc.load();
+ await settle();
+ expect(boxMc.querySelector('.board-linear-status')!.textContent).toContain('找不到 mcporter');
+ expect(boxMc.querySelector('.board-linear-status')!.textContent).toContain('未接上 Linear，显示本机数据');
+
+ const missingKeepOld=structuredClone(linearSample);
+ missingKeepOld.linear.status='failed';
+ missingKeepOld.linear.reason='找不到 mcporter，无法从 Linear 更新';
+ const boxMcOld=doc.createElement('div');
+ doc.body.append(boxMcOld);
+ const vMcOld=new BoardView(boxMcOld as unknown as HTMLElement,{
+  read:async()=>missingKeepOld,
+  refreshLinear:async()=>missingKeepOld,
+  openSettings(){},
+ });
+ await vMcOld.load();
+ await settle();
+ expect(boxMcOld.querySelector('.board-linear-status')!.textContent).toContain('找不到 mcporter');
+ expect(boxMcOld.querySelector('.board-linear-status')!.textContent).toContain('2026-11-27 04:00:00');
+ expect(boxMcOld.querySelector('.graph-root')!.textContent).toContain('交付看板');
+
+ box10.remove();box10b.remove();box11.remove();box12.remove();boxMc.remove();boxMcOld.remove();
+});
+
+test('P-1 R10 前端节流 60 秒按 attempted_at（含 failed/partial），手动不受冷却且在途复用',async()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8'));
+ const {BoardView,isLinearFresh}=await import('./board-view');
+ const now=Date.parse('2026-11-27T12:00:00Z');
+ const ago=(sec:number)=>new Date(now-sec*1000).toISOString();
+
+ // ok 缓存 90 秒前不再新鲜，应允许自动更新；failed/partial 缓存 30 秒前视为在冷却期内
+ expect(isLinearFresh({status:'ok',fetched_at:ago(90),attempted_at:ago(90),reason:null},now)).toBe(false);
+ expect(isLinearFresh({status:'ok',fetched_at:ago(30),attempted_at:ago(30),reason:null},now)).toBe(true);
+ expect(isLinearFresh({status:'failed',fetched_at:null,attempted_at:ago(30),reason:'网络错误'},now)).toBe(true);
+ expect(isLinearFresh({status:'partial',fetched_at:ago(30),attempted_at:ago(30),reason:'部分失败'},now)).toBe(true);
+ expect(isLinearFresh({status:'failed',fetched_at:null,attempted_at:ago(90),reason:'网络错误'},now)).toBe(false);
+
+ // ok 缓存 90 秒前：load() 自动触发 refreshLinear(false)
+ const ok90=structuredClone(linearSample);
+ ok90.linear.status='ok';
+ ok90.linear.attempted_at=new Date(Date.now()-90*1000).toISOString();
+ let ok90Calls=0;
+ const boxOk90=doc.createElement('div');
+ doc.body.append(boxOk90);
+ const vOk90=new BoardView(boxOk90 as unknown as HTMLElement,{
+  read:async()=>ok90,
+  refreshLinear:async()=>{ok90Calls++;return ok90;},
+  openSettings(){},
+ });
+ await vOk90.load();
+ await settle();
+ expect(ok90Calls).toBe(1);
+
+ // failed 缓存 30 秒前：自动刷新跳过；手动触发仍发起，在途时自动/手动并发复用
+ const fail30=structuredClone(linearSample);
+ fail30.linear.status='failed';
+ fail30.linear.attempted_at=new Date(Date.now()-30*1000).toISOString();
+ fail30.linear.reason='暂不可用';
+ let fail30Calls=0;
+ let releaseFail30!:()=>void;
+ const boxFail30=doc.createElement('div');
+ doc.body.append(boxFail30);
+ const vFail30=new BoardView(boxFail30 as unknown as HTMLElement,{
+  read:async()=>fail30,
+  refreshLinear:()=>{fail30Calls++;return new Promise(r=>{releaseFail30=()=>r(fail30);});},
+  openSettings(){},
+ });
+ await vFail30.load();
+ await settle();
+ expect(fail30Calls).toBe(0);
+ const pManual=vFail30.refreshLinear(true);
+ const pAuto=vFail30.refreshLinear(false);
+ expect(pManual).toBe(pAuto);
+ expect(fail30Calls).toBe(1);
+ releaseFail30();
+ await Promise.all([pManual,pAuto]);
+
+ // P-2：从 BoardView 点击候选卡，右栏展示依赖列表与只读说明
+ const candBtn=boxOk90.querySelector<HTMLElement>('.graph-candidate[data-candidate="M2"]');
+ expect(candBtn).not.toBeNull();
+ candBtn!.click();
+ expect(boxOk90.querySelector('#board-right .detail-cand-deps')!.textContent).toContain('M1 ──开工──▶ M2');
+ expect(boxOk90.querySelector('#board-right .detail-cand-noaction')!.textContent).toContain('只读：不在这里开 map 或派票');
+
+ boxOk90.remove();boxFail30.remove();
 });

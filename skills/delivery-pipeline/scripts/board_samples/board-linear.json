@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-27T04:00:00Z",
+  "lanes_root": "/tmp/demo/lanes",
+  "inbox": [],
+  "probes": [],
+  "errors": [],
+  "linear": {
+    "status": "ok",
+    "fetched_at": "2026-11-27T04:00:00Z",
+    "attempted_at": "2026-11-27T04:00:00Z",
+    "reason": null
+  },
+  "repos": [
+    {
+      "name": "demo",
+      "epics": [
+        {
+          "key": "DEMO-1",
+          "url": "https://linear.app/demo/issue/DEMO-1",
+          "title": "交付看板",
+          "ended": false,
+          "linear_status": "In Progress",
+          "mmfs": [
+            {
+              "map": "demo-m1",
+              "title": "本地看板",
+              "stage": "implement",
+              "halt": null,
+              "links": {
+                "plan_review": null,
+                "merge_review": null,
+                "linear": "https://linear.app/demo/issue/DEMO-2"
+              },
+              "updated_at": null,
+              "direct_lanes": [],
+              "executing": false,
+              "tickets": [
+                {
+                  "id": "01",
+                  "title": "本地实施票",
+                  "deps": [],
+                  "stage": "implement",
+                  "lane": null,
+                  "executing": false,
+                  "linear": "https://linear.app/demo/issue/DEMO-11",
+                  "linear_issue": {
+                    "title": "Linear 实施票",
+                    "status": "In Review"
+                  }
+                },
+                {
+                  "id": "02",
+                  "title": "无 Linear 信息",
+                  "deps": [
+                    "01"
+                  ],
+                  "stage": "implement",
+                  "lane": null,
+                  "executing": false,
+                  "linear": null
+                }
+              ],
+              "mmf_id": "M1",
+              "attribution_source": "linear"
+            }
+          ],
+          "candidates": [
+            {
+              "mmf_id": "M2",
+              "title": "接上 Linear",
+              "source": "epic_table",
+              "spec": {
+                "key": "DEMO-3",
+                "url": "https://linear.app/demo/issue/DEMO-3",
+                "status": "Todo"
+              }
+            },
+            {
+              "mmf_id": "M3",
+              "title": "交付汇总",
+              "source": "epic_table",
+              "spec": null
+            },
+            {
+              "mmf_id": "Unknown",
+              "title": "未归类工作",
+              "source": "linear_child",
+              "spec": {
+                "key": "DEMO-4",
+                "url": "https://linear.app/demo/issue/DEMO-4",
+                "status": "Todo"
+              }
+            }
+          ],
+          "mmf_edges": [
+            {
+              "from": "M1",
+              "to": "M2",
+              "kind": "开工",
+              "text": "开工依赖 M1"
+            },
+            {
+              "from": "M2",
+              "to": "M3",
+              "kind": "上线",
+              "text": "上线依赖 M2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

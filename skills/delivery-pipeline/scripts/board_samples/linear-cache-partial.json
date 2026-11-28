@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "status": "partial",
+  "fetched_at": "2026-11-27T04:05:00Z",
+  "attempted_at": "2026-11-27T04:05:00Z",
+  "reason": "部分子项未读回",
+  "issues": {
+    "DEMO-1": {
+      "title": "交付看板",
+      "status": "In Progress",
+      "status_type": "started",
+      "parent": null,
+      "description": "| MMF | 用户结果 | 前置 |\n| --- | --- | --- |\n| M1 | 本地看板 | 无 |",
+      "children": [
+        "DEMO-2"
+      ],
+      "fetched_at": "2026-11-27T04:05:00Z"
+    },
+    "DEMO-2": {
+      "title": "本地看板",
+      "status": "In Progress",
+      "status_type": "started",
+      "parent": "DEMO-1",
+      "description": "MMF: M1",
+      "children": [
+        "DEMO-11"
+      ],
+      "fetched_at": "2026-11-27T04:00:00Z"
+    },
+    "DEMO-11": {
+      "title": "Linear 实施票",
+      "status": "In Review",
+      "status_type": "started",
+      "parent": "DEMO-2",
+      "description": null,
+      "children": null,
+      "fetched_at": "2026-11-27T04:00:00Z"
+    }
+  },
+  "failed": {
+    "DEMO-2": "子项列表读取失败"
+  }
+}

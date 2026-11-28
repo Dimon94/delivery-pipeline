@@ -320,3 +320,115 @@ test('SP-09/SP-11：blocked 当前步骤保持蓝色外环与「收起」文案�
  expect(more.textContent).toContain('blocked');
  expect(more.textContent).toContain('/tmp/fixture-mmf');
 });
+
+test('S2/S6/S7 M1 样本右栏无 Linear 状态与归属说明；有 Linear 缓存时票显示 Linear 标题/状态或 Unknown，线性归属 MMF 显示归属来自 Linear',()=>{
+ // S2：M1 样本不出现 Linear 状态与归属说明
+ const m1Mmf=boardSample.repos[0]!.epics[0]!.mmfs[0]!;
+ const m1TicketDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf:m1Mmf,ticket:m1Mmf.tickets[0],inbox:false,open:true}));
+ expect(m1TicketDoc.querySelector('.detail-linear-status')).toBeNull();
+ const m1MmfDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf:m1Mmf,inbox:false,open:true}));
+ expect(m1MmfDoc.querySelector('.detail-attribution')).toBeNull();
+ expect(m1MmfDoc.body.textContent).not.toContain('归属来自 Linear');
+
+ // S6 + S7：带 Linear 归属的 MMF 与三张票
+ const linearMmf={
+  ...structuredClone(m1Mmf),
+  map:'map-a',
+  title:'MMF A',
+  attribution_source:'linear' as const,
+  tickets:[
+   {id:'01',title:'本地 01',deps:[],stage:'implement' as const,lane:null,executing:false,linear:'https://linear.app/demo/issue/DEMO-101',linear_issue:{title:'Linear 票 01',status:'In Review'}},
+   {id:'02',title:'本地 02',deps:['01'],stage:'implement' as const,lane:null,executing:false,linear:null},
+   {id:'03',title:'本地 03',deps:['02'],stage:'implement' as const,lane:null,executing:false,linear:'https://linear.app/demo/issue/DEMO-103'},
+  ],
+ };
+
+ const docA=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,inbox:false,open:true}));
+ expect(docA.querySelector('.detail-attribution')!.textContent).toBe('归属来自 Linear');
+
+ const doc01=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,ticket:linearMmf.tickets[0],inbox:false,open:true}));
+ expect(doc01.querySelector('.detail-title')!.textContent).toBe('Linear 票 01');
+ expect(doc01.querySelector('.detail-linear-status')!.textContent).toBe('In Review');
+
+ const doc02=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,ticket:linearMmf.tickets[1],inbox:false,open:true}));
+ expect(doc02.querySelector('.detail-title')!.textContent).toBe('本地 02');
+ expect(doc02.querySelector('.detail-linear-status')!.textContent).toBe('Unknown');
+
+ const doc03=mount(renderRightColumn({epicKey:'DEMO-E',mmf:linearMmf,ticket:linearMmf.tickets[2],inbox:false,open:true}));
+ expect(doc03.querySelector('.detail-title')!.textContent).toBe('本地 03');
+ expect(doc03.querySelector('.detail-linear-status')!.textContent).toBe('Unknown');
+});
+
+test('S13 点击 M3 候选卡右栏显示标识、标题、来源为 Epic 正文且无 Spec 链接；有 Spec 的候选显示 Spec 链接与状态',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const [m2,m3,unk]=linearSample.repos[0]!.epics[0]!.candidates!;
+
+ const docM3=mount(renderRightColumn({epicKey:'DEMO-1',candidate:m3,inbox:false,open:true}));
+ expect(docM3.querySelector('#board-right h2')!.textContent).toBe('DEMO-1 · M3');
+ expect(docM3.querySelector('.detail-title')!.textContent).toBe('交付汇总');
+ expect(docM3.querySelector('.detail-candidate-id')!.textContent).toBe('M3');
+ expect(docM3.querySelector('.detail-candidate-source')!.textContent).toBe('Epic 正文');
+ expect(docM3.querySelector('.detail-links a')).toBeNull();
+ expect(docM3.querySelector('.stage-bar')).toBeNull();
+
+ const docM2=mount(renderRightColumn({epicKey:'DEMO-1',candidate:m2,inbox:false,open:true}));
+ expect(docM2.querySelector('.detail-candidate-id')!.textContent).toBe('M2');
+ expect(docM2.querySelector('.detail-candidate-source')!.textContent).toBe('Epic 正文');
+ expect(docM2.querySelector('.detail-candidate-spec')!.textContent).toBe('DEMO-3 · Todo');
+ const m2Link=docM2.querySelector<HTMLAnchorElement>('.detail-links a')!;
+ expect(m2Link).not.toBeNull();
+ expect(m2Link.getAttribute('href')).toBe('https://linear.app/demo/issue/DEMO-3');
+
+ const docUnk=mount(renderRightColumn({epicKey:'DEMO-1',candidate:unk,inbox:false,open:true}));
+ expect(docUnk.querySelector('.detail-candidate-id')!.textContent).toBe('Unknown');
+ expect(docUnk.querySelector('.detail-candidate-source')!.textContent).toBe('Linear 子项');
+});
+
+test('R5 端点找不到的跨 MMF 边列在右栏 Epic 详情中，包含起止标识、类型与原文',()=>{
+ const linearSample=JSON.parse(readFileSync(new URL('../../../skills/delivery-pipeline/scripts/board_samples/board-linear.json',import.meta.url),'utf8')) as BoardSnapshot;
+ const mmf=linearSample.repos[0]!.epics[0]!.mmfs[0]!;
+ const missing=[{from:'M1',to:'M9',kind:'开工' as const,text:'开工 · 依赖 M1 接口'}];
+
+ const doc=mount(renderRightColumn({epicKey:'DEMO-1',mmf,missingEdges:missing,inbox:false,open:true}));
+ const sec=doc.querySelector('.detail-missing-edges')!;
+ expect(sec).not.toBeNull();
+ expect(sec.querySelector('.missing-edge-pair')!.textContent).toBe('M1 → M9');
+ expect(sec.querySelector('.missing-edge-kind')!.textContent).toBe('开工');
+ expect(sec.querySelector('.missing-edge-text')!.textContent).toBe('开工 · 依赖 M1 接口');
+
+ const emptyDoc=mount(renderRightColumn({epicKey:'DEMO-1',mmf,missingEdges:[],inbox:false,open:true}));
+ expect(emptyDoc.querySelector('.detail-missing-edges')).toBeNull();
+});
+
+test('P-2 Preview r-cand：候选详情展示依赖列表（含空态）与只读说明',()=>{
+ const m4={mmf_id:'M4',title:'导出报表',source:'epic_table' as const,spec:{key:'DD-702',url:'https://linear.app/x/issue/DD-702',status:'Todo'}};
+
+ // 复现 rcand.ts 反例：无 mmfEdges 时仍显示「依赖」空态与只读说明
+ const emptyDepsDoc=mount(renderRightColumn({epicKey:'EP-101',candidate:m4,missingEdges:[],inbox:false,hasLinear:true,open:true}));
+ const emptyDeps=emptyDepsDoc.querySelector('.detail-cand-deps');
+ expect(emptyDeps).not.toBeNull();
+ expect(emptyDeps!.textContent).toContain('依赖');
+ expect(emptyDeps!.textContent).toContain('无');
+ const noaction=emptyDepsDoc.querySelector('.detail-cand-noaction');
+ expect(noaction).not.toBeNull();
+ expect(noaction!.textContent).toBe('只读：不在这里开 map 或派票');
+
+ // 有相关依赖边时展示 M3 ──开工──▶ M4 · 原文，不混入无关边
+ const edges=[
+  {from:'M3',to:'M4',kind:'开工' as const,text:'开工 · 依赖 M3 导出字段'},
+  {from:'M1',to:'M2',kind:'上线' as const,text:'上线 · 无关边'},
+ ];
+ const withDepsDoc=mount(renderRightColumn({epicKey:'EP-101',candidate:m4,mmfEdges:edges,missingEdges:[],inbox:false,hasLinear:true,open:true}));
+ const items=[...withDepsDoc.querySelectorAll('.detail-cand-deps .cand-dep-item')];
+ expect(items.length).toBe(1);
+ expect(items[0]!.textContent).toContain('M3 ──开工──▶ M4');
+ expect(items[0]!.textContent).toContain('开工 · 依赖 M3 导出字段');
+ expect(withDepsDoc.querySelector('.detail-cand-deps')!.textContent).not.toContain('无关边');
+ expect(withDepsDoc.querySelector('.detail-cand-noaction')!.textContent).toBe('只读：不在这里开 map 或派票');
+
+ // Unknown 候选不匹配跨 MMF 边，依赖显示「无」
+ const unk={mmf_id:'Unknown',title:'未归类子项',source:'linear_child' as const,spec:{key:'DD-799',url:'https://linear.app/x/issue/DD-799',status:'Todo'}};
+ const unkDoc=mount(renderRightColumn({epicKey:'EP-101',candidate:unk,mmfEdges:edges,missingEdges:[],inbox:false,hasLinear:true,open:true}));
+ expect(unkDoc.querySelector('.detail-cand-deps')!.textContent).toContain('无');
+ expect(unkDoc.querySelector('.detail-cand-noaction')!.textContent).toBe('只读：不在这里开 map 或派票');
+});

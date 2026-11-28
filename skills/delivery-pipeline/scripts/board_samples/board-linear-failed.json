@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-27T04:00:00Z",
+  "lanes_root": "/tmp/demo/lanes",
+  "inbox": [],
+  "probes": [],
+  "errors": [],
+  "linear": {
+    "status": "failed",
+    "fetched_at": null,
+    "attempted_at": "2026-11-27T04:05:00Z",
+    "reason": "Linear 暂不可用"
+  },
+  "repos": [
+    {
+      "name": "demo",
+      "epics": [
+        {
+          "key": "DEMO-1",
+          "url": "https://linear.app/demo/issue/DEMO-1",
+          "title": "Unknown",
+          "ended": false,
+          "mmfs": [
+            {
+              "map": "demo-m1",
+              "title": "本地看板",
+              "stage": "implement",
+              "halt": null,
+              "links": {
+                "plan_review": null,
+                "merge_review": null,
+                "linear": "https://linear.app/demo/issue/DEMO-2"
+              },
+              "updated_at": null,
+              "direct_lanes": [],
+              "executing": false,
+              "tickets": [
+                {
+                  "id": "01",
+                  "title": "本地实施票",
+                  "deps": [],
+                  "stage": "implement",
+                  "lane": null,
+                  "executing": false,
+                  "linear": "https://linear.app/demo/issue/DEMO-11"
+                },
+                {
+                  "id": "02",
+                  "title": "无 Linear 信息",
+                  "deps": [
+                    "01"
+                  ],
+                  "stage": "implement",
+                  "lane": null,
+                  "executing": false,
+                  "linear": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

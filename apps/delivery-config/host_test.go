@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -63,6 +64,500 @@ func TestReadBoard(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLinearBoardContract(t *testing.T) {
+	const samples = "../../skills/delivery-pipeline/scripts/board_samples"
+	files := []string{
+		filepath.Join(samples, "board.json"),
+		filepath.Join(samples, "probed.json"),
+		filepath.Join(samples, "board-linear.json"),
+		filepath.Join(samples, "board-linear-failed.json"),
+	}
+	if m1 := os.Getenv("BOARD_M1_SNAPSHOT"); m1 != "" {
+		files = append(files, m1)
+	}
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			want, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := validateBoard(want)
+			if err != nil || !bytes.Equal(output, want) {
+				t.Fatalf("应原样返回快照，错误 %v", err)
+			}
+		})
+	}
+	t.Run("非法候选来源", func(t *testing.T) {
+		sample, err := os.ReadFile(filepath.Join(samples, "board-linear.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := bytes.Replace(sample, []byte(`"epic_table"`), []byte(`"undefined"`), 1)
+		output, err := validateBoard(bad)
+		if err == nil || output != nil || !strings.HasPrefix(err.Error(), "$.repos[0].epics[0].candidates[0].source") {
+			t.Fatalf("应报告非法候选来源的字段路径，错误 %v", err)
+		}
+	})
+}
+
+func TestRefreshBoardLinear(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLinear, err := os.ReadFile("../../skills/delivery-pipeline/scripts/board_samples/board-linear.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("S11_假脚本写出成功缓存并重读合并快照", func(t *testing.T) {
+		resources := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+		if err := os.MkdirAll(lanesRoot, 0700); err != nil {
+			t.Fatal(err)
+		}
+		countFile := filepath.Join(resources, "refresh.count")
+		script := `import json, pathlib, sys
+lanes = pathlib.Path(sys.argv[sys.argv.index('--lanes-root') + 1])
+cache = lanes / 'board-linear.json'
+if '--refresh-linear' in sys.argv:
+    n = int(pathlib.Path(` + strconv.Quote(countFile) + `).read_text()) if pathlib.Path(` + strconv.Quote(countFile) + `).exists() else 0
+    pathlib.Path(` + strconv.Quote(countFile) + `).write_text(str(n + 1))
+    cache.write_text(json.dumps({
+        'version': 1, 'status': 'ok',
+        'fetched_at': '2026-11-27T04:00:00Z',
+        'attempted_at': '2026-11-27T04:00:00Z',
+        'reason': None, 'issues': {}, 'failed': {},
+    }))
+    print(json.dumps({'status': 'ok', 'fetched_at': '2026-11-27T04:00:00Z', 'attempted_at': '2026-11-27T04:00:00Z', 'reason': None, 'failed': {}}))
+else:
+    sys.stdout.buffer.write(` + strconv.Quote(string(wantLinear)) + `.encode('utf-8'))
+`
+		if err := os.WriteFile(filepath.Join(resources, "board_snapshot.py"), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+		host := &Host{Python: python, Tool: filepath.Join(resources, "model_config.py")}
+		output, err := host.RefreshBoardLinear(false)
+		if err != nil {
+			t.Fatalf("刷新应成功：%v", err)
+		}
+		if !bytes.Equal(output, wantLinear) {
+			t.Fatalf("应返回更新后的合并快照")
+		}
+		gotCount, _ := os.ReadFile(countFile)
+		if string(gotCount) != "1" {
+			t.Fatalf("应启动一次更新子进程，实际 %q", gotCount)
+		}
+	})
+
+	t.Run("S12_冷却期内自动更新不启动子进程_手动更新并发去重只启一次", func(t *testing.T) {
+		resources := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+		if err := os.MkdirAll(lanesRoot, 0700); err != nil {
+			t.Fatal(err)
+		}
+		now := time.Date(2026, 11, 27, 4, 0, 30, 0, time.UTC)
+		attempted := now.Add(-30 * time.Second).Format(time.RFC3339)
+		cacheJSON := `{"version":1,"status":"ok","fetched_at":"` + attempted + `","attempted_at":"` + attempted + `","reason":null,"issues":{},"failed":{}}`
+		if err := os.WriteFile(filepath.Join(lanesRoot, "board-linear.json"), []byte(cacheJSON), 0600); err != nil {
+			t.Fatal(err)
+		}
+		countFile := filepath.Join(resources, "refresh.count")
+		script := `import json, pathlib, sys, time
+if '--refresh-linear' in sys.argv:
+    p = pathlib.Path(` + strconv.Quote(countFile) + `)
+    n = int(p.read_text()) if p.exists() else 0
+    p.write_text(str(n + 1))
+    time.sleep(0.35)
+    print(json.dumps({'status': 'ok', 'fetched_at': '2026-11-27T04:00:30Z', 'attempted_at': '2026-11-27T04:00:30Z', 'reason': None, 'failed': {}}))
+else:
+    sys.stdout.buffer.write(` + strconv.Quote(string(wantLinear)) + `.encode('utf-8'))
+`
+		if err := os.WriteFile(filepath.Join(resources, "board_snapshot.py"), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+		host := &Host{
+			Python:    python,
+			Tool:      filepath.Join(resources, "model_config.py"),
+			linearNow: func() time.Time { return now },
+		}
+		// 缓存 attempted_at 为 30 秒前且 status=ok：自动更新不启动子进程。
+		if _, err := host.RefreshBoardLinear(false); err != nil {
+			t.Fatalf("冷却期内自动更新应返回快照：%v", err)
+		}
+		if _, err := os.Stat(countFile); err == nil {
+			t.Fatal("冷却期内自动更新不应启动子进程")
+		}
+		// 连点两次手动更新：只启动一个子进程，两次拿到同一结果。
+		var wg sync.WaitGroup
+		outs := make([]json.RawMessage, 2)
+		errs := make([]error, 2)
+		for i := 0; i < 2; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				outs[idx], errs[idx] = host.RefreshBoardLinear(true)
+			}(i)
+		}
+		wg.Wait()
+		if errs[0] != nil || errs[1] != nil {
+			t.Fatalf("并发手动更新失败：%v / %v", errs[0], errs[1])
+		}
+		if !bytes.Equal(outs[0], outs[1]) || !bytes.Equal(outs[0], wantLinear) {
+			t.Fatal("两次并发手动更新应拿到同一快照结果")
+		}
+		gotCount, _ := os.ReadFile(countFile)
+		if string(gotCount) != "1" {
+			t.Fatalf("并发手动更新应只启动一个子进程，实际 %q", gotCount)
+		}
+	})
+
+	t.Run("找不到mcporter时返回明确原因并保留旧缓存或仅本地", func(t *testing.T) {
+		savedMcporter := mcporterPath
+		savedNode := nodePath
+		mcporterPath = ""
+		nodePath = ""
+		defer func() {
+			mcporterPath = savedMcporter
+			nodePath = savedNode
+		}()
+
+		tool, err := filepath.Abs("../../skills/delivery-pipeline/scripts/model_config.py")
+		if err != nil {
+			t.Fatal(err)
+		}
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("PATH", t.TempDir())
+		lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+		mapDir := filepath.Join(lanesRoot, "demo-m1")
+		if err := os.MkdirAll(mapDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		driverJSON := `{"gates":{"spec":"https://linear.app/demo/issue/DEMO-2"},"plan":{"repo":"demo","epic":"https://linear.app/demo/issue/DEMO-1","tickets":[{"id":"01"}]}}`
+		if err := os.WriteFile(filepath.Join(mapDir, "driver.json"), []byte(driverJSON), 0600); err != nil {
+			t.Fatal(err)
+		}
+		reg := "<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: demo-m1\nrole: map\nwork_item: DEMO-2\nepic: https://linear.app/demo/issue/DEMO-1\n```\n"
+		if err := os.WriteFile(filepath.Join(mapDir, "registry.md"), []byte(reg), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		host := &Host{Python: python, Tool: tool}
+		// 1) 无缓存：进入仅本地，原因写明“找不到 mcporter”。
+		out, err := host.RefreshBoardLinear(true)
+		if err != nil {
+			t.Fatalf("无 mcporter 应降级返回本地快照：%v", err)
+		}
+		var snap struct {
+			Linear struct {
+				Status    string  `json:"status"`
+				FetchedAt *string `json:"fetched_at"`
+				Reason    *string `json:"reason"`
+			} `json:"linear"`
+			Repos []struct {
+				Epics []struct {
+					Title string `json:"title"`
+				} `json:"epics"`
+			} `json:"repos"`
+		}
+		if err := json.Unmarshal(out, &snap); err != nil {
+			t.Fatal(err)
+		}
+		if snap.Linear.Status != "failed" || snap.Linear.FetchedAt != nil || snap.Linear.Reason == nil || !strings.Contains(*snap.Linear.Reason, "找不到 mcporter") {
+			t.Fatalf("无缓存时应写明找不到 mcporter，实际 %+v", snap.Linear)
+		}
+		if len(snap.Repos) == 0 || snap.Repos[0].Epics[0].Title != "Unknown" {
+			t.Fatalf("无缓存时 Epic 标题应保持 Unknown，实际 %+v", snap.Repos)
+		}
+
+		// 2) 已有旧成功缓存：沿用旧数据并写明“找不到 mcporter”。
+		oldFetched := "2026-11-27T01:00:00Z"
+		oldCache := `{"version":1,"status":"ok","fetched_at":"` + oldFetched + `","attempted_at":"` + oldFetched + `","reason":null,"issues":{"DEMO-1":{"title":"旧 Epic 标题","status":"In Progress","status_type":"started","parent":null,"description":null,"children":["DEMO-2"],"fetched_at":"` + oldFetched + `"}},"failed":{}}`
+		if err := os.WriteFile(filepath.Join(lanesRoot, "board-linear.json"), []byte(oldCache), 0600); err != nil {
+			t.Fatal(err)
+		}
+		out2, err := host.RefreshBoardLinear(true)
+		if err != nil {
+			t.Fatalf("有旧缓存且无 mcporter 应返回沿用旧数据的快照：%v", err)
+		}
+		if err := json.Unmarshal(out2, &snap); err != nil {
+			t.Fatal(err)
+		}
+		if snap.Linear.Status != "failed" || snap.Linear.FetchedAt == nil || *snap.Linear.FetchedAt != oldFetched || snap.Linear.Reason == nil || !strings.Contains(*snap.Linear.Reason, "找不到 mcporter") {
+			t.Fatalf("有旧缓存时应保留 fetched_at 并写明找不到 mcporter，实际 %+v", snap.Linear)
+		}
+		if snap.Repos[0].Epics[0].Title != "旧 Epic 标题" {
+			t.Fatalf("有旧缓存时应继续显示旧 Linear 标题，实际 %q", snap.Repos[0].Epics[0].Title)
+		}
+	})
+
+	t.Run("找不到node时返回明确原因并保留旧缓存或仅本地_绑定nodePath后成功", func(t *testing.T) {
+		savedMcporter := mcporterPath
+		savedNode := nodePath
+		nodePath = ""
+		defer func() {
+			mcporterPath = savedMcporter
+			nodePath = savedNode
+		}()
+
+		tool, err := filepath.Abs("../../skills/delivery-pipeline/scripts/model_config.py")
+		if err != nil {
+			t.Fatal(err)
+		}
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+		lanesRoot := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+		mapDir := filepath.Join(lanesRoot, "demo-m1")
+		if err := os.MkdirAll(mapDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		driverJSON := `{"gates":{"spec":"https://linear.app/demo/issue/DEMO-2"},"plan":{"repo":"demo","epic":"https://linear.app/demo/issue/DEMO-1","tickets":[{"id":"01"}]}}`
+		if err := os.WriteFile(filepath.Join(mapDir, "driver.json"), []byte(driverJSON), 0600); err != nil {
+			t.Fatal(err)
+		}
+		reg := "<!-- wayfinder-lane-registry:v2 -->\n```yaml\nlane_id: demo-m1\nrole: map\nwork_item: DEMO-2\nepic: https://linear.app/demo/issue/DEMO-1\n```\n"
+		if err := os.WriteFile(filepath.Join(mapDir, "registry.md"), []byte(reg), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		mcporterDir := t.TempDir()
+		fakeMcporter := filepath.Join(mcporterDir, "mcporter")
+		if err := os.WriteFile(fakeMcporter, []byte("#!/usr/bin/env node\nconsole.log('ignored')\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		mcporterPath = fakeMcporter
+
+		host := &Host{Python: python, Tool: tool}
+		// 1) 未绑定 node 且父进程 PATH 仅有系统目录：无缓存时仅本地并写明“找不到 node”。
+		out, err := host.RefreshBoardLinear(true)
+		if err != nil {
+			t.Fatalf("无 node 应降级返回本地快照：%v", err)
+		}
+		var snap struct {
+			Linear struct {
+				Status    string  `json:"status"`
+				FetchedAt *string `json:"fetched_at"`
+				Reason    *string `json:"reason"`
+			} `json:"linear"`
+			Repos []struct {
+				Epics []struct {
+					Title string `json:"title"`
+				} `json:"epics"`
+			} `json:"repos"`
+		}
+		if err := json.Unmarshal(out, &snap); err != nil {
+			t.Fatal(err)
+		}
+		if snap.Linear.Status != "failed" || snap.Linear.FetchedAt != nil || snap.Linear.Reason == nil || !strings.Contains(*snap.Linear.Reason, "找不到 node") {
+			reason := "<nil>"
+			if snap.Linear.Reason != nil {
+				reason = *snap.Linear.Reason
+			}
+			t.Fatalf("无缓存且缺 node 时应写明找不到 node，实际 status=%q fetched_at=%v reason=%q", snap.Linear.Status, snap.Linear.FetchedAt, reason)
+		}
+		if len(snap.Repos) == 0 || snap.Repos[0].Epics[0].Title != "Unknown" {
+			t.Fatalf("无缓存时 Epic 标题应保持 Unknown，实际 %+v", snap.Repos)
+		}
+
+		// 2) 已有旧成功缓存且缺 node：沿用旧数据并写明“找不到 node”。
+		oldFetched := "2026-11-27T01:00:00Z"
+		oldCache := `{"version":1,"status":"ok","fetched_at":"` + oldFetched + `","attempted_at":"` + oldFetched + `","reason":null,"issues":{"DEMO-1":{"title":"旧 Epic 标题","status":"In Progress","status_type":"started","parent":null,"description":null,"children":["DEMO-2"],"fetched_at":"` + oldFetched + `"}},"failed":{}}`
+		if err := os.WriteFile(filepath.Join(lanesRoot, "board-linear.json"), []byte(oldCache), 0600); err != nil {
+			t.Fatal(err)
+		}
+		out2, err := host.RefreshBoardLinear(true)
+		if err != nil {
+			t.Fatalf("有旧缓存且缺 node 应返回沿用旧数据的快照：%v", err)
+		}
+		if err := json.Unmarshal(out2, &snap); err != nil {
+			t.Fatal(err)
+		}
+		if snap.Linear.Status != "failed" || snap.Linear.FetchedAt == nil || *snap.Linear.FetchedAt != oldFetched || snap.Linear.Reason == nil || !strings.Contains(*snap.Linear.Reason, "找不到 node") {
+			reason := "<nil>"
+			if snap.Linear.Reason != nil {
+				reason = *snap.Linear.Reason
+			}
+			t.Fatalf("有旧缓存且缺 node 时应保留 fetched_at 并写明找不到 node，实际 status=%q fetched_at=%v reason=%q", snap.Linear.Status, snap.Linear.FetchedAt, reason)
+		}
+		if snap.Repos[0].Epics[0].Title != "旧 Epic 标题" {
+			t.Fatalf("有旧缓存时应继续显示旧 Linear 标题，实际 %q", snap.Repos[0].Epics[0].Title)
+		}
+
+		// 3) 绑定 nodePath 到隔离目录中的假 node，父进程 PATH 仍仅含系统目录：刷新应成功。
+		nodeDir := t.TempDir()
+		fakeNode := filepath.Join(nodeDir, "node")
+		// 假 node 直接响应 mcporter 的参数（第一个参数是假 mcporter 路径，其后为 mcporter 参数）。
+		fakeNodeScript := `#!/bin/sh
+args="$*"
+case "$args" in
+  *linear__list_issues*)
+    echo '{"issues":[],"hasNextPage":false}'
+    ;;
+  *DEMO-1*)
+    echo '{"id":"DEMO-1","title":"假 Node 返回的 Epic 标题","status":"In Progress","statusType":"started","parentId":null,"description":null}'
+    ;;
+  *DEMO-2*)
+    echo '{"id":"DEMO-2","title":"假 Node 返回的 Spec 标题","status":"In Progress","statusType":"started","parentId":"DEMO-1","description":null}'
+    ;;
+  *)
+    echo '{"id":"DEMO-1","title":"假 Node 返回的 Epic 标题","status":"In Progress","statusType":"started","parentId":null,"description":null}'
+    ;;
+esac
+`
+		if err := os.WriteFile(fakeNode, []byte(fakeNodeScript), 0755); err != nil {
+			t.Fatal(err)
+		}
+		nodePath = fakeNode
+		out3, err := host.RefreshBoardLinear(true)
+		if err != nil {
+			t.Fatalf("绑定 nodePath 后刷新应成功：%v", err)
+		}
+		if err := json.Unmarshal(out3, &snap); err != nil {
+			t.Fatal(err)
+		}
+		if snap.Linear.Status != "ok" || snap.Linear.FetchedAt == nil || snap.Linear.Reason != nil {
+			reason := "<nil>"
+			if snap.Linear.Reason != nil {
+				reason = *snap.Linear.Reason
+			}
+			t.Fatalf("绑定 nodePath 后应刷新成功，实际 status=%q fetched_at=%v reason=%q", snap.Linear.Status, snap.Linear.FetchedAt, reason)
+		}
+		if snap.Repos[0].Epics[0].Title != "假 Node 返回的 Epic 标题" {
+			t.Fatalf("绑定 nodePath 后应拿到新 Epic 标题，实际 %q", snap.Repos[0].Epics[0].Title)
+		}
+	})
+
+	t.Run("子进程超时返回明确超时错误", func(t *testing.T) {
+		resources := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		script := "import time\ntime.sleep(30)\n"
+		if err := os.WriteFile(filepath.Join(resources, "board_snapshot.py"), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+		host := &Host{Python: python, Tool: filepath.Join(resources, "model_config.py"), linearTimeout: 300 * time.Millisecond}
+		out, err := host.RefreshBoardLinear(true)
+		if err == nil || out != nil || !strings.Contains(err.Error(), "超时") {
+			t.Fatalf("期望超时错误且无快照，收到 %s / %v", out, err)
+		}
+	})
+}
+
+func TestSpecR10Throttle(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sample, err := os.ReadFile("../../skills/delivery-pipeline/scripts/board_samples/board-linear.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 27, 4, 10, 0, 0, time.UTC)
+
+	setupHost := func(t *testing.T, status string, ago time.Duration, sleepS string) (*Host, string) {
+		t.Helper()
+		resources := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		lanes := filepath.Join(home, ".config", "delivery-pipeline", "lanes")
+		if err := os.MkdirAll(lanes, 0700); err != nil {
+			t.Fatal(err)
+		}
+		at := now.Add(-ago).Format(time.RFC3339)
+		cache := `{"version":1,"status":"` + status + `","fetched_at":"` + at + `","attempted_at":"` + at + `","reason":null,"issues":{},"failed":{}}`
+		if err := os.WriteFile(filepath.Join(lanes, "board-linear.json"), []byte(cache), 0600); err != nil {
+			t.Fatal(err)
+		}
+		count := filepath.Join(resources, "count")
+		sampleFile := filepath.Join(resources, "s.json")
+		if err := os.WriteFile(sampleFile, sample, 0600); err != nil {
+			t.Fatal(err)
+		}
+		script := `import json, pathlib, sys, time
+if '--refresh-linear' in sys.argv:
+    p = pathlib.Path(` + strconv.Quote(count) + `)
+    n = int(p.read_text()) if p.exists() else 0
+    p.write_text(str(n + 1))
+    time.sleep(` + sleepS + `)
+    print(json.dumps({'status': 'ok', 'reason': None}))
+else:
+    sys.stdout.buffer.write(pathlib.Path(` + strconv.Quote(sampleFile) + `).read_bytes())
+`
+		if err := os.WriteFile(filepath.Join(resources, "board_snapshot.py"), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return &Host{
+			Python:    python,
+			Tool:      filepath.Join(resources, "model_config.py"),
+			linearNow: func() time.Time { return now },
+		}, count
+	}
+
+	readCount := func(path string) int {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return 0
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+		return n
+	}
+
+	t.Run("ok缓存90秒前非手动应启动", func(t *testing.T) {
+		h, count := setupHost(t, "ok", 90*time.Second, "0")
+		if _, err := h.RefreshBoardLinear(false); err != nil {
+			t.Fatal(err)
+		}
+		if got := readCount(count); got != 1 {
+			t.Fatalf("ok 缓存 attempted_at 90 秒前、非手动刷新应启动子进程，实际启动次数=%d", got)
+		}
+	})
+
+	for _, status := range []string{"failed", "partial"} {
+		t.Run(status+"缓存30秒前非手动应不启动", func(t *testing.T) {
+			h, count := setupHost(t, status, 30*time.Second, "0")
+			if _, err := h.RefreshBoardLinear(false); err != nil {
+				t.Fatal(err)
+			}
+			if got := readCount(count); got != 0 {
+				t.Fatalf("%s 缓存 attempted_at 30 秒前、非手动刷新不应启动子进程，实际启动次数=%d", status, got)
+			}
+		})
+	}
+
+	t.Run("failed缓存30秒内手动仍启动且在途时复用", func(t *testing.T) {
+		h, count := setupHost(t, "failed", 30*time.Second, "0.25")
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		outs := make([]json.RawMessage, 2)
+		for i, manual := range []bool{true, false} {
+			wg.Add(1)
+			go func(idx int, m bool) {
+				defer wg.Done()
+				if idx == 1 {
+					time.Sleep(50 * time.Millisecond)
+				}
+				outs[idx], errs[idx] = h.RefreshBoardLinear(m)
+			}(i, manual)
+		}
+		wg.Wait()
+		if errs[0] != nil || errs[1] != nil {
+			t.Fatalf("手动刷新及在途复用失败：%v / %v", errs[0], errs[1])
+		}
+		if !bytes.Equal(outs[0], outs[1]) || !bytes.Equal(outs[0], sample) {
+			t.Fatal("在途并发调用应复用同一快照结果")
+		}
+		if got := readCount(count); got != 1 {
+			t.Fatalf("手动刷新在 30 秒内应启动且并发只启动一次，实际启动次数=%d", got)
+		}
+	})
 }
 
 // 用独立 Python 进程穿过桌面公开 Interface，不替换配置 owner。
@@ -186,6 +681,68 @@ print(json.dumps(m.valid_fixture()))`, tool)
 	}
 }
 
+func assertApplyPostReadbackFailure(t *testing.T, python, tool string, evidence json.RawMessage, model, effort string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	seed := exec.Command(python, "-c", `import importlib.util,json,sys
+s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(json.dumps(m.valid_fixture()))`, tool)
+	raw, err := seed.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var candidate map[string]any
+	if err := json.Unmarshal(raw, &candidate); err != nil {
+		t.Fatal(err)
+	}
+	candidate["work"].(map[string]any)["planning"] = map[string]any{"agent": "pi", "model": model, "effort": effort, "fallbacks": []any{}}
+	payload, _ := json.Marshal(candidate)
+	sum := sha256.Sum256(raw)
+	evidencePath := filepath.Join(dir, "probe-evidence.json")
+	if err := os.WriteFile(evidencePath, evidence, 0600); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(dir, "tool.py")
+	script := `import json,os,pathlib,runpy,sys
+if len(sys.argv) >= 2 and sys.argv[1] == 'probe':
+ req = sys.argv[sys.argv.index('--request-id') + 1] if '--request-id' in sys.argv else ''
+ data = json.loads(pathlib.Path(` + strconv.Quote(evidencePath) + `).read_text(encoding='utf-8'))
+ data['request_id'] = req
+ print(json.dumps(data))
+ sys.exit(0)
+original=os.replace
+def replace(src,dst):
+ original(src,dst)
+ def fail(self): raise OSError('task readback failure')
+ pathlib.Path.read_bytes=fail
+os.replace=replace
+runpy.run_path(` + strconv.Quote(tool) + `,run_name='__main__')`
+	if err := os.WriteFile(wrapper, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := Host{Python: python, Tool: wrapper, Config: path}
+	out, err := h.Apply(payload, hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	json.Unmarshal(out, &result)
+	if result["status"] != "commit_unverified" {
+		t.Fatal(string(out))
+	}
+	actual, _ := os.ReadFile(path)
+	var readback map[string]any
+	json.Unmarshal(actual, &readback)
+	var expected map[string]any
+	json.Unmarshal(payload, &expected)
+	if !reflect.DeepEqual(readback, expected) {
+		t.Fatal("提交后错误不应回滚")
+	}
+}
+
 func TestApplyPostReadbackFailure(t *testing.T) {
 	python, _ := exec.LookPath("python3")
 	tool, _ := filepath.Abs("../../skills/delivery-pipeline-setup/scripts/model_config.py")
@@ -213,46 +770,14 @@ func TestApplyPostReadbackFailure(t *testing.T) {
 	if model == "" {
 		t.Skip("本机 Pi 无可核验候选，Host post 组合 Unknown")
 	}
-	seed := exec.Command(python, "-c", `import importlib.util,json,sys
-s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(json.dumps(m.valid_fixture()))`, tool)
-	raw, err := seed.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(path, raw, 0600)
-	var candidate map[string]any
-	json.Unmarshal(raw, &candidate)
-	candidate["work"].(map[string]any)["planning"] = map[string]any{"agent": "pi", "model": model, "effort": effort, "fallbacks": []any{}}
-	payload, _ := json.Marshal(candidate)
-	sum := sha256.Sum256(raw)
-	wrapper := filepath.Join(dir, "tool.py")
-	script := `import runpy,os,pathlib
-original=os.replace
-def replace(src,dst):
- original(src,dst)
- def fail(self): raise OSError('task readback failure')
- pathlib.Path.read_bytes=fail
-os.replace=replace
-runpy.run_path(` + strconv.Quote(tool) + `,run_name='__main__')`
-	os.WriteFile(wrapper, []byte(script), 0600)
-	h.Tool = wrapper
-	out, err := h.Apply(payload, hex.EncodeToString(sum[:]))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result map[string]any
-	json.Unmarshal(out, &result)
-	if result["status"] != "commit_unverified" {
-		t.Fatal(string(out))
-	}
-	actual, _ := os.ReadFile(path)
-	var readback map[string]any
-	json.Unmarshal(actual, &readback)
-	var expected map[string]any
-	json.Unmarshal(payload, &expected)
-	if !reflect.DeepEqual(readback, expected) {
-		t.Fatal("提交后错误不应回滚")
-	}
+	assertApplyPostReadbackFailure(t, python, tool, evidence, model, effort)
+}
+
+func TestApplyPostReadbackFailureDeterministicProbe(t *testing.T) {
+	python, _ := exec.LookPath("python3")
+	tool, _ := filepath.Abs("../../skills/delivery-pipeline-setup/scripts/model_config.py")
+	evidence := json.RawMessage(`{"request_id":"inspection","observed_at":"2026-11-27T00:00:00Z","sources":{"pi":{"status":"ok"}},"capabilities":{"pi":{"binary":true,"models":{"gpt-6.1-sol":["high"]}}}}`)
+	assertApplyPostReadbackFailure(t, python, tool, evidence, "gpt-6.1-sol", "high")
 }
 
 // R3：AppInfo.Build 与构建脚本 build_label 同格式；期望值取自 Spec 的示例，不由实现反推。

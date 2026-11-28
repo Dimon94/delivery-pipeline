@@ -42,6 +42,7 @@ export type BoardGroups={
 };
 
 export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
+ const hasLinear=Boolean(board.linear?.fetched_at);
  const repos:SideRepoSection[]=[];
  const ended:SideEpicEntry[]=[];
  for(const r of board.repos){
@@ -53,14 +54,30 @@ export function buildBoardGroups(board:BoardSnapshot):BoardGroups {
     epic:e,
     ended:e.ended,
     hasRunning:epicHasRunningTicket(e),
-    group:{id:epicGroupId(r.name,e),label,url:e.url,mmfs:e.mmfs},
+    group:{
+     id:epicGroupId(r.name,e),
+     label,
+     url:e.url,
+     mmfs:e.mmfs,
+     ...(e.candidates?.length?{candidates:e.candidates}:{}),
+     ...(e.mmf_edges?.length?{mmfEdges:e.mmf_edges}:{}),
+     ...(e.linear_status?{linearStatus:e.linear_status}:{}),
+     ...(hasLinear?{hasLinear:true}:{}),
+    },
    };
    if(e.ended)ended.push(entry);
    else activeEpics.push(entry);
   }
   if(activeEpics.length)repos.push({name:r.name,epics:activeEpics});
  }
- const inboxGroup:GraphGroup={id:INBOX_GROUP_ID,label:copy.Inbox,url:null,mmfs:board.inbox,inbox:true};
+ const inboxGroup:GraphGroup={
+  id:INBOX_GROUP_ID,
+  label:copy.Inbox,
+  url:null,
+  mmfs:board.inbox,
+  inbox:true,
+  ...(hasLinear?{hasLinear:true}:{}),
+ };
  const errors=Array.isArray(board.errors)?board.errors:[];
  const all:GraphGroup[]=[
   ...repos.flatMap(r=>r.epics.map(e=>e.group)),
@@ -84,17 +101,20 @@ function renderEpicItem(entry:SideEpicEntry,selectedGroupId:string|undefined,sel
  const problemCount=allTickets.filter(t=>t.lane?.group==='problem').length;
  const activeCount=allTickets.filter(t=>t.lane?.group==='active'||t.lane?.group==='review').length;
  const pct=allTickets.length?Math.round((doneCount/allTickets.length)*100):0;
- const flagsHtml=(problemCount?`<em class="epic-flag problem">${problemCount} 需处理</em>`:'')+(activeCount?`<em class="epic-flag">${activeCount} 进行中</em>`:'');
+ const linearStatusHtml=entry.epic.linear_status?`<em class="epic-flag epic-linear-status">${esc(entry.epic.linear_status)}</em>`:'';
+ const flagsHtml=linearStatusHtml+(problemCount?`<em class="epic-flag problem">${problemCount} 需处理</em>`:'')+(activeCount?`<em class="epic-flag">${activeCount} 进行中</em>`:'');
  const mmfLink=(m:(typeof g.mmfs)[number])=>{
   const mmfSelected=selected&&m.map===selectedMap;
   const stage=m.archived_at?copy.已归档:stageLabel(m.stage);
   return `<button class="board-mmf-entry${mmfSelected?' selected':''}" data-board="side-mmf" data-group="${esc(g.id)}" data-map="${esc(m.map)}" aria-current="${mmfSelected}" title="${esc(m.title)} · ${esc(stage)}"><span class="board-mmf-title">${esc(m.title)}</span><small>${esc(stage)}</small></button>`;
  };
+ const knownCandidateCount=(g.candidates??[]).filter(c=>c.mmf_id!=='Unknown').length;
+ const mmfCount=g.mmfs.length+knownCandidateCount;
  const finished=g.mmfs.filter(isFinishedMmf);
  const finishedOpen=expandedFinished.has(g.id);
  const activeHtml=g.mmfs.filter(m=>!isFinishedMmf(m)).map(mmfLink).join('');
  const finishedHtml=finished.length?`<button class="board-mmf-entry" data-board="toggle-summary" data-group="${esc(g.id)}" aria-expanded="${finishedOpen}"><span>${finishedOpen?'▾':'▸'} ${copy.已结束}</span><small>${finished.length} MMF</small></button>${finishedOpen?finished.map(mmfLink).join(''):''}`:'';
- return `<div class="board-epic${expanded?' is-expanded':''}" data-epic="${esc(g.id)}" data-expanded="${expanded}"><div class="board-epic-row"><button class="epic-toggle" data-board="toggle-epic" data-group="${esc(g.id)}" aria-expanded="${expanded}" aria-label="${esc(expanded?copy.收起Epic:copy.展开Epic)} ${esc(g.label)}">${expanded?'▾':'▸'}</button><button class="board-entry${selected?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${selected}" title="${esc(g.label)}"><span class="epic-top"><span class="board-entry-label">${esc(g.label)}</span><small>${g.mmfs.length} MMF${allTickets.length?` · ${allTickets.length} 票`:''}</small></span><span class="epic-bar"><i style="width:${pct}%"></i></span>${flagsHtml?`<span class="epic-flags">${flagsHtml}</span>`:''}</button></div><div class="epic-mmfs"${expanded?'':' hidden'}>${activeHtml}${finishedHtml}</div></div>`;
+ return `<div class="board-epic${expanded?' is-expanded':''}" data-epic="${esc(g.id)}" data-expanded="${expanded}"><div class="board-epic-row"><button class="epic-toggle" data-board="toggle-epic" data-group="${esc(g.id)}" aria-expanded="${expanded}" aria-label="${esc(expanded?copy.收起Epic:copy.展开Epic)} ${esc(g.label)}">${expanded?'▾':'▸'}</button><button class="board-entry${selected?' selected':''}" data-board="group" data-group="${esc(g.id)}" aria-current="${selected}" title="${esc(g.label)}"><span class="epic-top"><span class="board-entry-label">${esc(g.label)}</span><small>${mmfCount} MMF${allTickets.length?` · ${allTickets.length} 票`:''}</small></span><span class="epic-bar"><i style="width:${pct}%"></i></span>${flagsHtml?`<span class="epic-flags">${flagsHtml}</span>`:''}</button></div><div class="epic-mmfs"${expanded?'':' hidden'}>${activeHtml}${finishedHtml}</div></div>`;
 }
 
 function renderInboxSection(inbox:{group:GraphGroup;items:InboxItem[]},selectedGroupId:string|undefined,selectedMap:string|undefined,inboxOpen:boolean):string {

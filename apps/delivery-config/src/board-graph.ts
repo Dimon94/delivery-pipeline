@@ -1,7 +1,7 @@
-import {isFinishedMmf,type Mmf,type Ticket} from './board';
+import {isFinishedMmf,type Mmf,type MmfCandidate,type MmfEdge,type Ticket} from './board';
 import {copy,stageLabel,ticketStatusText} from './copy';
 
-export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];inbox?:true};
+export type GraphGroup={id:string;label:string;url:string|null;mmfs:Mmf[];candidates?:MmfCandidate[];mmfEdges?:MmfEdge[];inbox?:true;linearStatus?:string;hasLinear?:boolean};
 export type NodeRect={x:number;y:number;width:number;height:number};
 export type ViewportMetrics={scrollLeft:number;scrollTop:number;clientWidth:number;clientHeight:number;scrollWidth?:number;scrollHeight?:number};
 export type DependencyChain={nodes:Set<string>;edges:Set<string>};
@@ -147,7 +147,53 @@ export function graphSummary(group:GraphGroup,open:boolean) {
  };
 }
 
-export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined,summaryOpen=false):string {
+export function candidateKey(candidate:MmfCandidate,index:number):string {
+ if(candidate.mmf_id!=='Unknown')return candidate.mmf_id;
+ return candidate.spec?.key??`unknown-${index}`;
+}
+
+// 计算某个 MMF 在跨 MMF 依赖边中的全部上下游节点与边（`${from}>${to}`）。
+export function mmfDependencyChain(edges:MmfEdge[],targetMmfId:string):DependencyChain {
+ const upstream=new Set<string>([targetMmfId]);
+ const downstream=new Set<string>([targetMmfId]);
+ const edgeKeys=new Set<string>();
+ const upQueue=[targetMmfId];
+ while(upQueue.length){
+  const cur=upQueue.shift()!;
+  for(const e of edges){
+   if(e.to!==cur)continue;
+   edgeKeys.add(`${e.from}>${e.to}`);
+   if(!upstream.has(e.from)){upstream.add(e.from);upQueue.push(e.from);}
+  }
+ }
+ const downQueue=[targetMmfId];
+ while(downQueue.length){
+  const cur=downQueue.shift()!;
+  for(const e of edges){
+   if(e.from!==cur)continue;
+   edgeKeys.add(`${e.from}>${e.to}`);
+   if(!downstream.has(e.to)){downstream.add(e.to);downQueue.push(e.to);}
+  }
+ }
+ return {nodes:new Set([...upstream,...downstream]),edges:edgeKeys};
+}
+
+// 返回在当前图中至少有一个端点找不到（未展开或不存在）的跨 MMF 边。
+export function missingMmfEdges(group:GraphGroup,summaryOpen=false):MmfEdge[] {
+ const edges=group.mmfEdges??[];
+ if(!edges.length)return [];
+ const summarized=new Set(graphSummary(group,summaryOpen).items);
+ const visibleIds=new Set<string>();
+ for(const m of group.mmfs){
+  if((summaryOpen||!summarized.has(m))&&m.mmf_id&&m.mmf_id!=='Unknown')visibleIds.add(m.mmf_id);
+ }
+ for(const c of group.candidates??[]){
+  if(c.mmf_id&&c.mmf_id!=='Unknown')visibleIds.add(c.mmf_id);
+ }
+ return edges.filter(e=>!visibleIds.has(e.from)||!visibleIds.has(e.to));
+}
+
+export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|undefined,summaryOpen=false,selectedCandidate?:MmfCandidate):string {
  const G=GRAPH_GEOMETRY;
  const round2=(n:number)=>Number(n.toFixed(2));
  const bands:string[]=[],nodes:string[]=[],links:string[]=[];
@@ -156,11 +202,17 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  const summaryRight=mmfX+G.mmfW;
  let y=0,width=summaryRight+G.pad;
 
+ const candidates=group.candidates??[];
+ const showLinear=Boolean(group.hasLinear)||group.mmfs.some(m=>m.tickets.some(t=>Boolean(t.linear_issue)));
  const totalTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.length,0);
  const doneTickets=group.mmfs.reduce((sum,m)=>sum+m.tickets.filter(t=>t.lane?.group==='done').length,0);
+ const knownCandidateCount=candidates.filter(c=>c.mmf_id!=='Unknown').length;
+ const mmfCount=group.mmfs.length+knownCandidateCount;
 
  type BandLayout={mmf:Mmf;bandY:number;bandH:number;nodeX:number;mmfY:number;pos:Map<string,{x:number;y:number}>};
+ type CandidateLayout={candidate:MmfCandidate;index:number;candY:number};
  const layouts:BandLayout[]=[];
+ const candidateLayouts:CandidateLayout[]=[];
  const summary=graphSummary(group,summaryOpen);
  const summarized=new Set(summary.items);
  const placeBand=(m:Mmf,nodeX:number)=>{
@@ -198,6 +250,11 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
  };
 
  for(const m of group.mmfs)if(!summarized.has(m))placeBand(m,mmfX);
+ for(let i=0;i<candidates.length;i++){
+  const bandH=round2(G.mmfH+G.pad*2);
+  candidateLayouts.push({candidate:candidates[i]!,index:i,candY:round2(y+G.pad)});
+  y=round2(y+bandH+G.band);
+ }
  const summaryY=y+G.pad;
  const collapsedEnd=summary.items.length?y+G.mmfH+G.pad*2+G.band:y;
  if(summaryOpen)for(const m of summary.items)placeBand(m,summaryRight+G.mmfGap);
@@ -216,6 +273,19 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
   nodes.push(`<button class="graph-mmf graph-summary ${group.inbox?'graph-loose':'graph-finished'}" data-board="toggle-summary" data-group="${esc(group.id)}" data-x="${mmfX}" data-y="${summaryY}" aria-expanded="${summaryOpen}" style="left:${mmfX}px;top:${summaryY}px"><span class="mmf-top"><b>${summaryOpen?'▾':'▸'} ${summary.label}</b><span class="mmf-stage">${summary.count}</span></span><small class="mmf-meta">${summary.hint}</small></button>`);
  }
 
+ for(const {candidate:c,index,candY} of candidateLayouts){
+  const key=candidateKey(c,index);
+  const candMidY=round2(candY+G.mmfH/2);
+  links.push(`<path class="e-mmf e-candidate" data-candidate-link="${esc(key)}" d="${edge(G.root,rootMidY,mmfX,candMidY)}"/>`);
+  const selected=selectedCandidate===c;
+  const specText=c.spec?`${c.spec.key} · ${c.spec.status}`:'尚无 Spec';
+  const specHtml=c.spec
+   ?`<span class="cand-spec-key">${esc(c.spec.key)}</span> · <span class="cand-spec-status">${esc(c.spec.status)}</span>`
+   :'尚无 Spec';
+  const titleAttr=`${c.mmf_id} ${c.title} · 未开工 · ${specText}`;
+  nodes.push(`<button class="graph-mmf graph-candidate${selected?' selected':''}" data-board="candidate" data-candidate="${esc(key)}" data-mmf-id="${esc(c.mmf_id)}" data-candidate-source="${esc(c.source)}" data-x="${mmfX}" data-y="${candY}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${mmfX}px;top:${candY}px;border-style:dashed"><span class="mmf-top"><b class="mmf-key">${esc(c.mmf_id)}</b><span class="mmf-stage">未开工</span></span><span class="mmf-t">${esc(c.title)}</span><span class="mmf-meta">${specHtml}</span></button>`);
+ }
+
  for(const item of layouts){
   const {mmf:m,bandY,bandH,nodeX,mmfY,pos}=item;
   const mmfMidY=round2(mmfY+G.mmfH/2);
@@ -226,14 +296,15 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
    :edge(G.root,rootMidY,nodeX,mmfMidY);
   links.push(`<path class="e-mmf" data-link="${esc(group.id)}>${esc(m.map)}" d="${branch}"/>`);
 
-  const mmfSelected=m===mmf&&!ticket;
+  const mmfSelected=m===mmf&&!ticket&&!selectedCandidate;
   const mmfExec=Boolean(m.executing);
   const doneCount=m.tickets.filter(t=>t.lane?.group==='done').length;
   const segHtml=m.tickets.map(t=>`<i class="g-${t.lane?esc(t.lane.group):'pending'}"></i>`).join('');
   const countText=m.tickets.length?`${doneCount}/${m.tickets.length} 已集成`:'尚无票';
   const stage=m.archived_at?copy.已归档:stageLabel(m.stage);
   const mmfTitleAttr=`${m.title} · ${stage} · ${countText}`;
-  nodes.push(`<button class="graph-mmf${mmfExec?' is-executing':''}${mmfSelected?' selected':''}" data-board="mmf" data-map="${esc(m.map)}" data-x="${nodeX}" data-y="${mmfY}" aria-pressed="${mmfSelected}" title="${esc(mmfTitleAttr)}" style="left:${nodeX}px;top:${mmfY}px">${mmfExec?execRing(G.mmfW,G.mmfH):''}<span class="mmf-top"><b class="mmf-key">${esc(m.map)}</b><span class="mmf-stage">${esc(stage)}</span></span><span class="mmf-t">${esc(m.title)}</span><span class="mmf-seg">${segHtml}</span><span class="mmf-meta">${esc(countText)}${mmfExec?` · <span class="exec-label">${esc(copy.执行中)}</span>`:''}</span></button>`);
+  const mmfIdAttr=m.mmf_id?` data-mmf-id="${esc(m.mmf_id)}"`:'';
+  nodes.push(`<button class="graph-mmf${mmfExec?' is-executing':''}${mmfSelected?' selected':''}" data-board="mmf" data-map="${esc(m.map)}"${mmfIdAttr} data-x="${nodeX}" data-y="${mmfY}" aria-pressed="${mmfSelected}" title="${esc(mmfTitleAttr)}" style="left:${nodeX}px;top:${mmfY}px">${mmfExec?execRing(G.mmfW,G.mmfH):''}<span class="mmf-top"><b class="mmf-key">${esc(m.map)}</b><span class="mmf-stage">${esc(stage)}</span></span><span class="mmf-t">${esc(m.title)}</span><span class="mmf-seg">${segHtml}</span><span class="mmf-meta">${esc(countText)}${mmfExec?` · <span class="exec-label">${esc(copy.执行中)}</span>`:''}</span></button>`);
 
   if(!m.tickets.length){
    nodes.push(`<div class="graph-band-empty" style="left:${nodeX+G.mmfW+G.mmfGap}px;top:${round2(bandY+bandH/2-8)}px">尚无票</div>`);
@@ -252,42 +323,124 @@ export function renderGraph(group:GraphGroup,mmf:Mmf|undefined,ticket:Ticket|und
      links.push(`<path class="e-dep" data-map="${esc(m.map)}" data-dep="${esc(d)}>${esc(t.id)}" d="M${q.x+G.ticketW} ${qMidY} C${round2(q.x+G.ticketW+G.gx/2)} ${qMidY},${round2(p.x-G.gx/2)} ${tMidY},${p.x} ${tMidY}"/>`);
     }
    }
-   const selected=m===mmf&&t===ticket;
+   const selected=m===mmf&&t===ticket&&!selectedCandidate;
    const executing=Boolean(t.executing);
    const halted=ticketMatchesHalt(m,t);
    const status=ticketStatusText(t);
+   const displayTitle=t.linear_issue?.title||t.title;
+   const linearStatus=t.linear_issue?.status??'Unknown';
    const groupCls=t.lane?esc(t.lane.group):'pending';
-   const titleAttr=`${t.id} ${t.title} · ${status}`;
-   nodes.push(`<button class="graph-ticket g-${groupCls}${executing?' is-executing':''}${selected?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${p.x}px;top:${p.y}px">${executing?execRing(G.ticketW,G.ticketH):''}<span class="tk-row"><span class="tk-id">${esc(t.id)}</span><span class="tk-t">${esc(t.title)}</span>${halted?'<span class="tk-h">Halt</span>':''}</span><small class="tk-st ${ticketStateClass(t)}${executing?' exec-label':''}">${executing?'<i class="pulse-dot" aria-hidden="true"></i>':''}${esc(status)}</small></button>`);
+   const titleAttr=showLinear?`${t.id} ${displayTitle} · ${status} · Linear ${linearStatus}`:`${t.id} ${t.title} · ${status}`;
+   const linearStatusHtml=showLinear?` · <span class="tk-linear-status">${esc(linearStatus)}</span>`:'';
+   nodes.push(`<button class="graph-ticket g-${groupCls}${executing?' is-executing':''}${selected?' selected':''}" data-board="ticket" data-map="${esc(m.map)}" data-ticket="${esc(t.id)}" data-x="${p.x}" data-y="${p.y}" aria-pressed="${selected}" title="${esc(titleAttr)}" style="left:${p.x}px;top:${p.y}px">${executing?execRing(G.ticketW,G.ticketH):''}<span class="tk-row"><span class="tk-id">${esc(t.id)}</span><span class="tk-t">${esc(displayTitle)}</span>${halted?'<span class="tk-h">Halt</span>':''}</span><small class="tk-st ${ticketStateClass(t)}${executing?' exec-label':''}">${executing?'<i class="pulse-dot" aria-hidden="true"></i>':''}${esc(status)}${linearStatusHtml}</small></button>`);
   }
  }
 
- const rootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${group.mmfs.length} MMF · ${doneTickets}/${totalTickets} 票`;
- return `<div class="graph" style="width:${width}px;height:${h}px">${bands.join('')}<svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" style="width:${width}px;height:${h}px" aria-hidden="true">${links.join('')}</svg><div class="graph-root" data-x="0" data-y="${rootY}" data-meta="${esc(rootMeta)}" title="${esc(group.label)} · ${esc(rootMeta)}" style="left:0;top:${rootY}px">${esc(group.label)}</div>${nodes.join('')}</div>`;
+  const mmfNodePos=new Map<string,{x:number;midY:number}>();
+  for(const item of layouts){
+   if(item.mmf.mmf_id&&item.mmf.mmf_id!=='Unknown'){
+    mmfNodePos.set(item.mmf.mmf_id,{x:item.nodeX,midY:round2(item.mmfY+G.mmfH/2)});
+   }
+  }
+  for(const {candidate:c,candY} of candidateLayouts){
+   if(c.mmf_id&&c.mmf_id!=='Unknown'&&!mmfNodePos.has(c.mmf_id)){
+    mmfNodePos.set(c.mmf_id,{x:mmfX,midY:round2(candY+G.mmfH/2)});
+   }
+  }
+  const mmfEdgeLabels:string[]=[];
+  let drawnMmfEdges=0;
+  for(const e of group.mmfEdges??[]){
+   const from=mmfNodePos.get(e.from);
+   const to=mmfNodePos.get(e.to);
+   if(!from||!to)continue;
+   const kindCls=e.kind==='开工'?'start':e.kind==='上线'?'launch':'unknown';
+   const edgeId=`${e.from}>${e.to}`;
+   const dy=Math.abs(to.midY-from.midY);
+   const spread=(drawnMmfEdges%3)*6;
+   let d:string;
+   let labelX:number;
+   let labelY:number;
+   if(from.x===to.x){
+    const offset=Math.min(48,22+dy*0.08)+spread;
+    const cx=round2(from.x-offset);
+    d=`M${from.x} ${from.midY} C${cx} ${from.midY},${cx} ${to.midY},${to.x} ${to.midY}`;
+    labelX=round2(0.25*from.x+0.75*cx);
+    labelY=round2((from.midY+to.midY)/2);
+   }else{
+    d=edge(from.x,from.midY,to.x,to.midY);
+    labelX=round2((from.x+to.x)/2);
+    labelY=round2((from.midY+to.midY)/2);
+   }
+   drawnMmfEdges++;
+   links.push(`<path class="e-mmf-dep kind-${kindCls}" data-mmf-edge="${esc(edgeId)}" data-edge-from="${esc(e.from)}" data-edge-to="${esc(e.to)}" data-edge-kind="${esc(e.kind)}" data-edge-text="${esc(e.text)}" d="${d}" marker-end="url(#mmf-edge-arrow)"><title>${esc(e.kind)} · ${esc(e.text)}</title></path>`);
+   mmfEdgeLabels.push(`<div class="mmf-edge-label kind-${kindCls}" data-mmf-edge-label="${esc(edgeId)}" data-edge-from="${esc(e.from)}" data-edge-to="${esc(e.to)}" data-edge-kind="${esc(e.kind)}" style="left:${labelX}px;top:${labelY}px" title="${esc(e.text)}"><span class="mmf-edge-kind">${esc(e.kind)}</span><span class="mmf-edge-text">${esc(e.text)}</span></div>`);
+  }
+
+  const arrowDefs=drawnMmfEdges
+   ?'<defs><marker id="mmf-edge-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="currentColor" stroke-width="1.4"/></marker></defs>'
+   :'';
+  const baseRootMeta=group.inbox?`${group.mmfs.length} ${copy.条目}`:`${mmfCount} MMF · ${doneTickets}/${totalTickets} 票`;
+  const rootMeta=group.linearStatus?`${baseRootMeta} · ${group.linearStatus}`:baseRootMeta;
+  return `<div class="graph" style="width:${width}px;height:${h}px">${bands.join('')}<svg class="graph-links" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" style="width:${width}px;height:${h}px" aria-hidden="true">${arrowDefs}${links.join('')}</svg><div class="graph-root" data-x="0" data-y="${rootY}" data-meta="${esc(rootMeta)}" title="${esc(group.label)} · ${esc(rootMeta)}" style="left:0;top:${rootY}px">${esc(group.label)}</div>${nodes.join('')}${mmfEdgeLabels.join('')}</div>`;
 }
 
-// 悬停某张票或某个 MMF 时只保留其上下游链高亮，其余淡出；离开时恢复。
-export function applyHoverChain(container:Element,group:GraphGroup|undefined,hovered?:{map:string;ticket?:string}):void {
+// 悬停某张票、某个 MMF 或未开工候选卡时只保留其上下游链高亮，其余淡出；离开时恢复。
+export function applyHoverChain(container:Element,group:GraphGroup|undefined,hovered?:{map?:string;ticket?:string;candidate?:string}):void {
  const graphEl=container.querySelector('.graph');
  if(!graphEl)return;
  const tickets=[...graphEl.querySelectorAll<HTMLElement>('.graph-ticket')];
  const mmfs=[...graphEl.querySelectorAll<HTMLElement>('.graph-mmf')];
  const paths=[...graphEl.querySelectorAll<SVGPathElement>('.graph-links path')];
- if(!hovered||!group){
+ const edgeLabels=[...graphEl.querySelectorAll<HTMLElement>('.mmf-edge-label')];
+ const clear=()=>{
   graphEl.classList.remove('has-hover');
-  for(const el of [...tickets,...mmfs,...paths]){el.classList.remove('chain','dimmed');}
+  for(const el of [...tickets,...mmfs,...paths,...edgeLabels]){el.classList.remove('chain','dimmed');}
+ };
+ if(!hovered||!group){clear();return;}
+
+ if(hovered.candidate!==undefined){
+  const cands=group.candidates??[];
+  const cand=cands.find((c,i)=>candidateKey(c,i)===hovered.candidate||c.mmf_id===hovered.candidate);
+  if(!cand){clear();return;}
+  const mmfChain=cand.mmf_id!=='Unknown'&&group.mmfEdges?.length
+   ?mmfDependencyChain(group.mmfEdges,cand.mmf_id)
+   :{nodes:new Set<string>(),edges:new Set<string>()};
+  graphEl.classList.add('has-hover');
+  for(const el of tickets){el.classList.remove('chain');el.classList.add('dimmed');}
+  for(const el of mmfs){
+   const mmfId=el.dataset.mmfId;
+   const active=el.dataset.candidate===hovered.candidate||(Boolean(mmfId)&&mmfChain.nodes.has(mmfId!));
+   el.classList.toggle('chain',active);
+   el.classList.toggle('dimmed',!active);
+  }
+  for(const p of paths){
+   const mmfEdge=p.getAttribute('data-mmf-edge');
+   let active=false;
+   if(mmfEdge!==null){
+    active=mmfChain.edges.has(mmfEdge);
+   }else{
+    active=p.getAttribute('data-candidate-link')===hovered.candidate;
+   }
+   p.classList.toggle('chain',active);
+   p.classList.toggle('dimmed',!active);
+  }
+  for(const lbl of edgeLabels){
+   const active=mmfChain.edges.has(lbl.dataset.mmfEdgeLabel??'');
+   lbl.classList.toggle('chain',active);
+   lbl.classList.toggle('dimmed',!active);
+  }
   return;
  }
- const mmf=group.mmfs.find(m=>m.map===hovered.map);
- if(!mmf){
-  graphEl.classList.remove('has-hover');
-  for(const el of [...tickets,...mmfs,...paths]){el.classList.remove('chain','dimmed');}
-  return;
- }
+
+ const mmf=hovered.map?group.mmfs.find(m=>m.map===hovered.map):undefined;
+ if(!mmf){clear();return;}
  const isWholeMmf=hovered.ticket===undefined;
  const chain=isWholeMmf
   ?{nodes:new Set(mmf.tickets.map(t=>t.id)),edges:new Set<string>()}
   :dependencyChain(mmf.tickets,hovered.ticket!);
+ const mmfChain=isWholeMmf&&mmf.mmf_id&&mmf.mmf_id!=='Unknown'&&group.mmfEdges?.length
+  ?mmfDependencyChain(group.mmfEdges,mmf.mmf_id)
+  :undefined;
  const throughSummary=isSummarizedMmf(group,mmf);
  graphEl.classList.add('has-hover');
  for(const el of tickets){
@@ -296,15 +449,21 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
   el.classList.toggle('dimmed',!active);
  }
  for(const el of mmfs){
-  const active=el.dataset.map===hovered.map||(throughSummary&&el.classList.contains('graph-summary'));
+  const mmfId=el.dataset.mmfId;
+  const active=el.dataset.map===hovered.map
+   ||(throughSummary&&el.classList.contains('graph-summary'))
+   ||Boolean(mmfChain&&mmfId&&mmfChain.nodes.has(mmfId));
   el.classList.toggle('chain',active);
   el.classList.toggle('dimmed',!active);
  }
  for(const p of paths){
   const dep=p.getAttribute('data-dep');
   const rootTo=p.getAttribute('data-root-to');
+  const mmfEdge=p.getAttribute('data-mmf-edge');
   let active=false;
-  if(dep!==null){
+  if(mmfEdge!==null){
+   active=Boolean(mmfChain&&mmfChain.edges.has(mmfEdge));
+  }else if(dep!==null){
    active=p.getAttribute('data-map')===hovered.map&&(isWholeMmf||chain.edges.has(dep));
   }else if(rootTo!==null){
    active=p.getAttribute('data-map')===hovered.map&&(isWholeMmf||chain.nodes.has(rootTo));
@@ -316,5 +475,10 @@ export function applyHoverChain(container:Element,group:GraphGroup|undefined,hov
   }
   p.classList.toggle('chain',active);
   p.classList.toggle('dimmed',!active);
+ }
+ for(const lbl of edgeLabels){
+  const active=Boolean(mmfChain&&mmfChain.edges.has(lbl.dataset.mmfEdgeLabel??''));
+  lbl.classList.toggle('chain',active);
+  lbl.classList.toggle('dimmed',!active);
  }
 }
