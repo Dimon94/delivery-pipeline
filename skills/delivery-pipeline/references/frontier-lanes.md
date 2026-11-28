@@ -24,14 +24,14 @@ Dispatch blocker。
 
 | 工作 | Task type | Output mode |
 | --- | --- | --- |
-| AFK discovery/research、spec、tickets gate worker | `planning` | `artifact` |
+| AFK discovery/research、spec、tickets gate worker | `planning`（或配置中对应 `planning` 用途项） | `artifact` |
 | grilling/prototype HITL | `design` | `artifact` |
 | design implementation | `design` | `commit` |
 | frontend implementation | `frontend` | `commit` |
 | backend/other implementation | `backend` | `commit` |
-| whole-change tests | `testing` | `checks` |
+| whole-change tests | `testing`（或配置中对应 `checks` 用途项） | `checks` |
 | code review | review 矩阵（见下） | `verdict` |
-| terminal fan-in（merger） | `integration`（CLI 配置未定义时用 `backend` 项） | `integration` |
+| terminal fan-in（merger） | `integration`（CLI 配置未定义时取首个 `purpose=code` 的 work 项） | `integration` |
 
 review lane 无独立 work 项：用配置 `review.<scope>.standards` 的 `{agent, model, effort}`
 启动 worker，packet 携带该 scope 的两轴矩阵配置给 resolved code-review owner。

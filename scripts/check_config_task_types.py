@@ -381,6 +381,38 @@ def check() -> None:
         for task in ("design", "frontend", "backend", "testing"):
             assert saved["work"][task] == migrated["work"][task]
 
+        # R4 回归：setup configure 拒绝将已有 v9 配置降级回 v8，保留自定义目录。
+        v9_with_custom = copy.deepcopy(saved)
+        v9_with_custom["work"]["advisory-doc"] = {
+            **v9_with_custom["work"]["backend"],
+            "label": "咨询建议",
+            "hint": "调研与方案建议",
+            "purpose": "artifact",
+        }
+        cli_path.write_text(json.dumps(v9_with_custom, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        v9_hash = m.show(cli_path)["base_hash"]
+        downgrade = m.configure(cli_path, v8, v9_hash, None, "req-downgrade")
+        assert downgrade["status"] == "rejected" and downgrade["error"]["code"] == "invalid_candidate", downgrade
+        readback_v9 = m.show(cli_path)["config"]
+        assert readback_v9["version"] == 9 and "advisory-doc" in readback_v9["work"], readback_v9
+
+        # S4 回归：原始 JSON 中重复 work 键在 validate_path / show / load_document 均被拒绝。
+        dup_path = root / "dup-work.json"
+        raw = json.dumps(v9_with_custom, ensure_ascii=False)
+        key = '"advisory-doc": '
+        shadow = json.dumps({**v9_with_custom["work"]["advisory-doc"], "label": "被覆盖项"}, ensure_ascii=False)
+        dup_path.write_text(raw.replace(key, key + shadow + ", " + key, 1), encoding="utf-8")
+        dup_errors = m.validate_path(dup_path)
+        assert any("duplicate key: advisory-doc" in e for e in dup_errors), dup_errors
+        dup_shown = m.show(dup_path)
+        assert dup_shown["file_state"] == "invalid_schema" and dup_shown["validation"]["valid"] is False, dup_shown
+        try:
+            m.load_document(dup_path)
+        except ValueError as err:
+            assert "duplicate key: advisory-doc" in str(err), str(err)
+        else:
+            raise AssertionError("load_document accepted duplicate JSON work key")
+
     print("task-types: pass")
 
 

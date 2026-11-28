@@ -69,7 +69,11 @@ def ticket_stage(d: dict, rows: Sequence[dict]) -> str | None:
 def spec_stage(d: dict, by_item: dict) -> str | None:
     if not d or not d.get("grant"):
         return None
-    reviewing = any(r.get("role") in ("testing", "review") for rows in by_item.values() for r in rows)
+    reviewing = any(
+        str(item).endswith("#testing") or any(r.get("role") == "review" for r in rows)
+        for item, rows in by_item.items()
+        if rows
+    )
     return _delivery_stage(d) or ("review" if reviewing else "started")
 
 
@@ -195,6 +199,10 @@ def _cases():
          {"DD-1": "started", "DD-2": "started", "DD-3": "review"}),
         ("整体测试让 Spec 进 review", {"m#testing": [lane("running", "testing")]}, {},
          {"DD-1": "review", "DD-2": "todo", "DD-3": "todo"}),
+        ("替换名整体测试让 Spec 进 review", {"m#testing": [lane("running", "qa-checks")]}, {},
+         {"DD-1": "review", "DD-2": "todo", "DD-3": "todo"}),
+        ("同名 testing 普通 code 票不提前让 Spec 进 review", {"DD-2": [lane("running", "testing")]}, {},
+         {"DD-1": "started", "DD-2": "started", "DD-3": "todo"}),
         ("Merge Review 后全部待验收", {}, {"reviews": {"merge": {"sha": "s"}}},
          {"DD-1": "acceptance", "DD-2": "acceptance", "DD-3": "acceptance"}),
         ("合入后全部 done", {}, {"remote": {"merge": "ok"}}, {"DD-1": "done", "DD-2": "done", "DD-3": "done"}),

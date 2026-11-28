@@ -96,7 +96,7 @@ def resolve_checks_task(work_types) -> str | None:
 
 
 def is_whole_change_testing(row, map_id: str) -> bool:
-    return row.get("role") == "testing" or row.get("work_item") == f"{map_id}#testing"
+    return row.get("work_item") == f"{map_id}#testing"
 
 
 def act(action: str, ident: str, **args) -> dict:
@@ -181,7 +181,9 @@ def deviations(state) -> list[str]:
     out = []
     for row in sorted(state["lanes"].values(), key=lambda r: r["lane_id"]):
         role = row.get("role")
-        if role in ("map", "planning", "review", "integration"):
+        if role in ("map", "planning", "review") or (
+            role == "integration" and (row.get("output_mode") == "integration" or row.get("merges"))
+        ):
             if role == "integration" and row.get("merges"):
                 out.append(f"merger {row['lane_id']} 处理 {row['merges']} 的收口失败")
             continue
@@ -236,7 +238,8 @@ def detect_halt(state):
             candidates.append(halt("resplit_failed", lid, f"重拆自 {row['resplit_of']} 后仍失败",
                                    [lid, row["resplit_of"]], ["人工接手", "改计划", "放弃该票"]))
         item = row.get("work_item")
-        if (row.get("role") not in ("map", "testing", "review", "integration")
+        if (row.get("role") not in ("map", "review")
+                and not (row.get("role") == "integration" and (row.get("output_mode") == "integration" or row.get("merges")))
                 and not is_whole_change_testing(row, d["map"]) and item not in planned):
             if int(row.get("wave") or 1) > max_wave or row.get("contract_change") == "true":
                 candidates.append(halt("extra_ticket", lid, f"补票 {item} 超出已批准波次或改动合同票",
@@ -261,9 +264,11 @@ def detect_halt(state):
 
 def driver_owns_head(lanes) -> bool:
     """票实施阶段集成 HEAD 只由 Driver 移动；merger 在途或进入整体测试、评审后，别的 lane 也会合法地动它。"""
-    return not any(r.get("role") in ("testing", "review")
+    return not any(r.get("role") == "review"
                    or str(r.get("work_item") or "").endswith("#testing")
-                   or (r.get("role") == "integration" and r.get("state") in ACTIVE | {"terminal"})
+                   or (r.get("role") == "integration"
+                       and (r.get("output_mode") == "integration" or r.get("merges"))
+                       and r.get("state") in ACTIVE | {"terminal"})
                    for r in lanes.values())
 
 
@@ -413,16 +418,26 @@ def decide(state) -> dict:
     task, jobs = brief_delivery.batch(tickets, by_item, done, d.get('answers', {}))
     if jobs and work_types is not None and task not in work_types:
         hid = f"halt:plan_change:missing-task:{task}"
-        if hid not in set(d.get("resolved_halts", ())):
-            return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
-                       reason=f"task type not defined in config: {task}",
-                       evidence=[f"{DRIVER_FILE}#plan"],
-                       options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
+        return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
+                   reason=f"task type not defined in config: {task}",
+                   evidence=[f"{DRIVER_FILE}#plan"],
+                   options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
     if jobs and any(row.get('role') != 'map' and row.get('state') in ACTIVE for row in lanes.values()):
         return act('wait', 'wait', lanes=sorted(row['lane_id'] for row in lanes.values()
                    if row.get('state') in ACTIVE and row.get('role') != 'map'))
     if jobs:
-        return act('dispatch_briefs', 'briefs:' + plan_sha(jobs), task=task, briefs=thaw(jobs))
+        by_tid = {t['id']: t for t in tickets}
+        first_ticket = by_tid[jobs[0]['ticket']]
+        t_mode = first_ticket.get('ticket_mode')
+        m_mode = d['plan'].get('map_mode')
+        eff_mode = t_mode or m_mode
+        jobs = [j for j in jobs if (by_tid[j['ticket']].get('ticket_mode') or m_mode) == eff_mode]
+        extra_brief = {}
+        if t_mode:
+            extra_brief['ticket_mode'] = t_mode
+        if m_mode:
+            extra_brief['map_mode'] = m_mode
+        return act('dispatch_briefs', 'briefs:' + plan_sha(jobs), task=task, briefs=thaw(jobs), **extra_brief)
     pending_hitl = []
     for ticket in tickets:
         if by_item.get(ticket["id"]):
@@ -438,11 +453,9 @@ def decide(state) -> dict:
         mode, task_err = resolve_ticket_output_mode(ticket, work_types)
         if task_err:
             hid = f"halt:plan_change:missing-task:{ticket['id']}:{task_name}"
-            if hid not in set(d.get("resolved_halts", ())):
-                return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
-                           reason=task_err, evidence=[f"{DRIVER_FILE}#plan", f"ticket:{ticket['id']}"],
-                           options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
-            mode = ticket.get("output_mode", "commit")
+            return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
+                       reason=task_err, evidence=[f"{DRIVER_FILE}#plan", f"ticket:{ticket['id']}"],
+                       options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
         brief = thaw(d.get("contracts", {}).get(ticket["id"]))
         if mode == "commit" and not brief:  # ADR-0028：没有合同不派发
             return act("prepare_contract", f"contract:{ticket['id']}", owner="delegate-ticket",
@@ -771,10 +784,15 @@ def load(map_dir: Path) -> dict:
     driver = json.loads(path.read_text()) if path.exists() else None
     lanes = closeout.latest_rows(map_dir) if map_dir.exists() else {}
     state = {'driver': driver, 'lanes': lanes}
-    work_types = load_work_types()
-    if work_types is not None:
-        state['work_types'] = work_types
     mrow = map_row(lanes)
+    is_app = (
+        (driver and (driver.get('dispatch_runtime') == 'codex-app' or driver.get('coordinator_runtime') == 'codex-app'))
+        or (mrow and (mrow.get('coordinator_runtime') == 'codex-app' or mrow.get('dispatch_runtime') == 'codex-app'))
+    )
+    if not is_app:
+        work_types = load_work_types()
+        if work_types is not None:
+            state['work_types'] = work_types
     if driver and mrow:
         wt = mrow.get('integration_worktree_path')
         if any(brief_delivery.has_briefs(t) for t in driver.get('plan', {}).get('tickets', ())):
@@ -1020,10 +1038,13 @@ def exec_briefs(map_dir, state, action):
     if brief_delivery.git(tree, 'symbolic-ref', '--short', 'HEAD') != mrow.get('integration_branch'):
         raise ValueError('当前工作树不在 map 集成分支')
     jobs, role = action['args']['briefs'], action['args']['task']
+    mode = action['args'].get('ticket_mode') or action['args'].get('map_mode')
     with tempfile.NamedTemporaryFile(mode='w', dir=map_dir) as source:
         json.dump(jobs, source)
         source.flush()
         cmd = [str(DISPATCH_CLI), 'batch', source.name, '--managed', str(map_dir), '--task', role]
+        if mode:
+            cmd.extend(['--mode', str(mode)])
         p = subprocess.run(cmd, cwd=tree, capture_output=True, text=True)
     if p.returncode:
         raise ValueError(p.stderr.strip() or '执行片未全部通过')
@@ -1036,11 +1057,39 @@ def brief_preflight(state):
     tasks = brief_tasks(state)
     if not tasks:
         return []
-    p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
-    rows = {row["task"]: row for row in
-            (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
-    return [rows.get(task, {'task': task, 'ok': False,
-                            'error': p.stderr.strip() or '预检无输出'}) for task in tasks]
+    plan = state['driver']['plan']
+    map_mode = plan.get('map_mode')
+    task_modes: dict[str, list[str | None]] = {task: [] for task in tasks}
+    for ticket in plan['tickets']:
+        if not brief_delivery.has_briefs(ticket):
+            continue
+        task = ticket.get('task', 'backend')
+        mode = ticket.get('ticket_mode') or map_mode
+        if mode not in task_modes[task]:
+            task_modes[task].append(mode)
+    if all(modes == [None] for modes in task_modes.values()):
+        p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
+        rows = {row["task"]: row for row in
+                (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
+        return [rows.get(task, {'task': task, 'ok': False,
+                                'error': p.stderr.strip() or '预检无输出'}) for task in tasks]
+    out = []
+    for task in tasks:
+        chosen = None
+        for mode in task_modes[task]:
+            cmd = [str(DISPATCH_CLI), 'preflight', task]
+            if mode:
+                cmd.extend(['--mode', str(mode)])
+            p = subprocess.run(cmd, capture_output=True, text=True)
+            parsed = {row["task"]: row for row in
+                      (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
+            row = parsed.get(task, {'task': task, 'ok': False, 'error': p.stderr.strip() or '预检无输出'})
+            if not row.get('ok'):
+                chosen = row
+                break
+            chosen = row
+        out.append(chosen)
+    return out
 
 
 def preflight_html(rows):

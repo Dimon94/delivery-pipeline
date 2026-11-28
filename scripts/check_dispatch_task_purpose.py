@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [
     str(ROOT / "skills/delivery-pipeline/scripts"),
     str(ROOT / "skills/delivery-pipeline-setup/scripts"),
+    str(ROOT / "skills/delivery-pipeline-t3code/scripts"),
 ]
 import driver  # noqa: E402
 import lane_registry  # noqa: E402
@@ -506,6 +507,117 @@ def check() -> None:
                 [("t3_thread_read", {"thread": t3_thread, "recentRuns": [{"executedModel": advisory_plan["model"]}]})],
             )
             assert rec_res["state"] == "running" and rec_res["recovery_plan"] == advisory_plan["recovery_plan"], rec_res
+
+            # ---------- Review R1 回归：ST-1/ST-2/ST-3/ST-6 及 merger/cleared-missing ----------
+            # ST-1：testing 重标为 code、另有 qa-checks 时，普通 testing/commit 票不跳过整体测试、不解除 HEAD 保护、计入贡献者。
+            doc_testing_code = copy.deepcopy(doc)
+            doc_testing_code["work"]["qa-checks"] = copy.deepcopy(doc_testing_code["work"]["testing"])
+            doc_testing_code["work"]["testing"]["purpose"] = "code"
+            assert mc.validate_document(doc_testing_code) == []
+            wt_testing_code = {k: v["purpose"] for k, v in mc.normalize_work_entries(doc_testing_code).items()}
+            p_t1 = {"tickets": [{"id": "T1", "task": "testing"}]}
+            d_t1 = driver._granted(plan=p_t1, integration_seen="seen")
+            driver.grant_plan(d_t1, "plan-review")
+            s_closed = driver._state(d_t1, driver.MAP, driver._lane("T1", "closed", role="testing"))
+            s_closed["work_types"] = wt_testing_code
+            a_gate = driver.decide(s_closed)
+            assert a_gate["id"] == "dispatch:testing" and a_gate["args"]["task"] == "qa-checks", a_gate
+            s_running = driver._state(d_t1, driver.MAP, driver._lane("T1", "running", role="testing"))
+            s_running["work_types"] = wt_testing_code
+            s_running.update(integration_head="foreign", integration_foreign=["foreign commit"])
+            a_guard = driver.decide(s_running)
+            assert a_guard["id"] == "halt:authority:integration-head:foreign", a_guard
+            contrib_rows = copy.deepcopy(s_closed["lanes"])
+            contrib_rows["m1"]["base_commit"] = "base"
+            contrib_rows["T1"].update(map="m1", integrated_commit="contrib", agent="pi", model="magpie/gpt-6.1-sol", effort="high")
+            contribs = [x["lane_id"] for x in lane_registry.collect_implementation_identities(contrib_rows, "base")]
+            assert contribs == ["T1"], contribs
+
+            # ST-2 & merger：T3 对删除的 integration/commit 零原生调用报错；T3 与 Herdr merger 选首个 code 而非 artifact backend。
+            work_dispatch = _load_module("work_dispatch_r1", ROOT / "skills/delivery-pipeline-t3code/scripts/work_dispatch.py")
+            t3_calls = []
+            def _t3_stub(method, payload):
+                t3_calls.append((method, payload))
+                raise RuntimeError("native_boundary")
+            with patch.object(mc, "load_document", return_value=doc), patch.object(lane_registry, "rows", return_value={}):
+                try:
+                    work_dispatch.WorkDispatch(_t3_stub).dispatch(
+                        Path("/unused"),
+                        {"lane_id": "i1", "work_item": "T1", "role": "integration", "output_mode": "commit",
+                         "base_commit": "a" * 40, "map": "m1"},
+                        "packet", "/unused",
+                    )
+                except ValueError as err:
+                    assert str(err) == "task type not defined in config: integration", str(err)
+                else:
+                    raise AssertionError("T3 integration/commit unexpectedly fell back")
+            assert not t3_calls, t3_calls
+
+            doc_merger = copy.deepcopy(doc)
+            doc_merger["work"]["backend"].update(purpose="artifact", model="magpie/claude-opus-5-5")
+            first_code = next(k for k, v in mc.normalize_work_entries(doc_merger).items() if v["purpose"] == "code")
+            doc_merger["work"][first_code]["model"] = "magpie/gpt-6.1-mini"
+            assert mc.validate_document(doc_merger) == []
+            t3_calls.clear()
+            with patch.object(mc, "load_document", return_value=doc_merger), patch.object(lane_registry, "rows", return_value={}):
+                try:
+                    work_dispatch.WorkDispatch(_t3_stub).dispatch(
+                        Path("/unused"),
+                        {"lane_id": "i2", "work_item": "T1", "role": "integration", "output_mode": "integration",
+                         "base_commit": "a" * 40, "map": "m1"},
+                        "packet", "/unused",
+                    )
+                except RuntimeError as err:
+                    assert str(err) == "native_boundary"
+            assert t3_calls == [("orchestrator_capabilities", {"search": "magpie/gpt-6.1-mini"})], t3_calls
+
+            _write_config(home, doc_merger)
+            p_merger, herdr_merger_reg = _herdr_dispatch("lane-merger", "integration", "integration")
+            assert p_merger.returncode == 0, (p_merger.stdout, p_merger.stderr)
+            herdr_merger_row, _ = lane_registry.read(herdr_merger_reg, "lane-merger")
+            assert herdr_merger_row["model"] == "magpie/gpt-6.1-mini", herdr_merger_row
+
+            # ST-3：Codex App map 不受 CLI v9 改名 testing→qa-checks 影响。
+            _write_config(home, doc_checks)
+            app_dir = root / "map-app"
+            app_dir.mkdir()
+            app_plan = {"tickets": [{"id": "T1", "task": "backend"}]}
+            app_d = driver._granted(plan=app_plan, dispatch_runtime="codex-app", coordinator_runtime="codex-app")
+            driver.grant_plan(app_d, "plan-review")
+            driver.write_json(app_dir / driver.DRIVER_FILE, app_d)
+            app_rows = driver._state(app_d, {**driver.MAP, "integration_worktree_path": None, "coordinator_runtime": "codex-app"},
+                                     driver._lane("T1", "closed"))["lanes"]
+            with patch.object(driver.closeout, "latest_rows", return_value=app_rows):
+                app_action = driver.decide(driver.load(app_dir))
+            assert app_action["id"] == "dispatch:testing" and app_action["args"]["task"] == "testing", app_action
+
+            # ST-6：受管执行片保留 ticket_mode 并经 --mode 传给 delivery-dispatch batch。
+            m_plan = {"tickets": [{"id": "T1", "task": "rust-service", "ticket_mode": "fast",
+                                   "briefs": [driver._brief("T1")], "scenario_check": ["true"]}]}
+            m_d = driver._granted(plan=m_plan)
+            driver.grant_plan(m_d, "plan-review")
+            m_s = driver._state(m_d, {**driver.MAP, "integration_branch": "feat"})
+            m_s["work_types"] = {k: v["purpose"] for k, v in mc.normalize_work_entries(doc).items()}
+            m_act = driver.decide(m_s)
+            assert m_act["action"] == "dispatch_briefs" and m_act["args"].get("ticket_mode") == "fast", m_act
+            seen_argv = []
+            with patch.object(driver.brief_delivery, "git", return_value="feat"), patch.object(
+                driver.subprocess, "run", side_effect=lambda argv, **_: (seen_argv.extend(argv), subprocess.CompletedProcess(argv, 0, "", ""))[1]
+            ), patch.object(driver.brief_delivery, "verify_rows", return_value=[]):
+                driver.exec_briefs(root, m_s, m_act)
+            assert "--mode" in seen_argv and seen_argv[seen_argv.index("--mode") + 1] == "fast", seen_argv
+
+            # cleared-missing：缺失任务类型在确认 halt 后依然继续 halt，不放行派发。
+            c_plan = {"tickets": [{"id": "T1", "task": "advisory-doc", "output_mode": "artifact"}]}
+            c_d = driver._granted(plan=c_plan)
+            driver.grant_plan(c_d, "plan-review")
+            c_s = driver._state(c_d, driver.MAP)
+            c_s["work_types"] = {k: v["purpose"] for k, v in mc.normalize_work_entries(doc_deleted).items()}
+            h1 = driver.decide(c_s)
+            assert h1["action"] == "halt", h1
+            c_s["driver"], _ = driver.apply(c_s, h1, "继续")
+            h2 = driver.decide(c_s)
+            assert h2["action"] == "halt" and h2["id"] == h1["id"], h2
 
     print("dispatch-task-purpose: pass")
 

@@ -82,6 +82,32 @@ def check() -> None:
     doc, capabilities, envelope = _v9_fixture()
     assert m.validate_document(doc) == []
 
+    # 公开 task_purpose 接口：返回已定义项的 purpose，缺失项报错。
+    assert m.task_purpose(doc, "frontend") == "code"
+    assert m.task_purpose(doc, "advisory-doc") == "artifact"
+    try:
+        m.task_purpose(doc, "nonexistent-task")
+    except ValueError as err:
+        assert str(err) == "task type not defined in config: nonexistent-task", str(err)
+    else:
+        raise AssertionError("task_purpose unexpectedly succeeded for missing task")
+
+    # 合法 v8 可选任务 research 也冻结 recovery_plan。
+    v8_opt = m.apply_limits(m.valid_fixture(), m.DEFAULT_LIMITS.copy())
+    v8_opt["work"]["research"] = m.triple(v8_opt["work"]["backend"])
+    assert m.validate_document(v8_opt) == []
+    res_v8 = m.resolve_plan(v8_opt, "research", output_mode="artifact")
+    assert res_v8["purpose"] == "artifact" and "recovery_plan" in res_v8, res_v8
+    assert res_v8["recovery_plan"]["fallbacks"] == [], res_v8
+
+    # ST-5：内置 planning 被合法替换为唯一 planning 用途类型 plan-notes 时，默认 planning 入口按用途解析。
+    doc_plan = copy.deepcopy(doc)
+    doc_plan["work"]["plan-notes"] = doc_plan["work"].pop("planning")
+    assert m.validate_document(doc_plan) == []
+    assert m.resolve_planning_task(doc_plan) == "plan-notes"
+    plan_entry = m.resolve_plan(doc_plan, "planning", output_mode="artifact", evidence=capabilities)
+    assert plan_entry["task"] == "plan-notes" and plan_entry["purpose"] == "planning", plan_entry
+
     # S6-1: advisory-doc (purpose=artifact) 返回主三元组、purpose=artifact、含 fallbacks 的 recovery_plan 且不套 modes。
     advisory_plan = m.resolve_plan(
         doc,

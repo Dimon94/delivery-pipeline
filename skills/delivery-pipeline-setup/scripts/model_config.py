@@ -172,6 +172,40 @@ def normalize_work_entries(document: dict) -> dict[str, TaskTypeEntry]:
     return normalized
 
 
+def task_purpose(document: dict, task: str) -> TaskPurpose:
+    """返回合法 CLI 配置中指定任务类型的用途；任务类型未定义时报错。"""
+    work = normalize_work_entries(document)
+    if task not in work:
+        raise ValueError(f"task type not defined in config: {task}")
+    return work[task]["purpose"]
+
+
+def resolve_planning_task(document: dict) -> str:
+    """按用途解析规划入口任务类型：优先同名且为 planning 用途的 planning，否则取首个 planning 用途项。"""
+    work = normalize_work_entries(document)
+    if work.get("planning", {}).get("purpose") == "planning":
+        return "planning"
+    found = next((task for task, entry in work.items() if entry["purpose"] == "planning"), None)
+    if found is None:
+        raise ValueError("task type not defined in config: planning")
+    return found
+
+
+def _parse_json_with_duplicates(raw: str | bytes) -> tuple[object, list[str]]:
+    """解析 JSON 并记录任意对象中的重复键，不静默吞掉后值覆盖前值。"""
+    duplicates: list[str] = []
+
+    def _pairs_hook(pairs: list[tuple[str, object]]) -> dict:
+        result: dict = {}
+        for key, value in pairs:
+            if key in result:
+                duplicates.append(f"duplicate key: {key}")
+            result[key] = value
+        return result
+
+    return json.loads(raw, object_pairs_hook=_pairs_hook), duplicates
+
+
 def _cell_errors(prefix, value, agents, listing=None):
     if listing is None:
         return _entry_errors(prefix, value, agents)
@@ -418,7 +452,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
 
 def validate_path(path: Path) -> list[str]:
     try:
-        return validate_document(json.loads(path.expanduser().read_text()))
+        document, dup_errors = _parse_json_with_duplicates(path.expanduser().read_text())
+        return dup_errors + validate_document(document)
     except FileNotFoundError:
         return [f"config file not found: {path.expanduser()}"]
     except json.JSONDecodeError as error:
@@ -441,12 +476,12 @@ def show(path: Path) -> dict:
         return result
     result["base_hash"] = hashlib.sha256(raw).hexdigest()
     try:
-        document = json.loads(raw)
+        document, dup_errors = _parse_json_with_duplicates(raw)
     except (ValueError, UnicodeError):
         result["file_state"] = "invalid_json"
         return result
     result["config"] = document
-    errors = validate_document(document)
+    errors = dup_errors + validate_document(document)
     result["validation"] = {"valid": not errors, "errors": errors}
     if isinstance(document, dict) and document.get("version") not in (6, 7, 8, 9):
         result["file_state"] = "unsupported_version"
@@ -471,8 +506,8 @@ def cli_config_path() -> Path:
 
 
 def load_document(path: Path) -> dict:
-    document = json.loads(path.expanduser().read_text())
-    errors = validate_document(document)
+    document, dup_errors = _parse_json_with_duplicates(path.expanduser().read_text())
+    errors = dup_errors + validate_document(document)
     if errors:
         raise ValueError("; ".join(errors))
     return document
@@ -972,7 +1007,15 @@ def configure(path: Path, candidate: dict, base_hash: str | None,
     def prepare(snapshot: Snapshot) -> dict:
         if snapshot["base_hash"] != base_hash:
             raise ConfigRejected("base_conflict", "配置已变化，请读取最新配置后人工核对")
-        validate_selection(candidate, snapshot["config"], evidence, request_id)
+        previous = snapshot["config"]
+        if (isinstance(previous, dict) and not validate_document(previous)
+                and isinstance(candidate, dict) and isinstance(candidate.get("version"), int)
+                and candidate["version"] < previous["version"]):
+            raise ConfigRejected(
+                "invalid_candidate",
+                f"不能将配置从 v{previous['version']} 降级到 v{candidate['version']}",
+            )
+        validate_selection(candidate, previous, evidence, request_id)
         return candidate
     return configuration_transaction(path, prepare)
 
@@ -1472,16 +1515,17 @@ def resolve_plan(
     """解析并冻结一条 lane 的 mode 与模型选择，不修改配置。"""
     work = normalize_work_entries(document)
     if task not in work:
-        raise ValueError(f"task type not defined in config: {task}")
+        if task == "planning" and output_mode in (None, "artifact"):
+            task = resolve_planning_task(document)
+        else:
+            raise ValueError(f"task type not defined in config: {task}")
     entry = work[task]
     purpose = entry["purpose"]
     is_code = purpose == "code"
-    recovery = {}
-    if document.get("version") == 9 or task in CLI_REQUIRED_WORK:
-        explicit = is_code and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
-        recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
-                    "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
-                    "recovery_progress": {"current_index": None, "next_cursor": 0}}
+    explicit = is_code and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
+    recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
+                "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
+                "recovery_progress": {"current_index": None, "next_cursor": 0}}
     plan = {
         **recovery,
         "version": 5,
@@ -2528,7 +2572,9 @@ def main() -> int:
         if not args.candidate or not args.evidence:
             parser.error("preview-review 需要 --candidate 与 --evidence")
         try:
-            document = json.loads(Path(args.candidate).expanduser().read_text())
+            document, dup_errors = _parse_json_with_duplicates(Path(args.candidate).expanduser().read_text())
+            if dup_errors:
+                raise ValueError("; ".join(dup_errors))
             evidence = json.loads(Path(args.evidence).expanduser().read_text())
             print(json.dumps(preview_review_choice(document, evidence), ensure_ascii=False))
             return 0
@@ -2569,7 +2615,9 @@ def main() -> int:
         if not args.request_id or not args.evidence:
             parser.error("configure 需要 --request-id 与 --evidence")
         try:
-            candidate = json.load(sys.stdin)
+            candidate, dup_errors = _parse_json_with_duplicates(sys.stdin.read())
+            if dup_errors:
+                raise ValueError("; ".join(dup_errors))
             evidence = json.loads(Path(args.evidence).expanduser().read_text())
             result = (apply if args.command == "apply" else configure)(Path(args.path), candidate, args.base_hash, evidence, args.request_id)
         except (OSError, ValueError) as error:

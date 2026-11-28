@@ -1,6 +1,6 @@
 import {test,expect} from 'bun:test';
 import {Window} from 'happy-dom';
-import type {Config} from './draft';
+import {Draft, type Config} from './draft';
 
 function makeV9Config():Config {
  const a={agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high'};
@@ -129,4 +129,27 @@ test('DD-686 设置页 UI：S2 新增、S3 删除与禁用提示、S4 校验拒�
  } finally {
   await win.happyDOM.close();
  }
+});
+
+test('ST-4/S8: v8 可选任务在桌面升级候选里保留与后端迁移一致的 purpose 和 hint',()=>{
+ const v8:Config={
+  version:8,
+  model_families:{},
+  dispatch:{parallel:4,max_turns:100},
+  work:{
+   ...Object.fromEntries(['planning','design','frontend','backend','testing'].map(n=>[n,{agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high',fallbacks:[]}])),
+   research:{agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high'},
+   coordinator:{agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high'},
+  },
+  review:Object.fromEntries(['implementation','whole-change'].map(s=>[s,Object.fromEntries(['standards','spec'].map(a=>[a,{agent:'pi',model:'magpie/auto/gpt-6.1-sol',effort:'high',candidates:[]}]))])),
+  modes:{},
+ };
+ const d=new Draft(v8);
+ d.setBudget('parallel',2);
+ expect(d.changes()).toEqual(['dispatch.parallel']);
+ const cand=d.candidate();
+ expect(cand.work.research?.purpose).toBe('artifact');
+ expect(cand.work.research?.hint).toBe('独立调查与搜索');
+ expect(cand.work.coordinator?.purpose).toBe('advisory');
+ expect(cand.work.coordinator?.hint).toBe('当前协调会话的推荐观测值');
 });

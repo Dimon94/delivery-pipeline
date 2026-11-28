@@ -15,12 +15,12 @@ export const DEFAULT_TASK_META: Record<string, TaskTypeMeta> = {
  frontend: {label:'前端开发', hint:'写页面代码', purpose:'code'},
  backend: {label:'后端开发', hint:'写服务端代码', purpose:'code'},
  testing: {label:'测试', hint:'写测试并验证', purpose:'checks'},
- coordinator: {label:'协调', hint:'', purpose:'planning'},
- research: {label:'调研', hint:'', purpose:'advisory'},
- prototype: {label:'原型', hint:'', purpose:'artifact'},
- integration: {label:'集成', hint:'', purpose:'code'},
- assistance: {label:'协助', hint:'', purpose:'advisory'},
- 'second-opinion': {label:'第二意见', hint:'', purpose:'advisory'},
+ coordinator: {label:'协调', hint:'当前协调会话的推荐观测值', purpose:'advisory'},
+ research: {label:'调研', hint:'独立调查与搜索', purpose:'artifact'},
+ prototype: {label:'原型', hint:'设计原型与交互探索', purpose:'artifact'},
+ integration: {label:'集成', hint:'逐票集成辅助', purpose:'code'},
+ assistance: {label:'协助', hint:'内部辅助检索与实现', purpose:'advisory'},
+ 'second-opinion': {label:'第二意见', hint:'咨询子代理', purpose:'advisory'},
 };
 export type FallbackEdit = {kind:"add";item:ModelTriple}|{kind:"set";index:number;item:ModelTriple}|{kind:"move";index:number;to:number}|{kind:"promote";index:number}|{kind:"remove";index:number};
 export const budgetKeys = ["parallel", "max_turns"] as const;

@@ -386,7 +386,7 @@ def main() -> int:
             work = mc.normalize_work_entries(document)
             config_task = args.task
             if args.task == "integration" and args.output_mode == "integration" and "integration" not in work:
-                config_task = "backend" if "backend" in work else next(
+                config_task = next(
                     (t for t, entry in work.items() if entry["purpose"] == "code"), args.task
                 )
             plan = mc.resolve_plan(document, config_task,

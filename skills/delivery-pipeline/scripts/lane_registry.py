@@ -225,7 +225,8 @@ def collect_implementation_identities(registry, fixed_point):
     result = []
     for row in registry.values():
         if (row.get('map') != maps[0] or row.get('output_mode') != 'commit'
-                or row.get('role') in {'review', 'testing', 'coordinator', 'integration', 'map'}
+                or row.get('role') in {'review', 'map'}
+                or str(row.get('work_item') or '').endswith('#testing')
                 or not row.get('integrated_commit')):
             continue
         requested = {k: row.get(k) for k in ('agent', 'model', 'effort')}

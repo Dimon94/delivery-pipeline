@@ -41,8 +41,8 @@ class WorkDispatch:
             raise ValueError('lane already exists; inspect original request')
         config = model_config.load_document(model_config.cli_config_path())
         work = model_config.normalize_work_entries(config)
-        if kind == 'integration' and kind not in work:
-            config_task = 'backend' if 'backend' in work else next(
+        if kind == 'integration' and output == 'integration' and kind not in work:
+            config_task = next(
                 (t for t, entry in work.items() if entry['purpose'] == 'code'), kind
             )
         else:

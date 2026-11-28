@@ -128,9 +128,19 @@ def magpie_key(env):
     raise Failure('Magpie 路由缺密钥：设置 MAGPIE_API_KEY，或在 ~/.pi/agent/models.json 配置 magpie provider')
 
 
-def worker_plan(task, mode, config, turns):
+PURPOSE_OUTPUT_MODE = {
+    'planning': 'artifact',
+    'code': 'commit',
+    'artifact': 'artifact',
+    'checks': 'checks',
+    'advisory': 'artifact',
+}
+
+
+def worker_plan(task, mode, config, turns, output_mode=None):
     """只按已校验的 model-roles 配置解析路由；模型可用性由 setup 写入时核过，执行失败由 claude -p 退出码暴露。"""
-    plan = model_config.resolve_plan(config, task, ticket_mode=mode, output_mode='commit')
+    resolved_output = output_mode or PURPOSE_OUTPUT_MODE[model_config.task_purpose(config, task)]
+    plan = model_config.resolve_plan(config, task, ticket_mode=mode, output_mode=resolved_output)
     model = plan['model']
     env = os.environ.copy()
     if plan['agent'] == 'pi' and model.startswith('magpie/'):
