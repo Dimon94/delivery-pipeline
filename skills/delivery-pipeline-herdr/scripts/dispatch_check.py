@@ -300,6 +300,16 @@ def main() -> int:
                 or ex_row.get("effort") != "low"):
             failures.append(f"explicit integration config was not used: rc={result.returncode} out={result.stdout} row={ex_row}")
 
+        # 14. DD-692：merger 派发接收 --merges 并写入 registry；非 merger 不写 merges。
+        result, registry, _ = run(
+            root, "lane-int-merges", json.loads(json.dumps(base)),
+            task="integration", output_mode="integration", extra=("--merges", "T1"),
+        )
+        mg_row, _ = lane_registry.read(registry, "lane-int-merges") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or mg_row.get("state") != "running" or mg_row.get("role") != "integration"
+                or mg_row.get("merges") != "T1" or "merges" in fb_row):
+            failures.append(f"merger --merges registry write failed: rc={result.returncode} out={result.stdout} err={result.stderr} row={mg_row}")
+
     for failure in failures:
         print(f"FAIL {failure}")
     print("dispatch_check: " + ("fail" if failures else "pass"))

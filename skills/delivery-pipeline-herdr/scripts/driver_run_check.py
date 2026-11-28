@@ -17,15 +17,16 @@ args = sys.argv[1:]
 v = lambda k: args[args.index(k) + 1]
 assert "--config" not in args, f"map-local config reached dispatch: {args}"
 open(v("--registry") + ".args", "w").write(json.dumps(args))
+merges = f"merges: {v('--merges')}\\n" if "--merges" in args else ""
 open(v("--registry"), "w").write("""<!-- wayfinder-lane-registry:v2 -->
 ```yaml
 lane_id: %s
 work_item: %s
-role: backend
-output_mode: commit
+role: %s
+output_mode: %s
 state: running
-```
-""" % (v("--lane"), v("--work-item")))
+%s```
+""" % (v("--lane"), v("--work-item"), v("--task"), v("--output-mode"), merges))
 print(json.dumps({"lane_id": v("--lane"), "state": "running"}))
 '''
 
@@ -130,6 +131,20 @@ def main():
                              capture_output=True, text=True, env={**env, "DP_DISPATCH": "/nonexistent"})
         action = json.loads(out.stdout)
         assert out.returncode == 10 and action["id"] == "judge:diagnose:T1:1", (out.returncode, out.stdout, out.stderr)
+        # DD-692：integration_conflict 派发 merger 时透传 --merges，单次派发后转入 wait，不重复派发。
+        md2 = root / "map-merger"
+        md2.mkdir()
+        driver.write_json(md2 / "driver.json", {**base, "dispatch": dispatch_cfg, "transport": {"herdr": herdr_cfg}})
+        driver.persist_lanes(md2, [
+            {"lane_id": "m1", "work_item": "m1", "role": "map", "output_mode": "none", "state": "running",
+             "integration_worktree_path": str(integ), "integration_branch": "map", "_file": str(md2 / "registry.md")},
+            {"lane_id": "T1", "work_item": "T1", "role": "backend", "output_mode": "commit",
+             "state": "integration_conflict", "_file": str(md2 / "registry-T1.md")},
+        ])
+        out = subprocess.run([sys.executable, str(RUN), "run", str(md2)], capture_output=True, text=True, env=env)
+        assert out.returncode == 0 and json.loads(out.stdout)["action"] == "wait", (out.returncode, out.stdout, out.stderr)
+        msent = json.loads((md2 / "registry-T1-merger.md.args").read_text())
+        assert "--merges" in msent and msent[msent.index("--merges") + 1] == "T1", msent
         check_closeout(root)
     print("driver_run check: pass")
 

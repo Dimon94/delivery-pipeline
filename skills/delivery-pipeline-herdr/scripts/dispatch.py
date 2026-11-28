@@ -7,7 +7,7 @@
               --output-mode <mode> --lane <lane_id> --work-item <url> --title <pane label>
               --worktree <abs> --branch <branch> --base <sha> --packet <abs> --registry <abs .md>
               --map-registry <abs map registry .md | none>
-              --tab-prefix <tab 前缀> [--ticket-mode NAME] [--map-mode NAME] [--off-chain-reason TEXT]
+              --tab-prefix <tab 前缀> [--ticket-mode NAME] [--map-mode NAME] [--merges LANE_ID] [--off-chain-reason TEXT]
 
 派发前（任何 herdr 调用前）拒绝：lane 名超过 Herdr agent 名上限、map registry 未通过
 recovery_record.py check、packet owner 已移出交付链路且未给 --off-chain-reason。
@@ -224,6 +224,7 @@ def main() -> int:
                  "worktree", "branch", "base", "packet", "registry", "map-registry"):
         parser.add_argument(f"--{flag}", required="--recover-review" not in sys.argv)
     parser.add_argument("--config", help="可选配置路径，仅正式 review 接受替代路径")
+    parser.add_argument("--merges", help="可选：merger lane 负责收口的目标 lane_id")
     parser.add_argument("--off-chain-reason")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
@@ -397,6 +398,8 @@ def main() -> int:
             "base_commit": args.base, "map": map_lane, "contract_rev": contract_rev(),
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+        if args.merges:
+            row["merges"] = args.merges
         if args.off_chain_reason:
             row["off_chain_reason"] = args.off_chain_reason.replace("\n", " ")
         if review is not None:

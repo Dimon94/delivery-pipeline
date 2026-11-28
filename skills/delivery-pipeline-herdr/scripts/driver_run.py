@@ -59,6 +59,8 @@ def exec_dispatch(map_dir: Path, state, action):
            "--branch", branch, "--base", base, "--packet", str(packet),
            "--registry", str(registry), "--map-registry", mrow.get("_file") or "none",
            "--tab-prefix", str(herdr_cfg["tab_prefix"])]
+    if a.get("merges"):
+        cmd.extend(["--merges", str(a["merges"])])
     if herdr_cfg.get("workspace_label"):
         cmd.extend(["--workspace-label", str(herdr_cfg["workspace_label"])])
     out = subprocess.run(cmd, capture_output=True, text=True)
