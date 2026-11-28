@@ -1,6 +1,6 @@
 import {test,expect} from 'bun:test';
 import {Editor,type Snapshot} from './editor';
-import {type Config} from './draft';
+import {DEFAULT_TASK_META,type Config} from './draft';
 import {execFileSync} from 'node:child_process';
 const fixture=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json
 s=importlib.util.spec_from_file_location('m','skills/delivery-pipeline-setup/scripts/model_config.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(json.dumps(m.valid_fixture()))`],{cwd:new URL('../../../',import.meta.url).pathname}).toString()) as Config;
@@ -21,8 +21,9 @@ for(const status of ['conflict','uncertain'] as const)test(`${status}保留完�
  expect(e.state.kind).toBe(status);e.preview();e.back();await e.save(async()=>{calls++;throw Error();});expect(calls).toBe(1);
  expect(e.recover({...e.state.base,file_state:'unreadable',config:null})).toBe(false);
  expect(e.state.kind).toBe(status);expect(e.state.draft.config).toEqual(candidate);
+ const expectedWork=Object.fromEntries(Object.entries(candidate.work).map(([id,cell])=>[id,{...cell,...DEFAULT_TASK_META[id],fallbacks:cell.fallbacks??[]}]));
  expect(e.recover({...e.state.base,base_hash:'observed',config:e.state.draft.candidate()})).toBe(true);
- expect(e.state.base.base_hash).toBe('observed');expect(e.state.draft.config).toEqual({...candidate, version:8, model_families:{}, dispatch:{parallel:4,max_turns:100}});expect(e.state.draft.changes()).toEqual([]);
+ expect(e.state.base.base_hash).toBe('observed');expect(e.state.draft.config).toEqual({...candidate, version:9, model_families:{}, dispatch:{parallel:4,max_turns:100}, work:expectedWork});expect(e.state.draft.changes()).toEqual([]);
  expect('retained' in e.state&&e.state.retained).toBeFalsy();
 });
 test('另一完整文档为新基线；旧完整列表只供参考；拒绝后仍保留参考',async()=>{

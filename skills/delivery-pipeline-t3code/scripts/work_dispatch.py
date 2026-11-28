@@ -11,13 +11,12 @@ import lane_registry as registry
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'delivery-pipeline-setup/scripts'))
 import model_config
 
-OUTPUTS = {
+PURPOSE_OUTPUTS = {
     'planning': {'artifact': 'research'},
-    'design': {'artifact': 'design', 'commit': 'implementation'},
-    'frontend': {'commit': 'implementation'},
-    'backend': {'commit': 'implementation'},
-    'testing': {'checks': 'test'},
-    'integration': {'integration': 'implementation'},
+    'code': {'commit': 'implementation', 'artifact': 'design'},
+    'artifact': {'artifact': 'design'},
+    'checks': {'checks': 'test'},
+    'advisory': {'artifact': 'design'},
 }
 ROW_FIELDS = {'lane_id', 'work_item', 'role', 'output_mode', 'base_commit', 'map', 'ticket_url',
               'wave', 'merges', 'off_chain_reason'}
@@ -35,16 +34,25 @@ class WorkDispatch:
         if not task.strip():
             raise ValueError('worker packet is empty')
         kind, output = row['role'], row['output_mode']
-        role = OUTPUTS.get(kind, {}).get(output)
-        if role is None:
+        if kind == 'review' or output == 'verdict':
             raise ValueError('unsupported work type/output mode; formal review uses review_dispatch.py')
         lane = row['lane_id']
         if lane in registry.rows(path):
             raise ValueError('lane already exists; inspect original request')
         config = model_config.load_document(model_config.cli_config_path())
-        config_task = 'backend' if kind == 'integration' and kind not in config['work'] else kind
+        work = model_config.normalize_work_entries(config)
+        if kind == 'integration' and output == 'integration' and kind not in work:
+            config_task = next(
+                (t for t, entry in work.items() if entry['purpose'] == 'code'), kind
+            )
+        else:
+            config_task = kind
         plan = model_config.resolve_plan(config, config_task, ticket_mode=ticket_mode, map_mode=map_mode,
                                          output_mode=output)
+        role = ('implementation' if kind == 'integration' and output == 'integration'
+                else PURPOSE_OUTPUTS.get(plan['purpose'], {}).get(output))
+        if role is None:
+            raise ValueError('unsupported work type/output mode; formal review uses review_dispatch.py')
         frozen = model_config.freeze_overlay(plan)
         caps = self.call('orchestrator_capabilities', dict(search=frozen['model']))
         parent = caps['parentThreadId']

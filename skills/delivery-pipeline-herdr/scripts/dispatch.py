@@ -7,7 +7,7 @@
               --output-mode <mode> --lane <lane_id> --work-item <url> --title <pane label>
               --worktree <abs> --branch <branch> --base <sha> --packet <abs> --registry <abs .md>
               --map-registry <abs map registry .md | none>
-              --tab-prefix <tab 前缀> [--ticket-mode NAME] [--map-mode NAME] [--off-chain-reason TEXT]
+              --tab-prefix <tab 前缀> [--ticket-mode NAME] [--map-mode NAME] [--merges LANE_ID] [--off-chain-reason TEXT]
 
 派发前（任何 herdr 调用前）拒绝：lane 名超过 Herdr agent 名上限、map registry 未通过
 recovery_record.py check、packet owner 已移出交付链路且未给 --off-chain-reason。
@@ -224,6 +224,7 @@ def main() -> int:
                  "worktree", "branch", "base", "packet", "registry", "map-registry"):
         parser.add_argument(f"--{flag}", required="--recover-review" not in sys.argv)
     parser.add_argument("--config", help="可选配置路径，仅正式 review 接受替代路径")
+    parser.add_argument("--merges", help="可选：merger lane 负责收口的目标 lane_id")
     parser.add_argument("--off-chain-reason")
     parser.add_argument("--ticket-mode")
     parser.add_argument("--map-mode")
@@ -381,7 +382,14 @@ def main() -> int:
         else:
             if args.preflight_only:
                 raise DispatchError("preflight-only requires whole-change review")
-            plan = mc.resolve_plan(mc.load_document(config), args.task,
+            document = mc.load_document(config)
+            work = mc.normalize_work_entries(document)
+            config_task = args.task
+            if args.task == "integration" and args.output_mode == "integration" and "integration" not in work:
+                config_task = next(
+                    (t for t, entry in work.items() if entry["purpose"] == "code"), args.task
+                )
+            plan = mc.resolve_plan(document, config_task,
                                    ticket_mode=args.ticket_mode, map_mode=args.map_mode,
                                    evidence=evidence, output_mode=args.output_mode)
         frozen = mc.freeze_overlay(plan)
@@ -395,6 +403,8 @@ def main() -> int:
             "base_commit": args.base, "map": map_lane, "contract_rev": contract_rev(),
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+        if args.merges:
+            row["merges"] = args.merges
         if args.off_chain_reason:
             row["off_chain_reason"] = args.off_chain_reason.replace("\n", " ")
         if review is not None:
@@ -436,7 +446,7 @@ def main() -> int:
             if not wait_working(name):
                 subprocess.run(["herdr", "pane", "close", pane["pane_id"]], capture_output=True)
                 raise DispatchError("agent did not reach working after one re-prompt")
-        log = open(f"/tmp/lane-watch-{name}.log", "ab")
+        log = open(Path(os.environ.get("TMPDIR", "/tmp")) / f"lane-watch-{name}.log", "ab")
         watch_env = dict(os.environ)
         if args.map_registry != "none" and (Path(args.map_registry).parent / "driver.json").exists():
             watch_env["LANE_WATCH_MAP_DIR"] = str(Path(args.map_registry).parent)  # ADR-0026：终态先交 Driver

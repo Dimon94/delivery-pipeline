@@ -1,4 +1,4 @@
-# 模型配置 Schema（CLI version 8（兼容 6、7）/ App version 5）
+# 模型配置 Schema（CLI version 9（兼容 6、7、8）/ App version 5）
 
 本文件是 worker 模型配置的唯一定义点，核心链路与各 transport 壳共用同一份格式。
 各 transport 的调度逻辑在其壳内实现，配置 schema 只有这一份。
@@ -15,12 +15,12 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 
 ```json
 {
-  "version": 8,
+  "version": 9,
   "dispatch": {"parallel": 4, "max_turns": 100},
   "model_families": {},
   "work": {
-    "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] },
-    "backend":  { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [] }
+    "planning": { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [], "label": "规划", "hint": "拆需求、定方案", "purpose": "planning" },
+    "backend":  { "agent": "<agent>", "model": "<native-model-id>", "effort": "<native-effort>", "fallbacks": [], "label": "后端开发", "hint": "写服务端代码", "purpose": "code" }
   },
   "modes": {
     "<name>": {
@@ -47,10 +47,10 @@ skill 与 reference 不提供默认 agent/model/effort。缺必需项、未知 k
 }
 ```
 
-CLI v8 实例顶层 key 精确为 `dispatch`、 `version`、`work`、`modes`、`review`、`model_families`。App 实例额外必需
-`default_mode`。CLI 只读 v6、v7 时使用并发 4 和每次 100 轮。显式迁移输出 v8。App 使用 v5。
+CLI v9 实例顶层 key 精确为 `dispatch`、`version`、`work`、`modes`、`review`、`model_families`。App 实例额外必需
+`default_mode`。CLI 只读 v6、v7 时使用并发 4 和每次 100 轮，只读 v6–v8 时在内存中补齐内置任务类型默认元信息。显式迁移输出 v9。App 保持 v5。
 
-`dispatch` 仅含 `parallel` 与 `max_turns` 两个正整数。v8 缺键或非法值会阻止派发。降低并发后，已有执行继续，新任务等到空出名额。每次启动时固定轮限。
+`dispatch` 仅含 `parallel` 与 `max_turns` 两个正整数。v8/v9 缺键或非法值会阻止派发。降低并发后，已有执行继续，新任务等到空出名额。每次启动时固定轮限。
 
 ## work：任务类型
 
@@ -143,5 +143,23 @@ AI setup 显式 migrate 将 CLI v5 升 v6，仅补空列表；更旧版本先沿
 `request_id`、`observed_at`、`sources`、`capabilities`；缺完整核对证据时报错。
 仅返回整体交付检查中有候选的轴，每轴含 `selected`、`selected_index`、`outcome`、`unrecognized`。
 `outcome` 为 `different`、`no_different_family`、`unrecognized` 或 `none_runnable`；
-无可运行模型时选择与索引均为 null。写代码一方取设计、前端、后端主模型，运行时则取实际执行身份，
+无可运行模型时选择与索引均为 null。写代码一方取 `purpose == "code"` 的任务类型主模型（内置即设计、前端、后端），运行时则取实际执行身份，
 所以预览按当前设置推算，可能与备用接替后的结果不同。预览与运行时共用同一选择规则。
+
+## v9：任务类型目录与用途约束（DD-684）
+
+CLI v9 将 `work` 改为用户可维护的任务类型目录，每个 key 即任务类型 id：
+
+- **标识规则**：id 必须为小写 ASCII slug（`[a-z0-9]+(?:-[a-z0-9]+)*`），禁止保留词 `review`、`map`、`all`。
+- **条目结构**：每项精确定义 `{agent, model, effort, fallbacks, label, hint, purpose}` 七个字段，缺字段或多字段均拒绝。`label` 为非空且非 `Unknown` 的字符串；`hint` 为非 `Unknown` 字符串；`purpose` 属于 `planning | code | artifact | checks | advisory` 五种受限用途之一。
+- **必需用途底线**：`work` 中 `planning`、`code`、`checks` 三类用途各至少保留一项；删除最后一个必需用途时校验与 `apply` 均拒绝且磁盘原字节不变。
+- **内置 5 项默认元信息**（用于 v6–v8 内存规范化与升级到 v9）：
+  - `planning`：显示名 `规划`，说明 `拆需求、定方案`，用途 `planning`
+  - `design`：显示名 `设计`，说明 `界面与交互`，用途 `code`
+  - `frontend`：显示名 `前端开发`，说明 `写页面代码`，用途 `code`
+  - `backend`：显示名 `后端开发`，说明 `写服务端代码`，用途 `code`
+  - `testing`：显示名 `测试`，说明 `写测试并验证`，用途 `checks`
+- **只读兼容与原子升级**：CLI v6–v8 仍通过 `validate_document`，内存经 `normalize_work_entries` 补齐默认元信息；`show` 只读不改字节与 hash，v9 时 `cells` 按当前 `work` 键动态生成；`migrate` 与 `apply` 经同一 sidecar 锁/hash/replace/readback 原子事务升级到 v9，重复迁移返回 `changed: false` 且零写入。App 配置保持 v5 不变。
+- **保存增删改与能力证据放行**：v9 `apply` 允许维护整个 `work` 任务类型目录（新增、编辑与删除可选类型，受必需用途底线约束），`modes` 仍为只读区，修改即拒且磁盘原字节不变。能力证据按三元组变更放行：原模型能力不可用且三元组及 `fallbacks` 计数未增改时，仅改 `label`/`hint`/`purpose` 或删除其他可选类型不要求新能力证据即可 `applied`；新增任务类型、修改三元组或增加 `fallbacks` 计数必须提供本次 `request_id` 的精确能力证据，缺失返回 `capability_unavailable` 且磁盘原字节不变。
+- **按用途解析与已删除类型阻断（DD-688）**：`resolve_plan` 经 `normalize_work_entries` 按配置中定义的任务类型解析，返回 `purpose` 字段；仅 `purpose == "code"` 且 `output_mode == "commit"` 时允许显式 `modes` 覆盖，其余用途或非 `commit` 均直接走该任务类型的主三元组与 `fallbacks` 且不套 `modes`。`preview_review_choice` 将所有 `purpose == "code"` 任务类型的主模型计入写代码一方厂商，不计非 `code` 用途。配置删除某任务类型后，`resolve_plan` 及 CLI `resolve` / `start` 均报错 `task type not defined in config: <task>` 且不返回任何回落模型；已在 registry 冻结 `recovery_plan` 的 lane 仍经 `recover_registry` 返回原冻结计划。
+- **Driver 与 Transport 按用途派发（DD-689）**：Driver 对未显式声明 `output_mode` 的票按配置中任务类型的 `purpose` 推导默认 `output_mode`（`code -> commit`、`checks -> checks`、`planning | artifact | advisory -> artifact`），仅 `commit` 票要求派发合同；票面任务类型未在配置中定义时 Driver 返回 `halt`（`reason` 含 `task type not defined in config: <task>`），不写入新 lane，已冻结旧 lane 仍按 `recovery_plan` 恢复；whole-change testing 优先取同名 `testing`（`purpose == "checks"`），删除同名键时解析到配置中首个 `checks` 用途任务类型。T3Code `WorkDispatch` 按 `(purpose, output_mode)` 映射原生 `role`（`planning/artifact -> research`、`code/commit -> implementation`、`code|artifact|advisory / artifact -> design`、`checks/checks -> test`、`integration/integration -> implementation`）；Herdr `dispatch`（含 `driver_run.py` 透传 `ticket_mode` / `map_mode`）与 `delivery-dispatch` 直接经 `resolve_plan` 冻结三元组，未定义 `integration` 键时 merger 回退至 `backend` 或首个 `code` 任务类型。

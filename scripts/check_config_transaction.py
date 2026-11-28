@@ -135,10 +135,10 @@ def check():
         path.write_text(json.dumps(legacy))
         process = subprocess.run([sys.executable, str(SCRIPT), 'migrate', str(path)], capture_output=True, text=True)
         assert process.returncode == 0, process.stdout
-        assert json.loads(process.stdout) == {'migrated': str(path), 'transport': 'cli', 'default_mode': None}
+        assert json.loads(process.stdout) == {'migrated': str(path), 'transport': 'cli', 'default_mode': None, 'changed': True}
         actual = json.loads(path.read_bytes())
-        assert actual['version'] == 8 and actual['modes'] == {}
-        assert actual['work']['planning'] == {**legacy['roles']['planning'], 'fallbacks': []}
+        assert actual['version'] == 9 and actual['modes'] == {}
+        assert actual['work']['planning'] == {**legacy['roles']['planning'], 'fallbacks': [], **m.DEFAULT_TASK_META['planning']}
         assert actual['review']['whole-change']['spec'] == {**legacy['roles']['review'], 'candidates': []}
         # 并发及两种锁内顺序；迁移后读到新版允许零写入成功。
         for order in ('race', 'configure-first', 'migrate-first'):
@@ -168,7 +168,9 @@ def check():
             assert configure.returncode in (0, 1), configure_out
             if configure.returncode == 0:
                 assert result['status'] == 'applied' and result['changed'] is True
-                assert json.loads(path.read_bytes()) == {**candidate, 'version': 8, 'model_families': {}, 'dispatch': {'parallel': 4, 'max_turns': 100}}
+                expected_v9 = {**candidate, 'version': 9, 'model_families': {}, 'dispatch': {'parallel': 4, 'max_turns': 100},
+                               'work': m.normalize_work_entries(candidate)}
+                assert json.loads(path.read_bytes()) == expected_v9
                 expected_writes = (1, 1)
             else:
                 assert result['status'] == 'rejected' and result['error']['code'] == 'base_conflict'

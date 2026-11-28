@@ -429,3 +429,41 @@ describe('DD-610 自动思考程度提示',()=>{
   click('#undo');change();click('#reload');expect(status()).not.toBeNull();
  });
 });
+
+describe('备用与候选设为主用及顺位重设计',()=>{
+ beforeEach(async()=>{
+  doc.body.click();doc.querySelector<HTMLButtonElement>('#back')?.click();click('#undo');
+  models={[a.model]:['high'],[b.model]:['high'],[target]:['high']};
+  click('#reload');await new Promise(r=>setTimeout(r,20));
+ });
+ test('仅 1 个备用时不显示冗余上下移按钮，点击设为主用即可与主模型互换',()=>{
+  // 规划默认有 2 个备用 (a, b)，删除第 1 个后只剩 1 个备用 (b)，主模型为 a
+  if(!doc.querySelector('[data-work="planning"][data-action="add"]'))click('[data-queue="work.planning"]');
+  click('[data-work="planning"][data-action="remove"][data-index="0"]');
+  expect(doc.querySelector('[data-work="planning"][data-action="up"]')===null).toBe(true);
+  expect(doc.querySelector('[data-work="planning"][data-action="down"]')===null).toBe(true);
+  const promote=doc.querySelector<HTMLButtonElement>('[data-work="planning"][data-action="promote"][data-index="0"]')!;
+  expect(promote!==null).toBe(true);expect(promote.disabled).toBe(false);
+  promote.click();
+  expect(doc.querySelector('button[data-path="work.planning"][data-field="model"]')!.textContent).toBe('Claude Opus 5.5 · 自动路由');
+  expect(doc.querySelector('button[data-path="work.planning.fallbacks.0"][data-field="model"]')!.textContent).toBe('GPT 6.1 Sol · 自动路由');
+  expect(doc.querySelector('.footer-status')!.textContent).toBe('1 项修改待确认');
+  click('#undo');
+  expect(doc.querySelector('button[data-path="work.planning"][data-field="model"]')!.textContent).toBe('GPT 6.1 Sol · 自动路由');
+ });
+ test('多个备用与候选显示上下移，备用 1 上移和设为主用都可切为主模型',()=>{
+  if(!doc.querySelector(`[data-review="${p}"][data-action="add"]`))click(`[data-queue="${p}"]`);
+  const up0=doc.querySelector<HTMLButtonElement>(`[data-review="${p}"][data-action="up"][data-index="0"]`)!;
+  const down1=doc.querySelector<HTMLButtonElement>(`[data-review="${p}"][data-action="down"][data-index="1"]`)!;
+  expect(up0.disabled).toBe(false);expect(down1.disabled).toBe(true);
+  // 候选 2 (b) 设为主用：原主模型 (a) 移至候选 1，原候选 1 (a) 移至候选 2
+  click(`[data-review="${p}"][data-action="promote"][data-index="1"]`);
+  expect(doc.querySelector(`button[data-path="${p}"][data-field="model"]`)!.textContent).toBe('Claude Opus 5.5 · 自动路由');
+  expect(doc.querySelector(`button[data-path="${p}.candidates.0"][data-field="model"]`)!.textContent).toBe('GPT 6.1 Sol · 自动路由');
+  // 候选 1 (a) 点上移：回到主模型
+  click(`[data-review="${p}"][data-action="up"][data-index="0"]`);
+  expect(doc.querySelector(`button[data-path="${p}"][data-field="model"]`)!.textContent).toBe('GPT 6.1 Sol · 自动路由');
+  expect(doc.querySelector(`button[data-path="${p}.candidates.0"][data-field="model"]`)!.textContent).toBe('Claude Opus 5.5 · 自动路由');
+  click('#undo');
+ });
+});

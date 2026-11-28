@@ -21,7 +21,7 @@ def identity(model):
 def fixture():
     c = m.migrate_document(m.valid_fixture())[0]
     for task in c['work']:
-        c['work'][task] = {**identity('gpt-6.1-sol'), 'fallbacks': []}
+        c['work'][task] = {**c['work'][task], **identity('gpt-6.1-sol'), 'fallbacks': []}
     for scope in c['review'].values():
         for axis in scope:
             scope[axis] = {**identity('gpt-6.1-sol'), 'candidates': []}
@@ -75,12 +75,20 @@ def preview():
         assert set(plan) == {'scope','required_axes','config_hash','request_id','implementations','lane','axes','family_evidence','implementation_evidence'}
         assert set(plan['lane']) == {'selected','selected_index','comparison','comparison_basis','fallback','attempts','probe_evidence_id','native_evidence_ids'}
         assert all(x['vendor_source'] == 'vendor_table' for x in plan['family_evidence'])
-        # planning/testing 和备用不属于界面当前写代码身份。
+        # planning/testing、非 code 自定义任务类型和备用不属于界面当前写代码身份。
         c['work']['planning']['model'] = c['work']['testing']['model'] = 'claude-opus-5-5'
         c['work']['backend']['fallbacks'] = [identity('claude-opus-5-5')]
+        c['work']['advisory-doc'] = {**identity('claude-opus-5-5'), 'fallbacks': [],
+                                     'label': '咨询建议', 'hint': '调研文档', 'purpose': 'artifact'}
         assert cli(c, ev) == result
         c['work']['design']['model'] = 'claude-opus-5-5'
         assert cli(c, ev)['standards']['outcome'] == 'no_different_family'
+        c_custom = copy.deepcopy(original)
+        del c_custom['work']['design']
+        del c_custom['work']['frontend']
+        c_custom['work']['rust-service'] = {**identity('claude-opus-5-5'), 'fallbacks': [],
+                                            'label': 'Rust 服务', 'hint': '写服务代码', 'purpose': 'code'}
+        assert cli(c_custom, ev)['standards']['outcome'] == 'no_different_family'
         c, ev = fixture()
         c['model_families'] = {'pi': {'claude-opus-5-5': {'family': 'openai', 'source': 'user_declared'}}}
         assert cli(c, ev)['standards']['selected_index'] == 0

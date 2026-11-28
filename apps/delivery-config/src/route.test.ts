@@ -23,9 +23,9 @@ await import('./main?dd613');
 const settle=()=>new Promise(r=>setTimeout(r,20));await settle();
 const click=(s:string)=>doc.querySelector<HTMLButtonElement>(s)!.click();
 const option=()=>doc.querySelector<HTMLOptionElement>('select[data-path="work.design"][data-field="agent"] option[value="codex"]')!;
-test('DD-613 直连名称贯穿下拉与只读行，选择后列出内置模型',()=>{
+test('DD-613 直连名称贯穿下拉与工作行，选择后列出内置模型',()=>{
  expect(option().disabled).toBe(false);expect(option().textContent).toBe('Codex CLI · 直连 OpenAI');
- expect(doc.querySelector('.readonly-grid')!.textContent).toContain('Codex CLI · 直连 OpenAI');
+ expect(doc.querySelector('[data-task-row="research"]')!.textContent).toContain('Codex CLI · 直连 OpenAI');
  for(const word of FORBIDDEN)expect(option().textContent).not.toContain(word);
  const select=option().parentElement as HTMLSelectElement;select.value='codex';select.dispatchEvent(new win.Event('change',{bubbles:true}));
  click('[data-path="work.design"][data-field="model"]');
@@ -48,7 +48,7 @@ test('DD-618 官方清单贯穿工具下拉与已有行，模型档位与就近�
  gateway='ok';click('#refresh');await settle();
  expect(claudeOption().disabled).toBe(false);
  expect(claudeOption().textContent).toBe('Claude Code · 官方清单');
- expect(doc.querySelector('.readonly-grid')!.textContent).toContain('Claude Code · 官方清单');
+ expect(doc.querySelector('[data-task-row="coordinator"]')!.textContent).toContain('Claude Code · 官方清单');
  for(const word of FORBIDDEN)expect(claudeOption().textContent).not.toContain(word);
  const select=claudeOption().parentElement as HTMLSelectElement;select.value='claude';select.dispatchEvent(new win.Event('change',{bubbles:true}));
  click('[data-path="work.design"][data-field="model"]');

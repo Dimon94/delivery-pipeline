@@ -64,6 +64,39 @@ FAILED = {"blocked", "integration_checks_failed"}
 MAX_REPAIRS = 2  # ADR-0012：两轮修复后重拆
 PLANNING_OWNERS = (("discovery", "wayfinder"), ("spec", "to-spec"), ("tickets", "to-tickets"))
 REMOTE_STEPS = ("push", "open_pr", "wait_ci", "merge", "finalize")
+PURPOSE_OUTPUT_MODE = {
+    "planning": "artifact",
+    "code": "commit",
+    "artifact": "artifact",
+    "checks": "checks",
+    "advisory": "artifact",
+}
+
+
+def resolve_ticket_output_mode(ticket, work_types) -> tuple[str | None, str | None]:
+    """按配置任务类型的用途推导未显式填写的 output_mode；配置中已删除该类型时返回 (None, error)。"""
+    task = ticket.get("task", "backend")
+    if work_types is not None:
+        if task not in work_types:
+            return None, f"task type not defined in config: {task}"
+        explicit = ticket.get("output_mode")
+        if explicit:
+            return explicit, None
+        return PURPOSE_OUTPUT_MODE[work_types[task]], None
+    return ticket.get("output_mode", "commit"), None
+
+
+def resolve_checks_task(work_types) -> str | None:
+    """解析 whole-change testing 使用的任务类型：优先同名 testing（checks），否则取首个 checks 类型。"""
+    if work_types is None:
+        return "testing"
+    if work_types.get("testing") == "checks":
+        return "testing"
+    return next((task for task, purpose in work_types.items() if purpose == "checks"), None)
+
+
+def is_whole_change_testing(row, map_id: str) -> bool:
+    return row.get("work_item") == f"{map_id}#testing"
 
 
 def act(action: str, ident: str, **args) -> dict:
@@ -148,11 +181,13 @@ def deviations(state) -> list[str]:
     out = []
     for row in sorted(state["lanes"].values(), key=lambda r: r["lane_id"]):
         role = row.get("role")
-        if role in ("map", "planning", "review", "integration"):
+        if role in ("map", "planning", "review") or (
+            role == "integration" and (row.get("output_mode") == "integration" or row.get("merges"))
+        ):
             if role == "integration" and row.get("merges"):
                 out.append(f"merger {row['lane_id']} 处理 {row['merges']} 的收口失败")
             continue
-        if role == "testing":
+        if is_whole_change_testing(row, d["map"]):
             if int(row.get("repairs") or 0):
                 suffix = f"（{row['repair_lane']}）" if row.get("repair_lane") else ""
                 out.append(f"整体检查 {row['lane_id']} 修复 {row['repairs']} 轮{suffix}")
@@ -203,7 +238,9 @@ def detect_halt(state):
             candidates.append(halt("resplit_failed", lid, f"重拆自 {row['resplit_of']} 后仍失败",
                                    [lid, row["resplit_of"]], ["人工接手", "改计划", "放弃该票"]))
         item = row.get("work_item")
-        if row.get("role") not in ("map", "testing", "review", "integration") and item not in planned:
+        if (row.get("role") not in ("map", "review")
+                and not (row.get("role") == "integration" and (row.get("output_mode") == "integration" or row.get("merges")))
+                and not is_whole_change_testing(row, d["map"]) and item not in planned):
             if int(row.get("wave") or 1) > max_wave or row.get("contract_change") == "true":
                 candidates.append(halt("extra_ticket", lid, f"补票 {item} 超出已批准波次或改动合同票",
                                        [lid], ["批准补票", "拒绝补票"]))
@@ -227,14 +264,22 @@ def detect_halt(state):
 
 def driver_owns_head(lanes) -> bool:
     """票实施阶段集成 HEAD 只由 Driver 移动；merger 在途或进入整体测试、评审后，别的 lane 也会合法地动它。"""
-    return not any(r.get("role") in ("testing", "review")
-                   or (r.get("role") == "integration" and r.get("state") in ACTIVE | {"terminal"})
+    return not any(r.get("role") == "review"
+                   or str(r.get("work_item") or "").endswith("#testing")
+                   or (r.get("role") == "integration"
+                       and (r.get("output_mode") == "integration" or r.get("merges"))
+                       and r.get("state") in ACTIVE | {"terminal"})
                    for r in lanes.values())
 
 
 def owner_action_id(d, gate, prefix):
     attempt = d.get("owner_attempts", {}).get(gate, 0)
     return f"{prefix}:{attempt}" if attempt else prefix
+
+
+def lane_attempt_id(prefix: str, row) -> str:
+    repairs = int(row.get("repairs") or 0)
+    return f"{prefix}:{row['lane_id']}:{repairs}" if repairs else f"{prefix}:{row['lane_id']}"
 
 
 def decide_planning(state):
@@ -331,9 +376,9 @@ def decide(state) -> dict:
             continue
         if st == "terminal":
             if row.get("output_mode") == "commit":
-                return act("fan_in", f"fan_in:{lid}", lane_id=lid, commit=row.get("head_commit"),
+                return act("fan_in", lane_attempt_id("fan_in", row), lane_id=lid, commit=row.get("head_commit"),
                            integration=mrow.get("integration_worktree_path"))
-            return act("consume", f"consume:{lid}", lane_id=lid, output_mode=row.get("output_mode"),
+            return act("consume", lane_attempt_id("consume", row), lane_id=lid, output_mode=row.get("output_mode"),
                        verdict=row.get("verdict"))
         if row.get('work_item') in managed and not done(row['work_item']):
             continue
@@ -369,12 +414,30 @@ def decide(state) -> dict:
                            note="ADR-0013：两轮修复仍失败，波次内重拆")
 
     # 3. frontier
+    work_types = state.get("work_types")
     task, jobs = brief_delivery.batch(tickets, by_item, done, d.get('answers', {}))
+    if jobs and work_types is not None and task not in work_types:
+        hid = f"halt:plan_change:missing-task:{task}"
+        return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
+                   reason=f"task type not defined in config: {task}",
+                   evidence=[f"{DRIVER_FILE}#plan"],
+                   options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
     if jobs and any(row.get('role') != 'map' and row.get('state') in ACTIVE for row in lanes.values()):
         return act('wait', 'wait', lanes=sorted(row['lane_id'] for row in lanes.values()
                    if row.get('state') in ACTIVE and row.get('role') != 'map'))
     if jobs:
-        return act('dispatch_briefs', 'briefs:' + plan_sha(jobs), task=task, briefs=thaw(jobs))
+        by_tid = {t['id']: t for t in tickets}
+        first_ticket = by_tid[jobs[0]['ticket']]
+        t_mode = first_ticket.get('ticket_mode')
+        m_mode = d['plan'].get('map_mode')
+        eff_mode = t_mode or m_mode
+        jobs = [j for j in jobs if (by_tid[j['ticket']].get('ticket_mode') or m_mode) == eff_mode]
+        extra_brief = {}
+        if t_mode:
+            extra_brief['ticket_mode'] = t_mode
+        if m_mode:
+            extra_brief['map_mode'] = m_mode
+        return act('dispatch_briefs', 'briefs:' + plan_sha(jobs), task=task, briefs=thaw(jobs), **extra_brief)
     pending_hitl = []
     for ticket in tickets:
         if by_item.get(ticket["id"]):
@@ -386,14 +449,28 @@ def decide(state) -> dict:
             continue
         if ticket['id'] in managed:
             continue
-        mode, brief = ticket.get("output_mode", "commit"), thaw(d.get("contracts", {}).get(ticket["id"]))
+        task_name = ticket.get("task", "backend")
+        mode, task_err = resolve_ticket_output_mode(ticket, work_types)
+        if task_err:
+            hid = f"halt:plan_change:missing-task:{ticket['id']}:{task_name}"
+            return act("halt", hid, kind="plan_change", label=HALT_CLASSES["plan_change"],
+                       reason=task_err, evidence=[f"{DRIVER_FILE}#plan", f"ticket:{ticket['id']}"],
+                       options=["在配置中补回该任务类型后重新 run", "修订票面任务类型后重审计划"])
+        brief = thaw(d.get("contracts", {}).get(ticket["id"]))
         if mode == "commit" and not brief:  # ADR-0028：没有合同不派发
             return act("prepare_contract", f"contract:{ticket['id']}", owner="delegate-ticket",
                        work_item=ticket["id"], base=state.get("integration_head"))
-        return act("dispatch", f"dispatch:{ticket['id']}", task=ticket.get("task", "backend"),
+        extra = {}
+        if ticket.get("ticket_mode"):
+            extra["ticket_mode"] = ticket["ticket_mode"]
+        if d["plan"].get("map_mode"):
+            extra["map_mode"] = d["plan"]["map_mode"]
+        if brief:
+            extra.update(contract=brief, **brief_delivery.packet(brief))
+        return act("dispatch", f"dispatch:{ticket['id']}", task=task_name,
                    output_mode=mode, work_item=ticket["id"],
                    lane_id=ticket.get("lane_id", ticket["id"]), answer=d.get("answers", {}).get(ticket["id"]),
-                   **(dict(contract=brief, **brief_delivery.packet(brief)) if brief else {}))
+                   **extra)
     if pending_hitl:
         ids = ",".join(t["id"] for t in pending_hitl)
         return act("ask_human", f"hitl:{ids}", kind="hitl",
@@ -406,18 +483,36 @@ def decide(state) -> dict:
         return act("wait", "wait", lanes=sorted(active))
 
     # 4. whole-change testing → review
-    for role, mode in (("testing", "checks"), ("review", "verdict")):
-        rows = [r for r in lanes.values() if r.get("role") == role]
-        if not rows:
-            return act("dispatch", f"dispatch:{role}", task=role, output_mode=mode, lane_id=f"{d['map']}-{role}",
-                       work_item=f"{d['map']}#{role}", strategy=thaw(d.get("test_strategy")))
-        latest = max(rows, key=lambda r: r["lane_id"])
-        if role == "review" and latest.get("verdict") == "FIX":
-            rnd = int(latest.get("round") or 1)
-            return act("judge", f"judge:review_fix:{rnd}", weight="heavy", kind="review-fix",
-                       lane_id=latest["lane_id"], note="FIX findings 交同一 implementer lane 修复；反例变绿加完整测试即关闭，不开下一轮（ADR-0027）")
-        if latest.get("state") not in closeout.DONE:
-            return act("wait", "wait", lanes=[latest["lane_id"]])
+    testing_rows = [r for r in lanes.values() if is_whole_change_testing(r, d["map"])]
+    if not testing_rows:
+        checks_task = resolve_checks_task(work_types)
+        if checks_task is None:
+            return act("halt", "halt:plan_change:missing-task:testing", kind="plan_change",
+                       label=HALT_CLASSES["plan_change"],
+                       reason="task type not defined in config: testing",
+                       evidence=[f"{DRIVER_FILE}#plan"],
+                       options=["在配置中补回 checks 用途任务类型后重新 run"])
+        return act("dispatch", "dispatch:testing", task=checks_task, output_mode="checks",
+                   lane_id=f"{d['map']}-testing", work_item=f"{d['map']}#testing",
+                   strategy=thaw(d.get("test_strategy")))
+    latest_testing = max(testing_rows, key=lambda r: r["lane_id"])
+    if latest_testing.get("state") not in closeout.DONE:
+        return act("wait", "wait", lanes=[latest_testing["lane_id"]])
+
+    review_rows = [r for r in lanes.values() if r.get("role") == "review"]
+    if not review_rows:
+        return act("dispatch", "dispatch:review", task="review", output_mode="verdict",
+                   lane_id=f"{d['map']}-review", work_item=f"{d['map']}#review",
+                   strategy=thaw(d.get("test_strategy")))
+    latest_review = max(review_rows, key=lambda r: r["lane_id"])
+    if latest_review.get("verdict") == "FIX":
+        rnd = int(latest_review.get("round") or 1)
+        fix_id = f"judge:review_fix:{rnd}"
+        if latest_review.get("state") != "superseded" and fix_id not in receipts:
+            return act("judge", fix_id, weight="heavy", kind="review-fix",
+                       lane_id=latest_review["lane_id"], note="FIX findings 交同一 implementer lane 修复；反例变绿加完整测试即关闭，不开下一轮（ADR-0027）")
+    elif latest_review.get("state") not in closeout.DONE:
+        return act("wait", "wait", lanes=[latest_review["lane_id"]])
 
     # 5. Merge Review → remote
     review = (d.get("reviews") or {}).get("merge") or {}
@@ -670,12 +765,34 @@ def render(state, kind: str, preflight: str = '') -> str:
 
 # ---------- IO ----------
 
+def load_work_types() -> dict[str, str] | None:
+    """只读 CLI 配置的 task_id -> purpose 映射；配置缺失时返回 None（兼容无配置单测）。"""
+    setup_scripts = str(SCRIPTS.parents[1] / "delivery-pipeline-setup" / "scripts")
+    if setup_scripts not in sys.path:
+        sys.path.insert(0, setup_scripts)
+    import model_config
+    path = model_config.cli_config_path()
+    if not path.exists():
+        return None
+    doc = model_config.load_document(path)
+    work = model_config.normalize_work_entries(doc)
+    return {task: entry["purpose"] for task, entry in work.items()}
+
+
 def load(map_dir: Path) -> dict:
     path = map_dir / DRIVER_FILE
     driver = json.loads(path.read_text()) if path.exists() else None
     lanes = closeout.latest_rows(map_dir) if map_dir.exists() else {}
     state = {'driver': driver, 'lanes': lanes}
     mrow = map_row(lanes)
+    is_app = (
+        (driver and (driver.get('dispatch_runtime') == 'codex-app' or driver.get('coordinator_runtime') == 'codex-app'))
+        or (mrow and (mrow.get('coordinator_runtime') == 'codex-app' or mrow.get('dispatch_runtime') == 'codex-app'))
+    )
+    if not is_app:
+        work_types = load_work_types()
+        if work_types is not None:
+            state['work_types'] = work_types
     if driver and mrow:
         wt = mrow.get('integration_worktree_path')
         if any(brief_delivery.has_briefs(t) for t in driver.get('plan', {}).get('tickets', ())):
@@ -791,7 +908,13 @@ def exec_fan_in(map_dir: Path, state, action) -> dict:
         return {"state": "blocked", "blocked_reason": why}
     drift = {"scope_drift": "、".join(outside)} if outside else {}  # 越界只记偏差，合并评审页显示
     if run_git(wt, "cherry-pick", commit).returncode != 0:
+        empty = (run_git(wt, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").returncode == 0
+                 and not run_git(wt, "diff", "--name-only", "--diff-filter=U").stdout.strip()
+                 and run_git(wt, "diff", "--cached", "--quiet").returncode == 0)
         run_git(wt, "cherry-pick", "--abort")
+        if empty:
+            head = run_git(wt, "rev-parse", "HEAD").stdout.strip()
+            return {"state": "integrated", "integrated_commit": head, **drift}
         return {"state": "integration_conflict", "blocked_reason": "cherry-pick 冲突"}
     head = run_git(wt, "rev-parse", "HEAD").stdout.strip()
     same = run_git(wt, "rev-parse", "HEAD^{tree}").stdout.strip() == run_git(wt, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
@@ -915,10 +1038,13 @@ def exec_briefs(map_dir, state, action):
     if brief_delivery.git(tree, 'symbolic-ref', '--short', 'HEAD') != mrow.get('integration_branch'):
         raise ValueError('当前工作树不在 map 集成分支')
     jobs, role = action['args']['briefs'], action['args']['task']
+    mode = action['args'].get('ticket_mode') or action['args'].get('map_mode')
     with tempfile.NamedTemporaryFile(mode='w', dir=map_dir) as source:
         json.dump(jobs, source)
         source.flush()
         cmd = [str(DISPATCH_CLI), 'batch', source.name, '--managed', str(map_dir), '--task', role]
+        if mode:
+            cmd.extend(['--mode', str(mode)])
         p = subprocess.run(cmd, cwd=tree, capture_output=True, text=True)
     if p.returncode:
         raise ValueError(p.stderr.strip() or '执行片未全部通过')
@@ -931,11 +1057,39 @@ def brief_preflight(state):
     tasks = brief_tasks(state)
     if not tasks:
         return []
-    p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
-    rows = {row["task"]: row for row in
-            (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
-    return [rows.get(task, {'task': task, 'ok': False,
-                            'error': p.stderr.strip() or '预检无输出'}) for task in tasks]
+    plan = state['driver']['plan']
+    map_mode = plan.get('map_mode')
+    task_modes: dict[str, list[str | None]] = {task: [] for task in tasks}
+    for ticket in plan['tickets']:
+        if not brief_delivery.has_briefs(ticket):
+            continue
+        task = ticket.get('task', 'backend')
+        mode = ticket.get('ticket_mode') or map_mode
+        if mode not in task_modes[task]:
+            task_modes[task].append(mode)
+    if all(modes == [None] for modes in task_modes.values()):
+        p = subprocess.run([str(DISPATCH_CLI), 'preflight', *tasks], capture_output=True, text=True)
+        rows = {row["task"]: row for row in
+                (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
+        return [rows.get(task, {'task': task, 'ok': False,
+                                'error': p.stderr.strip() or '预检无输出'}) for task in tasks]
+    out = []
+    for task in tasks:
+        chosen = None
+        for mode in task_modes[task]:
+            cmd = [str(DISPATCH_CLI), 'preflight', task]
+            if mode:
+                cmd.extend(['--mode', str(mode)])
+            p = subprocess.run(cmd, capture_output=True, text=True)
+            parsed = {row["task"]: row for row in
+                      (json.loads(line) for line in p.stdout.splitlines() if line.startswith('{'))}
+            row = parsed.get(task, {'task': task, 'ok': False, 'error': p.stderr.strip() or '预检无输出'})
+            if not row.get('ok'):
+                chosen = row
+                break
+            chosen = row
+        out.append(chosen)
+    return out
 
 
 def preflight_html(rows):
@@ -1042,7 +1196,9 @@ def _cases():
         ("dispatch-frontier", _state(_granted(), MAP), "dispatch", "dispatch:T1"),
         ("dep-wait", _state(_granted(), MAP, _lane("T1", "running")), "wait", "wait"),
         ("fan-in", _state(_granted(), MAP, _lane("T1", "terminal", head_commit="c")), "fan_in", "fan_in:T1"),
+        ("fan-in-repaired", _state(_granted(), MAP, _lane("T1", "terminal", head_commit="c2", repairs="1")), "fan_in", "fan_in:T1:1"),
         ("consume", _state(_granted(), MAP, _lane("T1", "terminal", output_mode="artifact")), "consume", "consume:T1"),
+        ("consume-repaired", _state(_granted(), MAP, _lane("T1", "terminal", output_mode="checks", repairs="1")), "consume", "consume:T1:1"),
         ("closeout", _state(_granted(), MAP, _lane("T1", "integrated")), "closeout", "closeout:T1"),
         ("merger", _state(_granted(), MAP, _lane("T1", "integration_conflict")), "dispatch", "dispatch:merger:T1"),
         ("foreign-head", _moved(_state(_granted(integration_seen="a"), MAP, _lane("T1", "integration_conflict"))),
@@ -1062,6 +1218,14 @@ def _cases():
         ("review", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing")), "dispatch", "dispatch:review"),
         ("review-fix", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
                               _lane("r", "closed", role="review", work_item="m1#review", verdict="FIX")), "judge", "judge:review_fix:1"),
+        ("review-fix-recorded", _state(_granted(receipts={"judge:review_fix:1": {"lane_id": "T1-fix"}}), MAP, *all_done,
+                                       _lane("t", "closed", role="testing", work_item="m1#testing"),
+                                       _lane("r", "superseded", role="review", work_item="m1#review", verdict="FIX", fix_lane="T1-fix"),
+                                       _lane("T1-fix", "closed", work_item="T1")), "render_review", "render:merge:"),
+        ("review-fix-running", _state(_granted(receipts={"judge:review_fix:1": {"lane_id": "T1-fix"}}), MAP, *all_done,
+                                      _lane("t", "closed", role="testing", work_item="m1#testing"),
+                                      _lane("r", "superseded", role="review", work_item="m1#review", verdict="FIX", fix_lane="T1-fix"),
+                                      _lane("T1-fix", "running", work_item="T1")), "wait", "wait"),
         ("render-merge", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
                                 _lane("r", "closed", role="review", work_item="m1#review", verdict="PASS")), "render_review", "render:merge:"),
         ("remote", _state(_granted(reviews={"merge": {"approved": True}}), MAP, *all_done,
@@ -1129,6 +1293,8 @@ def self_test() -> int:
     failures += _io_self_test()
     failures += _issue_sync_self_test()
     failures += _contract_self_test()
+    failures += _idempotent_fan_in_self_test()
+    failures += _repair_fan_in_self_test()
     failures += _head_guard_self_test()
     failures += _planning_self_test()
     failures += _review_html_self_test()
@@ -1283,6 +1449,138 @@ def _contract_self_test() -> list[str]:
         blocked = _state(_granted(), MAP, _lane("T1", "blocked", blocked_reason="合同违约：验收命令退出 1"))
         if decide(blocked)["id"] != "judge:diagnose:T1:1":
             failures.append("合同违约应进既有诊断修复链")
+    return failures
+
+
+def _idempotent_fan_in_self_test() -> list[str]:
+    """DD-691：待集成提交的改动已完全在集成 HEAD 中（空 cherry-pick / 相同 tree）应幂等收口，真实冲突仍判 integration_conflict。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, tree = str(Path(tmp, "repo")), str(Path(tmp, "lane"))
+        git = brief_delivery.git
+        subprocess.run(["git", "init", "-qb", "integration", repo], check=True)
+        for kv in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+            git(repo, "config", *kv)
+        Path(repo, "README.md").write_text("base\n")
+        git(repo, "add", "--", "README.md")
+        git(repo, "commit", "-qm", "base")
+        base = git(repo, "rev-parse", "HEAD")
+        git(repo, "worktree", "add", "-qb", "lane", tree)
+        Path(tree, "a.txt").write_text("ok\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "-qm", "work")
+        c1 = git(tree, "rev-parse", "HEAD")
+
+        def fan_in(commit, contract):
+            row = _lane("T1", "terminal", head_commit=commit, worktree=tree)
+            state = _state(_granted(contracts={"T1": contract}), dict(MAP, integration_worktree_path=repo), row)
+            return exec_fan_in(Path(tmp), state, decide(state))
+
+        # 先在集成树落入相同改动（不同 commit SHA，相同 tree），模拟已集成后重复 fan-in。
+        Path(repo, "a.txt").write_text("ok\n")
+        git(repo, "add", "--", "a.txt")
+        git(repo, "commit", "-qm", "integrated")
+        head1 = git(repo, "rev-parse", "HEAD")
+
+        # 1. 相同 tree 重复集成（空 cherry-pick）→ 幂等收口，不得误判 integration_conflict。
+        dup = fan_in(c1, _brief("T1"))
+        if (dup.get("state") != "integrated" or dup.get("integrated_commit") != head1
+                or git(repo, "rev-parse", "HEAD") != head1 or git(repo, "status", "--porcelain")
+                or run_git(repo, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").returncode == 0):
+            failures.append(f"相同 tree 重复 fan-in 应幂等 integrated，got {dup}")
+
+        # 2. 集成 HEAD 另有其他提交（tree 不同，但 c1 改动已全部在 HEAD 中）→ 同样按已集成幂等收口。
+        Path(repo, "extra.txt").write_text("extra\n")
+        git(repo, "add", "--", "extra.txt")
+        git(repo, "commit", "-qm", "extra")
+        head2 = git(repo, "rev-parse", "HEAD")
+        subset = fan_in(c1, _brief("T1"))
+        if (subset.get("state") != "integrated" or subset.get("integrated_commit") != head2
+                or git(repo, "rev-parse", "HEAD") != head2 or git(repo, "status", "--porcelain")):
+            failures.append(f"改动已在集成 HEAD 中的空 cherry-pick 应幂等 integrated，got {subset}")
+
+        # 3. 真实冲突仍应返回 integration_conflict 并清理 CHERRY_PICK_HEAD。
+        git(tree, "reset", "-q", "--hard", base)
+        Path(tree, "a.txt").write_text("conflict\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "-qm", "conflict")
+        c2 = git(tree, "rev-parse", "HEAD")
+        conflict = fan_in(c2, _brief("T1", check=["git", "grep", "-q", "conflict", "HEAD", "--", "a.txt"], expected="a.txt 含 conflict"))
+        if (conflict.get("state") != "integration_conflict"
+                or git(repo, "rev-parse", "HEAD") != head2 or git(repo, "status", "--porcelain")
+                or run_git(repo, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").returncode == 0):
+            failures.append(f"真实冲突应仍判 integration_conflict，got {conflict}")
+    return failures
+
+
+def _repair_fan_in_self_test() -> list[str]:
+    """DD-690：blocked → repair → 再次 fan-in / consume 必须推进状态，不得当成重复回执死循环。"""
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        md, repo, tree = Path(tmp, "map"), str(Path(tmp, "repo")), str(Path(tmp, "lane"))
+        md.mkdir()
+        git = brief_delivery.git
+        subprocess.run(["git", "init", "-qb", "integration", repo], check=True)
+        for kv in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+            git(repo, "config", *kv)
+        Path(repo, "README.md").write_text("base\n")
+        git(repo, "add", "--", "README.md")
+        git(repo, "commit", "-qm", "base")
+        git(repo, "worktree", "add", "-qb", "lane", tree)
+        Path(tree, "a.txt").write_text("no\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "-qm", "bad")
+        bad_commit = git(tree, "rev-parse", "HEAD")
+
+        registry = str(md / "registry.md")
+        write_json(md / DRIVER_FILE, _granted())
+        persist_lanes(md, [
+            dict(MAP, integration_worktree_path=repo, _file=registry),
+            dict(_lane("T1", "terminal", head_commit=bad_commit, worktree=tree), _file=registry),
+        ])
+        first = run(md, limit=20)
+        if first["id"] != "judge:diagnose:T1:1":
+            return [f"首次合同违约应交回验收诊断，got {first}"]
+        record(md, "judge:diagnose:T1:1", {"lane_id": "T1"})
+        Path(tree, "a.txt").write_text("ok\n")
+        git(tree, "add", "--", "a.txt")
+        git(tree, "commit", "--amend", "-qm", "fix")
+        good_commit = git(tree, "rev-parse", "HEAD")
+        if signal(md, f"LANE_DONE T1 {good_commit}")["signal"] != "recorded":
+            return ["修复后终态行应写入 terminal"]
+        try:
+            after = run(md, executors={"closeout": lambda *_: {"result": "closed"}}, limit=20)
+        except RuntimeError as exc:
+            return [f"修复后再次 fan-in 死循环：{exc}"]
+        t1 = load(md)["lanes"]["T1"]
+        if after["id"] != "dispatch:T2" or t1["state"] != "closed" or Path(repo, "a.txt").read_text() != "ok\n":
+            failures.append(f"修复后再次 fan-in 应集成、收口并推进到 T2，got after={after} lane={t1}")
+        if record(md, "fan_in:T1:1", {"state": "integrated"}).get("duplicate") is not True:
+            failures.append("新轮次 fan_in:T1:1 的重复回执仍应幂等")
+
+        # 同类路径：consume（checks 失败 → blocked → repair → 再次 consume）
+        md2 = Path(tmp, "map2")
+        md2.mkdir()
+        reg2 = str(md2 / "registry.md")
+        write_json(md2 / DRIVER_FILE, _granted())
+        persist_lanes(md2, [
+            dict(MAP, _file=reg2),
+            *[dict(_lane(i, "closed"), _file=reg2) for i in ("T1", "T2", "T3", "T4")],
+            dict(_lane("m1-testing", "terminal", role="testing", work_item="m1#testing",
+                       output_mode="checks", checks="fail"), _file=reg2),
+        ])
+        if run(md2, limit=20)["id"] != "judge:diagnose:m1-testing:1":
+            failures.append("testing checks 失败应进入诊断修复")
+        else:
+            record(md2, "judge:diagnose:m1-testing:1", {"lane_id": "m1-testing"})
+            persist_lanes(md2, [{**load(md2)["lanes"]["m1-testing"], "state": "terminal", "checks": "pass"}])
+            try:
+                nxt = run(md2, executors={"closeout": lambda *_: {"result": "closed"}}, limit=20)
+            except RuntimeError as exc:
+                failures.append(f"修复后再次 consume 死循环：{exc}")
+            else:
+                if nxt["id"] != "dispatch:review" or load(md2)["lanes"]["m1-testing"]["state"] != "closed":
+                    failures.append(f"修复后再次 consume 应推进到 review，got {nxt}")
     return failures
 
 

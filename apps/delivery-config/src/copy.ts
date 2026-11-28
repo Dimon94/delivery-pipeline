@@ -74,6 +74,14 @@ export const copy = {
   "候选2": "候选",
   "上移": "上移",
   "下移": "下移",
+  "设为主用": "设为主用",
+  "上移为主模型": "上移为主模型",
+  "上移一位": "上移一位",
+  "下移一位": "下移一位",
+  "设为工作主用提示": "将此备用切换为主模型，当前主模型移至备用 1",
+  "设为检查主用提示": "将此候选切换为主模型，当前主模型移至候选 1",
+  "备用顺位提示": "主模型不可用时按顺序接替，点“设为主用”可随时切换",
+  "候选顺位提示": "按顺位选用检查模型，点“设为主用”可随时切换",
   "删除": "删除",
   "title核对完成后才能新增": "title=\"核对完成后才能新增\"",
   "添加候选": "添加候选",
@@ -200,8 +208,49 @@ export const copy = {
   "LinearIssue": "Linear issue",
   "可选": "可选：",
   "回复Halt说明": "回复 Halt 不在本看板（链接到 Driver 现场）",
-  "候选只读说明": "只读：不在这里开 map 或派票"
+  "候选只读说明": "只读：不在这里开 map 或派票",
+ "新增任务类型": "新增任务类型",
+ "编辑任务类型": "编辑任务类型",
+ "任务类型ID": "任务类型 ID",
+ "任务类型ID示例": "如 advisory-doc（小写字母、数字和连字符）",
+ "显示名称": "显示名称",
+ "说明": "说明",
+ "用途": "用途",
+ "编辑": "编辑",
+ "添加": "添加",
+ "保存": "保存",
+ "已新增": "已新增",
+ "已删除": "已删除",
+ "用途规划": "规划",
+ "用途写代码并提交": "写代码并提交",
+ "用途产出文档": "产出文档",
+ "用途测试验证": "测试验证",
+ "用途只读咨询": "只读咨询",
+ "没有命名预设": "当前没有命名预设。"
 };
+export const purposeLabels: Record<import('./draft').TaskPurpose, string> = {
+ planning: copy.用途规划,
+ code: copy.用途写代码并提交,
+ artifact: copy.用途产出文档,
+ checks: copy.用途测试验证,
+ advisory: copy.用途只读咨询,
+};
+export function purposeLabel(purpose: import('./draft').TaskPurpose): string {
+ return purposeLabels[purpose] ?? purpose;
+}
+export function lastRequiredPurposeText(purpose: import('./draft').TaskPurpose): string {
+ return `至少需保留一个「${purposeLabel(purpose)}」类型`;
+}
+export function taskTypeErrorText(error: import('./draft').TaskTypeValidationError, purpose?: import('./draft').TaskPurpose): string {
+ switch (error) {
+  case 'invalid_id': return '任务类型 ID 只能包含小写字母、数字和连字符，且不能有空格';
+  case 'reserved_id': return '该 ID 为系统保留词，不能用作任务类型 ID';
+  case 'duplicate_id': return '已存在相同 ID 的任务类型';
+  case 'empty_label': return '请填写有效的显示名称';
+  case 'invalid_purpose': return '请选择有效的用途';
+  case 'last_required_purpose': return purpose ? lastRequiredPurposeText(purpose) : '至少需保留一个必需用途的任务类型';
+ }
+}
 export const STAGE_ORDER:readonly import('./board').Stage[]=['spec','tickets','implement','integrate','review','merge_review','merged'];
 // 阶段全称对齐锁定原型 v4；读不出的阶段原样显示数据值。
 export const stageNames:Record<string,string>={spec:'spec',tickets:'tickets',implement:'实施',integrate:'集成',review:'审查',merge_review:'Merge Review',merged:'合入'};

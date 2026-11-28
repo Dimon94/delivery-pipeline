@@ -74,7 +74,7 @@ TAB = "#1 实施"
 
 
 def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", map_text=GOOD_MAP,
-        extra=(), config_document=None, probe_evidence=None):
+        extra=(), config_document=None, probe_evidence=None, task="backend", output_mode="commit"):
     (root / "state.json").write_text(json.dumps(state))
     (root / "calls.jsonl").write_text("")
     config, evidence = fixture_config(root)
@@ -86,12 +86,12 @@ def run(root: Path, lane: str, state: dict, *, env_extra=None, packet="packet", 
     registry = root / f"registry-{lane}.md"
     map_registry = root / "registry-map-demo.md"
     map_registry.write_text(map_text)
-    env = {**os.environ, "HOME": str(root), "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
+    env = {**os.environ, "HOME": str(root), "TMPDIR": str(root), "PATH": f"{root}:{os.environ['PATH']}", "HERDR_ENV": "1",
            "HERDR_WORKSPACE_ID": "w1", "HERDR_TAB_ID": "w1:t1", "HERDR_PANE_ID": "w1:p1",
            "DP_LANE_WATCH": str(root / "watch"), **(env_extra or {})}
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--evidence", str(evidence),
-         "--task", "backend", "--output-mode", "commit", "--lane", lane, "--work-item", "https://x/1",
+         "--task", task, "--output-mode", output_mode, "--lane", lane, "--work-item", "https://x/1",
          "--title", "#1 演示", "--tab-prefix", TAB, "--worktree", str(root), "--branch", "b", "--base", "abc",
          "--packet", str(root / "packet.md"), "--registry", str(registry),
          "--map-registry", str(map_registry), *extra],
@@ -107,7 +107,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "herdr").write_text(f"#!{sys.executable}\n" + FAKE_HERDR)
-        (root / "watch").write_text(f"#!/bin/sh\necho \"$@\" > {root}/watch.args\n")
+        (root / "watch").write_text(
+            f"#!/bin/sh\nprintf '%s\\n' \"$*\" > \"{root}/watch.args.tmp\" && mv \"{root}/watch.args.tmp\" \"{root}/watch.args\"\n"
+        )
         for name in ("herdr", "watch"):
             (root / name).chmod(0o755)
 
@@ -135,8 +137,8 @@ def main() -> int:
         if "--pane" not in start or start[start.index("--pane") + 1] != "w1:p2":
             failures.append("agent start not bound to placed pane")
         import time
-        for _ in range(50):
-            if (root / "watch.args").exists():
+        for _ in range(300):
+            if (root / "watch.args").exists() and (root / "watch.args").read_text().strip():
                 break
             time.sleep(0.05)
         if not (root / "watch.args").exists() or "w1:p2 w1:p1 lane-a" not in (root / "watch.args").read_text():
@@ -272,6 +274,41 @@ def main() -> int:
             result, registry, calls = run(root, lane, json.loads(json.dumps(base)), extra=flags)
             if result.returncode == 0 or calls or registry.exists() or "中文简写" not in result.stdout:
                 failures.append(f"label without CJK short name not rejected before herdr {flags}: {result.stdout}")
+
+        # 13. DD-691：task=integration 且 work 未定义 integration 时回退到 backend；显式定义时仍用 integration。
+        fb_doc = mc.valid_fixture()
+        fb_doc["work"].pop("integration", None)
+        result, registry, _ = run(
+            root, "lane-int-fb", json.loads(json.dumps(base)),
+            task="integration", output_mode="integration", config_document=fb_doc,
+        )
+        fb_row, _ = lane_registry.read(registry, "lane-int-fb") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or fb_row.get("state") != "running" or fb_row.get("role") != "integration"
+                or fb_row.get("model") != fb_doc["work"]["backend"]["model"]
+                or fb_row.get("effort") != fb_doc["work"]["backend"]["effort"]):
+            failures.append(f"integration fallback to backend failed: rc={result.returncode} out={result.stdout} row={fb_row}")
+
+        ex_doc = mc.valid_fixture()
+        ex_doc["work"]["backend"] = {"agent": "pi", "model": "provider/model", "effort": "high", "fallbacks": []}
+        ex_doc["work"]["integration"] = {"agent": "pi", "model": "provider/model", "effort": "low"}
+        result, registry, _ = run(
+            root, "lane-int-ex", json.loads(json.dumps(base)),
+            task="integration", output_mode="integration", config_document=ex_doc,
+        )
+        ex_row, _ = lane_registry.read(registry, "lane-int-ex") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or ex_row.get("state") != "running" or ex_row.get("role") != "integration"
+                or ex_row.get("effort") != "low"):
+            failures.append(f"explicit integration config was not used: rc={result.returncode} out={result.stdout} row={ex_row}")
+
+        # 14. DD-692：merger 派发接收 --merges 并写入 registry；非 merger 不写 merges。
+        result, registry, _ = run(
+            root, "lane-int-merges", json.loads(json.dumps(base)),
+            task="integration", output_mode="integration", extra=("--merges", "T1"),
+        )
+        mg_row, _ = lane_registry.read(registry, "lane-int-merges") if registry.exists() else ({}, None)
+        if (result.returncode != 0 or mg_row.get("state") != "running" or mg_row.get("role") != "integration"
+                or mg_row.get("merges") != "T1" or "merges" in fb_row):
+            failures.append(f"merger --merges registry write failed: rc={result.returncode} out={result.stdout} err={result.stderr} row={mg_row}")
 
     for failure in failures:
         print(f"FAIL {failure}")

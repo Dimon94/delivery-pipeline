@@ -128,9 +128,19 @@ def magpie_key(env):
     raise Failure('Magpie 路由缺密钥：设置 MAGPIE_API_KEY，或在 ~/.pi/agent/models.json 配置 magpie provider')
 
 
-def worker_plan(task, mode, config, turns):
+PURPOSE_OUTPUT_MODE = {
+    'planning': 'artifact',
+    'code': 'commit',
+    'artifact': 'artifact',
+    'checks': 'checks',
+    'advisory': 'artifact',
+}
+
+
+def worker_plan(task, mode, config, turns, output_mode=None):
     """只按已校验的 model-roles 配置解析路由；模型可用性由 setup 写入时核过，执行失败由 claude -p 退出码暴露。"""
-    plan = model_config.resolve_plan(config, task, ticket_mode=mode, output_mode='commit')
+    resolved_output = output_mode or PURPOSE_OUTPUT_MODE[model_config.task_purpose(config, task)]
+    plan = model_config.resolve_plan(config, task, ticket_mode=mode, output_mode=resolved_output)
     model = plan['model']
     env = os.environ.copy()
     if plan['agent'] == 'pi' and model.startswith('magpie/'):
@@ -144,7 +154,7 @@ def worker_plan(task, mode, config, turns):
         raise Failure('Claude 不支持所选 effort：' + plan['effort'])
     argv = ['claude', '-p', '--model', model, '--effort', plan['effort'], '--max-turns', str(turns),
             '--permission-mode', 'bypassPermissions', '--no-session-persistence', '--output-format', 'json']
-    return argv, env, {key: plan[key] for key in ('agent', 'model', 'effort', 'recovery_plan') if key in plan} | {'max_turns': turns}
+    return argv, env, {key: plan[key] for key in ('agent', 'model', 'effort', 'purpose', 'recovery_plan') if key in plan} | {'max_turns': turns}
 
 
 INSTRUCTION = ('先读 read_first，只改 writable 所列文件，按 check 的 argv 验收。'

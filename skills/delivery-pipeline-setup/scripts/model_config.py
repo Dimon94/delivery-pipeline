@@ -8,9 +8,31 @@ from contextlib import contextmanager
 from typing import TypedDict, Literal, Callable, Mapping
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
+
+TaskPurpose = Literal["planning", "code", "artifact", "checks", "advisory"]
+TASK_PURPOSES: tuple[TaskPurpose, ...] = ("planning", "code", "artifact", "checks", "advisory")
+REQUIRED_PURPOSES: tuple[TaskPurpose, ...] = ("planning", "code", "checks")
+RESERVED_TASK_IDS = {"review", "map", "all"}
+TASK_ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*", re.ASCII)
+DEFAULT_TASK_META: dict[str, dict[str, str]] = {
+    "planning": {"label": "规划", "hint": "拆需求、定方案", "purpose": "planning"},
+    "design": {"label": "设计", "hint": "界面与交互", "purpose": "code"},
+    "frontend": {"label": "前端开发", "hint": "写页面代码", "purpose": "code"},
+    "backend": {"label": "后端开发", "hint": "写服务端代码", "purpose": "code"},
+    "testing": {"label": "测试", "hint": "写测试并验证", "purpose": "checks"},
+}
+_LEGACY_OPTIONAL_TASK_META: dict[str, dict[str, str]] = {
+    "coordinator": {"label": "协调", "hint": "当前协调会话的推荐观测值", "purpose": "advisory"},
+    "research": {"label": "调研", "hint": "独立调查与搜索", "purpose": "artifact"},
+    "prototype": {"label": "原型", "hint": "设计原型与交互探索", "purpose": "artifact"},
+    "integration": {"label": "集成", "hint": "逐票集成辅助", "purpose": "code"},
+    "assistance": {"label": "协助", "hint": "内部辅助检索与实现", "purpose": "advisory"},
+    "second-opinion": {"label": "第二意见", "hint": "咨询子代理", "purpose": "advisory"},
+}
 
 TASK_TYPES = {
     "coordinator",
@@ -76,8 +98,112 @@ class ModelTriple(TypedDict):
     effort: str
 
 
+class TaskTypeEntry(TypedDict):
+    agent: Literal["pi", "codex", "claude", "antigravity"]
+    model: str
+    effort: str
+    fallbacks: list[ModelTriple]
+    label: str
+    hint: str
+    purpose: TaskPurpose
+
+
 def triple(value: dict) -> ModelTriple:
     return {k: value[k] for k in ("agent", "model", "effort")}
+
+
+def _v9_work_errors(work: object, agents: set[str]) -> list[str]:
+    if not isinstance(work, dict) or not work:
+        return ["v9 work must be a non-empty object"]
+    errors: list[str] = []
+    purposes: set[str] = set()
+    expected_fields = {"agent", "model", "effort", "fallbacks", "label", "hint", "purpose"}
+    for task, entry in work.items():
+        if not isinstance(task, str) or not TASK_ID_RE.fullmatch(task):
+            errors.append(f"work.{task} id must be a lowercase ASCII slug")
+        elif task in RESERVED_TASK_IDS:
+            errors.append(f"work.{task} id is reserved: {task}")
+        prefix = f"work.{task}"
+        if not isinstance(entry, dict) or set(entry) != expected_fields:
+            errors.append(f"{prefix} must define exactly {sorted(expected_fields)}")
+            continue
+        errors.extend(
+            _cell_errors(
+                prefix,
+                {k: entry[k] for k in ("agent", "model", "effort", "fallbacks")},
+                agents,
+                "fallbacks",
+            )
+        )
+        label = entry.get("label")
+        if not isinstance(label, str) or not label.strip() or label.strip().lower() == "unknown":
+            errors.append(f"{prefix}.label must be a known non-empty string")
+        hint = entry.get("hint")
+        if not isinstance(hint, str) or hint.strip().lower() == "unknown":
+            errors.append(f"{prefix}.hint must be a known string")
+        purpose = entry.get("purpose")
+        if purpose not in TASK_PURPOSES:
+            errors.append(f"{prefix}.purpose must be one of {list(TASK_PURPOSES)}")
+        else:
+            purposes.add(purpose)
+    for required in REQUIRED_PURPOSES:
+        if required not in purposes:
+            errors.append(f"v9 work must define at least one {required} task type")
+    return errors
+
+
+def normalize_work_entries(document: dict) -> dict[str, TaskTypeEntry]:
+    """将合法 CLI v6–v9 配置的 work 在内存中统一为 v9 TaskTypeEntry 视图，不修改输入。"""
+    errors = validate_document(document, "cli")
+    if errors:
+        raise ValueError("; ".join(errors))
+    if document["version"] == 9:
+        return copy.deepcopy(document["work"])
+    normalized: dict[str, TaskTypeEntry] = {}
+    for task, entry in document["work"].items():
+        meta = DEFAULT_TASK_META.get(task) or _LEGACY_OPTIONAL_TASK_META[task]
+        normalized[task] = {
+            **triple(entry),
+            "fallbacks": copy.deepcopy(entry.get("fallbacks", [])),
+            "label": meta["label"],
+            "hint": meta["hint"],
+            "purpose": meta["purpose"],
+        }
+    return normalized
+
+
+def task_purpose(document: dict, task: str) -> TaskPurpose:
+    """返回合法 CLI 配置中指定任务类型的用途；任务类型未定义时报错。"""
+    work = normalize_work_entries(document)
+    if task not in work:
+        raise ValueError(f"task type not defined in config: {task}")
+    return work[task]["purpose"]
+
+
+def resolve_planning_task(document: dict) -> str:
+    """按用途解析规划入口任务类型：优先同名且为 planning 用途的 planning，否则取首个 planning 用途项。"""
+    work = normalize_work_entries(document)
+    if work.get("planning", {}).get("purpose") == "planning":
+        return "planning"
+    found = next((task for task, entry in work.items() if entry["purpose"] == "planning"), None)
+    if found is None:
+        raise ValueError("task type not defined in config: planning")
+    return found
+
+
+def _parse_json_with_duplicates(raw: str | bytes) -> tuple[object, list[str]]:
+    """解析 JSON 并记录任意对象中的重复键，不静默吞掉后值覆盖前值。"""
+    duplicates: list[str] = []
+
+    def _pairs_hook(pairs: list[tuple[str, object]]) -> dict:
+        result: dict = {}
+        for key, value in pairs:
+            if key in result:
+                duplicates.append(f"duplicate key: {key}")
+            result[key] = value
+        return result
+
+    return json.loads(raw, object_pairs_hook=_pairs_hook), duplicates
 
 
 def _cell_errors(prefix, value, agents, listing=None):
@@ -151,15 +277,13 @@ def choose_review_candidate(pool: list[dict], runnable: list[bool],
 
 
 def preview_review_choice(document: dict, evidence: dict) -> dict:
-    """按当前草稿的设计/前端/后端主模型预计；不探测、不修改输入。"""
-    errors = validate_document(document)
-    if errors:
-        raise ValueError('; '.join(errors))
+    """按当前草稿 purpose 为 code 的任务类型主模型预计；不探测、不修改输入。"""
+    work = normalize_work_entries(document)
     if (not isinstance(evidence, dict) or not evidence.get('request_id')
             or not evidence.get('observed_at') or not isinstance(evidence.get('sources'), dict)
             or not isinstance(evidence.get('capabilities'), dict)):
         raise ValueError('preview-review requires complete current probe evidence')
-    implementations = [triple(document['work'][task]) for task in ('design', 'frontend', 'backend')]
+    implementations = [triple(entry) for entry in work.values() if entry['purpose'] == 'code']
     axes = {axis: [triple(cell), *cell['candidates']]
             for axis, cell in document['review']['whole-change'].items() if cell['candidates']}
     for identity in [*implementations, *(item for pool in axes.values() for item in pool)]:
@@ -189,8 +313,8 @@ DEFAULT_LIMITS = {"parallel": 4, "max_turns": 100}
 def read_limits(config: dict) -> dict:
     if config.get("version") in (6, 7):
         return DEFAULT_LIMITS.copy()
-    if config.get("version") != 8:
-        raise ValueError("dispatch requires CLI config v6, v7 or v8")
+    if config.get("version") not in (8, 9):
+        raise ValueError("dispatch requires CLI config v6, v7, v8 or v9")
     limits = config.get("dispatch")
     if not isinstance(limits, dict) or set(limits) != set(DEFAULT_LIMITS):
         raise ValueError("dispatch must define exactly parallel and max_turns")
@@ -201,16 +325,26 @@ def read_limits(config: dict) -> dict:
 
 
 def apply_limits(config: dict, limits: dict) -> dict:
-    migrated, transport = migrate_document(config)
-    if transport != "cli":
-        raise ValueError("dispatch requires CLI config")
+    if isinstance(config, dict) and config.get("version") in (6, 7, 8, 9):
+        errors = validate_document(config, "cli")
+        if errors:
+            raise ValueError("; ".join(errors))
+        migrated = copy.deepcopy(config)
+        if migrated["version"] == 6:
+            migrated.update(version=7, model_families={})
+        if migrated["version"] == 7:
+            migrated.update(version=8, dispatch=DEFAULT_LIMITS.copy())
+    else:
+        migrated, transport = migrate_document(config)
+        if transport != "cli":
+            raise ValueError("dispatch requires CLI config")
     migrated["dispatch"] = limits
     migrated["dispatch"] = read_limits(migrated)
     return migrated
 
 
 def validate_document(document: object, transport: str = "cli") -> list[str]:
-    """只检查 CLI v6/v7 / App v5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
+    """只检查 CLI v6–v9 / App v5 结构，不探测或修改用户配置。transport 为 cli 或 app。"""
     if transport not in ("cli", "app"):
         return ["transport must be cli or app"]
     agents = CLI_AGENTS if transport == "cli" else {"codex-app"}
@@ -218,13 +352,13 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
     if not isinstance(document, dict):
         return ["top-level value must be an object"]
     top_level = {"version", "work", "modes", "review"}
-    if transport == "cli" and document.get("version") == 8:
+    if transport == "cli" and document.get("version") in (8, 9):
         top_level.add("dispatch")
         try:
             read_limits(document)
         except ValueError as error:
             errors.append(str(error))
-    if transport == "cli" and document.get("version") in (7, 8):
+    if transport == "cli" and document.get("version") in (7, 8, 9):
         top_level.add("model_families")
     if transport == "app":
         top_level = top_level | {"default_mode"}
@@ -232,14 +366,16 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
         errors.append(f"top-level keys must be exactly {sorted(top_level)}")
     if transport == "cli" and "default_mode" in document:
         errors.append("default_mode is App-only; CLI 默认计划来自 work 项")
-    if document.get("version") not in ((6, 7, 8) if transport == "cli" else (5,)):
+    if document.get("version") not in ((6, 7, 8, 9) if transport == "cli" else (5,)):
         errors.append(
             "unsupported version; older configs need model_config.py migrate"
         )
-    if transport == "cli" and document.get("version") in (7, 8):
+    if transport == "cli" and document.get("version") in (7, 8, 9):
         errors.extend(_family_errors(document.get("model_families")))
     work = document.get("work")
-    if not isinstance(work, dict):
+    if transport == "cli" and document.get("version") == 9:
+        errors.extend(_v9_work_errors(work, agents))
+    elif not isinstance(work, dict):
         errors.append("work must be an object")
     else:
         if not set(work) <= TASK_TYPES:
@@ -316,7 +452,8 @@ def validate_document(document: object, transport: str = "cli") -> list[str]:
 
 def validate_path(path: Path) -> list[str]:
     try:
-        return validate_document(json.loads(path.expanduser().read_text()))
+        document, dup_errors = _parse_json_with_duplicates(path.expanduser().read_text())
+        return dup_errors + validate_document(document)
     except FileNotFoundError:
         return [f"config file not found: {path.expanduser()}"]
     except json.JSONDecodeError as error:
@@ -339,20 +476,25 @@ def show(path: Path) -> dict:
         return result
     result["base_hash"] = hashlib.sha256(raw).hexdigest()
     try:
-        document = json.loads(raw)
+        document, dup_errors = _parse_json_with_duplicates(raw)
     except (ValueError, UnicodeError):
         result["file_state"] = "invalid_json"
         return result
     result["config"] = document
-    errors = validate_document(document)
+    errors = dup_errors + validate_document(document)
     result["validation"] = {"valid": not errors, "errors": errors}
-    if isinstance(document, dict) and document.get("version") not in (6, 7, 8):
+    if isinstance(document, dict) and document.get("version") not in (6, 7, 8, 9):
         result["file_state"] = "unsupported_version"
     elif errors:
         result["file_state"] = "invalid_schema"
     else:
+        work_tasks = (
+            list(document["work"])
+            if document.get("version") == 9
+            else sorted(CLI_REQUIRED_WORK)
+        )
         result["cells"] = {
-            **{f"work.{task}": {"status": "unknown"} for task in sorted(CLI_REQUIRED_WORK)},
+            **{f"work.{task}": {"status": "unknown"} for task in work_tasks},
             **{f"review.{scope}.{axis}": {"status": "unknown"}
                for scope in REVIEW_SCOPES for axis in REVIEW_AXES},
         }
@@ -364,8 +506,8 @@ def cli_config_path() -> Path:
 
 
 def load_document(path: Path) -> dict:
-    document = json.loads(path.expanduser().read_text())
-    errors = validate_document(document)
+    document, dup_errors = _parse_json_with_duplicates(path.expanduser().read_text())
+    errors = dup_errors + validate_document(document)
     if errors:
         raise ValueError("; ".join(errors))
     return document
@@ -526,7 +668,7 @@ def migrate_document(document: dict) -> tuple[dict, str]:
     is_app = "default_mode" in document and any(
         isinstance(c, dict) and c.get("agent") == "codex-app"
         for c in document.get("work", {}).values())
-    if document.get("version") in (6, 7, 8) or (document.get("version") == 5 and is_app):
+    if document.get("version") in (6, 7, 8, 9) or (document.get("version") == 5 and is_app):
         transport = "app" if is_app else "cli"
         errors = validate_document(document, transport)
         if errors: raise ValueError("; ".join(errors))
@@ -535,6 +677,9 @@ def migrate_document(document: dict) -> tuple[dict, str]:
             migrated.update(version=7, model_families={})
         if transport == "cli" and migrated["version"] == 7:
             migrated.update(version=8, dispatch=DEFAULT_LIMITS.copy())
+        if transport == "cli" and migrated["version"] == 8:
+            migrated["work"] = normalize_work_entries(migrated)
+            migrated["version"] = 9
         return migrated, transport
     if document.get("version") == 5:
         for c in [*document.get("work", {}).values(), *(c for axes in document.get("review", {}).values() for c in axes.values())]:
@@ -551,6 +696,8 @@ def migrate_document(document: dict) -> tuple[dict, str]:
             for c in axes.values(): c["candidates"] = []
     if transport == "cli":
         migrated.update(version=8, model_families={}, dispatch=DEFAULT_LIMITS.copy())
+        migrated["work"] = normalize_work_entries(migrated)
+        migrated["version"] = 9
     errors = validate_document(migrated, transport)
     if errors: raise ValueError("; ".join(errors))
     return migrated, transport
@@ -822,10 +969,13 @@ def validate_selection(candidate: dict, previous: object,
                 raise ConfigRejected("invalid_candidate", "新声明必须对应配置引用的精确工具和原生模型")
     old_entries = (_config_entries(previous) if previous_valid else {})
     def counts(document, task):
-        c = document["work"][task]
+        c = document["work"].get(task)
+        if not isinstance(c, dict) or "fallbacks" not in c:
+            return Counter()
         return Counter(tuple(item[k] for k in ("agent", "model", "effort")) for item in c["fallbacks"])
     additions = {}
-    for task in CLI_REQUIRED_WORK:
+    work_tasks = candidate["work"].keys() if candidate.get("version") == 9 else CLI_REQUIRED_WORK
+    for task in work_tasks:
         old = counts(previous, task) if previous_valid else Counter()
         for identity in counts(candidate, task) - old:
             additions[f"work.{task}.fallbacks.{identity}"] = dict(zip(("agent", "model", "effort"), identity))
@@ -857,7 +1007,15 @@ def configure(path: Path, candidate: dict, base_hash: str | None,
     def prepare(snapshot: Snapshot) -> dict:
         if snapshot["base_hash"] != base_hash:
             raise ConfigRejected("base_conflict", "配置已变化，请读取最新配置后人工核对")
-        validate_selection(candidate, snapshot["config"], evidence, request_id)
+        previous = snapshot["config"]
+        if (isinstance(previous, dict) and not validate_document(previous)
+                and isinstance(candidate, dict) and isinstance(candidate.get("version"), int)
+                and candidate["version"] < previous["version"]):
+            raise ConfigRejected(
+                "invalid_candidate",
+                f"不能将配置从 v{previous['version']} 降级到 v{candidate['version']}",
+            )
+        validate_selection(candidate, previous, evidence, request_id)
         return candidate
     return configuration_transaction(path, prepare)
 
@@ -878,22 +1036,35 @@ def apply(path: Path, candidate: dict, base_hash: str,
         errors = validate_document(candidate)
         if errors:
             raise ConfigRejected("invalid_candidate", "; ".join(errors))
-        # 仅替换九格的三元组；同一格的其他合法字段也属于只读区。
+        # v6–v8 仅替换九格的三元组与有序列表；v9 允许维护整个 work 任务类型目录，
+        # modes 等只读区始终保持原值。
         permitted = copy.deepcopy(previous)
-        for key in DESKTOP_CELLS:
-            parts = key.split(".")
-            old, new = permitted, candidate
-            for part in parts:
-                old, new = old[part], new[part]
-            for field in ("agent", "model", "effort"):
-                old[field] = new[field]
-            if key.startswith("work."):
-                old["fallbacks"] = copy.deepcopy(new["fallbacks"])
-            else:
-                old["candidates"] = copy.deepcopy(new["candidates"])
-        if previous["version"] in (7, 8):
+        if candidate["version"] == 9 and permitted["version"] in (6, 7, 8):
+            permitted, _ = migrate_document(permitted)
+        if permitted["version"] == 9:
+            permitted["work"] = copy.deepcopy(candidate["work"])
+            for scope in REVIEW_SCOPES:
+                for axis in REVIEW_AXES:
+                    old = permitted["review"][scope][axis]
+                    new = candidate["review"][scope][axis]
+                    for field in ("agent", "model", "effort"):
+                        old[field] = new[field]
+                    old["candidates"] = copy.deepcopy(new["candidates"])
+        else:
+            for key in DESKTOP_CELLS:
+                parts = key.split(".")
+                old, new = permitted, candidate
+                for part in parts:
+                    old, new = old[part], new[part]
+                for field in ("agent", "model", "effort"):
+                    old[field] = new[field]
+                if key.startswith("work."):
+                    old["fallbacks"] = copy.deepcopy(new["fallbacks"])
+                else:
+                    old["candidates"] = copy.deepcopy(new["candidates"])
+        if permitted["version"] in (7, 8, 9):
             permitted["model_families"] = copy.deepcopy(candidate["model_families"])
-        if candidate["version"] == 8:
+        if candidate["version"] in (8, 9):
             permitted = apply_limits(permitted, candidate["dispatch"])
         if permitted != candidate:
             raise ConfigRejected("invalid_candidate", "桌面不能修改只读设置")
@@ -903,7 +1074,7 @@ def apply(path: Path, candidate: dict, base_hash: str,
 
 
 def migrate_path(path: Path) -> dict:
-    """迁移范围与成功返回不变；读取、转换、替换、读回均在共享锁内。"""
+    """迁移范围不变；读取、转换、替换、读回均在共享锁内。"""
     path = path.expanduser()
     transport = None
     migrated = None
@@ -917,7 +1088,8 @@ def migrate_path(path: Path) -> dict:
     if result["status"] == "rejected":
         raise ConfigRejected(result["error"]["code"], result["error"]["message"])
     return {"migrated": str(path), "transport": transport,
-            "default_mode": migrated.get("default_mode")}
+            "default_mode": migrated.get("default_mode"),
+            "changed": result["changed"]}
 
 
 CodexRoute = Literal["gateway", "direct"] | None
@@ -1341,29 +1513,29 @@ def resolve_plan(
     output_mode: str | None = None,
 ) -> dict:
     """解析并冻结一条 lane 的 mode 与模型选择，不修改配置。"""
-    errors = validate_document(document)
-    if errors:
-        raise ValueError("; ".join(errors))
-    if task not in TASK_TYPES:
-        raise ValueError(f"unknown task type: {task}")
-    if task not in document["work"]:
-        raise ValueError(f"task type not defined in config: {task}")
-    entry = document["work"][task]
-    recovery = {}
-    if document.get("version") in (6, 7, 8) and task in CLI_REQUIRED_WORK:
-        explicit = task in IMPLEMENTATION_TASKS and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
-        recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
-                    "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
-                    "recovery_progress": {"current_index": None, "next_cursor": 0}}
+    work = normalize_work_entries(document)
+    if task not in work:
+        if task == "planning" and output_mode in (None, "artifact"):
+            task = resolve_planning_task(document)
+        else:
+            raise ValueError(f"task type not defined in config: {task}")
+    entry = work[task]
+    purpose = entry["purpose"]
+    is_code = purpose == "code"
+    explicit = is_code and output_mode == "commit" and (ticket_mode is not None or map_mode is not None)
+    recovery = {"recovery_plan": {"plan_version": 1, "source": "explicit_mode" if explicit else "work",
+                "primary": triple(entry), "fallbacks": [] if explicit else [triple(x) for x in entry["fallbacks"]]},
+                "recovery_progress": {"current_index": None, "next_cursor": 0}}
     plan = {
         **recovery,
         "version": 5,
         "task": task,
+        "purpose": purpose,
         "agent": entry["agent"],
         "model": entry["model"],
         "effort": entry["effort"],
     }
-    if task not in IMPLEMENTATION_TASKS or output_mode != "commit":
+    if not is_code or output_mode != "commit":
         if evidence is None:
             capability = "unknown"
         else:
@@ -2121,11 +2293,11 @@ def self_test() -> list[str]:
     if (
         transport != "cli"
         or validate_document(migrated)
-        or migrated["version"] != 8
+        or migrated["version"] != 9
         or "default_mode" in migrated
         or migrated["modes"] != {}
     ):
-        failures.append("v2 migration did not produce a valid v5 config")
+        failures.append("v2 migration did not produce a valid v9 config")
     if migrated["review"]["whole-change"]["spec"]["model"] != "provider/model":
         failures.append("v2 migration lost the review role triple")
     legacy_v3 = json.loads(json.dumps(legacy_v2))
@@ -2141,12 +2313,12 @@ def self_test() -> list[str]:
     }
     migrated, _ = migrate_document(json.loads(json.dumps(legacy_v3)))
     if (
-        migrated["version"] != 8
+        migrated["version"] != 9
         or "default_mode" in migrated
         or validate_document(migrated)
         or "execution" in migrated["work"]["backend"]
     ):
-        failures.append("v3 migration did not produce a valid v5 config")
+        failures.append("v3 migration did not produce a valid v9 config")
     split_v3 = json.loads(json.dumps(legacy_v3))
     split_v3["execution"]["pi"]["execution"] = {"model": "provider/model", "effort": "low"}
     try:
@@ -2193,13 +2365,13 @@ def self_test() -> list[str]:
     migrated, transport = migrate_document(json.loads(json.dumps(legacy_v4)))
     if (
         transport != "cli"
-        or migrated["version"] != 8
+        or migrated["version"] != 9
         or "default_mode" in migrated
         or validate_document(migrated)
         or "execution" in migrated["work"]["backend"]
         or migrated["modes"]["standard"]["kind"] != "direct"
     ):
-        failures.append("v4 CLI migration did not produce a direct-only v5 config")
+        failures.append("v4 CLI migration did not produce a direct-only v9 config")
     for field, value in (
         ("model", "other/model"),
         ("execution", {"model": "provider/model", "effort": "medium"}),
@@ -2260,16 +2432,96 @@ def self_test() -> list[str]:
     if transport != "app" or migrated["version"] != 5:
         failures.append("App v4 migration did not bump the version")
     v7 = {**valid_fixture(), "version": 7, "model_families": {}}
-    v8 = migrate_document(v7)[0]
-    if v8["dispatch"] != DEFAULT_LIMITS or migrate_document(v8)[0] != v8:
-        failures.append("v7 repeated migration changed configuration")
+    v9 = migrate_document(v7)[0]
+    if v9["version"] != 9 or v9["dispatch"] != DEFAULT_LIMITS or migrate_document(v9)[0] != v9:
+        failures.append("v7 migration to v9 failed or repeated migration changed configuration")
+    if normalize_work_entries(v7) != v9["work"]:
+        failures.append("normalize_work_entries did not match v9 migrated work entries")
+    v9_custom = copy.deepcopy(v9)
+    v9_custom["work"]["advisory-doc"] = {
+        "agent": "pi", "model": "provider/model", "effort": "high",
+        "fallbacks": [{"agent": "pi", "model": "provider/model", "effort": "low"}],
+        "label": "咨询建议", "hint": "输出调研与方案建议文档", "purpose": "artifact",
+    }
+    v9_custom["work"]["rust-service"] = {
+        "agent": "pi", "model": "provider/model", "effort": "high", "fallbacks": [],
+        "label": "Rust 服务", "hint": "写 Rust 后端代码", "purpose": "code",
+    }
+    if validate_document(v9_custom):
+        failures.append("valid v9 config with custom task type was rejected")
+    advisory_plan = resolve_plan(v9_custom, "advisory-doc", ticket_mode="standard", output_mode="artifact")
+    if (
+        advisory_plan["purpose"] != "artifact"
+        or advisory_plan["mode"] != "none"
+        or advisory_plan["effort"] != "high"
+        or advisory_plan["recovery_plan"]["source"] != "work"
+        or len(advisory_plan["recovery_plan"]["fallbacks"]) != 1
+    ):
+        failures.append("v9 artifact task type did not resolve without modes and with fallbacks")
+    rust_plan = resolve_plan(v9_custom, "rust-service", ticket_mode="standard", output_mode="commit")
+    if (
+        rust_plan["purpose"] != "code"
+        or rust_plan["mode"] != "direct"
+        or rust_plan["mode_name"] != "standard"
+        or rust_plan["effort"] != "low"
+    ):
+        failures.append("v9 code task type did not apply explicit mode on commit")
+    v9_removed = copy.deepcopy(v9_custom)
+    del v9_removed["work"]["advisory-doc"]
+    try:
+        resolve_plan(v9_removed, "advisory-doc", output_mode="artifact")
+    except ValueError as err:
+        if str(err) != "task type not defined in config: advisory-doc":
+            failures.append(f"unexpected error for removed task type: {err}")
+    else:
+        failures.append("removed v9 task type was resolved instead of rejected")
+    v9_min = copy.deepcopy(v9)
+    del v9_min["work"]["frontend"]
+    del v9_min["work"]["design"]
+    if validate_document(v9_min):
+        failures.append("v9 config removing optional code task types was rejected")
+    for missing_task, required_purpose in (("backend", "code"), ("planning", "planning"), ("testing", "checks")):
+        broken = copy.deepcopy(v9_min)
+        del broken["work"][missing_task]
+        errs = validate_document(broken)
+        if not errs or not any(required_purpose in e for e in errs):
+            failures.append(f"v9 missing last {required_purpose} task type was not rejected")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "model-roles.json"
         path.write_text(json.dumps(legacy_v3), encoding="utf-8")
         result = migrate_path(path)
         readback = json.loads(path.read_text(encoding="utf-8"))
-        if result["default_mode"] is not None or validate_document(readback):
+        if result["default_mode"] is not None or result["changed"] is not True or validate_document(readback):
             failures.append("migrate_path readback did not round-trip")
+        second = migrate_path(path)
+        if second["changed"] is not False:
+            failures.append("repeated migrate_path did not report changed=False")
+        v9_path = Path(directory) / "v9.json"
+        v9_path.write_text(json.dumps(v9, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        v9_hash = hashlib.sha256(v9_path.read_bytes()).hexdigest()
+        v9_ev = {
+            "request_id": "self-test-v9",
+            "observed_at": "2026-11-27T12:00:00Z",
+            "sources": {agent: {"status": "ok"} for agent in sorted(CLI_AGENTS)},
+            "capabilities": evidence,
+        }
+        res_add = apply(v9_path, v9_custom, v9_hash, v9_ev, "self-test-v9")
+        if res_add["status"] != "applied" or "advisory-doc" not in res_add["config"]["work"]:
+            failures.append("v9 apply did not save added custom task type")
+        v9_hash = res_add["base_hash"]
+        meta_edit = copy.deepcopy(res_add["config"])
+        meta_edit["work"]["backend"]["label"] = "服务端"
+        meta_edit["work"]["backend"]["hint"] = "维护后端接口"
+        del meta_edit["work"]["design"]
+        res_meta = apply(v9_path, meta_edit, v9_hash, None, "self-test-meta")
+        if res_meta["status"] != "applied" or "design" in res_meta["config"]["work"]:
+            failures.append("v9 apply rejected metadata edit or optional delete without new evidence")
+        v9_hash = res_meta["base_hash"]
+        changed_model = copy.deepcopy(res_meta["config"])
+        changed_model["work"]["backend"]["effort"] = "low"
+        res_no_ev = apply(v9_path, changed_model, v9_hash, None, "self-test-no-ev")
+        if res_no_ev["status"] != "rejected" or res_no_ev["error"]["code"] != "capability_unavailable":
+            failures.append("v9 apply allowed model change without capability evidence")
     return failures
 
 
@@ -2320,7 +2572,9 @@ def main() -> int:
         if not args.candidate or not args.evidence:
             parser.error("preview-review 需要 --candidate 与 --evidence")
         try:
-            document = json.loads(Path(args.candidate).expanduser().read_text())
+            document, dup_errors = _parse_json_with_duplicates(Path(args.candidate).expanduser().read_text())
+            if dup_errors:
+                raise ValueError("; ".join(dup_errors))
             evidence = json.loads(Path(args.evidence).expanduser().read_text())
             print(json.dumps(preview_review_choice(document, evidence), ensure_ascii=False))
             return 0
@@ -2361,7 +2615,9 @@ def main() -> int:
         if not args.request_id or not args.evidence:
             parser.error("configure 需要 --request-id 与 --evidence")
         try:
-            candidate = json.load(sys.stdin)
+            candidate, dup_errors = _parse_json_with_duplicates(sys.stdin.read())
+            if dup_errors:
+                raise ValueError("; ".join(dup_errors))
             evidence = json.loads(Path(args.evidence).expanduser().read_text())
             result = (apply if args.command == "apply" else configure)(Path(args.path), candidate, args.base_hash, evidence, args.request_id)
         except (OSError, ValueError) as error:
