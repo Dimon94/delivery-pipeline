@@ -419,7 +419,10 @@ def decide(state) -> dict:
         latest = max(rows, key=lambda r: r["lane_id"])
         if role == "review" and latest.get("verdict") == "FIX":
             rnd = int(latest.get("round") or 1)
-            return act("judge", f"judge:review_fix:{rnd}", weight="heavy", kind="review-fix",
+            fix_id = f"judge:review_fix:{rnd}"
+            if latest.get("state") == "superseded" or fix_id in receipts:
+                continue
+            return act("judge", fix_id, weight="heavy", kind="review-fix",
                        lane_id=latest["lane_id"], note="FIX findings 交同一 implementer lane 修复；反例变绿加完整测试即关闭，不开下一轮（ADR-0027）")
         if latest.get("state") not in closeout.DONE:
             return act("wait", "wait", lanes=[latest["lane_id"]])
@@ -1075,6 +1078,14 @@ def _cases():
         ("review", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing")), "dispatch", "dispatch:review"),
         ("review-fix", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
                               _lane("r", "closed", role="review", work_item="m1#review", verdict="FIX")), "judge", "judge:review_fix:1"),
+        ("review-fix-recorded", _state(_granted(receipts={"judge:review_fix:1": {"lane_id": "T1-fix"}}), MAP, *all_done,
+                                       _lane("t", "closed", role="testing", work_item="m1#testing"),
+                                       _lane("r", "superseded", role="review", work_item="m1#review", verdict="FIX", fix_lane="T1-fix"),
+                                       _lane("T1-fix", "closed", work_item="T1")), "render_review", "render:merge:"),
+        ("review-fix-running", _state(_granted(receipts={"judge:review_fix:1": {"lane_id": "T1-fix"}}), MAP, *all_done,
+                                      _lane("t", "closed", role="testing", work_item="m1#testing"),
+                                      _lane("r", "superseded", role="review", work_item="m1#review", verdict="FIX", fix_lane="T1-fix"),
+                                      _lane("T1-fix", "running", work_item="T1")), "wait", "wait"),
         ("render-merge", _state(_granted(), MAP, *all_done, _lane("t", "closed", role="testing", work_item="m1#testing"),
                                 _lane("r", "closed", role="review", work_item="m1#review", verdict="PASS")), "render_review", "render:merge:"),
         ("remote", _state(_granted(reviews={"merge": {"approved": True}}), MAP, *all_done,
